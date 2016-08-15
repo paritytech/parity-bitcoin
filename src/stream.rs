@@ -22,14 +22,29 @@ impl Stream {
 
 	/// Appends raw bytes to the end of the stream.
 	pub fn append_bytes(&mut self, bytes: &[u8]) -> &mut Self {
-		// discard error for now, since we write to sinple vector
+		// discard error for now, since we write to simple vector
 		self.buffer.write(bytes).unwrap();
+		self
+	}
+
+	/// Appends a list of serializable structs to the end of the stream.
+	pub fn append_list<T>(&mut self, t: &[T]) -> &mut Self where T: Serializable {
+		for i in t {
+			i.serialize(self);
+		}
 		self
 	}
 
 	/// Full stream.
 	pub fn out(self) -> Vec<u8> {
 		self.buffer
+	}
+}
+
+impl Serializable for i32 {
+	#[inline]
+	fn serialize(&self, s: &mut Stream) {
+		s.buffer.write_i32::<LittleEndian>(*self).unwrap();
 	}
 }
 

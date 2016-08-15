@@ -13,6 +13,12 @@ impl From<CompactInteger> for u64 {
 	}
 }
 
+impl From<usize> for CompactInteger {
+	fn from(i: usize) -> Self {
+		CompactInteger(i as u64)
+	}
+}
+
 impl From<u64> for CompactInteger {
 	fn from(i: u64) -> Self {
 		CompactInteger(i)
@@ -54,13 +60,13 @@ mod tests {
 		let mut stream = Stream::default();
 
 		stream
-			.append(&CompactInteger::from(0))
-			.append(&CompactInteger::from(0xfc))
-			.append(&CompactInteger::from(0xfd))
-			.append(&CompactInteger::from(0xffff))
-			.append(&CompactInteger::from(0x10000))
-			.append(&CompactInteger::from(0xffff_ffff))
-			.append(&CompactInteger::from(0x1_0000_0000));
+			.append(&CompactInteger::from(0u64))
+			.append(&CompactInteger::from(0xfcu64))
+			.append(&CompactInteger::from(0xfdu64))
+			.append(&CompactInteger::from(0xffffu64))
+			.append(&CompactInteger::from(0x10000u64))
+			.append(&CompactInteger::from(0xffff_ffffu64))
+			.append(&CompactInteger::from(0x1_0000_0000u64));
 
 		let expected = vec![
 			0,
