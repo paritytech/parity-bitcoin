@@ -37,6 +37,16 @@ impl<'a> Reader<'a> {
 		self.read += len;
 		Ok(result)
 	}
+
+	pub fn read_list<T>(&mut self, len: usize) -> Result<Vec<T>, Error> where T: Deserializable {
+		let mut result = vec![];
+
+		for _ in 0..len {
+			result.push(try!(self.read()));
+		}
+
+		Ok(result)
+	}
 }
 
 impl Deserializable for i32 {

@@ -8,6 +8,12 @@ use reader::{Deserializable, Reader, Error as ReaderError};
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct CompactInteger(u64);
 
+impl From<CompactInteger> for usize {
+	fn from(i: CompactInteger) -> Self {
+		i.0 as usize
+	}
+}
+
 impl From<CompactInteger> for u64 {
 	fn from(i: CompactInteger) -> Self {
 		i.0
