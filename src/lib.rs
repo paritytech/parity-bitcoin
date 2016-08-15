@@ -6,6 +6,7 @@ extern crate rustc_serialize;
 pub mod block;
 pub mod block_header;
 pub mod compact_integer;
+pub mod reader;
 pub mod stream;
 pub mod transaction;
 
