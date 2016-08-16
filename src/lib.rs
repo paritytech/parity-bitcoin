@@ -10,6 +10,7 @@ pub mod compact_integer;
 pub mod crypto;
 pub mod hash;
 pub mod merkle_root;
+pub mod network;
 pub mod reader;
 pub mod stream;
 pub mod transaction;
