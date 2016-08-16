@@ -5,4 +5,5 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 
 [dependencies]
 byteorder = "0.5"
+rust-crypto = "0.2.36"
 rustc-serialize = "0.3"
