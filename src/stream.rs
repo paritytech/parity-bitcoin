@@ -2,6 +2,12 @@
 use std::io::Write;
 use byteorder::{LittleEndian, WriteBytesExt};
 
+pub fn serialize(t: &Serializable) -> Vec<u8> {
+	let mut stream = Stream::default();
+	stream.append(t);
+	stream.out()
+}
+
 pub trait Serializable {
 	/// Serialize the struct and appends it to the end of stream. 
 	fn serialize(&self, s: &mut Stream);

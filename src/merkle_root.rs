@@ -1,6 +1,7 @@
 use crypto::dhash;
 use hash::{H256, H512};
 
+#[inline]
 fn concat(a: &H256, b: &H256) -> H512 {
 	let mut result = [0u8; 64];
 	result[0..32].copy_from_slice(a);
@@ -8,6 +9,8 @@ fn concat(a: &H256, b: &H256) -> H512 {
 	result
 }
 
+/// Calculates the root of the merkle tree
+/// https://en.bitcoin.it/wiki/Protocol_documentation#Merkle_Trees
 pub fn merkle_root(hashes: &[H256]) -> H256 {
 	if hashes.len() == 1 {
 		return hashes[0].clone();

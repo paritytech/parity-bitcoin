@@ -1,10 +1,21 @@
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
+pub fn deserialize<T>(buffer: &[u8]) -> Result<T, Error> where T: Deserializable {
+	let mut reader = Reader::new(buffer);
+	let result = try!(reader.read());
+	if !reader.is_finished() {
+		return Err(Error::UnreadData);
+	}
+
+	Ok(result)
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Error {
 	MalformedData,
 	UnexpectedEnd,
+	UnreadData,
 }
 
 pub trait Deserializable {
@@ -46,6 +57,11 @@ impl<'a> Reader<'a> {
 		}
 
 		Ok(result)
+	}
+
+	/// Returns true if reading is finished.
+	pub fn is_finished(&self) -> bool {
+		self.read == self.buffer.len()
 	}
 }
 
@@ -98,10 +114,12 @@ mod test {
 		];
 
 		let mut reader = Reader::new(&buffer);
+		assert!(!reader.is_finished());
 		assert_eq!(1u8, reader.read().unwrap());
 		assert_eq!(2u16, reader.read().unwrap());
 		assert_eq!(3u32, reader.read().unwrap());
 		assert_eq!(4u64, reader.read().unwrap());
+		assert!(reader.is_finished());
 		assert_eq!(Error::UnexpectedEnd, reader.read::<u8>().unwrap_err());
 	}
 }

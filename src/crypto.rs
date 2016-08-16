@@ -3,6 +3,7 @@ use rcrypto::digest::Digest;
 use hash::H256;
 
 /// SHA-256
+#[inline]
 pub fn hash(input: &[u8]) -> H256 {
 	let mut result = [0u8; 32];
 	let mut hasher = Sha256::new();
@@ -12,6 +13,7 @@ pub fn hash(input: &[u8]) -> H256 {
 }
 
 /// Double SHA-256
+#[inline]
 pub fn dhash(input: &[u8]) -> H256 {
 	hash(&hash(input))
 }
