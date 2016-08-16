@@ -34,26 +34,18 @@ pub fn merkle_root(hashes: &[H256]) -> H256 {
 
 #[cfg(test)]
 mod tests {
-	use rustc_serialize::hex::FromHex;
+	use hash::h256_from_str;
 	use super::merkle_root;
 
 	// block 80_000
 	// https://blockchain.info/block/000000000043a8c0fd1d6f726790caa2a406010d19efd2780db27bdbbd93baf6
 	#[test]
 	fn test_merkle_root_with_2_hashes() {
-		let mut tx1 = "c06fbab289f723c6261d3030ddb6be121f7d2508d77862bb1e484f5cd7f92b25".from_hex().unwrap();
-		let mut tx2 = "5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2".from_hex().unwrap();
-		let mut expected = "8fb300e3fdb6f30a4c67233b997f99fdd518b968b9a3fd65857bfe78b2600719".from_hex().unwrap();
-		tx1.reverse();
-		tx2.reverse();
-		expected.reverse();
+		let tx1 = h256_from_str("c06fbab289f723c6261d3030ddb6be121f7d2508d77862bb1e484f5cd7f92b25");
+		let tx2 = h256_from_str("5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2");
+		let expected = h256_from_str("8fb300e3fdb6f30a4c67233b997f99fdd518b968b9a3fd65857bfe78b2600719");
 
-		let mut a = [0u8; 32];
-		a.copy_from_slice(&tx1);
-		let mut b = [0u8; 32];
-		b.copy_from_slice(&tx2);
-
-		let result = merkle_root(&[a, b]);
-		assert_eq!(result.to_vec(), expected);
+		let result = merkle_root(&[tx1, tx2]);
+		assert_eq!(result, expected);
 	}
 }

@@ -1,12 +1,19 @@
 //! A type of variable-length integer commonly used in the Bitcoin P2P protocol and Bitcoin serialized data structures.
 //! https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers
 
+use std::fmt;
 use stream::{Serializable, Stream};
 use reader::{Deserializable, Reader, Error as ReaderError};
 
 /// A type of variable-length integer commonly used in the Bitcoin P2P protocol and Bitcoin serialized data structures.
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct CompactInteger(u64);
+
+impl fmt::Display for CompactInteger {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		self.0.fmt(f)
+	}
+}
 
 impl From<CompactInteger> for usize {
 	fn from(i: CompactInteger) -> Self {

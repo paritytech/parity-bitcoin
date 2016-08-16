@@ -1,14 +1,27 @@
+use std::fmt;
 use reader::{Deserializable, Reader, Error as ReaderError};
 use stream::{Serializable, Stream};
+use hash::{H256, h256_to_str};
 
 #[derive(Debug, PartialEq)]
 pub struct BlockHeader {
 	version: u32,
-	previous_header_hash: [u8; 32],
-	merkle_root_hash: [u8; 32],
+	previous_header_hash: H256,
+	merkle_root_hash: H256,
 	time: u32,
 	nbits: u32,
 	nonce: u32,
+}
+
+impl fmt::Display for BlockHeader {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		try!(writeln!(f, "version: {}", self.version));;
+		try!(writeln!(f, "previous header hash: {}", h256_to_str(&self.previous_header_hash)));
+		try!(writeln!(f, "merkle root hash: {}", h256_to_str(&self.merkle_root_hash)));
+		try!(writeln!(f, "time: {}", self.time));
+		try!(writeln!(f, "nbits: {}", self.nbits));
+		writeln!(f, "nonce: {}", self.nonce)
+	}
 }
 
 impl Serializable for BlockHeader {
