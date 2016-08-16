@@ -8,6 +8,8 @@ pub mod block;
 pub mod block_header;
 pub mod compact_integer;
 pub mod crypto;
+pub mod hash;
+pub mod merkle_root;
 pub mod reader;
 pub mod stream;
 pub mod transaction;
