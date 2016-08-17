@@ -7,6 +7,7 @@ extern crate rustc_serialize;
 #[macro_use]
 extern crate lazy_static;
 extern crate secp256k1;
+extern crate base58;
 
 pub mod keys;
 pub mod address;
