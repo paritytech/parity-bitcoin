@@ -1,10 +1,21 @@
+//! Bitcoin KeyPair
+//!
+//! Fields:
+//! - secret - 32 bytes
+//! - public - 65 bytes
+//! - private - secret with additional network identifier (and compressed flag?)
+//! - address_hash - 20 bytes derived from public
+//! - address - address_hash with network identifier and format type
+
 use std::fmt;
 use rustc_serialize::hex::ToHex;
 use rcrypto::sha2::Sha256;
 use rcrypto::ripemd160::Ripemd160;
 use rcrypto::digest::Digest;
 use secp256k1::key;
-use keys::{Secret, Public, Error, SECP256K1, Address};
+use hash::H160;
+use network::Network;
+use keys::{Secret, Public, Error, SECP256K1, Address, Type};
 
 pub struct KeyPair {
 	secret: Secret,
@@ -51,7 +62,7 @@ impl KeyPair {
 		}
 	}
 
-	pub fn address(&self) -> Address {
+	pub fn address_hash(&self) -> H160 {
 		let mut tmp = [0u8; 32];
 		let mut result = [0u8; 20];
 		let mut sha2 = Sha256::new();
@@ -62,12 +73,20 @@ impl KeyPair {
 		rmd.result(&mut result);
 		result
 	}
+
+	pub fn address(&self, network: Network) -> Address {
+		Address {
+			kind: Type::P2PKH,
+			network: network,
+			hash: self.address_hash(),
+		}
+	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::KeyPair;
-	use base58::{ToBase58, FromBase58};
+	use base58::{FromBase58};
 
 	#[test]
 	fn test_generating_address() {
@@ -78,6 +97,6 @@ mod tests {
 		let mut address = [0u8; 20];
 		address.copy_from_slice(&"16meyfSoQV6twkAAxPe51RtMVz7PGRmWna".from_base58().unwrap()[1..21]);
 		let kp = KeyPair::from_secret(secret).unwrap();
-		assert_eq!(kp.address(), address);
+		assert_eq!(kp.address_hash(), address);
 	}
 }
