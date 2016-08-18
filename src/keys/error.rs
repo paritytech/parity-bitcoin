@@ -10,6 +10,7 @@ pub enum Error {
 	InvalidNetwork,
 	InvalidChecksum,
 	InvalidPrivate,
+	InvalidAddress,
 	FailedKeyGeneration,
 }
 
@@ -23,6 +24,7 @@ impl fmt::Display for Error {
 			Error::InvalidNetwork => "Invalid Network",
 			Error::InvalidChecksum => "Invalid Checksum",
 			Error::InvalidPrivate => "Invalid Private",
+			Error::InvalidAddress => "Invalid Address",
 			Error::FailedKeyGeneration => "Key generation failed",
 		};
 

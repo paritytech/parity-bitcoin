@@ -13,9 +13,8 @@ use rcrypto::sha2::Sha256;
 use rcrypto::ripemd160::Ripemd160;
 use rcrypto::digest::Digest;
 use secp256k1::key;
-use hash::H160;
 use network::Network;
-use keys::{Secret, Public, Error, SECP256K1, Address, Type};
+use keys::{Secret, Public, Error, SECP256K1, Address, Type, AddressHash};
 
 pub struct KeyPair {
 	secret: Secret,
@@ -62,7 +61,7 @@ impl KeyPair {
 		}
 	}
 
-	pub fn address_hash(&self) -> H160 {
+	pub fn address_hash(&self) -> AddressHash {
 		let mut tmp = [0u8; 32];
 		let mut result = [0u8; 20];
 		let mut sha2 = Sha256::new();

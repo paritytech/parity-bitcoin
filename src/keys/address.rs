@@ -4,11 +4,11 @@
 //! https://en.bitcoin.it/wiki/Address
 
 use std::fmt;
+use std::str::FromStr;
 use std::ops::Deref;
-use base58::ToBase58;
+use base58::{ToBase58, FromBase58};
 use network::Network;
-use hash::H160;
-use keys::{DisplayLayout, checksum, Error};
+use keys::{DisplayLayout, checksum, Error, AddressHash};
 
 /// There are two address formats currently in use.
 /// https://bitcoin.org/en/developer-reference#address-conversion
@@ -31,7 +31,7 @@ pub struct Address {
 	/// The network of the address.
 	pub network: Network,
 	/// Public key hash.
-	pub hash: H160,
+	pub hash: AddressHash,
 }
 
 pub struct AddressDisplayLayout([u8; 25]);
@@ -63,13 +63,89 @@ impl DisplayLayout for Address {
 		AddressDisplayLayout(result)
 	}
 
-	fn from_layout(_data: &[u8]) -> Result<Self, Error> where Self: Sized {
-		unimplemented!();
+	fn from_layout(data: &[u8]) -> Result<Self, Error> where Self: Sized {
+		if data.len() != 25 {
+			return Err(Error::InvalidAddress);
+		}
+
+		let cs = checksum(&data[0..21]);
+		if cs != &data[21..] {
+			return Err(Error::InvalidChecksum);
+		}
+
+		let (network, kind) = match data[0] {
+			0 => (Network::Mainnet, Type::P2PKH),
+			5 => (Network::Mainnet, Type::P2SH),
+			111 => (Network::Testnet, Type::P2PKH),
+			196 => (Network::Testnet, Type::P2SH),
+			_ => return Err(Error::InvalidAddress),
+		};
+
+		let mut hash = [0u8; 20];
+		hash.copy_from_slice(&data[1..21]);
+
+		let address = Address {
+			kind: kind,
+			network: network,
+			hash: hash,
+		};
+
+		Ok(address)
 	}
 }
 
 impl fmt::Display for Address {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		self.layout().to_base58().fmt(f)
+	}
+}
+
+impl FromStr for Address {
+	type Err = Error;
+
+	fn from_str(s: &str) -> Result<Self, Error> where Self: Sized {
+		let hex = try!(s.from_base58().map_err(|_| Error::InvalidAddress));
+		Address::from_layout(&hex)
+	}
+}
+
+impl From<&'static str> for Address {
+	fn from(s: &'static str) -> Self {
+		s.parse().unwrap()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use rustc_serialize::hex::FromHex;
+	use network::Network;
+	use super::{Address, Type};
+
+	fn load_hash(s: &str) -> [u8; 20] {
+		let mut address = [0u8; 20];
+		address.copy_from_slice(&s.from_hex().unwrap());
+		address
+	}
+
+	#[test]
+	fn test_address_to_string() {
+		let address = Address {
+			kind: Type::P2PKH,
+			network: Network::Mainnet,
+			hash: load_hash("3f4aa1fedf1f54eeb03b759deadb36676b184911"),
+		};
+
+		assert_eq!("16meyfSoQV6twkAAxPe51RtMVz7PGRmWna".to_owned(), address.to_string());
+	}
+
+	#[test]
+	fn test_address_from_str() {
+		let address = Address {
+			kind: Type::P2PKH,
+			network: Network::Mainnet,
+			hash: load_hash("3f4aa1fedf1f54eeb03b759deadb36676b184911"),
+		};
+
+		assert_eq!(address, "16meyfSoQV6twkAAxPe51RtMVz7PGRmWna".into());
 	}
 }
