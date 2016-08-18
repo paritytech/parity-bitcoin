@@ -8,7 +8,7 @@ use std::ops::Deref;
 use base58::ToBase58;
 use network::Network;
 use hash::H160;
-use keys::{DisplayLayout, checksum};
+use keys::{DisplayLayout, checksum, Error};
 
 /// There are two address formats currently in use.
 /// https://bitcoin.org/en/developer-reference#address-conversion
@@ -61,6 +61,10 @@ impl DisplayLayout for Address {
 		let cs = checksum(&result[0..21]);
 		result[21..25].copy_from_slice(&cs);
 		AddressDisplayLayout(result)
+	}
+
+	fn from_layout(_data: &[u8]) -> Result<Self, Error> where Self: Sized {
+		unimplemented!();
 	}
 }
 

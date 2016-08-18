@@ -7,6 +7,9 @@ pub enum Error {
 	InvalidSecret,
 	InvalidMessage,
 	InvalidSignature,
+	InvalidNetwork,
+	InvalidChecksum,
+	InvalidPrivate,
 	FailedKeyGeneration,
 }
 
@@ -17,6 +20,9 @@ impl fmt::Display for Error {
 			Error::InvalidSecret => "Invalid Secret",
 			Error::InvalidMessage => "Invalid Message",
 			Error::InvalidSignature => "Invalid Signature",
+			Error::InvalidNetwork => "Invalid Network",
+			Error::InvalidChecksum => "Invalid Checksum",
+			Error::InvalidPrivate => "Invalid Private",
 			Error::FailedKeyGeneration => "Key generation failed",
 		};
 
