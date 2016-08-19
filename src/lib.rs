@@ -22,3 +22,4 @@ pub mod reader;
 pub mod stream;
 pub mod transaction;
 
+pub use rustc_serialize::hex;

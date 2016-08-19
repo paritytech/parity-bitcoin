@@ -1,7 +1,7 @@
 //! Bitcoin KeyPair
 
 use std::fmt;
-use rustc_serialize::hex::ToHex;
+use hex::ToHex;
 use rcrypto::sha2::Sha256;
 use rcrypto::ripemd160::Ripemd160;
 use rcrypto::digest::Digest;

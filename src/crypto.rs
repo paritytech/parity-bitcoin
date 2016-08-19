@@ -21,7 +21,7 @@ pub fn dhash(input: &[u8]) -> H256 {
 #[cfg(test)]
 mod tests {
 	use super::dhash;
-	use rustc_serialize::hex::FromHex;
+	use hex::FromHex;
 
     #[test]
     fn test_double_hash() {

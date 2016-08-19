@@ -1,11 +1,11 @@
-use rustc_serialize::hex::{ToHex, FromHex};
+use hex::{ToHex, FromHex};
 
 pub type H160 = [u8; 20];
 pub type H256 = [u8; 32];
 pub type H512 = [u8; 64];
 pub type H520 = [u8; 65];
 
-/// Reverses the hash. Commonly used to display 
+/// Reverses the hash. Commonly used to display
 #[inline]
 pub fn reverse(hash: &H256) -> H256 {
 	let mut result = hash.clone();

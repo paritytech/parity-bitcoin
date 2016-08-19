@@ -50,7 +50,7 @@ impl Block {
 
 #[cfg(test)]
 mod tests {
-	use rustc_serialize::hex::FromHex;
+	use hex::FromHex;
 	use reader::deserialize;
 	use hash::h256_from_str;
 	use super::Block;

@@ -117,7 +117,7 @@ impl From<&'static str> for Address {
 
 #[cfg(test)]
 mod tests {
-	use rustc_serialize::hex::FromHex;
+	use hex::FromHex;
 	use network::Network;
 	use super::{Address, Type};
 
