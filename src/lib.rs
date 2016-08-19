@@ -10,6 +10,7 @@ extern crate secp256k1;
 extern crate base58;
 
 pub mod keys;
+pub mod script;
 pub mod block;
 pub mod block_header;
 pub mod compact_integer;
