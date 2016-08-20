@@ -2,6 +2,7 @@ use hex::{ToHex, FromHex};
 
 pub type H160 = [u8; 20];
 pub type H256 = [u8; 32];
+pub type H264 = [u8; 33];
 pub type H512 = [u8; 64];
 pub type H520 = [u8; 65];
 

@@ -1,10 +1,11 @@
 use std::fmt;
 use std::str::FromStr;
+use hex::ToHex;
 use base58::{ToBase58, FromBase58};
 use network::Network;
 use keys::{Secret, DisplayLayout, checksum, Error};
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub struct Private {
 	/// The network on which this key should be used.
 	pub network: Network,
@@ -66,6 +67,14 @@ impl DisplayLayout for Private {
 		};
 
 		Ok(private)
+	}
+}
+
+impl fmt::Debug for Private {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		try!(writeln!(f, "network: {:?}", self.network));
+		try!(writeln!(f, "secret: {}", self.secret.to_hex()));
+		writeln!(f, "compressed: {}", self.compressed)
 	}
 }
 
