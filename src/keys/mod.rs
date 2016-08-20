@@ -23,9 +23,10 @@ pub use self::error::Error;
 pub use self::private::Private;
 pub use self::public::Public;
 
-use hash::{H160, H256, H520};
+use hash::{H160, H256};
 pub type AddressHash = H160;
 pub type Secret = H256;
+pub type Message = H256;
 
 use secp256k1;
 lazy_static! {

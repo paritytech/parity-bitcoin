@@ -1,18 +1,15 @@
 //! Bitcoin KeyPair
 
 use std::fmt;
-use hex::ToHex;
 use rcrypto::sha2::Sha256;
 use rcrypto::ripemd160::Ripemd160;
 use rcrypto::digest::Digest;
 use secp256k1::key;
 use network::Network;
-use keys::{Public, Error, SECP256K1, Address, Type, AddressHash, Private};
+use keys::{Public, Error, SECP256K1, Address, Type, AddressHash, Private, Message};
 
 pub struct KeyPair {
 	private: Private,
-	/// Uncompressed public key. 65 bytes
-	/// TODO: make it optionally compressed
 	public: Public,
 }
 
@@ -35,7 +32,6 @@ impl KeyPair {
 		let context = &SECP256K1;
 		let s: key::SecretKey = try!(key::SecretKey::from_slice(context, &private.secret));
 		let pub_key = try!(key::PublicKey::from_secret_key(context, &s));
-		// TODO: take into account private field `compressed`
 		let serialized = pub_key.serialize_vec(context, private.compressed);
 
 		let public = if private.compressed {
@@ -93,6 +89,26 @@ impl KeyPair {
 			hash: self.address_hash(),
 		}
 	}
+
+	pub fn is_compressed(&self) -> bool {
+		self.private.compressed
+	}
+
+	pub fn sign(&self, _message: &Message) -> Result<(), Error> {
+		unimplemented!();
+	}
+
+	pub fn sign_compact(&self, _message: &Message) -> Result<(), Error> {
+		unimplemented!();
+	}
+
+	pub fn verify(&self, _message: &Message) -> Result<bool, Error> {
+		unimplemented!();
+	}
+
+	pub fn recover_compat(&self, _signature: ()) -> Result<Public, Error> {
+		unimplemented!();
+	}
 }
 
 #[cfg(test)]
@@ -117,12 +133,26 @@ mod tests {
 		kp.address() == address.into()
 	}
 
+	fn check_compressed(secret: &'static str, compressed: bool) -> bool {
+		let kp = KeyPair::from_private(secret.into()).unwrap();
+		kp.is_compressed() == compressed
+	}
+
 	#[test]
-	fn test_generating_address() {
+	fn test_keypair_address() {
 		assert!(check_addresses(SECRET_0, ADDRESS_0));
 		assert!(check_addresses(SECRET_1, ADDRESS_1));
 		assert!(check_addresses(SECRET_2, ADDRESS_2));
 		assert!(check_addresses(SECRET_3, ADDRESS_3));
 		assert!(check_addresses(SECRET_4, ADDRESS_4));
+	}
+
+	#[test]
+	fn test_keypair_is_compressed() {
+		assert!(check_compressed(SECRET_0, false));
+		assert!(check_compressed(SECRET_1, false));
+		assert!(check_compressed(SECRET_2, false));
+		assert!(check_compressed(SECRET_3, true));
+		assert!(check_compressed(SECRET_4, true));
 	}
 }

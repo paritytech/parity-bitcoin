@@ -3,20 +3,20 @@
 use script::Opcode;
 
 /// Maximum number of bytes pushable to the stack
-const MAX_SCRIPT_ELEMENT_SIZE: u32 = 520;
+const _MAX_SCRIPT_ELEMENT_SIZE: u32 = 520;
 
 /// Maximum number of non-push operations per script
-const MAX_OPS_PER_SCRIPT: u32 = 201;
+const _MAX_OPS_PER_SCRIPT: u32 = 201;
 
 /// Maximum number of public keys per multisig
-const MAX_PUBKEYS_PER_MULTISIG: u32 = 20;
+const _MAX_PUBKEYS_PER_MULTISIG: u32 = 20;
 
 /// Maximum script length in bytes
-const MAX_SCRIPT_SIZE: u32 = 10000;
+const _MAX_SCRIPT_SIZE: u32 = 10000;
 
 /// Threshold for nLockTime: below this value it is interpreted as block number,
 /// otherwise as UNIX timestamp.
-const LOCKTIME_THRESHOLD: u32 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
+const _LOCKTIME_THRESHOLD: u32 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 
 /// Serialized script, used inside transaction inputs and outputs.
 pub struct Script {

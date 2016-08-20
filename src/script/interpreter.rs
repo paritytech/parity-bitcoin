@@ -3,8 +3,8 @@ use super::{Script, Num, VerificationFlags};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SignatureVersion {
-	Base,
-	Witness_V0,
+	_Base,
+	_WitnessV0,
 }
 
 pub trait SignatureChecker {
@@ -15,6 +15,12 @@ pub trait SignatureChecker {
 	fn check_sequence(&self, sequence: Num);
 }
 
-pub fn eval_script(stack: &mut Vec<Vec<u8>>, script: &Script, flags: &VerificationFlags, checker: &SignatureChecker, version: SignatureVersion) -> Result<bool, ()> {
+pub fn eval_script(
+	_stack: &mut Vec<Vec<u8>>,
+	_script: &Script,
+	_flags: &VerificationFlags,
+	_checker: &SignatureChecker,
+	_version: SignatureVersion
+) -> Result<bool, ()> {
 	Ok(false)
 }
