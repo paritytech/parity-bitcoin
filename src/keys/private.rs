@@ -5,7 +5,7 @@ use secp256k1::Message as SecpMessage;
 use hex::ToHex;
 use base58::{ToBase58, FromBase58};
 use network::Network;
-use keys::{Secret, DisplayLayout, checksum, Error, Message, Signature, SECP256K1};
+use keys::{Secret, DisplayLayout, checksum, Error, Message, Signature, CompactSignature, SECP256K1};
 
 #[derive(PartialEq)]
 pub struct Private {
@@ -24,10 +24,10 @@ impl Private {
 		let message = try!(SecpMessage::from_slice(message));
 		let signature = try!(context.sign(&message, &secret));
 		let data = signature.serialize_der(context);
-		Ok(Signature::DER(data))
+		Ok(data.into())
 	}
 
-	pub fn sign_compact(&self, message: &Message) -> Result<Signature, Error> {
+	pub fn sign_compact(&self, message: &Message) -> Result<CompactSignature, Error> {
 		let context = &SECP256K1;
 		let secret = try!(key::SecretKey::from_slice(context, &self.secret));
 		let message = try!(SecpMessage::from_slice(message));
@@ -40,7 +40,7 @@ impl Private {
 			true => 27 + recovery_id + 4,
 			false => 27 + recovery_id,
 		};
-		Ok(Signature::Compact(signature))
+		Ok(signature.into())
 	}
 }
 

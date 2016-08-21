@@ -23,7 +23,7 @@ pub use self::keypair::KeyPair;
 pub use self::error::Error;
 pub use self::private::Private;
 pub use self::public::Public;
-pub use self::signature::Signature;
+pub use self::signature::{Signature, CompactSignature};
 
 use hash::{H160, H256};
 pub type AddressHash = H160;

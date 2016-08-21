@@ -94,8 +94,7 @@ impl KeyPair {
 
 #[cfg(test)]
 mod tests {
-	use keys::Message;
-	use crypto::hash;
+	use crypto::dhash;
 	use super::KeyPair;
 
 	/// Tests from:
@@ -111,6 +110,11 @@ mod tests {
 	const ADDRESS_1C: &'static str = "1NoJrossxPBKfCHuJXT4HadJrXRE9Fxiqs";
 	const ADDRESS_2C: &'static str = "1CRj2HyM1CXWzHAXLQtiGLyggNT9WQqsDs";
 	const SIGN_1: &'static str = "304402205dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d022014ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6";
+	const SIGN_2: &'static str = "3044022052d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd5022061d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d";
+	const SIGN_COMPACT_1: &'static str = "1c5dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d14ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6";
+	const SIGN_COMPACT_1C: &'static str = "205dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d14ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6";
+	const SIGN_COMPACT_2: &'static str = "1c52d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd561d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d";
+	const SIGN_COMPACT_2C: &'static str = "2052d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd561d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d";
 
 	fn check_addresses(secret: &'static str, address: &'static str) -> bool {
 		let kp = KeyPair::from_private(secret.into()).unwrap();
@@ -120,6 +124,18 @@ mod tests {
 	fn check_compressed(secret: &'static str, compressed: bool) -> bool {
 		let kp = KeyPair::from_private(secret.into()).unwrap();
 		kp.private().compressed == compressed
+	}
+
+	fn check_sign(secret: &'static str, raw_message: &[u8], signature: &'static str) -> bool {
+		let message = dhash(raw_message);
+		let kp = KeyPair::from_private(secret.into()).unwrap();
+		kp.private().sign(&message).unwrap() == signature.into()
+	}
+
+	fn check_sign_compact(secret: &'static str, raw_message: &[u8], signature: &'static str) -> bool {
+		let message = dhash(raw_message);
+		let kp = KeyPair::from_private(secret.into()).unwrap();
+		kp.private().sign_compact(&message).unwrap() == signature.into()
 	}
 
 	#[test]
@@ -140,15 +156,21 @@ mod tests {
 		assert!(check_compressed(SECRET_2C, true));
 	}
 
-	// TODO: fix
 	#[test]
-	#[ignore]
 	fn test_sign() {
-		use hex::ToHex;
-		let message = hash(b"Very deterministic message");
-		println!("message: {}", message.to_hex());
-		let kp = KeyPair::from_private(SECRET_1.into()).unwrap();
-		let signature = kp.private().sign(&message).unwrap();
-		assert_eq!(signature, SIGN_1.into());
+		let message = b"Very deterministic message";
+		assert!(check_sign(SECRET_1, message, SIGN_1));
+		assert!(check_sign(SECRET_1C, message, SIGN_1));
+		assert!(check_sign(SECRET_2, message, SIGN_2));
+		assert!(check_sign(SECRET_2C, message, SIGN_2));
+	}
+
+	#[test]
+	fn test_sign_compact() {
+		let message = b"Very deterministic message";
+		assert!(check_sign_compact(SECRET_1, message, SIGN_COMPACT_1));
+		assert!(check_sign_compact(SECRET_1C, message, SIGN_COMPACT_1C));
+		assert!(check_sign_compact(SECRET_2, message, SIGN_COMPACT_2));
+		assert!(check_sign_compact(SECRET_2C, message, SIGN_COMPACT_2C));
 	}
 }
