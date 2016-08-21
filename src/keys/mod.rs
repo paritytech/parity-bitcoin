@@ -14,6 +14,7 @@ pub mod keypair;
 mod error;
 mod private;
 mod public;
+mod signature;
 
 pub use self::address::{Type, Address};
 pub use self::checksum::checksum;
@@ -22,6 +23,7 @@ pub use self::keypair::KeyPair;
 pub use self::error::Error;
 pub use self::private::Private;
 pub use self::public::Public;
+pub use self::signature::Signature;
 
 use hash::{H160, H256};
 pub type AddressHash = H160;
