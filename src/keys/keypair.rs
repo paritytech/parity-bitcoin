@@ -3,7 +3,7 @@
 use std::fmt;
 use secp256k1::key;
 use network::Network;
-use keys::{Public, Error, SECP256K1, Address, Type, Private, Message};
+use keys::{Public, Error, SECP256K1, Address, Type, Private};
 
 pub struct KeyPair {
 	private: Private,
@@ -82,19 +82,12 @@ impl KeyPair {
 			hash: self.public.address_hash(),
 		}
 	}
-
-	pub fn verify(&self, _message: &Message) -> Result<bool, Error> {
-		unimplemented!();
-	}
-
-	pub fn recover_compact(&self, _signature: ()) -> Result<Public, Error> {
-		unimplemented!();
-	}
 }
 
 #[cfg(test)]
 mod tests {
 	use crypto::dhash;
+	use keys::Public;
 	use super::KeyPair;
 
 	/// Tests from:
@@ -132,10 +125,24 @@ mod tests {
 		kp.private().sign(&message).unwrap() == signature.into()
 	}
 
+	fn check_verify(secret: &'static str, raw_message: &[u8], signature: &'static str) -> bool {
+		let message = dhash(raw_message);
+		let kp = KeyPair::from_private(secret.into()).unwrap();
+		kp.public().verify(&message, &signature.into()).unwrap()
+	}
+
 	fn check_sign_compact(secret: &'static str, raw_message: &[u8], signature: &'static str) -> bool {
 		let message = dhash(raw_message);
 		let kp = KeyPair::from_private(secret.into()).unwrap();
 		kp.private().sign_compact(&message).unwrap() == signature.into()
+	}
+
+	fn check_recover_compact(secret: &'static str, raw_message: &[u8]) -> bool {
+		let message = dhash(raw_message);
+		let kp = KeyPair::from_private(secret.into()).unwrap();
+		let signature = kp.private().sign_compact(&message).unwrap();
+		let recovered = Public::recover_compact(&message, &signature).unwrap();
+		kp.public() == &recovered
 	}
 
 	#[test]
@@ -163,6 +170,17 @@ mod tests {
 		assert!(check_sign(SECRET_1C, message, SIGN_1));
 		assert!(check_sign(SECRET_2, message, SIGN_2));
 		assert!(check_sign(SECRET_2C, message, SIGN_2));
+		assert!(!check_sign(SECRET_2C, b"", SIGN_2));
+	}
+
+	#[test]
+	fn test_verify() {
+		let message = b"Very deterministic message";
+		assert!(check_verify(SECRET_1, message, SIGN_1));
+		assert!(check_verify(SECRET_1C, message, SIGN_1));
+		assert!(check_verify(SECRET_2, message, SIGN_2));
+		assert!(check_verify(SECRET_2C, message, SIGN_2));
+		assert!(!check_verify(SECRET_2C, b"", SIGN_2));
 	}
 
 	#[test]
@@ -172,5 +190,16 @@ mod tests {
 		assert!(check_sign_compact(SECRET_1C, message, SIGN_COMPACT_1C));
 		assert!(check_sign_compact(SECRET_2, message, SIGN_COMPACT_2));
 		assert!(check_sign_compact(SECRET_2C, message, SIGN_COMPACT_2C));
+		assert!(!check_sign_compact(SECRET_2C, b"", SIGN_COMPACT_2C));
+	}
+
+	#[test]
+	fn test_recover_compact() {
+		let message = b"Very deterministic message";
+		assert!(check_recover_compact(SECRET_0, message));
+		assert!(check_recover_compact(SECRET_1, message));
+		assert!(check_recover_compact(SECRET_1C, message));
+		assert!(check_recover_compact(SECRET_2, message));
+		assert!(check_recover_compact(SECRET_2C, message));
 	}
 }
