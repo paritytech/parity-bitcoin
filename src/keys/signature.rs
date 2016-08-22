@@ -54,6 +54,18 @@ impl From<Vec<u8>> for Signature {
 	}
 }
 
+impl Signature {
+	pub fn check_low_s(&self) -> bool {
+		unimplemented!();
+	}
+}
+
+impl<'a> From<&'a [u8]> for Signature {
+	fn from(v: &'a [u8]) -> Self {
+		Signature(v.to_vec())
+	}
+}
+
 pub struct CompactSignature(H520);
 
 impl fmt::Debug for CompactSignature {
