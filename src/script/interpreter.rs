@@ -1,5 +1,5 @@
 use keys::{Public, Signature};
-use script::{Script, Num, VerificationFlags, Opcode, Error};
+use script::{script, Script, Num, VerificationFlags, Opcode, Error, Instruction};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
@@ -207,11 +207,26 @@ fn check_minimal_push(data: &[u8], opcode: Opcode) -> bool {
 
 pub fn eval_script(
 	_stack: &mut Vec<Vec<u8>>,
-	_script: &Script,
+	script: &Script,
 	_flags: &VerificationFlags,
 	_checker: &SignatureChecker,
 	_version: SignatureVersion
 ) -> Result<bool, Error> {
+	if script.len() > script::MAX_SCRIPT_SIZE {
+		return Err(Error::ScriptSize);
+	}
+
+	for i in script.into_iter() {
+		match try!(i) {
+			Instruction::PushValue(_opcode, _num) => {
+			},
+			Instruction::PushBytes(_opcode, _bytes) => {
+			},
+			Instruction::Normal(_opcode) => {
+			},
+		}
+	}
+
 	Ok(false)
 }
 

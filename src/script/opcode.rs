@@ -5,6 +5,81 @@
 pub enum Opcode {
     // push value
     OP_0 = 0x00,
+	OP_PUSHBYTES_1 = 0x01,
+	OP_PUSHBYTES_2 = 0x02,
+	OP_PUSHBYTES_3 = 0x03,
+	OP_PUSHBYTES_4 = 0x04,
+	OP_PUSHBYTES_5 = 0x05,
+	OP_PUSHBYTES_6 = 0x06,
+	OP_PUSHBYTES_7 = 0x07,
+	OP_PUSHBYTES_8 = 0x08,
+	OP_PUSHBYTES_9 = 0x09,
+	OP_PUSHBYTES_10 = 0x0a,
+	OP_PUSHBYTES_11 = 0x0b,
+	OP_PUSHBYTES_12 = 0x0c,
+	OP_PUSHBYTES_13 = 0x0d,
+	OP_PUSHBYTES_14 = 0x0e,
+	OP_PUSHBYTES_15 = 0x0f,
+	OP_PUSHBYTES_16 = 0x10,
+	OP_PUSHBYTES_17 = 0x11,
+	OP_PUSHBYTES_18 = 0x12,
+	OP_PUSHBYTES_19 = 0x13,
+	OP_PUSHBYTES_20 = 0x14,
+	OP_PUSHBYTES_21 = 0x15,
+	OP_PUSHBYTES_22 = 0x16,
+	OP_PUSHBYTES_23 = 0x17,
+	OP_PUSHBYTES_24 = 0x18,
+	OP_PUSHBYTES_25 = 0x19,
+	OP_PUSHBYTES_26 = 0x1a,
+	OP_PUSHBYTES_27 = 0x1b,
+	OP_PUSHBYTES_28 = 0x1c,
+	OP_PUSHBYTES_29 = 0x1d,
+	OP_PUSHBYTES_30 = 0x1e,
+	OP_PUSHBYTES_31 = 0x1f,
+	OP_PUSHBYTES_32 = 0x20,
+	OP_PUSHBYTES_33 = 0x21,
+	OP_PUSHBYTES_34 = 0x22,
+	OP_PUSHBYTES_35 = 0x23,
+	OP_PUSHBYTES_36 = 0x24,
+	OP_PUSHBYTES_37 = 0x25,
+	OP_PUSHBYTES_38 = 0x26,
+	OP_PUSHBYTES_39 = 0x27,
+	OP_PUSHBYTES_40 = 0x28,
+	OP_PUSHBYTES_41 = 0x29,
+	OP_PUSHBYTES_42 = 0x2a,
+	OP_PUSHBYTES_43 = 0x2b,
+	OP_PUSHBYTES_44 = 0x2c,
+	OP_PUSHBYTES_45 = 0x2d,
+	OP_PUSHBYTES_46 = 0x2e,
+	OP_PUSHBYTES_47 = 0x2f,
+	OP_PUSHBYTES_48 = 0x30,
+	OP_PUSHBYTES_49 = 0x31,
+	OP_PUSHBYTES_50 = 0x32,
+	OP_PUSHBYTES_51 = 0x33,
+	OP_PUSHBYTES_52 = 0x34,
+	OP_PUSHBYTES_53 = 0x35,
+	OP_PUSHBYTES_54 = 0x36,
+	OP_PUSHBYTES_55 = 0x37,
+	OP_PUSHBYTES_56 = 0x38,
+	OP_PUSHBYTES_57 = 0x39,
+	OP_PUSHBYTES_58 = 0x3a,
+	OP_PUSHBYTES_59 = 0x3b,
+	OP_PUSHBYTES_60 = 0x3c,
+	OP_PUSHBYTES_61 = 0x3d,
+	OP_PUSHBYTES_62 = 0x3e,
+	OP_PUSHBYTES_63 = 0x3f,
+	OP_PUSHBYTES_64 = 0x40,
+	OP_PUSHBYTES_65 = 0x41,
+	OP_PUSHBYTES_66 = 0x42,
+	OP_PUSHBYTES_67 = 0x43,
+	OP_PUSHBYTES_68 = 0x44,
+	OP_PUSHBYTES_69 = 0x45,
+	OP_PUSHBYTES_70 = 0x46,
+	OP_PUSHBYTES_71 = 0x47,
+	OP_PUSHBYTES_72 = 0x48,
+	OP_PUSHBYTES_73 = 0x49,
+	OP_PUSHBYTES_74 = 0x4a,
+	OP_PUSHBYTES_75 = 0x4b,
     OP_PUSHDATA1 = 0x4c,
     OP_PUSHDATA2 = 0x4d,
     OP_PUSHDATA4 = 0x4e,
@@ -149,6 +224,81 @@ impl Opcode {
 		use self::Opcode::*;
 		match u {
 			0x00 => Some(OP_0),
+			0x01 => Some(OP_PUSHBYTES_1),
+			0x02 => Some(OP_PUSHBYTES_2),
+			0x03 => Some(OP_PUSHBYTES_3),
+			0x04 => Some(OP_PUSHBYTES_4),
+			0x05 => Some(OP_PUSHBYTES_5),
+			0x06 => Some(OP_PUSHBYTES_6),
+			0x07 => Some(OP_PUSHBYTES_7),
+			0x08 => Some(OP_PUSHBYTES_8),
+			0x09 => Some(OP_PUSHBYTES_9),
+			0x0a => Some(OP_PUSHBYTES_10),
+			0x0b => Some(OP_PUSHBYTES_11),
+			0x0c => Some(OP_PUSHBYTES_12),
+			0x0d => Some(OP_PUSHBYTES_13),
+			0x0e => Some(OP_PUSHBYTES_14),
+			0x0f => Some(OP_PUSHBYTES_15),
+			0x10 => Some(OP_PUSHBYTES_16),
+			0x11 => Some(OP_PUSHBYTES_17),
+			0x12 => Some(OP_PUSHBYTES_18),
+			0x13 => Some(OP_PUSHBYTES_19),
+			0x14 => Some(OP_PUSHBYTES_20),
+			0x15 => Some(OP_PUSHBYTES_21),
+			0x16 => Some(OP_PUSHBYTES_22),
+			0x17 => Some(OP_PUSHBYTES_23),
+			0x18 => Some(OP_PUSHBYTES_24),
+			0x19 => Some(OP_PUSHBYTES_25),
+			0x1a => Some(OP_PUSHBYTES_26),
+			0x1b => Some(OP_PUSHBYTES_27),
+			0x1c => Some(OP_PUSHBYTES_28),
+			0x1d => Some(OP_PUSHBYTES_29),
+			0x1e => Some(OP_PUSHBYTES_30),
+			0x1f => Some(OP_PUSHBYTES_31),
+			0x20 => Some(OP_PUSHBYTES_32),
+			0x21 => Some(OP_PUSHBYTES_33),
+			0x22 => Some(OP_PUSHBYTES_34),
+			0x23 => Some(OP_PUSHBYTES_35),
+			0x24 => Some(OP_PUSHBYTES_36),
+			0x25 => Some(OP_PUSHBYTES_37),
+			0x26 => Some(OP_PUSHBYTES_38),
+			0x27 => Some(OP_PUSHBYTES_39),
+			0x28 => Some(OP_PUSHBYTES_40),
+			0x29 => Some(OP_PUSHBYTES_41),
+			0x2a => Some(OP_PUSHBYTES_42),
+			0x2b => Some(OP_PUSHBYTES_43),
+			0x2c => Some(OP_PUSHBYTES_44),
+			0x2d => Some(OP_PUSHBYTES_45),
+			0x2e => Some(OP_PUSHBYTES_46),
+			0x2f => Some(OP_PUSHBYTES_47),
+			0x30 => Some(OP_PUSHBYTES_48),
+			0x31 => Some(OP_PUSHBYTES_49),
+			0x32 => Some(OP_PUSHBYTES_50),
+			0x33 => Some(OP_PUSHBYTES_51),
+			0x34 => Some(OP_PUSHBYTES_52),
+			0x35 => Some(OP_PUSHBYTES_53),
+			0x36 => Some(OP_PUSHBYTES_54),
+			0x37 => Some(OP_PUSHBYTES_55),
+			0x38 => Some(OP_PUSHBYTES_56),
+			0x39 => Some(OP_PUSHBYTES_57),
+			0x3a => Some(OP_PUSHBYTES_58),
+			0x3b => Some(OP_PUSHBYTES_59),
+			0x3c => Some(OP_PUSHBYTES_60),
+			0x3d => Some(OP_PUSHBYTES_61),
+			0x3e => Some(OP_PUSHBYTES_62),
+			0x3f => Some(OP_PUSHBYTES_63),
+			0x40 => Some(OP_PUSHBYTES_64),
+			0x41 => Some(OP_PUSHBYTES_65),
+			0x42 => Some(OP_PUSHBYTES_66),
+			0x43 => Some(OP_PUSHBYTES_67),
+			0x44 => Some(OP_PUSHBYTES_68),
+			0x45 => Some(OP_PUSHBYTES_69),
+			0x46 => Some(OP_PUSHBYTES_70),
+			0x47 => Some(OP_PUSHBYTES_71),
+			0x48 => Some(OP_PUSHBYTES_72),
+			0x49 => Some(OP_PUSHBYTES_73),
+			0x4a => Some(OP_PUSHBYTES_74),
+			0x4b => Some(OP_PUSHBYTES_75),
 			0x4c => Some(OP_PUSHDATA1),
 			0x4d => Some(OP_PUSHDATA2),
 			0x4e => Some(OP_PUSHDATA4),
@@ -290,6 +440,25 @@ impl Opcode {
 			_ => None,
 		}
 	}
+
+	pub fn is_disabled(&self) -> bool {
+		use self::Opcode::*;
+		match *self {
+			OP_CAT | OP_SUBSTR | OP_LEFT | OP_RIGHT | OP_INVERT | OP_AND | OP_OR |
+				OP_XOR | OP_2MUL | OP_2DIV | OP_MUL | OP_DIV | OP_MOD | OP_LSHIFT |
+				OP_RSHIFT => true,
+			_ => false,
+		}
+	}
+
+	pub fn is_simple_push(&self) -> bool {
+		(*self as u8) < (Opcode::OP_PUSHDATA1 as u8)
+	}
+
+	pub fn is_push_value(&self) -> bool {
+		let s = *self as u8;
+		s >= Opcode::OP_1NEGATE as u8 && s <= Opcode::OP_16 as u8
+	}
 }
 
 #[cfg(test)]
@@ -301,6 +470,81 @@ mod tests {
 
 		// push value
 		assert_eq!(Opcode::OP_0, Opcode::from_u8(Opcode::OP_0 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_1, Opcode::from_u8(Opcode::OP_PUSHBYTES_1 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_2, Opcode::from_u8(Opcode::OP_PUSHBYTES_2 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_3, Opcode::from_u8(Opcode::OP_PUSHBYTES_3 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_4, Opcode::from_u8(Opcode::OP_PUSHBYTES_4 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_5, Opcode::from_u8(Opcode::OP_PUSHBYTES_5 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_6, Opcode::from_u8(Opcode::OP_PUSHBYTES_6 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_7, Opcode::from_u8(Opcode::OP_PUSHBYTES_7 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_8, Opcode::from_u8(Opcode::OP_PUSHBYTES_8 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_9, Opcode::from_u8(Opcode::OP_PUSHBYTES_9 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_10, Opcode::from_u8(Opcode::OP_PUSHBYTES_10 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_11, Opcode::from_u8(Opcode::OP_PUSHBYTES_11 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_12, Opcode::from_u8(Opcode::OP_PUSHBYTES_12 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_13, Opcode::from_u8(Opcode::OP_PUSHBYTES_13 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_14, Opcode::from_u8(Opcode::OP_PUSHBYTES_14 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_15, Opcode::from_u8(Opcode::OP_PUSHBYTES_15 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_16, Opcode::from_u8(Opcode::OP_PUSHBYTES_16 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_17, Opcode::from_u8(Opcode::OP_PUSHBYTES_17 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_18, Opcode::from_u8(Opcode::OP_PUSHBYTES_18 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_19, Opcode::from_u8(Opcode::OP_PUSHBYTES_19 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_20, Opcode::from_u8(Opcode::OP_PUSHBYTES_20 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_21, Opcode::from_u8(Opcode::OP_PUSHBYTES_21 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_22, Opcode::from_u8(Opcode::OP_PUSHBYTES_22 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_23, Opcode::from_u8(Opcode::OP_PUSHBYTES_23 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_24, Opcode::from_u8(Opcode::OP_PUSHBYTES_24 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_25, Opcode::from_u8(Opcode::OP_PUSHBYTES_25 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_26, Opcode::from_u8(Opcode::OP_PUSHBYTES_26 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_27, Opcode::from_u8(Opcode::OP_PUSHBYTES_27 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_28, Opcode::from_u8(Opcode::OP_PUSHBYTES_28 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_29, Opcode::from_u8(Opcode::OP_PUSHBYTES_29 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_30, Opcode::from_u8(Opcode::OP_PUSHBYTES_30 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_31, Opcode::from_u8(Opcode::OP_PUSHBYTES_31 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_32, Opcode::from_u8(Opcode::OP_PUSHBYTES_32 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_33, Opcode::from_u8(Opcode::OP_PUSHBYTES_33 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_34, Opcode::from_u8(Opcode::OP_PUSHBYTES_34 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_35, Opcode::from_u8(Opcode::OP_PUSHBYTES_35 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_36, Opcode::from_u8(Opcode::OP_PUSHBYTES_36 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_37, Opcode::from_u8(Opcode::OP_PUSHBYTES_37 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_38, Opcode::from_u8(Opcode::OP_PUSHBYTES_38 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_39, Opcode::from_u8(Opcode::OP_PUSHBYTES_39 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_40, Opcode::from_u8(Opcode::OP_PUSHBYTES_40 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_41, Opcode::from_u8(Opcode::OP_PUSHBYTES_41 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_42, Opcode::from_u8(Opcode::OP_PUSHBYTES_42 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_43, Opcode::from_u8(Opcode::OP_PUSHBYTES_43 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_44, Opcode::from_u8(Opcode::OP_PUSHBYTES_44 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_45, Opcode::from_u8(Opcode::OP_PUSHBYTES_45 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_46, Opcode::from_u8(Opcode::OP_PUSHBYTES_46 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_47, Opcode::from_u8(Opcode::OP_PUSHBYTES_47 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_48, Opcode::from_u8(Opcode::OP_PUSHBYTES_48 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_49, Opcode::from_u8(Opcode::OP_PUSHBYTES_49 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_50, Opcode::from_u8(Opcode::OP_PUSHBYTES_50 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_51, Opcode::from_u8(Opcode::OP_PUSHBYTES_51 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_52, Opcode::from_u8(Opcode::OP_PUSHBYTES_52 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_53, Opcode::from_u8(Opcode::OP_PUSHBYTES_53 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_54, Opcode::from_u8(Opcode::OP_PUSHBYTES_54 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_55, Opcode::from_u8(Opcode::OP_PUSHBYTES_55 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_56, Opcode::from_u8(Opcode::OP_PUSHBYTES_56 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_57, Opcode::from_u8(Opcode::OP_PUSHBYTES_57 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_58, Opcode::from_u8(Opcode::OP_PUSHBYTES_58 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_59, Opcode::from_u8(Opcode::OP_PUSHBYTES_59 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_60, Opcode::from_u8(Opcode::OP_PUSHBYTES_60 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_61, Opcode::from_u8(Opcode::OP_PUSHBYTES_61 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_62, Opcode::from_u8(Opcode::OP_PUSHBYTES_62 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_63, Opcode::from_u8(Opcode::OP_PUSHBYTES_63 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_64, Opcode::from_u8(Opcode::OP_PUSHBYTES_64 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_65, Opcode::from_u8(Opcode::OP_PUSHBYTES_65 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_66, Opcode::from_u8(Opcode::OP_PUSHBYTES_66 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_67, Opcode::from_u8(Opcode::OP_PUSHBYTES_67 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_68, Opcode::from_u8(Opcode::OP_PUSHBYTES_68 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_69, Opcode::from_u8(Opcode::OP_PUSHBYTES_69 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_70, Opcode::from_u8(Opcode::OP_PUSHBYTES_70 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_71, Opcode::from_u8(Opcode::OP_PUSHBYTES_71 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_72, Opcode::from_u8(Opcode::OP_PUSHBYTES_72 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_73, Opcode::from_u8(Opcode::OP_PUSHBYTES_73 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_74, Opcode::from_u8(Opcode::OP_PUSHBYTES_74 as u8).unwrap());
+		assert_eq!(Opcode::OP_PUSHBYTES_75, Opcode::from_u8(Opcode::OP_PUSHBYTES_75 as u8).unwrap());
 		assert_eq!(Opcode::OP_PUSHDATA1, Opcode::from_u8(Opcode::OP_PUSHDATA1 as u8).unwrap());
 		assert_eq!(Opcode::OP_PUSHDATA2, Opcode::from_u8(Opcode::OP_PUSHDATA2 as u8).unwrap());
 		assert_eq!(Opcode::OP_PUSHDATA4, Opcode::from_u8(Opcode::OP_PUSHDATA4 as u8).unwrap());

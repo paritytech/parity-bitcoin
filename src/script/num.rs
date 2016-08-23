@@ -11,6 +11,14 @@ pub struct Num {
 	value: i64,
 }
 
+impl From<u8> for Num {
+	fn from(i: u8) -> Self {
+		Num {
+			value: i as i64
+		}
+	}
+}
+
 impl From<i64> for Num {
 	fn from(i: i64) -> Self {
 		Num {

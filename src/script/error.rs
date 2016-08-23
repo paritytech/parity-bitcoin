@@ -3,8 +3,12 @@ use script::Opcode;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
+	// Max sizes.
+	ScriptSize,
+	PushSize,
+
 	// Logical/Format/Canonical errors.
-	BadOpcode(u8),
+	BadOpcode,
 	DisabledOpcode(Opcode),
 
 	// BIP62
@@ -17,8 +21,12 @@ pub enum Error {
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match *self {
+			// Max sizes.
+			Error::ScriptSize => "Script is too long".fmt(f),
+			Error::PushSize => "Pushing too many bytes".fmt(f),
+
 			// Logical/Format/Canonical errors.
-			Error::BadOpcode(opcode) => writeln!(f, "Bad Opcode: {}", opcode),
+			Error::BadOpcode => "Bad Opcode".fmt(f),
 			Error::DisabledOpcode(ref opcode) => writeln!(f, "Disabled Opcode: {:?}", opcode),
 
 			// BIP62
