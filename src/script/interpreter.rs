@@ -206,9 +206,9 @@ fn check_minimal_push(data: &[u8], opcode: Opcode) -> bool {
 }
 
 pub fn eval_script(
-	_stack: &mut Vec<Vec<u8>>,
+	stack: &mut Vec<Vec<u8>>,
 	script: &Script,
-	_flags: &VerificationFlags,
+	flags: &VerificationFlags,
 	_checker: &SignatureChecker,
 	_version: SignatureVersion
 ) -> Result<bool, Error> {
@@ -218,9 +218,15 @@ pub fn eval_script(
 
 	for i in script.into_iter() {
 		match try!(i) {
-			Instruction::PushValue(_opcode, _num) => {
+			Instruction::PushValue(_opcode, num) => {
+				stack.push(num.to_vec());
 			},
-			Instruction::PushBytes(_opcode, _bytes) => {
+			Instruction::PushBytes(opcode, bytes) => {
+				// TODO: if fExec
+				if flags.verify_minimaldata && !check_minimal_push(bytes, opcode) {
+					return Err(Error::Minimaldata);
+				}
+				stack.push(bytes.to_vec());
 			},
 			Instruction::Normal(_opcode) => {
 			},

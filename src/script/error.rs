@@ -14,6 +14,7 @@ pub enum Error {
 	// BIP62
 	SignatureHashtype,
 	SignatureDer,
+	Minimaldata,
 	SignatureHighS,
 	PubkeyType,
 }
@@ -32,6 +33,7 @@ impl fmt::Display for Error {
 			// BIP62
 			Error::SignatureHashtype => "Invalid Signature Hashtype".fmt(f),
 			Error::SignatureDer => "Invalid Signature".fmt(f),
+			Error::Minimaldata => "Check minimaldata failed".fmt(f),
 			Error::SignatureHighS => "Invalid High S in Signature".fmt(f),
 			Error::PubkeyType => "Invalid Pubkey".fmt(f),
 		}
