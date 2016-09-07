@@ -1,6 +1,6 @@
 //! Script verification flags.
 
-#[derive(Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq)]
 pub struct VerificationFlags {
 	pub none: bool,
 

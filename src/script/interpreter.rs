@@ -1,4 +1,6 @@
 use keys::{Public, Signature};
+use hash::H256;
+use transaction::Transaction;
 use script::{script, Script, Num, VerificationFlags, Opcode, Error, Instruction};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -12,16 +14,71 @@ pub enum SignatureHash {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SignatureVersion {
-	_Base,
-	_WitnessV0,
+	Base,
+	WitnessV0,
 }
 
 pub trait SignatureChecker {
-	fn check_signature(&self, script_signature: &[u8], public: &Public, script: &Script, version: SignatureVersion);
+	fn check_signature(
+		&self,
+		script_signature: &[u8],
+		public: &Public,
+		script: &Script,
+		version: SignatureVersion
+	) -> bool;
 
-	fn check_lock_time(&self, lock_time: Num);
+	fn check_lock_time(&self, lock_time: Num) -> bool;
 
-	fn check_sequence(&self, sequence: Num);
+	fn check_sequence(&self, sequence: Num) -> bool;
+}
+
+pub struct NoopSignatureChecker;
+
+impl SignatureChecker for NoopSignatureChecker {
+	fn check_signature(&self, _: &[u8], _: &Public, _: &Script, _: SignatureVersion) -> bool {
+		false
+	}
+
+	fn check_lock_time(&self, _: Num) -> bool {
+		false
+	}
+
+	fn check_sequence(&self, _: Num) -> bool {
+		false
+	}
+}
+
+pub struct TransactionSignatureChecker {
+	transaction: Transaction,
+	i: u32,
+	amount: i64,
+}
+
+impl TransactionSignatureChecker {
+	fn verify_signature(&self, _signature: &[u8], _public: &Public, _hash: &H256) -> bool {
+		unimplemented!();
+	}
+}
+
+impl SignatureChecker for TransactionSignatureChecker {
+	fn check_signature(
+		&self,
+		_script_signature: &[u8],
+		_public: &Public,
+		_script: &Script,
+		_version: SignatureVersion
+	) -> bool {
+		unimplemented!();
+	}
+
+	fn check_lock_time(&self, _lock_time: Num) -> bool {
+		unimplemented!();
+	}
+
+	fn check_sequence(&self, _sequence: Num) -> bool {
+		unimplemented!();
+	}
+
 }
 
 fn is_public_key(v: &[u8]) -> bool {
@@ -233,13 +290,14 @@ pub fn eval_script(
 		}
 	}
 
-	Ok(false)
+	Ok(true)
 }
 
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
-	use super::is_public_key;
+	use script::{Opcode, Script, VerificationFlags};
+	use super::{is_public_key, eval_script, NoopSignatureChecker, SignatureVersion};
 
 	#[test]
 	fn tests_is_public_key() {
@@ -249,5 +307,33 @@ mod tests {
 		assert!(is_public_key(&[2; 33]));
 		assert!(is_public_key(&[3; 33]));
 		assert!(!is_public_key(&[4; 33]));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/d612837814020ae832499d18e6ee5eb919a87907/src/test/script_tests.cpp#L900
+	#[test]
+	fn test_push_data() {
+		let expected = vec![vec![0x5a]];
+		let mut flags = VerificationFlags::default();
+		let checker = NoopSignatureChecker;
+		flags.verify_p2sh = true;
+		let version = SignatureVersion::Base;
+		let direct = Script::new(vec![Opcode::OP_PUSHBYTES_1 as u8, 0x5a]);
+		let pushdata1 = Script::new(vec![Opcode::OP_PUSHDATA1 as u8, 0x1, 0x5a]);
+		let pushdata2 = Script::new(vec![Opcode::OP_PUSHDATA2 as u8, 0x1, 0, 0x5a]);
+		let pushdata4 = Script::new(vec![Opcode::OP_PUSHDATA4 as u8, 0x1, 0, 0, 0, 0x5a]);
+
+		let mut direct_stack = vec![];
+		let mut pushdata1_stack= vec![];
+		let mut pushdata2_stack= vec![];
+		let mut pushdata4_stack= vec![];
+		assert!(eval_script(&mut direct_stack, &direct, &flags, &checker, version).unwrap());
+		assert!(eval_script(&mut pushdata1_stack, &pushdata1, &flags, &checker, version).unwrap());
+		assert!(eval_script(&mut pushdata2_stack, &pushdata2, &flags, &checker, version).unwrap());
+		assert!(eval_script(&mut pushdata4_stack, &pushdata4, &flags, &checker, version).unwrap());
+
+		assert_eq!(expected, direct_stack);
+		assert_eq!(expected, pushdata1_stack);
+		assert_eq!(expected, pushdata2_stack);
+		assert_eq!(expected, pushdata4_stack);
 	}
 }

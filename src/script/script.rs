@@ -169,6 +169,10 @@ impl<'a> Iterator for Instructions<'a> {
 	}
 }
 
+pub struct ScriptWitness {
+	script: Vec<Vec<u8>>,
+}
+
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;

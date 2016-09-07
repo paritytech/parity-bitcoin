@@ -12,10 +12,51 @@ pub fn hash(input: &[u8]) -> H256 {
 	result
 }
 
+pub struct DHash256 {
+	hasher: Sha256,
+}
+
+impl DHash256 {
+	pub fn new() -> Self {
+		DHash256 {
+			hasher: Sha256::new(),
+		}
+	}
+}
+
+impl Digest for DHash256 {
+	fn input(&mut self, d: &[u8]) {
+		self.hasher.input(d)
+	}
+
+	fn result(&mut self, out: &mut [u8]) {
+		self.hasher.result(out);
+		self.hasher.reset();
+		self.hasher.input(out);
+		self.hasher.result(out);
+	}
+
+	fn reset(&mut self) {
+		self.hasher.reset();
+	}
+
+	fn output_bits(&self) -> usize {
+		256
+	}
+
+	fn block_size(&self) -> usize {
+		64
+	}
+}
+
 /// Double SHA-256
 #[inline]
 pub fn dhash(input: &[u8]) -> H256 {
-	hash(&hash(input))
+	let mut result = [0u8; 32];
+	let mut hasher = DHash256::new();
+	hasher.input(input);
+	hasher.result(&mut result);
+	result
 }
 
 #[cfg(test)]
