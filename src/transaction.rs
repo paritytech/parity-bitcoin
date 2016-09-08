@@ -8,6 +8,11 @@ use hash::H256;
 use stream::{Serializable, Stream, serialize};
 use compact_integer::CompactInteger;
 
+// Below flags apply in the context of BIP 68
+// If this flag set, CTxIn::nSequence is NOT interpreted as a
+// relative lock-time.
+pub const SEQUENCE_LOCKTIME_DISABLE_FLAG: u32 = 1u32 << 31;
+
 #[derive(Debug)]
 pub struct OutPoint {
 	hash: H256,

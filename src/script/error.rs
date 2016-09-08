@@ -20,6 +20,8 @@ pub enum Error {
 	BadOpcode,
 	DisabledOpcode(Opcode),
 	InvalidStackOperation,
+	InvalidAltstackOperation,
+	UnbalancedConditional,
 
 	// CHECKLOCKTIMEVERIFY and CHECKSEQUENCEVERIFY
 	NegativeLocktime,
@@ -56,7 +58,10 @@ impl fmt::Display for Error {
 			Error::BadOpcode => "Bad Opcode".fmt(f),
 			Error::DisabledOpcode(ref opcode) => writeln!(f, "Disabled Opcode: {:?}", opcode),
 			Error::InvalidStackOperation => "Invalid stack operation".fmt(f),
+			Error::InvalidAltstackOperation => "Invalid altstack operation".fmt(f),
+			Error::UnbalancedConditional => "Unbalanced conditional".fmt(f),
 
+			// CHECKLOCKTIMEVERIFY and CHECKSEQUENCEVERIFY
 			Error::NegativeLocktime => "Negative locktime".fmt(f),
 			Error::UnsatisfiedLocktime => "UnsatisfiedLocktime".fmt(f),
 

@@ -1,6 +1,6 @@
 use keys::{Public, Signature};
 use hash::H256;
-use transaction::Transaction;
+use transaction::{Transaction, SEQUENCE_LOCKTIME_DISABLE_FLAG};
 use script::{script, Script, Num, VerificationFlags, Opcode, Error, Instruction};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -262,6 +262,39 @@ fn check_minimal_push(data: &[u8], opcode: Opcode) -> bool {
 	}
 }
 
+fn cast_to_bool(data: &[u8]) -> bool {
+	if data.is_empty() {
+		return false;
+	}
+
+	if data[..data.len() - 1].iter().any(|x| x != &0) {
+		return true;
+	}
+
+	let last = data[data.len() - 1];
+	if last == 0 || last == 0x80 {
+		false
+	} else {
+		true
+	}
+}
+
+#[inline]
+fn require_not_empty(stack: &Vec<Vec<u8>>) -> Result<(), Error> {
+	match stack.is_empty() {
+		true => Err(Error::InvalidStackOperation),
+		false => Ok(()),
+	}
+}
+
+#[inline]
+fn require_len(stack: &Vec<Vec<u8>>, len: usize) -> Result<(), Error> {
+	match stack.len() < len {
+		true => Err(Error::InvalidStackOperation),
+		false => Ok(()),
+	}
+}
+
 pub fn eval_script(
 	stack: &mut Vec<Vec<u8>>,
 	script: &Script,
@@ -273,7 +306,12 @@ pub fn eval_script(
 		return Err(Error::ScriptSize);
 	}
 
+	let mut fvec = Vec::<bool>::new();
+	let mut altstack = Vec::<Vec<u8>>::new();
+
 	for i in script.into_iter() {
+		let fexec = fvec.iter().find(|&x| !x).is_some();
+
 		match try!(i) {
 			Instruction::PushValue(_opcode, num) => {
 				stack.push(num.to_vec());
@@ -294,9 +332,7 @@ pub fn eval_script(
 						}
 					}
 
-					if stack.is_empty() {
-						return Err(Error::InvalidStackOperation);
-					}
+					try!(require_not_empty(stack));
 
 					// Note that elsewhere numeric opcodes are limited to
 					// operands in the range -2**31+1 to 2**31-1, however it is
@@ -325,20 +361,72 @@ pub fn eval_script(
 						return Err(Error::UnsatisfiedLocktime);
 					}
 				},
+				Opcode::OP_CHECKSEQUENCEVERIFY => {
+					if !flags.verify_chechsequenceverify {
+						if flags.verify_discourage_upgradable_nops {
+							return Err(Error::DiscourageUpgradableNops);
+						}
+					}
+
+					try!(require_not_empty(stack));
+
+					let sequence = try!(Num::from_slice(stack.last().unwrap(), flags.verify_minimaldata, 5));
+
+					if sequence.is_negative() {
+						return Err(Error::NegativeLocktime);
+					}
+
+					if !(sequence & (SEQUENCE_LOCKTIME_DISABLE_FLAG as i64).into()).is_zero() {
+						continue;
+					}
+
+					if !checker.check_sequence(sequence) {
+						return Err(Error::UnsatisfiedLocktime);
+					}
+				},
 				Opcode::OP_NOP1 | Opcode::OP_NOP4 | Opcode::OP_NOP5 | Opcode::OP_NOP6 |
 					Opcode::OP_NOP7 | Opcode::OP_NOP8 | Opcode::OP_NOP9 | Opcode::OP_NOP10 => {
 					if flags.verify_discourage_upgradable_nops {
 						return Err(Error::DiscourageUpgradableNops);
 					}
 				},
+				Opcode::OP_IF | Opcode::OP_NOTIF => {
+					let mut fvalue = false;
+					if fexec {
+						try!(require_not_empty(stack).map_err(|_| Error::UnbalancedConditional));
+						fvalue = cast_to_bool(&stack.pop().unwrap());
+						if opcode == Opcode::OP_NOTIF {
+							fvalue = !fvalue;
+						}
+					}
+					fvec.push(fvalue);
+				},
+				Opcode::OP_ELSE => {
+					if fvec.is_empty() {
+						return Err(Error::UnbalancedConditional);
+					}
+					let last = fvec[fvec.len() - 1];
+					fvec[fvec.len() - 1] == !last;
+				},
+				Opcode::OP_ENDIF => {
+					if fvec.is_empty() {
+						return Err(Error::UnbalancedConditional);
+					}
+					fvec.pop();
+				},
+				Opcode::OP_VERIFY => {
+					try!(require_not_empty(stack));
+					// should we return an error without popping the value?
+					let fvalue = cast_to_bool(&stack.pop().unwrap());
+					if !fvalue {
+						return Err(Error::Verify);
+					}
+				},
 				Opcode::OP_RETURN => {
 					return Err(Error::ReturnOpcode);
 				},
 				Opcode::OP_EQUAL => {
-					if stack.len() < 2 {
-						return Err(Error::InvalidStackOperation);
-					}
-
+					try!(require_len(stack, 2));
 					let equal = stack.pop() == stack.pop();
 					let to_push = match equal {
 						true => vec![1],
@@ -347,14 +435,107 @@ pub fn eval_script(
 					stack.push(to_push);
 				},
 				Opcode::OP_EQUALVERIFY => {
-					if stack.len() < 2 {
-						return Err(Error::InvalidStackOperation);
-					}
-
+					try!(require_len(stack, 2));
 					let equal = stack.pop() == stack.pop();
 					if !equal {
 						return Err(Error::EqualVerify);
 					}
+				},
+				Opcode::OP_TOALTSTACK => {
+					try!(require_not_empty(stack));
+					altstack.push(stack.pop().unwrap());
+				},
+				Opcode::OP_FROMALTSTACK => {
+					try!(require_not_empty(&altstack).map_err(|_| Error::InvalidAltstackOperation));
+					stack.push(altstack.pop().unwrap());
+				},
+				Opcode::OP_2DROP => {
+					try!(require_len(stack, 2));
+					stack.pop();
+					stack.pop();
+				},
+				Opcode::OP_2DUP => {
+					try!(require_len(stack, 2));
+					let v1 = stack[stack.len() - 2].clone();
+					let v2 = stack[stack.len() - 1].clone();
+					stack.push(v1);
+					stack.push(v2);
+				},
+				Opcode::OP_3DUP => {
+					try!(require_len(stack, 3));
+					let v1 = stack[stack.len() - 3].clone();
+					let v2 = stack[stack.len() - 2].clone();
+					let v3 = stack[stack.len() - 1].clone();
+					stack.push(v1);
+					stack.push(v2);
+					stack.push(v3);
+				},
+				Opcode::OP_2OVER => {
+					try!(require_len(stack, 4));
+					let v1 = stack[stack.len() - 4].clone();
+					let v2 = stack[stack.len() - 3].clone();
+					stack.push(v1);
+					stack.push(v2);
+				},
+				Opcode::OP_2ROT => {
+					try!(require_len(stack, 6));
+					let v1 = stack[stack.len() - 6].clone();
+					let v2 = stack[stack.len() - 5].clone();
+					let len = stack.len();
+					stack.remove(len - 6);
+					// -5 -just removed element
+					stack.remove(len - 6);
+					stack.push(v1);
+					stack.push(v2);
+				},
+				Opcode::OP_2SWAP => {
+					try!(require_len(stack, 4));
+					let len = stack.len();
+					stack.swap(len - 4, len - 2);
+					stack.swap(len - 3, len - 1);
+				},
+				Opcode::OP_IFDUP => {
+					try!(require_not_empty(stack));
+					if cast_to_bool(stack.last().unwrap()) {
+						let last = stack.last().unwrap().clone();
+						stack.push(last);
+					}
+				},
+				Opcode::OP_DEPTH => {
+					let depth = Num::from(stack.len());
+					stack.push(depth.to_vec());
+				},
+				Opcode::OP_DROP => {
+					try!(require_not_empty(stack));
+					stack.pop();
+				},
+				Opcode::OP_DUP => {
+					try!(require_not_empty(stack));
+					let v1 = stack[stack.len() - 1].clone();
+					stack.push(v1);
+				},
+				Opcode::OP_NIP => {
+					try!(require_len(stack, 2));
+					let len = stack.len();
+					stack.swap_remove(len - 2);
+				},
+				Opcode::OP_OVER => {
+					try!(require_len(stack, 2));
+					let v = stack[stack.len() - 2].clone();
+					stack.push(v);
+				},
+				Opcode::OP_PICK | Opcode::OP_ROLL => {
+					try!(require_len(stack, 2));
+					let n: i64 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).into();
+					if n < 0 || n >= stack.len() as i64 {
+						return Err(Error::InvalidStackOperation);
+					}
+
+					let v = stack[n as usize + 1].clone();
+					if opcode == Opcode::OP_ROLL {
+						stack.remove(n as usize + 1);
+					}
+					stack.push(v);
 				},
 				_ => (),
 			},

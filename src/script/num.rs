@@ -1,4 +1,5 @@
 //! Script numeric.
+use std::ops;
 use script::Error;
 
 /// Numeric opcodes (OP_1ADD, etc) are restricted to operating on 4-byte integers.
@@ -20,11 +21,25 @@ impl From<u8> for Num {
 	}
 }
 
+impl From<usize> for Num {
+	fn from(i: usize) -> Self {
+		Num {
+			value: i as i64
+		}
+	}
+}
+
 impl From<i64> for Num {
 	fn from(i: i64) -> Self {
 		Num {
 			value: i
 		}
+	}
+}
+
+impl From<Num> for i64 {
+	fn from(n: Num) -> Self {
+		n.value
 	}
 }
 
@@ -108,5 +123,17 @@ impl Num {
 
 	pub fn is_negative(&self) -> bool {
 		self.value < 0
+	}
+
+	pub fn is_zero(&self) -> bool {
+		self.value == 0
+	}
+}
+
+impl ops::BitAnd for Num {
+	type Output = Self;
+
+	fn bitand(self, rhs: Self) -> Self::Output {
+		(self.value & rhs.value).into()
 	}
 }
