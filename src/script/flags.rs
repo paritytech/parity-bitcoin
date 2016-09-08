@@ -65,3 +65,11 @@ pub struct VerificationFlags {
 	/// Making v1-v16 witness program non-standard
 	pub verify_discourage_upgradable_witness_program: bool,
 }
+
+impl VerificationFlags {
+	pub fn verify_p2sh(mut self, value: bool) -> Self {
+		self.verify_p2sh = value;
+		self
+	}
+}
+

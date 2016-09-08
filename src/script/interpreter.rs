@@ -425,22 +425,6 @@ pub fn eval_script(
 				Opcode::OP_RETURN => {
 					return Err(Error::ReturnOpcode);
 				},
-				Opcode::OP_EQUAL => {
-					try!(require_len(stack, 2));
-					let equal = stack.pop() == stack.pop();
-					let to_push = match equal {
-						true => vec![1],
-						false => vec![0],
-					};
-					stack.push(to_push);
-				},
-				Opcode::OP_EQUALVERIFY => {
-					try!(require_len(stack, 2));
-					let equal = stack.pop() == stack.pop();
-					if !equal {
-						return Err(Error::EqualVerify);
-					}
-				},
 				Opcode::OP_TOALTSTACK => {
 					try!(require_not_empty(stack));
 					altstack.push(stack.pop().unwrap());
@@ -537,6 +521,45 @@ pub fn eval_script(
 					}
 					stack.push(v);
 				},
+				Opcode::OP_ROT => {
+					try!(require_len(stack, 3));
+					let len = stack.len();
+					stack.swap(len - 3, len - 2);
+					stack.swap(len - 2, len - 1);
+				},
+				Opcode::OP_SWAP => {
+					try!(require_len(stack, 2));
+					let len = stack.len();
+					stack.swap(len - 2, len - 1);
+				},
+				Opcode::OP_TUCK => {
+					try!(require_len(stack, 2));
+					let len = stack.len();
+					let v = stack[len - 1].clone();
+					stack.insert(len - 2, v);
+				},
+				Opcode::OP_SIZE => {
+					try!(require_not_empty(stack));
+					let n = Num::from(stack.last().unwrap().len());
+					stack.push(n.to_vec());
+				},
+				Opcode::OP_EQUAL => {
+					try!(require_len(stack, 2));
+					let v1 = stack.pop();
+					let v2 = stack.pop();
+					let to_push = match v1 == v2 {
+						true => vec![1],
+						false => vec![0],
+					};
+					stack.push(to_push);
+				},
+				Opcode::OP_EQUALVERIFY => {
+					try!(require_len(stack, 2));
+					let equal = stack.pop() == stack.pop();
+					if !equal {
+						return Err(Error::EqualVerify);
+					}
+				},
 				_ => (),
 			},
 		}
@@ -547,13 +570,13 @@ pub fn eval_script(
 		last != &vec![0; last.len()]
 	};
 
-	Ok(true)
+	Ok(success)
 }
 
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
-	use script::{Opcode, Script, VerificationFlags};
+	use script::{Opcode, Script, VerificationFlags, Builder, Error};
 	use super::{is_public_key, eval_script, NoopSignatureChecker, SignatureVersion};
 
 	#[test]
@@ -570,9 +593,9 @@ mod tests {
 	#[test]
 	fn test_push_data() {
 		let expected = vec![vec![0x5a]];
-		let mut flags = VerificationFlags::default();
+		let flags = VerificationFlags::default()
+			.verify_p2sh(true);
 		let checker = NoopSignatureChecker;
-		flags.verify_p2sh = true;
 		let version = SignatureVersion::Base;
 		let direct = Script::new(vec![Opcode::OP_PUSHBYTES_1 as u8, 0x5a]);
 		let pushdata1 = Script::new(vec![Opcode::OP_PUSHDATA1 as u8, 0x1, 0x5a]);
@@ -592,5 +615,115 @@ mod tests {
 		assert_eq!(expected, pushdata1_stack);
 		assert_eq!(expected, pushdata2_stack);
 		assert_eq!(expected, pushdata4_stack);
+	}
+
+	fn basic_test(script: &Script, expected: Result<bool, Error>, expected_stack: Vec<Vec<u8>>) {
+		let flags = VerificationFlags::default()
+			.verify_p2sh(true);
+		let checker = NoopSignatureChecker;
+		let version = SignatureVersion::Base;
+		let mut stack = vec![];
+		assert_eq!(eval_script(&mut stack, script, &flags, &checker, version), expected);
+		if expected.is_ok() {
+			assert_eq!(stack, expected_stack);
+		}
+	}
+
+	#[test]
+	fn test_equal() {
+		let script = Builder::default()
+			.push_data(&[0x4])
+			.push_data(&[0x4])
+			.push_opcode(Opcode::OP_EQUAL)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![vec![1]];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_equal_false() {
+		let script = Builder::default()
+			.push_data(&[0x4])
+			.push_data(&[0x3])
+			.push_opcode(Opcode::OP_EQUAL)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![vec![0]];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_equal_invalid_stack() {
+		let script = Builder::default()
+			.push_data(&[0x4])
+			.push_opcode(Opcode::OP_EQUAL)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_equal_verify() {
+		let script = Builder::default()
+			.push_data(&[0x4])
+			.push_data(&[0x4])
+			.push_opcode(Opcode::OP_EQUALVERIFY)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_equal_verify_failed() {
+		let script = Builder::default()
+			.push_data(&[0x4])
+			.push_data(&[0x3])
+			.push_opcode(Opcode::OP_EQUALVERIFY)
+			.into_script();
+		let result = Err(Error::EqualVerify);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_equal_verify_invalid_stack() {
+		let script = Builder::default()
+			.push_data(&[0x4])
+			.push_opcode(Opcode::OP_EQUALVERIFY)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_size() {
+		let script = Builder::default()
+			.push_data(&[0x12, 0x34])
+			.push_opcode(Opcode::OP_SIZE)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![vec![0x12, 0x34], vec![0x2]];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_size_false() {
+		let script = Builder::default()
+			.push_data(&[])
+			.push_opcode(Opcode::OP_SIZE)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![vec![], vec![]];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_size_invalid_stack() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_SIZE)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
 	}
 }
