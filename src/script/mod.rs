@@ -1,3 +1,4 @@
+mod builder;
 mod error;
 mod flags;
 mod interpreter;
@@ -7,6 +8,7 @@ mod script;
 mod sign;
 mod standard;
 
+pub use self::builder::Builder;
 pub use self::error::Error;
 pub use self::flags::VerificationFlags;
 pub use self::interpreter::eval_script;

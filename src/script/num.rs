@@ -1,4 +1,5 @@
 //! Script numeric.
+use script::Error;
 
 /// Numeric opcodes (OP_1ADD, etc) are restricted to operating on 4-byte integers.
 /// The semantics are subtle, though: operands must be in the range [-2^31 +1...2^31 -1],
@@ -28,6 +29,43 @@ impl From<i64> for Num {
 }
 
 impl Num {
+	pub fn from_slice(data: &[u8], require_minimal: bool, max_size: usize) -> Result<Self, Error> {
+		if data.len() > max_size {
+			return Err(Error::NumberOverflow);
+		}
+
+		if data.is_empty() {
+			return Ok(0u8.into());
+		}
+
+		if require_minimal {
+			// Check that the number is encoded with the minimum possible
+			// number of bytes.
+			//
+			// If the most-significant-byte - excluding the sign bit - is zero
+			// then we're not minimal. Note how this test also rejects the
+			// negative-zero encoding, 0x80.
+			if (data.last().unwrap() & 0x7f) == 0 {
+				if data.len() <= 1 || (data[data.len() - 2] & 0x80) == 0 {
+					return Err(Error::NumberNotMinimallyEncoded)
+				}
+			}
+		}
+
+		let mut result = 0i64;
+		for i in 0..data.len() {
+			result |= (data[i] as i64) << (8 * i);
+		}
+
+		// If the input vector's most significant byte is 0x80, remove it from
+		// the result's msb and return a negative.
+		if data.last().unwrap() & 0x80 != 0 {
+			Ok((-(result & !(0x80i64 << (8 * (data.len() - 1))))).into())
+		} else {
+			Ok(result.into())
+		}
+	}
+
 	pub fn to_vec(&self) -> Vec<u8> {
 		if self.value == 0 {
 			return vec![];
@@ -66,5 +104,9 @@ impl Num {
 		}
 
 		result
+	}
+
+	pub fn is_negative(&self) -> bool {
+		self.value < 0
 	}
 }

@@ -266,7 +266,7 @@ pub fn eval_script(
 	stack: &mut Vec<Vec<u8>>,
 	script: &Script,
 	flags: &VerificationFlags,
-	_checker: &SignatureChecker,
+	checker: &SignatureChecker,
 	_version: SignatureVersion
 ) -> Result<bool, Error> {
 	if script.len() > script::MAX_SCRIPT_SIZE {
@@ -285,10 +285,86 @@ pub fn eval_script(
 				}
 				stack.push(bytes.to_vec());
 			},
-			Instruction::Normal(_opcode) => {
+			Instruction::Normal(opcode) => match opcode {
+				Opcode::OP_NOP => break,
+				Opcode::OP_CHECKLOCKTIMEVERIFY => {
+					if !flags.verify_clocktimeverify {
+						if flags.verify_discourage_upgradable_nops {
+							return Err(Error::DiscourageUpgradableNops);
+						}
+					}
+
+					if stack.is_empty() {
+						return Err(Error::InvalidStackOperation);
+					}
+
+					// Note that elsewhere numeric opcodes are limited to
+					// operands in the range -2**31+1 to 2**31-1, however it is
+					// legal for opcodes to produce results exceeding that
+					// range. This limitation is implemented by CScriptNum's
+					// default 4-byte limit.
+					//
+					// If we kept to that limit we'd have a year 2038 problem,
+					// even though the nLockTime field in transactions
+					// themselves is uint32 which only becomes meaningless
+					// after the year 2106.
+					//
+					// Thus as a special case we tell CScriptNum to accept up
+					// to 5-byte bignums, which are good until 2**39-1, well
+					// beyond the 2**32-1 limit of the nLockTime field itself.
+					let lock_time = try!(Num::from_slice(stack.last().unwrap(), flags.verify_minimaldata, 5));
+
+					// In the rare event that the argument may be < 0 due to
+					// some arithmetic being done first, you can always use
+					// 0 MAX CHECKLOCKTIMEVERIFY.
+					if lock_time.is_negative() {
+						return Err(Error::NegativeLocktime);
+					}
+
+					if !checker.check_lock_time(lock_time) {
+						return Err(Error::UnsatisfiedLocktime);
+					}
+				},
+				Opcode::OP_NOP1 | Opcode::OP_NOP4 | Opcode::OP_NOP5 | Opcode::OP_NOP6 |
+					Opcode::OP_NOP7 | Opcode::OP_NOP8 | Opcode::OP_NOP9 | Opcode::OP_NOP10 => {
+					if flags.verify_discourage_upgradable_nops {
+						return Err(Error::DiscourageUpgradableNops);
+					}
+				},
+				Opcode::OP_RETURN => {
+					return Err(Error::ReturnOpcode);
+				},
+				Opcode::OP_EQUAL => {
+					if stack.len() < 2 {
+						return Err(Error::InvalidStackOperation);
+					}
+
+					let equal = stack.pop() == stack.pop();
+					let to_push = match equal {
+						true => vec![1],
+						false => vec![0],
+					};
+					stack.push(to_push);
+				},
+				Opcode::OP_EQUALVERIFY => {
+					if stack.len() < 2 {
+						return Err(Error::InvalidStackOperation);
+					}
+
+					let equal = stack.pop() == stack.pop();
+					if !equal {
+						return Err(Error::EqualVerify);
+					}
+				},
+				_ => (),
 			},
 		}
 	}
+
+	let success = !stack.is_empty() && {
+		let last = stack.last().unwrap();
+		last != &vec![0; last.len()]
+	};
 
 	Ok(true)
 }
