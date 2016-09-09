@@ -8,7 +8,7 @@ use script::Error;
 /// numeric operation). CScriptNum enforces those semantics by storing results as
 /// an int64 and allowing out-of-range values to be returned as a vector of bytes but
 /// throwing an exception if arithmetic is done or the result is interpreted as an integer.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct Num {
 	value: i64,
 }

@@ -1,3 +1,4 @@
+use std::cmp;
 use keys::{Public, Signature};
 use hash::H256;
 use transaction::{Transaction, SEQUENCE_LOCKTIME_DISABLE_FLAG};
@@ -610,21 +611,21 @@ pub fn eval_script(
 					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
 					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
 					let v = Num::from(!v1.is_zero() && !v2.is_zero());
-					stack.push((v).to_vec());
+					stack.push(v.to_vec());
 				},
 				Opcode::OP_BOOLOR => {
 					try!(require_len(stack, 2));
 					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
 					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
 					let v = Num::from(!v1.is_zero() || !v2.is_zero());
-					stack.push((v).to_vec());
+					stack.push(v.to_vec());
 				},
 				Opcode::OP_NUMEQUAL => {
 					try!(require_len(stack, 2));
 					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
 					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
 					let v = Num::from(v1 == v2);
-					stack.push((v).to_vec());
+					stack.push(v.to_vec());
 				},
 				Opcode::OP_NUMEQUALVERIFY => {
 					try!(require_len(stack, 2));
@@ -634,8 +635,64 @@ pub fn eval_script(
 						return Err(Error::NumEqualVerify);
 					}
 				},
-
-				// several opcodes here
+				Opcode::OP_NUMNOTEQUAL => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v = Num::from(v1 != v2);
+					stack.push(v.to_vec());
+				},
+				Opcode::OP_LESSTHAN => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v = Num::from(v1 > v2);
+					stack.push(v.to_vec());
+				},
+				Opcode::OP_GREATERTHAN => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v = Num::from(v1 < v2);
+					stack.push(v.to_vec());
+				},
+				Opcode::OP_LESSTHANOREQUAL => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v = Num::from(v1 >= v2);
+					stack.push(v.to_vec());
+				},
+				Opcode::OP_GREATERTHANOREQUAL => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v = Num::from(v1 <= v2);
+					stack.push(v.to_vec());
+				},
+				Opcode::OP_MIN => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					stack.push(cmp::min(v1, v2).to_vec());
+				},
+				Opcode::OP_MAX => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					stack.push(cmp::max(v1, v2).to_vec());
+				},
+				Opcode::OP_WITHIN => {
+					try!(require_len(stack, 3));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v3 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let to_push = match v2 <= v3 && v3 <= v1 {
+						true => vec![1],
+						false => vec![0],
+					};
+					stack.push(to_push);
+				},
 				Opcode::OP_RIPEMD160 => {
 					try!(require_not_empty(stack));
 					let v = ripemd160(&stack.pop().unwrap());
@@ -1301,4 +1358,302 @@ mod tests {
 		basic_test(&script, result, stack);
 	}
 
+	#[test]
+	fn test_numnotequal() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_NUMNOTEQUAL)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_numnotequal_not() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_NUMNOTEQUAL)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_numnotequal_invalid_stack() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_NUMNOTEQUAL)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_lessthan() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_LESSTHAN)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_lessthan_not() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_LESSTHAN)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_lessthan_invalid_stack() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_LESSTHAN)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_greaterthan() {
+		let script = Builder::default()
+			.push_num(3.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_GREATERTHAN)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_greaterthan_not() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_GREATERTHAN)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_greaterthan_invalid_stack() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_GREATERTHAN)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_lessthanorequal() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_LESSTHANOREQUAL)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_lessthanorequal_equal() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_LESSTHANOREQUAL)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_lessthanorequal_not() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(1.into())
+			.push_opcode(Opcode::OP_LESSTHANOREQUAL)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_lessthanorequal_invalid_stack() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_LESSTHANOREQUAL)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_greaterthanorequal() {
+		let script = Builder::default()
+			.push_num(3.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_GREATERTHANOREQUAL)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_greaterthanorequal_equal() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_GREATERTHANOREQUAL)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_greaterthanorequal_not() {
+		let script = Builder::default()
+			.push_num(1.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_GREATERTHANOREQUAL)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_greaterthanorequal_invalid_stack() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_GREATERTHANOREQUAL)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_min() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_MIN)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(2).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_min_second() {
+		let script = Builder::default()
+			.push_num(4.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_MIN)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(3).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_min_invalid_stack() {
+		let script = Builder::default()
+			.push_num(4.into())
+			.push_opcode(Opcode::OP_MIN)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_max() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_MAX)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(3).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_max_second() {
+		let script = Builder::default()
+			.push_num(4.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_MAX)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(4).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_max_invalid_stack() {
+		let script = Builder::default()
+			.push_num(4.into())
+			.push_opcode(Opcode::OP_MAX)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_within() {
+		let script = Builder::default()
+			.push_num(3.into())
+			.push_num(2.into())
+			.push_num(4.into())
+			.push_opcode(Opcode::OP_WITHIN)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![vec![1]];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_within_not() {
+		let script = Builder::default()
+			.push_num(3.into())
+			.push_num(5.into())
+			.push_num(4.into())
+			.push_opcode(Opcode::OP_WITHIN)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![vec![0]];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_within_invalid_stack() {
+		let script = Builder::default()
+			.push_num(5.into())
+			.push_num(4.into())
+			.push_opcode(Opcode::OP_WITHIN)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
 }
