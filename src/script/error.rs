@@ -15,6 +15,7 @@ pub enum Error {
 	// Failed verify operations
 	Verify,
 	EqualVerify,
+	NumEqualVerify,
 
 	// Logical/Format/Canonical errors.
 	BadOpcode,
@@ -47,6 +48,7 @@ impl fmt::Display for Error {
 			// Failed verify operations
 			Error::Verify => "Failed verify operation".fmt(f),
 			Error::EqualVerify => "Failed equal verify operation".fmt(f),
+			Error::NumEqualVerify => "Failed num equal verify operation".fmt(f),
 
 			// Max sizes.
 			Error::ScriptSize => "Script is too long".fmt(f),

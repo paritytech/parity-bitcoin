@@ -13,6 +13,18 @@ pub struct Num {
 	value: i64,
 }
 
+impl From<bool> for Num {
+	fn from(i: bool) -> Self {
+		let v = match i {
+			true => 1,
+			false => 0,
+		};
+		Num {
+			value: v
+		}
+	}
+}
+
 impl From<u8> for Num {
 	fn from(i: u8) -> Self {
 		Num {
@@ -23,6 +35,14 @@ impl From<u8> for Num {
 
 impl From<usize> for Num {
 	fn from(i: usize) -> Self {
+		Num {
+			value: i as i64
+		}
+	}
+}
+
+impl From<i32> for Num {
+	fn from(i: i32) -> Self {
 		Num {
 			value: i as i64
 		}
@@ -128,6 +148,14 @@ impl Num {
 	pub fn is_zero(&self) -> bool {
 		self.value == 0
 	}
+
+	pub fn abs(&self) -> Num {
+		if self.value < 0 {
+			(-self.value).into()
+		} else {
+			self.value.into()
+		}
+	}
 }
 
 impl ops::BitAnd for Num {
@@ -135,5 +163,29 @@ impl ops::BitAnd for Num {
 
 	fn bitand(self, rhs: Self) -> Self::Output {
 		(self.value & rhs.value).into()
+	}
+}
+
+impl ops::Add for Num {
+	type Output = Self;
+
+	fn add(self, rhs: Self) -> Self::Output {
+		(self.value + rhs.value).into()
+	}
+}
+
+impl ops::Sub for Num {
+	type Output = Self;
+
+	fn sub(self, rhs: Self) -> Self::Output {
+		(self.value - rhs.value).into()
+	}
+}
+
+impl ops::Neg for Num {
+	type Output = Self;
+
+	fn neg(self) -> Self::Output {
+		(-self.value).into()
 	}
 }

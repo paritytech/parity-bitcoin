@@ -561,6 +561,79 @@ pub fn eval_script(
 						return Err(Error::EqualVerify);
 					}
 				},
+				Opcode::OP_1ADD => {
+					try!(require_not_empty(stack));
+					let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)) + 1.into();
+					stack.push(n.to_vec());
+				},
+				Opcode::OP_1SUB => {
+					try!(require_not_empty(stack));
+					let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)) - 1.into();
+					stack.push(n.to_vec());
+				},
+				Opcode::OP_NEGATE => {
+					try!(require_not_empty(stack));
+					let n = -try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					stack.push(n.to_vec());
+				},
+				Opcode::OP_ABS => {
+					try!(require_not_empty(stack));
+					let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).abs();
+					stack.push(n.to_vec());
+				},
+				Opcode::OP_NOT => {
+					try!(require_not_empty(stack));
+					let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).is_zero();
+					let n = Num::from(n);
+					stack.push(n.to_vec());
+				},
+				Opcode::OP_0NOTEQUAL => {
+					try!(require_not_empty(stack));
+					let n = !try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).is_zero();
+					let n = Num::from(n);
+					stack.push(n.to_vec());
+				},
+				Opcode::OP_ADD => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					stack.push((v1 + v2).to_vec());
+				},
+				Opcode::OP_SUB => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					stack.push((v2 - v1).to_vec());
+				},
+				Opcode::OP_BOOLAND => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v = Num::from(!v1.is_zero() && !v2.is_zero());
+					stack.push((v).to_vec());
+				},
+				Opcode::OP_BOOLOR => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v = Num::from(!v1.is_zero() || !v2.is_zero());
+					stack.push((v).to_vec());
+				},
+				Opcode::OP_NUMEQUAL => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v = Num::from(v1 == v2);
+					stack.push((v).to_vec());
+				},
+				Opcode::OP_NUMEQUALVERIFY => {
+					try!(require_len(stack, 2));
+					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+					if v1 != v2 {
+						return Err(Error::NumEqualVerify);
+					}
+				},
 
 				// several opcodes here
 				Opcode::OP_RIPEMD160 => {
@@ -604,7 +677,7 @@ pub fn eval_script(
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
-	use script::{Opcode, Script, VerificationFlags, Builder, Error};
+	use script::{Opcode, Script, VerificationFlags, Builder, Error, Num};
 	use super::{is_public_key, eval_script, NoopSignatureChecker, SignatureVersion};
 
 	#[test]
@@ -834,4 +907,398 @@ mod tests {
 		let result = Err(Error::InvalidStackOperation);
 		basic_test(&script, result, vec![]);
 	}
+
+	#[test]
+	fn test_1add() {
+		let script = Builder::default()
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_1ADD)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(6).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_1add_invalid_stack() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_1ADD)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_1sub() {
+		let script = Builder::default()
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_1SUB)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(4).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_1sub_invalid_stack() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_1SUB)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_negate() {
+		let script = Builder::default()
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_NEGATE)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(-5).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_negate_negative() {
+		let script = Builder::default()
+			.push_num((-5).into())
+			.push_opcode(Opcode::OP_NEGATE)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(5).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_negate_invalid_stack() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_NEGATE)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_abs() {
+		let script = Builder::default()
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_ABS)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(5).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_abs_negative() {
+		let script = Builder::default()
+			.push_num((-5).into())
+			.push_opcode(Opcode::OP_ABS)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(5).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_abs_invalid_stack() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_ABS)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_not() {
+		let script = Builder::default()
+			.push_num(4.into())
+			.push_opcode(Opcode::OP_NOT)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_not_zero() {
+		let script = Builder::default()
+			.push_num(0.into())
+			.push_opcode(Opcode::OP_NOT)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_not_invalid_stack() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_NOT)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_0notequal() {
+		let script = Builder::default()
+			.push_num(4.into())
+			.push_opcode(Opcode::OP_0NOTEQUAL)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_0notequal_zero() {
+		let script = Builder::default()
+			.push_num(0.into())
+			.push_opcode(Opcode::OP_0NOTEQUAL)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_0notequal_invalid_stack() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_0NOTEQUAL)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_add() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_ADD)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(5).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_add_invalid_stack() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_ADD)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_sub() {
+		let script = Builder::default()
+			.push_num(3.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_SUB)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_sub_invalid_stack() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_SUB)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_booland() {
+		let script = Builder::default()
+			.push_num(3.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_BOOLAND)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_booland_first() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(0.into())
+			.push_opcode(Opcode::OP_BOOLAND)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_booland_second() {
+		let script = Builder::default()
+			.push_num(0.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_BOOLAND)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_booland_none() {
+		let script = Builder::default()
+			.push_num(0.into())
+			.push_num(0.into())
+			.push_opcode(Opcode::OP_BOOLAND)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_booland_invalid_stack() {
+		let script = Builder::default()
+			.push_num(0.into())
+			.push_opcode(Opcode::OP_BOOLAND)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_boolor() {
+		let script = Builder::default()
+			.push_num(3.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_BOOLOR)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_boolor_first() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(0.into())
+			.push_opcode(Opcode::OP_BOOLOR)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_boolor_second() {
+		let script = Builder::default()
+			.push_num(0.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_BOOLOR)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_boolor_none() {
+		let script = Builder::default()
+			.push_num(0.into())
+			.push_num(0.into())
+			.push_opcode(Opcode::OP_BOOLOR)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_boolor_invalid_stack() {
+		let script = Builder::default()
+			.push_num(0.into())
+			.push_opcode(Opcode::OP_BOOLOR)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_numequal() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_NUMEQUAL)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![Num::from(1).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_numequal_not() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_NUMEQUAL)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![Num::from(0).to_vec()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_numequal_invalid_stack() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_NUMEQUAL)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_numequalverify() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_NUMEQUALVERIFY)
+			.into_script();
+		let result = Ok(false);
+		let stack = vec![];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_numequalverify_failed() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_NUMEQUALVERIFY)
+			.into_script();
+		let result = Err(Error::NumEqualVerify);
+		let stack = vec![];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_numequalverify_invalid_stack() {
+		let script = Builder::default()
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_NUMEQUALVERIFY)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		let stack = vec![];
+		basic_test(&script, result, stack);
+	}
+
 }
