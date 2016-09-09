@@ -1,6 +1,7 @@
 use keys::{Public, Signature};
 use hash::H256;
 use transaction::{Transaction, SEQUENCE_LOCKTIME_DISABLE_FLAG};
+use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
 use script::{script, Script, Num, VerificationFlags, Opcode, Error, Instruction};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -560,6 +561,33 @@ pub fn eval_script(
 						return Err(Error::EqualVerify);
 					}
 				},
+
+				// several opcodes here
+				Opcode::OP_RIPEMD160 => {
+					try!(require_not_empty(stack));
+					let v = ripemd160(&stack.pop().unwrap());
+					stack.push(v.to_vec());
+				},
+				Opcode::OP_SHA1 => {
+					try!(require_not_empty(stack));
+					let v = sha1(&stack.pop().unwrap());
+					stack.push(v.to_vec());
+				},
+				Opcode::OP_SHA256 => {
+					try!(require_not_empty(stack));
+					let v = sha256(&stack.pop().unwrap());
+					stack.push(v.to_vec());
+				},
+				Opcode::OP_HASH160 => {
+					try!(require_not_empty(stack));
+					let v = dhash160(&stack.pop().unwrap());
+					stack.push(v.to_vec());
+				},
+				Opcode::OP_HASH256 => {
+					try!(require_not_empty(stack));
+					let v = dhash256(&stack.pop().unwrap());
+					stack.push(v.to_vec());
+				},
 				_ => (),
 			},
 		}
@@ -722,6 +750,86 @@ mod tests {
 	fn test_size_invalid_stack() {
 		let script = Builder::default()
 			.push_opcode(Opcode::OP_SIZE)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_hash256() {
+		let script = Builder::default()
+			.push_data(b"hello")
+			.push_opcode(Opcode::OP_HASH256)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec!["9595c9df90075148eb06860365df33584b75bff782a510c6cd4883a419833d50".from_hex().unwrap()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_hash256_invalid_stack() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_HASH256)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_ripemd160() {
+		let script = Builder::default()
+			.push_data(b"hello")
+			.push_opcode(Opcode::OP_RIPEMD160)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec!["108f07b8382412612c048d07d13f814118445acd".from_hex().unwrap()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_ripemd160_invalid_stack() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_RIPEMD160)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_sha1() {
+		let script = Builder::default()
+			.push_data(b"hello")
+			.push_opcode(Opcode::OP_SHA1)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec!["aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".from_hex().unwrap()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_sha1_invalid_stack() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_SHA1)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test(&script, result, vec![]);
+	}
+
+	#[test]
+	fn test_sha256() {
+		let script = Builder::default()
+			.push_data(b"hello")
+			.push_opcode(Opcode::OP_SHA256)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec!["2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".from_hex().unwrap()];
+		basic_test(&script, result, stack);
+	}
+
+	#[test]
+	fn test_sha256_invalid_stack() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_SHA256)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
 		basic_test(&script, result, vec![]);

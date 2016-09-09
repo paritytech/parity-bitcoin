@@ -1,6 +1,8 @@
+use rcrypto::sha1::Sha1;
 use rcrypto::sha2::Sha256;
+use rcrypto::ripemd160::Ripemd160;
 use rcrypto::digest::Digest;
-use hash::H256;
+use hash::{H160, H256};
 
 /// SHA-256
 #[inline]
@@ -10,6 +12,46 @@ pub fn hash(input: &[u8]) -> H256 {
 	hasher.input(input);
 	hasher.result(&mut result);
 	result
+}
+
+pub struct DHash160 {
+	sha256: Sha256,
+	ripemd: Ripemd160,
+}
+
+impl DHash160 {
+	pub fn new() -> Self {
+		DHash160 {
+			sha256: Sha256::new(),
+			ripemd: Ripemd160::new(),
+		}
+	}
+}
+
+impl Digest for DHash160 {
+	fn input(&mut self, d: &[u8]) {
+		self.sha256.input(d)
+	}
+
+	fn result(&mut self, out: &mut [u8]) {
+		let mut tmp = [0u8; 32];
+		self.sha256.result(&mut tmp);
+		self.ripemd.input(&tmp);
+		self.ripemd.result(out);
+		self.ripemd.reset();
+	}
+
+	fn reset(&mut self) {
+		self.sha256.reset();
+	}
+
+	fn output_bits(&self) -> usize {
+		160
+	}
+
+	fn block_size(&self) -> usize {
+		64
+	}
 }
 
 pub struct DHash256 {
@@ -49,9 +91,49 @@ impl Digest for DHash256 {
 	}
 }
 
+/// RIPEMD160
+#[inline]
+pub fn ripemd160(input: &[u8]) -> H160 {
+	let mut result = [0u8; 20];
+	let mut hasher = Ripemd160::new();
+	hasher.input(input);
+	hasher.result(&mut result);
+	result
+}
+
+/// SHA-1
+#[inline]
+pub fn sha1(input: &[u8]) -> H160 {
+	let mut result = [0u8; 20];
+	let mut hasher = Sha1::new();
+	hasher.input(input);
+	hasher.result(&mut result);
+	result
+}
+
+/// SHA-256
+#[inline]
+pub fn sha256(input: &[u8]) -> H256 {
+	let mut result = [0u8; 32];
+	let mut hasher = Sha256::new();
+	hasher.input(input);
+	hasher.result(&mut result);
+	result
+}
+
+/// SHA-256 and RIPEMD160
+#[inline]
+pub fn dhash160(input: &[u8]) -> H160 {
+	let mut result = [0u8; 20];
+	let mut hasher = DHash160::new();
+	hasher.input(input);
+	hasher.result(&mut result);
+	result
+}
+
 /// Double SHA-256
 #[inline]
-pub fn dhash(input: &[u8]) -> H256 {
+pub fn dhash256(input: &[u8]) -> H256 {
 	let mut result = [0u8; 32];
 	let mut hasher = DHash256::new();
 	hasher.input(input);
@@ -61,13 +143,41 @@ pub fn dhash(input: &[u8]) -> H256 {
 
 #[cfg(test)]
 mod tests {
-	use super::dhash;
+	use super::{ripemd160, sha1, sha256, dhash160, dhash256};
 	use hex::FromHex;
 
+	#[test]
+	fn test_ripemd160() {
+		let expected = "108f07b8382412612c048d07d13f814118445acd".from_hex().unwrap();
+		let result = ripemd160(b"hello");
+		assert_eq!(result.to_vec(), expected);
+	}
+
+	#[test]
+	fn test_sha1() {
+		let expected = "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".from_hex().unwrap();
+		let result = sha1(b"hello");
+		assert_eq!(result.to_vec(), expected);
+	}
+
+	#[test]
+	fn test_sha256() {
+		let expected = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".from_hex().unwrap();
+		let result = sha256(b"hello");
+		assert_eq!(result.to_vec(), expected);
+	}
+
+	#[test]
+	fn test_dhash160() {
+		let expected = "b6a9c8c230722b7c748331a8b450f05566dc7d0f".from_hex().unwrap();
+		let result = dhash160(b"hello");
+		assert_eq!(result.to_vec(), expected);
+	}
+
     #[test]
-    fn test_double_hash() {
+    fn test_dhash256() {
 		let expected = "9595c9df90075148eb06860365df33584b75bff782a510c6cd4883a419833d50".from_hex().unwrap();
-		let result = dhash(b"hello");
+		let result = dhash256(b"hello");
 		assert_eq!(result.to_vec(), expected);
     }
 }

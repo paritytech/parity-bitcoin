@@ -86,7 +86,7 @@ impl KeyPair {
 
 #[cfg(test)]
 mod tests {
-	use crypto::dhash;
+	use crypto::dhash256;
 	use keys::Public;
 	use super::KeyPair;
 
@@ -120,25 +120,25 @@ mod tests {
 	}
 
 	fn check_sign(secret: &'static str, raw_message: &[u8], signature: &'static str) -> bool {
-		let message = dhash(raw_message);
+		let message = dhash256(raw_message);
 		let kp = KeyPair::from_private(secret.into()).unwrap();
 		kp.private().sign(&message).unwrap() == signature.into()
 	}
 
 	fn check_verify(secret: &'static str, raw_message: &[u8], signature: &'static str) -> bool {
-		let message = dhash(raw_message);
+		let message = dhash256(raw_message);
 		let kp = KeyPair::from_private(secret.into()).unwrap();
 		kp.public().verify(&message, &signature.into()).unwrap()
 	}
 
 	fn check_sign_compact(secret: &'static str, raw_message: &[u8], signature: &'static str) -> bool {
-		let message = dhash(raw_message);
+		let message = dhash256(raw_message);
 		let kp = KeyPair::from_private(secret.into()).unwrap();
 		kp.private().sign_compact(&message).unwrap() == signature.into()
 	}
 
 	fn check_recover_compact(secret: &'static str, raw_message: &[u8]) -> bool {
-		let message = dhash(raw_message);
+		let message = dhash256(raw_message);
 		let kp = KeyPair::from_private(secret.into()).unwrap();
 		let signature = kp.private().sign_compact(&message).unwrap();
 		let recovered = Public::recover_compact(&message, &signature).unwrap();

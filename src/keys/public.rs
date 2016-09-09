@@ -2,10 +2,8 @@ use std::fmt;
 use std::ops::Deref;
 use secp256k1::key;
 use secp256k1::{Message as SecpMessage, RecoveryId, RecoverableSignature, Error as SecpError, Signature as SecpSignature};
-use rcrypto::sha2::Sha256;
-use rcrypto::ripemd160::Ripemd160;
-use rcrypto::digest::Digest;
 use hex::ToHex;
+use crypto::dhash160;
 use hash::{H264, H520};
 use keys::{AddressHash, Error, CompactSignature, Signature, Message, SECP256K1};
 
@@ -16,15 +14,7 @@ pub enum Public {
 
 impl Public {
 	pub fn address_hash(&self) -> AddressHash {
-		let mut tmp = [0u8; 32];
-		let mut result = [0u8; 20];
-		let mut sha2 = Sha256::new();
-		let mut rmd = Ripemd160::new();
-		sha2.input(self);
-		sha2.result(&mut tmp);
-		rmd.input(&tmp);
-		rmd.result(&mut result);
-		result
+		dhash160(self)
 	}
 
 	pub fn verify(&self, message: &Message, signature: &Signature) -> Result<bool, Error> {

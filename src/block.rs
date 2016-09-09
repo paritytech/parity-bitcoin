@@ -1,6 +1,6 @@
 use block_header::BlockHeader;
 use compact_integer::CompactInteger;
-use crypto::dhash;
+use crypto::dhash256;
 use hash::H256;
 use merkle_root::merkle_root;
 use reader::{Deserializable, Reader, Error as ReaderError};
@@ -38,7 +38,7 @@ impl Deserializable for Block {
 
 impl Block {
 	pub fn hash(&self) -> H256 {
-		dhash(&serialize(&self.block_header))
+		dhash256(&serialize(&self.block_header))
 	}
 
 	/// Returns block's merkle root.

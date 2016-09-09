@@ -3,7 +3,7 @@
 //! https://en.bitcoin.it/wiki/Protocol_documentation#tx
 
 use reader::{Deserializable, Reader, Error as ReaderError};
-use crypto::dhash;
+use crypto::dhash256;
 use hash::H256;
 use stream::{Serializable, Stream, serialize};
 use compact_integer::CompactInteger;
@@ -147,7 +147,7 @@ impl Deserializable for Transaction {
 
 impl Transaction {
 	pub fn hash(&self) -> H256 {
-		dhash(&serialize(self))
+		dhash256(&serialize(self))
 	}
 }
 
