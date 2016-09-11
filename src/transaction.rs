@@ -149,6 +149,14 @@ impl Transaction {
 	pub fn hash(&self) -> H256 {
 		dhash256(&serialize(self))
 	}
+
+	pub fn transaction_inputs(&self) -> &[TransactionInput] {
+		&self.transaction_inputs
+	}
+
+	pub fn transaction_outputs(&self) -> &[TransactionOutput] {
+		&self.transaction_outputs
+	}
 }
 
 #[cfg(test)]

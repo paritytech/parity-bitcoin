@@ -1,9 +1,9 @@
 use std::cmp;
 use keys::{Public, Signature};
-use hash::H256;
+use hash::{H256, h256_from_u8};
 use transaction::{Transaction, SEQUENCE_LOCKTIME_DISABLE_FLAG};
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
-use script::{script, Script, Num, VerificationFlags, Opcode, Error, Instruction};
+use script::{script, Script, Num, VerificationFlags, Opcode, Error};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
@@ -24,7 +24,7 @@ pub trait SignatureChecker {
 	fn check_signature(
 		&self,
 		script_signature: &[u8],
-		public: &Public,
+		public: &[u8],
 		script: &Script,
 		version: SignatureVersion
 	) -> bool;
@@ -37,7 +37,7 @@ pub trait SignatureChecker {
 pub struct NoopSignatureChecker;
 
 impl SignatureChecker for NoopSignatureChecker {
-	fn check_signature(&self, _: &[u8], _: &Public, _: &Script, _: SignatureVersion) -> bool {
+	fn check_signature(&self, _: &[u8], _: &[u8], _: &Script, _: SignatureVersion) -> bool {
 		false
 	}
 
@@ -57,7 +57,7 @@ pub struct TransactionSignatureChecker {
 }
 
 impl TransactionSignatureChecker {
-	fn verify_signature(&self, _signature: &[u8], _public: &Public, _hash: &H256) -> bool {
+	fn verify_signature(&self, _signature: &[u8], _public: &[u8], _hash: &H256) -> bool {
 		unimplemented!();
 	}
 }
@@ -65,11 +65,25 @@ impl TransactionSignatureChecker {
 impl SignatureChecker for TransactionSignatureChecker {
 	fn check_signature(
 		&self,
-		_script_signature: &[u8],
-		_public: &Public,
+		script_signature: &[u8],
+		public: &[u8],
 		_script: &Script,
 		_version: SignatureVersion
 	) -> bool {
+		let public = match Public::from_slice(public) {
+			Ok(public) => public,
+			_ => return false,
+		};
+
+		if script_signature.is_empty() {
+			return false;
+		}
+
+		let hash_type = script_signature.last().unwrap();
+
+
+
+
 		unimplemented!();
 	}
 
@@ -81,6 +95,27 @@ impl SignatureChecker for TransactionSignatureChecker {
 		unimplemented!();
 	}
 
+}
+
+fn signature_hash(
+	script_code: &Script,
+	tx: &Transaction,
+	i: usize,
+	hash_type: i32,
+	amount: u32,
+	version: SignatureVersion
+) -> H256 {
+	if i >= tx.transaction_inputs().len() {
+		return h256_from_u8(1);
+	}
+
+	if (hash_type & 0x1f) == SignatureHash::Single as i32 {
+		if i >= tx.transaction_outputs().len() {
+			return h256_from_u8(1);
+		}
+	}
+
+	unimplemented!();
 }
 
 fn is_public_key(v: &[u8]) -> bool {
@@ -188,7 +223,7 @@ fn is_valid_signature_encoding(sig: &[u8]) -> bool {
 	true
 }
 
-fn is_low_der_signature(sig: &[u8]) -> Result<bool, Error> {
+fn is_low_der_signature(sig: &[u8]) -> Result<(), Error> {
 	if !is_valid_signature_encoding(sig) {
 		return Err(Error::SignatureDer);
 	}
@@ -198,7 +233,7 @@ fn is_low_der_signature(sig: &[u8]) -> Result<bool, Error> {
 		return Err(Error::SignatureHighS);
 	}
 
-	Ok(true)
+	Ok(())
 }
 
 fn is_defined_hashtype_signature(sig: &[u8]) -> bool {
@@ -213,31 +248,35 @@ fn is_defined_hashtype_signature(sig: &[u8]) -> bool {
 	true
 }
 
-fn check_signature_encoding(sig: &[u8], flags: &VerificationFlags) -> Result<bool, Error> {
+fn check_signature_encoding(sig: &[u8], flags: &VerificationFlags) -> Result<(), Error> {
 	// Empty signature. Not strictly DER encoded, but allowed to provide a
 	// compact way to provide an invalid signature for use with CHECK(MULTI)SIG
 
 	if sig.is_empty() {
-		return Ok(true);
+		return Ok(());
 	}
 
 	if (flags.verify_dersig || flags.verify_low_s || flags.verify_strictenc) && !is_valid_signature_encoding(sig) {
-		Err(Error::SignatureDer)
-	} else if flags.verify_low_s && !try!(is_low_der_signature(sig)) {
-		Ok(false)
-	} else if flags.verify_strictenc && !is_defined_hashtype_signature(sig) {
+		return Err(Error::SignatureDer);
+	}
+
+	if flags.verify_low_s {
+		try!(is_low_der_signature(sig));
+	}
+
+	if flags.verify_strictenc && !is_defined_hashtype_signature(sig) {
 		Err(Error::SignatureHashtype)
 	} else {
-		Ok(true)
+		Ok(())
 	}
 }
 
-fn check_pubkey_encoding(v: &[u8], flags: &VerificationFlags) -> Result<bool, Error> {
+fn check_pubkey_encoding(v: &[u8], flags: &VerificationFlags) -> Result<(), Error> {
 	if flags.verify_strictenc && !is_public_key(v) {
 		return Err(Error::PubkeyType);
 	}
 
-	Ok(true)
+	Ok(())
 }
 
 fn check_minimal_push(data: &[u8], opcode: Opcode) -> bool {
@@ -297,430 +336,588 @@ fn require_len(stack: &Vec<Vec<u8>>, len: usize) -> Result<(), Error> {
 	}
 }
 
+fn read_usize(data: &[u8], size: usize) -> Result<usize, Error> {
+	if data.len() < size {
+		return Err(Error::BadOpcode);
+	}
+
+	let result = data
+		.iter()
+		.take(size)
+		.enumerate()
+		.fold(0, |acc, (i, x)| acc + ((*x as usize) << (i * 8)));
+	Ok(result)
+}
+
 pub fn eval_script(
 	stack: &mut Vec<Vec<u8>>,
 	script: &Script,
 	flags: &VerificationFlags,
 	checker: &SignatureChecker,
-	_version: SignatureVersion
+	version: SignatureVersion
 ) -> Result<bool, Error> {
 	if script.len() > script::MAX_SCRIPT_SIZE {
 		return Err(Error::ScriptSize);
 	}
 
-	let mut fvec = Vec::<bool>::new();
+	let mut pc = 0;
+	let mut begincode = 0;
+	let mut exec_stack = Vec::<bool>::new();
 	let mut altstack = Vec::<Vec<u8>>::new();
 
-	for i in script.into_iter() {
-		let fexec = fvec.iter().find(|&x| !x).is_some();
+	while pc < script.len() {
+		let fexec = exec_stack.iter().find(|&x| !x).is_some();
+		let opcode = try!(script.get_opcode(pc));
+		match opcode {
+			Opcode::OP_PUSHDATA1 |
+			Opcode::OP_PUSHDATA2 |
+			Opcode::OP_PUSHDATA4 => {
+				let len = match opcode {
+					Opcode::OP_PUSHDATA1 => 1,
+					Opcode::OP_PUSHDATA2 => 2,
+					_ => 4,
+				};
 
-		match try!(i) {
-			Instruction::PushValue(_opcode, num) => {
-				stack.push(num.to_vec());
-			},
-			Instruction::PushBytes(opcode, bytes) => {
-				// TODO: if fExec
+				let slice = try!(script.take(pc + 1, len));
+				let n = try!(read_usize(slice, len));
+				let bytes = try!(script.take_checked(pc + 1 + len, n));
 				if flags.verify_minimaldata && !check_minimal_push(bytes, opcode) {
 					return Err(Error::Minimaldata);
 				}
 				stack.push(bytes.to_vec());
+				pc += len + n;
 			},
-			Instruction::Normal(opcode) => match opcode {
-				Opcode::OP_NOP => break,
-				Opcode::OP_CHECKLOCKTIMEVERIFY => {
-					if !flags.verify_clocktimeverify {
-						if flags.verify_discourage_upgradable_nops {
-							return Err(Error::DiscourageUpgradableNops);
-						}
-					}
-
-					try!(require_not_empty(stack));
-
-					// Note that elsewhere numeric opcodes are limited to
-					// operands in the range -2**31+1 to 2**31-1, however it is
-					// legal for opcodes to produce results exceeding that
-					// range. This limitation is implemented by CScriptNum's
-					// default 4-byte limit.
-					//
-					// If we kept to that limit we'd have a year 2038 problem,
-					// even though the nLockTime field in transactions
-					// themselves is uint32 which only becomes meaningless
-					// after the year 2106.
-					//
-					// Thus as a special case we tell CScriptNum to accept up
-					// to 5-byte bignums, which are good until 2**39-1, well
-					// beyond the 2**32-1 limit of the nLockTime field itself.
-					let lock_time = try!(Num::from_slice(stack.last().unwrap(), flags.verify_minimaldata, 5));
-
-					// In the rare event that the argument may be < 0 due to
-					// some arithmetic being done first, you can always use
-					// 0 MAX CHECKLOCKTIMEVERIFY.
-					if lock_time.is_negative() {
-						return Err(Error::NegativeLocktime);
-					}
-
-					if !checker.check_lock_time(lock_time) {
-						return Err(Error::UnsatisfiedLocktime);
-					}
-				},
-				Opcode::OP_CHECKSEQUENCEVERIFY => {
-					if !flags.verify_chechsequenceverify {
-						if flags.verify_discourage_upgradable_nops {
-							return Err(Error::DiscourageUpgradableNops);
-						}
-					}
-
-					try!(require_not_empty(stack));
-
-					let sequence = try!(Num::from_slice(stack.last().unwrap(), flags.verify_minimaldata, 5));
-
-					if sequence.is_negative() {
-						return Err(Error::NegativeLocktime);
-					}
-
-					if !(sequence & (SEQUENCE_LOCKTIME_DISABLE_FLAG as i64).into()).is_zero() {
-						continue;
-					}
-
-					if !checker.check_sequence(sequence) {
-						return Err(Error::UnsatisfiedLocktime);
-					}
-				},
-				Opcode::OP_NOP1 | Opcode::OP_NOP4 | Opcode::OP_NOP5 | Opcode::OP_NOP6 |
-					Opcode::OP_NOP7 | Opcode::OP_NOP8 | Opcode::OP_NOP9 | Opcode::OP_NOP10 => {
+			Opcode::OP_0 |
+			Opcode::OP_PUSHBYTES_1 |
+			Opcode::OP_PUSHBYTES_2 |
+			Opcode::OP_PUSHBYTES_3 |
+			Opcode::OP_PUSHBYTES_4 |
+			Opcode::OP_PUSHBYTES_5 |
+			Opcode::OP_PUSHBYTES_6 |
+			Opcode::OP_PUSHBYTES_7 |
+			Opcode::OP_PUSHBYTES_8 |
+			Opcode::OP_PUSHBYTES_9 |
+			Opcode::OP_PUSHBYTES_10 |
+			Opcode::OP_PUSHBYTES_11 |
+			Opcode::OP_PUSHBYTES_12 |
+			Opcode::OP_PUSHBYTES_13 |
+			Opcode::OP_PUSHBYTES_14 |
+			Opcode::OP_PUSHBYTES_15 |
+			Opcode::OP_PUSHBYTES_16 |
+			Opcode::OP_PUSHBYTES_17 |
+			Opcode::OP_PUSHBYTES_18 |
+			Opcode::OP_PUSHBYTES_19 |
+			Opcode::OP_PUSHBYTES_20 |
+			Opcode::OP_PUSHBYTES_21 |
+			Opcode::OP_PUSHBYTES_22 |
+			Opcode::OP_PUSHBYTES_23 |
+			Opcode::OP_PUSHBYTES_24 |
+			Opcode::OP_PUSHBYTES_25 |
+			Opcode::OP_PUSHBYTES_26 |
+			Opcode::OP_PUSHBYTES_27 |
+			Opcode::OP_PUSHBYTES_28 |
+			Opcode::OP_PUSHBYTES_29 |
+			Opcode::OP_PUSHBYTES_30 |
+			Opcode::OP_PUSHBYTES_31 |
+			Opcode::OP_PUSHBYTES_32 |
+			Opcode::OP_PUSHBYTES_33 |
+			Opcode::OP_PUSHBYTES_34 |
+			Opcode::OP_PUSHBYTES_35 |
+			Opcode::OP_PUSHBYTES_36 |
+			Opcode::OP_PUSHBYTES_37 |
+			Opcode::OP_PUSHBYTES_38 |
+			Opcode::OP_PUSHBYTES_39 |
+			Opcode::OP_PUSHBYTES_40 |
+			Opcode::OP_PUSHBYTES_41 |
+			Opcode::OP_PUSHBYTES_42 |
+			Opcode::OP_PUSHBYTES_43 |
+			Opcode::OP_PUSHBYTES_44 |
+			Opcode::OP_PUSHBYTES_45 |
+			Opcode::OP_PUSHBYTES_46 |
+			Opcode::OP_PUSHBYTES_47 |
+			Opcode::OP_PUSHBYTES_48 |
+			Opcode::OP_PUSHBYTES_49 |
+			Opcode::OP_PUSHBYTES_50 |
+			Opcode::OP_PUSHBYTES_51 |
+			Opcode::OP_PUSHBYTES_52 |
+			Opcode::OP_PUSHBYTES_53 |
+			Opcode::OP_PUSHBYTES_54 |
+			Opcode::OP_PUSHBYTES_55 |
+			Opcode::OP_PUSHBYTES_56 |
+			Opcode::OP_PUSHBYTES_57 |
+			Opcode::OP_PUSHBYTES_58 |
+			Opcode::OP_PUSHBYTES_59 |
+			Opcode::OP_PUSHBYTES_60 |
+			Opcode::OP_PUSHBYTES_61 |
+			Opcode::OP_PUSHBYTES_62 |
+			Opcode::OP_PUSHBYTES_63 |
+			Opcode::OP_PUSHBYTES_64 |
+			Opcode::OP_PUSHBYTES_65 |
+			Opcode::OP_PUSHBYTES_66 |
+			Opcode::OP_PUSHBYTES_67 |
+			Opcode::OP_PUSHBYTES_68 |
+			Opcode::OP_PUSHBYTES_69 |
+			Opcode::OP_PUSHBYTES_70 |
+			Opcode::OP_PUSHBYTES_71 |
+			Opcode::OP_PUSHBYTES_72 |
+			Opcode::OP_PUSHBYTES_73 |
+			Opcode::OP_PUSHBYTES_74 |
+			Opcode::OP_PUSHBYTES_75 => {
+				let bytes = try!(script.take_checked(pc + 1, opcode as usize));
+				if flags.verify_minimaldata && !check_minimal_push(bytes, opcode) {
+					return Err(Error::Minimaldata);
+				}
+				stack.push(bytes.to_vec());
+				pc += opcode as usize;
+			},
+			Opcode::OP_1 |
+			Opcode::OP_2 |
+			Opcode::OP_3 |
+			Opcode::OP_4 |
+			Opcode::OP_5 |
+			Opcode::OP_6 |
+			Opcode::OP_7 |
+			Opcode::OP_8 |
+			Opcode::OP_9 |
+			Opcode::OP_10 |
+			Opcode::OP_11 |
+			Opcode::OP_12 |
+			Opcode::OP_13 |
+			Opcode::OP_14 |
+			Opcode::OP_15 |
+			Opcode::OP_16 => {
+				let value = opcode as u8 - (Opcode::OP_1 as u8 - 1);
+				stack.push(Num::from(value).to_vec());
+			},
+			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_LEFT | Opcode::OP_RIGHT |
+			Opcode::OP_INVERT | Opcode::OP_AND | Opcode::OP_OR | Opcode::OP_XOR |
+			Opcode::OP_2MUL | Opcode::OP_2DIV | Opcode::OP_MUL | Opcode::OP_DIV |
+			Opcode::OP_MOD | Opcode::OP_LSHIFT | Opcode::OP_RSHIFT => {
+				return Err(Error::DisabledOpcode(opcode));
+			},
+			Opcode::OP_NOP => break,
+			Opcode::OP_CHECKLOCKTIMEVERIFY => {
+				if !flags.verify_clocktimeverify {
 					if flags.verify_discourage_upgradable_nops {
 						return Err(Error::DiscourageUpgradableNops);
 					}
-				},
-				Opcode::OP_IF | Opcode::OP_NOTIF => {
-					let mut fvalue = false;
-					if fexec {
-						try!(require_not_empty(stack).map_err(|_| Error::UnbalancedConditional));
-						fvalue = cast_to_bool(&stack.pop().unwrap());
-						if opcode == Opcode::OP_NOTIF {
-							fvalue = !fvalue;
-						}
-					}
-					fvec.push(fvalue);
-				},
-				Opcode::OP_ELSE => {
-					if fvec.is_empty() {
-						return Err(Error::UnbalancedConditional);
-					}
-					let last = fvec[fvec.len() - 1];
-					fvec[fvec.len() - 1] == !last;
-				},
-				Opcode::OP_ENDIF => {
-					if fvec.is_empty() {
-						return Err(Error::UnbalancedConditional);
-					}
-					fvec.pop();
-				},
-				Opcode::OP_VERIFY => {
-					try!(require_not_empty(stack));
-					// should we return an error without popping the value?
-					let fvalue = cast_to_bool(&stack.pop().unwrap());
-					if !fvalue {
-						return Err(Error::Verify);
-					}
-				},
-				Opcode::OP_RETURN => {
-					return Err(Error::ReturnOpcode);
-				},
-				Opcode::OP_TOALTSTACK => {
-					try!(require_not_empty(stack));
-					altstack.push(stack.pop().unwrap());
-				},
-				Opcode::OP_FROMALTSTACK => {
-					try!(require_not_empty(&altstack).map_err(|_| Error::InvalidAltstackOperation));
-					stack.push(altstack.pop().unwrap());
-				},
-				Opcode::OP_2DROP => {
-					try!(require_len(stack, 2));
-					stack.pop();
-					stack.pop();
-				},
-				Opcode::OP_2DUP => {
-					try!(require_len(stack, 2));
-					let v1 = stack[stack.len() - 2].clone();
-					let v2 = stack[stack.len() - 1].clone();
-					stack.push(v1);
-					stack.push(v2);
-				},
-				Opcode::OP_3DUP => {
-					try!(require_len(stack, 3));
-					let v1 = stack[stack.len() - 3].clone();
-					let v2 = stack[stack.len() - 2].clone();
-					let v3 = stack[stack.len() - 1].clone();
-					stack.push(v1);
-					stack.push(v2);
-					stack.push(v3);
-				},
-				Opcode::OP_2OVER => {
-					try!(require_len(stack, 4));
-					let v1 = stack[stack.len() - 4].clone();
-					let v2 = stack[stack.len() - 3].clone();
-					stack.push(v1);
-					stack.push(v2);
-				},
-				Opcode::OP_2ROT => {
-					try!(require_len(stack, 6));
-					let v1 = stack[stack.len() - 6].clone();
-					let v2 = stack[stack.len() - 5].clone();
-					let len = stack.len();
-					stack.remove(len - 6);
-					// -5 -just removed element
-					stack.remove(len - 6);
-					stack.push(v1);
-					stack.push(v2);
-				},
-				Opcode::OP_2SWAP => {
-					try!(require_len(stack, 4));
-					let len = stack.len();
-					stack.swap(len - 4, len - 2);
-					stack.swap(len - 3, len - 1);
-				},
-				Opcode::OP_IFDUP => {
-					try!(require_not_empty(stack));
-					if cast_to_bool(stack.last().unwrap()) {
-						let last = stack.last().unwrap().clone();
-						stack.push(last);
-					}
-				},
-				Opcode::OP_DEPTH => {
-					let depth = Num::from(stack.len());
-					stack.push(depth.to_vec());
-				},
-				Opcode::OP_DROP => {
-					try!(require_not_empty(stack));
-					stack.pop();
-				},
-				Opcode::OP_DUP => {
-					try!(require_not_empty(stack));
-					let v1 = stack[stack.len() - 1].clone();
-					stack.push(v1);
-				},
-				Opcode::OP_NIP => {
-					try!(require_len(stack, 2));
-					let len = stack.len();
-					stack.swap_remove(len - 2);
-				},
-				Opcode::OP_OVER => {
-					try!(require_len(stack, 2));
-					let v = stack[stack.len() - 2].clone();
-					stack.push(v);
-				},
-				Opcode::OP_PICK | Opcode::OP_ROLL => {
-					try!(require_len(stack, 2));
-					let n: i64 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).into();
-					if n < 0 || n >= stack.len() as i64 {
-						return Err(Error::InvalidStackOperation);
-					}
+				}
 
-					let v = stack[n as usize + 1].clone();
-					if opcode == Opcode::OP_ROLL {
-						stack.remove(n as usize + 1);
-					}
-					stack.push(v);
-				},
-				Opcode::OP_ROT => {
-					try!(require_len(stack, 3));
-					let len = stack.len();
-					stack.swap(len - 3, len - 2);
-					stack.swap(len - 2, len - 1);
-				},
-				Opcode::OP_SWAP => {
-					try!(require_len(stack, 2));
-					let len = stack.len();
-					stack.swap(len - 2, len - 1);
-				},
-				Opcode::OP_TUCK => {
-					try!(require_len(stack, 2));
-					let len = stack.len();
-					let v = stack[len - 1].clone();
-					stack.insert(len - 2, v);
-				},
-				Opcode::OP_SIZE => {
-					try!(require_not_empty(stack));
-					let n = Num::from(stack.last().unwrap().len());
-					stack.push(n.to_vec());
-				},
-				Opcode::OP_EQUAL => {
-					try!(require_len(stack, 2));
-					let v1 = stack.pop();
-					let v2 = stack.pop();
-					let to_push = match v1 == v2 {
-						true => vec![1],
-						false => vec![0],
-					};
-					stack.push(to_push);
-				},
-				Opcode::OP_EQUALVERIFY => {
-					try!(require_len(stack, 2));
-					let equal = stack.pop() == stack.pop();
-					if !equal {
-						return Err(Error::EqualVerify);
-					}
-				},
-				Opcode::OP_1ADD => {
-					try!(require_not_empty(stack));
-					let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)) + 1.into();
-					stack.push(n.to_vec());
-				},
-				Opcode::OP_1SUB => {
-					try!(require_not_empty(stack));
-					let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)) - 1.into();
-					stack.push(n.to_vec());
-				},
-				Opcode::OP_NEGATE => {
-					try!(require_not_empty(stack));
-					let n = -try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					stack.push(n.to_vec());
-				},
-				Opcode::OP_ABS => {
-					try!(require_not_empty(stack));
-					let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).abs();
-					stack.push(n.to_vec());
-				},
-				Opcode::OP_NOT => {
-					try!(require_not_empty(stack));
-					let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).is_zero();
-					let n = Num::from(n);
-					stack.push(n.to_vec());
-				},
-				Opcode::OP_0NOTEQUAL => {
-					try!(require_not_empty(stack));
-					let n = !try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).is_zero();
-					let n = Num::from(n);
-					stack.push(n.to_vec());
-				},
-				Opcode::OP_ADD => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					stack.push((v1 + v2).to_vec());
-				},
-				Opcode::OP_SUB => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					stack.push((v2 - v1).to_vec());
-				},
-				Opcode::OP_BOOLAND => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v = Num::from(!v1.is_zero() && !v2.is_zero());
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_BOOLOR => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v = Num::from(!v1.is_zero() || !v2.is_zero());
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_NUMEQUAL => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v = Num::from(v1 == v2);
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_NUMEQUALVERIFY => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					if v1 != v2 {
-						return Err(Error::NumEqualVerify);
-					}
-				},
-				Opcode::OP_NUMNOTEQUAL => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v = Num::from(v1 != v2);
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_LESSTHAN => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v = Num::from(v1 > v2);
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_GREATERTHAN => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v = Num::from(v1 < v2);
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_LESSTHANOREQUAL => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v = Num::from(v1 >= v2);
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_GREATERTHANOREQUAL => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v = Num::from(v1 <= v2);
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_MIN => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					stack.push(cmp::min(v1, v2).to_vec());
-				},
-				Opcode::OP_MAX => {
-					try!(require_len(stack, 2));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					stack.push(cmp::max(v1, v2).to_vec());
-				},
-				Opcode::OP_WITHIN => {
-					try!(require_len(stack, 3));
-					let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let v3 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-					let to_push = match v2 <= v3 && v3 <= v1 {
-						true => vec![1],
-						false => vec![0],
-					};
-					stack.push(to_push);
-				},
-				Opcode::OP_RIPEMD160 => {
-					try!(require_not_empty(stack));
-					let v = ripemd160(&stack.pop().unwrap());
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_SHA1 => {
-					try!(require_not_empty(stack));
-					let v = sha1(&stack.pop().unwrap());
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_SHA256 => {
-					try!(require_not_empty(stack));
-					let v = sha256(&stack.pop().unwrap());
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_HASH160 => {
-					try!(require_not_empty(stack));
-					let v = dhash160(&stack.pop().unwrap());
-					stack.push(v.to_vec());
-				},
-				Opcode::OP_HASH256 => {
-					try!(require_not_empty(stack));
-					let v = dhash256(&stack.pop().unwrap());
-					stack.push(v.to_vec());
-				},
-				_ => (),
+				try!(require_not_empty(stack));
+
+				// Note that elsewhere numeric opcodes are limited to
+				// operands in the range -2**31+1 to 2**31-1, however it is
+				// legal for opcodes to produce results exceeding that
+				// range. This limitation is implemented by CScriptNum's
+				// default 4-byte limit.
+				//
+				// If we kept to that limit we'd have a year 2038 problem,
+				// even though the nLockTime field in transactions
+				// themselves is uint32 which only becomes meaningless
+				// after the year 2106.
+				//
+				// Thus as a special case we tell CScriptNum to accept up
+				// to 5-byte bignums, which are good until 2**39-1, well
+				// beyond the 2**32-1 limit of the nLockTime field itself.
+				let lock_time = try!(Num::from_slice(stack.last().unwrap(), flags.verify_minimaldata, 5));
+
+				// In the rare event that the argument may be < 0 due to
+				// some arithmetic being done first, you can always use
+				// 0 MAX CHECKLOCKTIMEVERIFY.
+				if lock_time.is_negative() {
+					return Err(Error::NegativeLocktime);
+				}
+
+				if !checker.check_lock_time(lock_time) {
+					return Err(Error::UnsatisfiedLocktime);
+				}
 			},
+			Opcode::OP_CHECKSEQUENCEVERIFY => {
+				if !flags.verify_chechsequenceverify {
+					if flags.verify_discourage_upgradable_nops {
+						return Err(Error::DiscourageUpgradableNops);
+					}
+				}
+
+				try!(require_not_empty(stack));
+
+				let sequence = try!(Num::from_slice(stack.last().unwrap(), flags.verify_minimaldata, 5));
+
+				if sequence.is_negative() {
+					return Err(Error::NegativeLocktime);
+				}
+
+				if (sequence & (SEQUENCE_LOCKTIME_DISABLE_FLAG as i64).into()).is_zero() {
+					if !checker.check_sequence(sequence) {
+						return Err(Error::UnsatisfiedLocktime);
+					}
+				}
+			},
+			Opcode::OP_NOP1 | Opcode::OP_NOP4 | Opcode::OP_NOP5 | Opcode::OP_NOP6 |
+				Opcode::OP_NOP7 | Opcode::OP_NOP8 | Opcode::OP_NOP9 | Opcode::OP_NOP10 => {
+				if flags.verify_discourage_upgradable_nops {
+					return Err(Error::DiscourageUpgradableNops);
+				}
+			},
+			Opcode::OP_IF | Opcode::OP_NOTIF => {
+				let mut exec_value = false;
+				if fexec {
+					try!(require_not_empty(stack).map_err(|_| Error::UnbalancedConditional));
+					exec_value = cast_to_bool(&stack.pop().unwrap());
+					if opcode == Opcode::OP_NOTIF {
+						exec_value = !exec_value;
+					}
+				}
+				exec_stack.push(exec_value);
+			},
+			Opcode::OP_ELSE => {
+				if exec_stack.is_empty() {
+					return Err(Error::UnbalancedConditional);
+				}
+				let last = exec_stack[exec_stack.len() - 1];
+				exec_stack[exec_stack.len() - 1] == !last;
+			},
+			Opcode::OP_ENDIF => {
+				if exec_stack.is_empty() {
+					return Err(Error::UnbalancedConditional);
+				}
+				exec_stack.pop();
+			},
+			Opcode::OP_VERIFY => {
+				try!(require_not_empty(stack));
+				// should we return an error without popping the value?
+				let exec_value = cast_to_bool(&stack.pop().unwrap());
+				if !exec_value {
+					return Err(Error::Verify);
+				}
+			},
+			Opcode::OP_RETURN => {
+				return Err(Error::ReturnOpcode);
+			},
+			Opcode::OP_TOALTSTACK => {
+				try!(require_not_empty(stack));
+				altstack.push(stack.pop().unwrap());
+			},
+			Opcode::OP_FROMALTSTACK => {
+				try!(require_not_empty(&altstack).map_err(|_| Error::InvalidAltstackOperation));
+				stack.push(altstack.pop().unwrap());
+			},
+			Opcode::OP_2DROP => {
+				try!(require_len(stack, 2));
+				stack.pop();
+				stack.pop();
+			},
+			Opcode::OP_2DUP => {
+				try!(require_len(stack, 2));
+				let v1 = stack[stack.len() - 2].clone();
+				let v2 = stack[stack.len() - 1].clone();
+				stack.push(v1);
+				stack.push(v2);
+			},
+			Opcode::OP_3DUP => {
+				try!(require_len(stack, 3));
+				let v1 = stack[stack.len() - 3].clone();
+				let v2 = stack[stack.len() - 2].clone();
+				let v3 = stack[stack.len() - 1].clone();
+				stack.push(v1);
+				stack.push(v2);
+				stack.push(v3);
+			},
+			Opcode::OP_2OVER => {
+				try!(require_len(stack, 4));
+				let v1 = stack[stack.len() - 4].clone();
+				let v2 = stack[stack.len() - 3].clone();
+				stack.push(v1);
+				stack.push(v2);
+			},
+			Opcode::OP_2ROT => {
+				try!(require_len(stack, 6));
+				let v1 = stack[stack.len() - 6].clone();
+				let v2 = stack[stack.len() - 5].clone();
+				let len = stack.len();
+				stack.remove(len - 6);
+				// -5 -just removed element
+				stack.remove(len - 6);
+				stack.push(v1);
+				stack.push(v2);
+			},
+			Opcode::OP_2SWAP => {
+				try!(require_len(stack, 4));
+				let len = stack.len();
+				stack.swap(len - 4, len - 2);
+				stack.swap(len - 3, len - 1);
+			},
+			Opcode::OP_IFDUP => {
+				try!(require_not_empty(stack));
+				if cast_to_bool(stack.last().unwrap()) {
+					let last = stack.last().unwrap().clone();
+					stack.push(last);
+				}
+			},
+			Opcode::OP_DEPTH => {
+				let depth = Num::from(stack.len());
+				stack.push(depth.to_vec());
+			},
+			Opcode::OP_DROP => {
+				try!(require_not_empty(stack));
+				stack.pop();
+			},
+			Opcode::OP_DUP => {
+				try!(require_not_empty(stack));
+				let v1 = stack[stack.len() - 1].clone();
+				stack.push(v1);
+			},
+			Opcode::OP_NIP => {
+				try!(require_len(stack, 2));
+				let len = stack.len();
+				stack.swap_remove(len - 2);
+			},
+			Opcode::OP_OVER => {
+				try!(require_len(stack, 2));
+				let v = stack[stack.len() - 2].clone();
+				stack.push(v);
+			},
+			Opcode::OP_PICK | Opcode::OP_ROLL => {
+				try!(require_len(stack, 2));
+				let n: i64 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).into();
+				if n < 0 || n >= stack.len() as i64 {
+					return Err(Error::InvalidStackOperation);
+				}
+
+				let v = stack[n as usize + 1].clone();
+				if opcode == Opcode::OP_ROLL {
+					stack.remove(n as usize + 1);
+				}
+				stack.push(v);
+			},
+			Opcode::OP_ROT => {
+				try!(require_len(stack, 3));
+				let len = stack.len();
+				stack.swap(len - 3, len - 2);
+				stack.swap(len - 2, len - 1);
+			},
+			Opcode::OP_SWAP => {
+				try!(require_len(stack, 2));
+				let len = stack.len();
+				stack.swap(len - 2, len - 1);
+			},
+			Opcode::OP_TUCK => {
+				try!(require_len(stack, 2));
+				let len = stack.len();
+				let v = stack[len - 1].clone();
+				stack.insert(len - 2, v);
+			},
+			Opcode::OP_SIZE => {
+				try!(require_not_empty(stack));
+				let n = Num::from(stack.last().unwrap().len());
+				stack.push(n.to_vec());
+			},
+			Opcode::OP_EQUAL => {
+				try!(require_len(stack, 2));
+				let v1 = stack.pop();
+				let v2 = stack.pop();
+				let to_push = match v1 == v2 {
+					true => vec![1],
+					false => vec![0],
+				};
+				stack.push(to_push);
+			},
+			Opcode::OP_EQUALVERIFY => {
+				try!(require_len(stack, 2));
+				let equal = stack.pop() == stack.pop();
+				if !equal {
+					return Err(Error::EqualVerify);
+				}
+			},
+			Opcode::OP_1ADD => {
+				try!(require_not_empty(stack));
+				let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)) + 1.into();
+				stack.push(n.to_vec());
+			},
+			Opcode::OP_1SUB => {
+				try!(require_not_empty(stack));
+				let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)) - 1.into();
+				stack.push(n.to_vec());
+			},
+			Opcode::OP_NEGATE => {
+				try!(require_not_empty(stack));
+				let n = -try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				stack.push(n.to_vec());
+			},
+			Opcode::OP_ABS => {
+				try!(require_not_empty(stack));
+				let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).abs();
+				stack.push(n.to_vec());
+			},
+			Opcode::OP_NOT => {
+				try!(require_not_empty(stack));
+				let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).is_zero();
+				let n = Num::from(n);
+				stack.push(n.to_vec());
+			},
+			Opcode::OP_0NOTEQUAL => {
+				try!(require_not_empty(stack));
+				let n = !try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).is_zero();
+				let n = Num::from(n);
+				stack.push(n.to_vec());
+			},
+			Opcode::OP_ADD => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				stack.push((v1 + v2).to_vec());
+			},
+			Opcode::OP_SUB => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				stack.push((v2 - v1).to_vec());
+			},
+			Opcode::OP_BOOLAND => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v = Num::from(!v1.is_zero() && !v2.is_zero());
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_BOOLOR => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v = Num::from(!v1.is_zero() || !v2.is_zero());
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_NUMEQUAL => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v = Num::from(v1 == v2);
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_NUMEQUALVERIFY => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				if v1 != v2 {
+					return Err(Error::NumEqualVerify);
+				}
+			},
+			Opcode::OP_NUMNOTEQUAL => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v = Num::from(v1 != v2);
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_LESSTHAN => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v = Num::from(v1 > v2);
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_GREATERTHAN => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v = Num::from(v1 < v2);
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_LESSTHANOREQUAL => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v = Num::from(v1 >= v2);
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_GREATERTHANOREQUAL => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v = Num::from(v1 <= v2);
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_MIN => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				stack.push(cmp::min(v1, v2).to_vec());
+			},
+			Opcode::OP_MAX => {
+				try!(require_len(stack, 2));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				stack.push(cmp::max(v1, v2).to_vec());
+			},
+			Opcode::OP_WITHIN => {
+				try!(require_len(stack, 3));
+				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v3 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let to_push = match v2 <= v3 && v3 <= v1 {
+					true => vec![1],
+					false => vec![0],
+				};
+				stack.push(to_push);
+			},
+			Opcode::OP_RIPEMD160 => {
+				try!(require_not_empty(stack));
+				let v = ripemd160(&stack.pop().unwrap());
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_SHA1 => {
+				try!(require_not_empty(stack));
+				let v = sha1(&stack.pop().unwrap());
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_SHA256 => {
+				try!(require_not_empty(stack));
+				let v = sha256(&stack.pop().unwrap());
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_HASH160 => {
+				try!(require_not_empty(stack));
+				let v = dhash160(&stack.pop().unwrap());
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_HASH256 => {
+				try!(require_not_empty(stack));
+				let v = dhash256(&stack.pop().unwrap());
+				stack.push(v.to_vec());
+			},
+			Opcode::OP_CODESEPARATOR => {
+				begincode = pc;
+			},
+			Opcode::OP_CHECKSIG | Opcode::OP_CHECKSIGVERIFY => {
+				try!(require_len(stack, 2));
+				let pubkey = stack.pop().unwrap();
+				let signature = stack.pop().unwrap();
+				let mut subscript = script.subscript(begincode);
+				if version == SignatureVersion::Base {
+					subscript = script.find_and_delete(&signature);
+				}
+
+				try!(check_signature_encoding(&signature, flags));
+				try!(check_pubkey_encoding(&pubkey, flags));
+
+				let success = checker.check_signature(&signature, &pubkey, &subscript, version);
+				match opcode {
+					Opcode::OP_CHECKSIG => {
+						let to_push = match success {
+							true => vec![1],
+							false => vec![0],
+						};
+						stack.push(to_push);
+					},
+					Opcode::OP_CHECKSIGVERIFY if !success => {
+						return Err(Error::CheckSigVerify);
+					},
+					_ => {},
+				}
+			},
+			_ => {},
 		}
+		pc += 1;
 	}
 
 	let success = !stack.is_empty() && {

@@ -53,48 +53,40 @@ impl Script {
 	pub fn len(&self) -> usize {
 		self.data.len()
 	}
-}
 
-pub enum Instruction<'a> {
-	/// Push operation.
-	PushBytes(Opcode, &'a [u8]),
-	/// Push value.
-	PushValue(Opcode, Num),
-	/// Normal operation.
-	Normal(Opcode),
-}
+	pub fn subscript(&self, from: usize) -> Script {
+		Script::new(self.data[from..].to_vec())
+	}
 
-pub struct Instructions<'a> {
-	data: &'a [u8],
-}
+	pub fn find_and_delete(&self, data: &[u8]) -> Script {
+		let mut result = Vec::new();
+		let mut current = 0;
+		let len = data.len();
+		let end = self.data.len();
 
-impl<'a> IntoIterator for &'a Script {
-	type Item = Result<Instruction<'a>, Error>;
-	type IntoIter = Instructions<'a>;
-
-	fn into_iter(self) -> Instructions<'a> {
-		Instructions {
-			data: &self.data
+		if len > end {
+			return Script::new(data.to_vec());
 		}
+
+		while current < end - len {
+			if &self.data[current..len] != data {
+				result.push(self.data[current]);
+				current += 1;
+			} else {
+				current += len;
+			}
+		}
+
+		result.extend_from_slice(&self.data[current..]);
+		Script::new(result)
 	}
-}
 
-fn read_usize(data: &[u8], size: usize) -> Result<usize, Error> {
-	if data.len() < size {
-		return Err(Error::BadOpcode);
+	pub fn get_opcode(&self, position: usize) -> Result<Opcode, Error> {
+		Opcode::from_u8(self.data[position]).ok_or(Error::BadOpcode)
 	}
 
-	let result = data
-		.iter()
-		.take(size)
-		.enumerate()
-		.fold(0, |acc, (i, x)| acc + ((*x as usize) << (i * 8)));
-	Ok(result)
-}
-
-impl<'a> Instructions<'a> {
 	#[inline]
-	fn take(&self, offset: usize, len: usize) -> Result<&'a [u8], Error> {
+	pub fn take(&self, offset: usize, len: usize) -> Result<&[u8], Error> {
 		if offset + len > self.data.len() {
 			Err(Error::BadOpcode)
 		} else {
@@ -103,68 +95,11 @@ impl<'a> Instructions<'a> {
 	}
 
 	#[inline]
-	fn take_checked(&self, offset: usize, len: usize) -> Result<&'a [u8], Error> {
+	pub fn take_checked(&self, offset: usize, len: usize) -> Result<&[u8], Error> {
 		if len > MAX_SCRIPT_ELEMENT_SIZE {
 			Err(Error::ScriptSize)
 		} else {
 			self.take(offset, len)
-		}
-	}
-
-	#[inline]
-	fn advance(&mut self, i: usize) {
-		self.data = &self.data[i..]
-	}
-
-	fn lookup_next(&self) -> Result<(Instruction<'a>, usize), Error> {
-		match Opcode::from_u8(self.data[0]) {
-			None => Err(Error::BadOpcode),
-			Some(Opcode::OP_PUSHDATA1) => {
-				let slice = try!(self.take(1, 1));
-				let n = try!(read_usize(slice, 1));
-				let next = Instruction::PushBytes(Opcode::OP_PUSHDATA1, try!(self.take_checked(2, n)));
-				Ok((next, 2 + n))
-			},
-			Some(Opcode::OP_PUSHDATA2) => {
-				let slice = try!(self.take(1, 2));
-				let n = try!(read_usize(slice, 2));
-				let next = Instruction::PushBytes(Opcode::OP_PUSHDATA1, try!(self.take_checked(3, n)));
-				Ok((next, 3 + n))
-			},
-			Some(Opcode::OP_PUSHDATA4) => {
-				let slice = try!(self.take(1, 4));
-				let n = try!(read_usize(slice, 4));
-				let next = Instruction::PushBytes(Opcode::OP_PUSHDATA1, try!(self.take_checked(5, n)));
-				Ok((next, 5 + n))
-			},
-			Some(o) if o.is_simple_push() => {
-				let slice = try!(self.take_checked(1, o as usize));
-				Ok((Instruction::PushBytes(o, slice), o as usize + 1))
-			},
-			Some(o) if o.is_push_value() => {
-				let value = o as u8 - (Opcode::OP_1 as u8 - 1);
-				Ok((Instruction::PushValue(o, value.into()), 1))
-			},
-			Some(o) if o.is_disabled() => Err(Error::DisabledOpcode(o)),
-			Some(o) => Ok((Instruction::Normal(o), 1)),
-		}
-	}
-}
-
-impl<'a> Iterator for Instructions<'a> {
-	type Item = Result<Instruction<'a>, Error>;
-
-	fn next(&mut self) -> Option<Self::Item> {
-		if self.data.is_empty() {
-			return None;
-		}
-
-		match self.lookup_next() {
-			Ok((next, i)) => {
-				self.advance(i);
-				Some(Ok(next))
-			},
-			Err(e) => Some(Err(e)),
 		}
 	}
 }

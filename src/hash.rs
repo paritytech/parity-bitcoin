@@ -28,3 +28,10 @@ pub fn h256_from_str(s: &'static str) -> H256 {
 pub fn h256_to_str(hash: &H256) -> String {
 	reverse(hash).to_hex()
 }
+
+#[inline]
+pub fn h256_from_u8(u: u8) -> H256 {
+	let mut result = [0u8; 32];
+	result[31] = u;
+	result
+}

@@ -13,6 +13,22 @@ pub enum Public {
 }
 
 impl Public {
+	pub fn from_slice(data: &[u8]) -> Result<Self, Error> {
+		match data.len() {
+			33 => {
+				let mut public = [0u8; 33];
+				public.copy_from_slice(data);
+				Ok(Public::Compressed(public))
+			},
+			65 => {
+				let mut public = [0u8; 65];
+				public.copy_from_slice(data);
+				Ok(Public::Normal(public))
+			},
+			_ => Err(Error::InvalidPublic)
+		}
+	}
+
 	pub fn address_hash(&self) -> AddressHash {
 		dhash160(self)
 	}
