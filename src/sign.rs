@@ -127,6 +127,9 @@ mod tests {
 		let current_output = "76a914c8e90996c7c6080ee06284600c684ed904d14c5c88ac".from_hex().unwrap();
 		let value = 91234;
 		let expected_script_sig = "47304402202cb265bf10707bf49346c3515dd3d16fc454618c58ec0a0ff448a676c54ff71302206c6624d762a1fcef4618284ead8f08678ac05b13c84235f1654e6ad168233e8201410414e301b2328f17442c0b8310d787bf3d8a404cfbd0704f135b6ad4b2d3ee751310f981926e53a6e8c39bd7d3fefd576c543cce493cbac06388f2651d1aacbfcd".from_hex().unwrap();
+		let kp = KeyPair::from_private(private).unwrap();
+		assert_eq!(kp.address(), from);
+		assert_eq!(&current_output[3..23], &to.hash);
 
 		let unsigned_input = UnsignedTransactionInput {
 			sequence: 0xffff_ffff,
@@ -148,13 +151,14 @@ mod tests {
 			outputs: vec![output],
 		};
 
-		let kp = KeyPair::from_private(private).unwrap();
 		let input = input_signer.signed_input(&kp, 0, &previous_output, Sighash::new(SighashBase::All, false));
 
 		println!("input seq: {:?}", input.sequence);
 		println!("input outpoint index: {:?}", input.previous_output.index);
 		println!("input outpoint hash: {:?}", input.previous_output.hash.to_hex());
-		println!("input sig: {:?}", input.script_sig.to_hex());
+		println!("input sig:\n{}", Script::new(input.script_sig.clone()));
+		println!("expec sig:\n{}", Script::new(expected_script_sig.clone()));
+
 		assert_eq!(input.script_sig, expected_script_sig);
 	}
 }
