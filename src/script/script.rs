@@ -2,7 +2,7 @@
 
 use std::fmt;
 use hex::ToHex;
-use script::{Opcode, Error, Num};
+use script::{Opcode, Error};
 
 /// Maximum number of bytes pushable to the stack
 const MAX_SCRIPT_ELEMENT_SIZE: usize = 520;
@@ -172,7 +172,7 @@ impl fmt::Display for Script {
 }
 
 pub struct ScriptWitness {
-	script: Vec<Vec<u8>>,
+	_script: Vec<Vec<u8>>,
 }
 
 #[cfg(test)]
@@ -225,4 +225,16 @@ OP_ADD
 "#;
 		assert_eq!(script.to_string(), s.to_string());
 	}
+
+	//#[test]
+	//#[ignore]
+	//fn playpen() {
+		//let hex = "47304402202cb265bf10707bf49346c3515dd3d16fc454618c58ec0a0ff448a676c54ff71302206c6624d762a1fcef4618284ead8f08678ac05b13c84235f1654e6ad168233e8201410414e301b2328f17442c0b8310d787bf3d8a404cfbd0704f135b6ad4b2d3ee751310f981926e53a6e8c39bd7d3fefd576c543cce493cbac06388f2651d1aacbfcd".from_hex().unwrap();
+		//let script = Script::new(hex);
+		//let hex2 = "76a914c8e90996c7c6080ee06284600c684ed904d14c5c88ac".from_hex().unwrap();
+		//let script2 = Script::new(hex2);
+		//println!("1:\n{}", script);
+		//println!("2:\n{}", script2);
+		//assert!(false);
+	//}
 }

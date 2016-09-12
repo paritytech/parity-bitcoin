@@ -41,6 +41,16 @@ impl Deserializable for OutPoint {
 	}
 }
 
+impl OutPoint {
+	pub fn hash(&self) -> &H256 {
+		&self.hash
+	}
+
+	pub fn index(&self) -> u32 {
+		self.index
+	}
+}
+
 #[derive(Debug)]
 pub struct TransactionInput {
 	previous_output: OutPoint,
@@ -72,6 +82,20 @@ impl Deserializable for TransactionInput {
 		};
 
 		Ok(result)
+	}
+}
+
+impl TransactionInput {
+	pub fn previous_output(&self) -> &OutPoint {
+		&self.previous_output
+	}
+
+	pub fn script_sig(&self) -> &[u8] {
+		&self.script_sig
+	}
+
+	pub fn sequence(&self) -> u32 {
+		self.sequence
 	}
 }
 
@@ -157,6 +181,13 @@ impl Transaction {
 	pub fn transaction_outputs(&self) -> &[TransactionOutput] {
 		&self.transaction_outputs
 	}
+}
+
+pub struct MutableTransaction {
+	pub version: i32,
+	pub transaction_inputs: Vec<TransactionInput>,
+	pub transaction_outputs: Vec<TransactionOutput>,
+	pub lock_time: u32,
 }
 
 #[cfg(test)]

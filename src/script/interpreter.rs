@@ -7,11 +7,47 @@ use script::{script, Script, Num, VerificationFlags, Opcode, Error, read_usize};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
-pub enum SignatureHash {
+pub enum SighashBase {
 	All = 1,
 	None = 2,
 	Single = 3,
-	AnyoneCanPay = 0x80,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Sighash {
+	base: SighashBase,
+	anyone_can_pay: bool,
+}
+
+impl From<Sighash> for u8 {
+	fn from(s: Sighash) -> Self {
+		let base = s.base as u8;
+		match s.anyone_can_pay {
+			true => base | 0x80,
+			false => base,
+		}
+	}
+}
+
+impl Sighash {
+	fn from_u8(u: u8) -> Option<Self> {
+		let (base, anyone_can_pay) = match u {
+			1 => (SighashBase::All, false),
+			2 => (SighashBase::None, false),
+			3 => (SighashBase::Single, false),
+			0x81 => (SighashBase::All, true),
+			0x82 => (SighashBase::None, true),
+			0x83 => (SighashBase::Single, true),
+			_ => return None,
+		};
+
+		let sighash = Sighash {
+			base: base,
+			anyone_can_pay: anyone_can_pay
+		};
+
+		Some(sighash)
+	}
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -79,10 +115,7 @@ impl SignatureChecker for TransactionSignatureChecker {
 			return false;
 		}
 
-		let hash_type = script_signature.last().unwrap();
-
-
-
+		let _hash_type = script_signature.last().unwrap();
 
 		unimplemented!();
 	}
@@ -98,18 +131,18 @@ impl SignatureChecker for TransactionSignatureChecker {
 }
 
 fn signature_hash(
-	script_code: &Script,
+	_script_code: &Script,
 	tx: &Transaction,
 	i: usize,
 	hash_type: i32,
-	amount: u32,
-	version: SignatureVersion
+	_amount: u32,
+	_version: SignatureVersion
 ) -> H256 {
 	if i >= tx.transaction_inputs().len() {
 		return h256_from_u8(1);
 	}
 
-	if (hash_type & 0x1f) == SignatureHash::Single as i32 {
+	if (hash_type & 0x1f) == SighashBase::Single as i32 {
 		if i >= tx.transaction_outputs().len() {
 			return h256_from_u8(1);
 		}
@@ -241,11 +274,7 @@ fn is_defined_hashtype_signature(sig: &[u8]) -> bool {
 		return false;
 	}
 
-	let n_hashtype = sig[sig.len() -1] & !(SignatureHash::AnyoneCanPay as u8);
-	if n_hashtype < SignatureHash::All as u8 && n_hashtype > SignatureHash::Single as u8 {
-		return false
-	}
-	true
+	Sighash::from_u8(sig[sig.len() -1]).is_some()
 }
 
 fn check_signature_encoding(sig: &[u8], flags: &VerificationFlags) -> Result<(), Error> {

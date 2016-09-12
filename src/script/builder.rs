@@ -20,7 +20,7 @@ impl Builder {
 		self
 	}
 
-	pub fn push_num(mut self, num: Num) -> Self {
+	pub fn push_num(self, num: Num) -> Self {
 		self.push_data(&num.to_vec())
 	}
 

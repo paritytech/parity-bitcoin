@@ -1,6 +1,6 @@
 use script::{Script, ScriptWitness};
 
 pub struct SignatureData {
-	script: Script,
-	witness: ScriptWitness,
+	_script: Script,
+	_witness: ScriptWitness,
 }
