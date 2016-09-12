@@ -1,7 +1,10 @@
+//! Script opcodes.
+use std::fmt;
+
 /// Script opcodes.
 #[repr(u8)]
 #[allow(non_camel_case_types)]
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub enum Opcode {
     // push value
     OP_0 = 0x00,
@@ -217,6 +220,12 @@ pub enum Opcode {
 	OP_PUBKEY = 0xfe,
 
 	OP_INVALIDOPCODE = 0xff,
+}
+
+impl fmt::Display for Opcode {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		fmt::Debug::fmt(self, f)
+	}
 }
 
 impl Opcode {

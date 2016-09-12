@@ -3,7 +3,7 @@ use keys::{Public, Signature};
 use hash::{H256, h256_from_u8};
 use transaction::{Transaction, SEQUENCE_LOCKTIME_DISABLE_FLAG};
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
-use script::{script, Script, Num, VerificationFlags, Opcode, Error};
+use script::{script, Script, Num, VerificationFlags, Opcode, Error, read_usize};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
@@ -334,19 +334,6 @@ fn require_len(stack: &Vec<Vec<u8>>, len: usize) -> Result<(), Error> {
 		true => Err(Error::InvalidStackOperation),
 		false => Ok(()),
 	}
-}
-
-fn read_usize(data: &[u8], size: usize) -> Result<usize, Error> {
-	if data.len() < size {
-		return Err(Error::BadOpcode);
-	}
-
-	let result = data
-		.iter()
-		.take(size)
-		.enumerate()
-		.fold(0, |acc, (i, x)| acc + ((*x as usize) << (i * 8)));
-	Ok(result)
 }
 
 pub fn eval_script(

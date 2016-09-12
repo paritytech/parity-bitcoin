@@ -44,7 +44,7 @@ impl Deserializable for OutPoint {
 #[derive(Debug)]
 pub struct TransactionInput {
 	previous_output: OutPoint,
-	signature_script: Vec<u8>,
+	script_sig: Vec<u8>,
 	sequence: u32,
 }
 
@@ -52,8 +52,8 @@ impl Serializable for TransactionInput {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&self.previous_output)
-			.append(&CompactInteger::from(self.signature_script.len()))
-			.append_bytes(&self.signature_script)
+			.append(&CompactInteger::from(self.script_sig.len()))
+			.append_bytes(&self.script_sig)
 			.append(&self.sequence);
 	}
 }
@@ -61,13 +61,13 @@ impl Serializable for TransactionInput {
 impl Deserializable for TransactionInput {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
 		let previous_output = try!(reader.read());
-		let signature_script_len = try!(reader.read::<CompactInteger>());
-		let signature_script = try!(reader.read_bytes(signature_script_len.into())).to_vec();
+		let script_sig_len = try!(reader.read::<CompactInteger>());
+		let script_sig = try!(reader.read_bytes(script_sig_len.into())).to_vec();
 		let sequence = try!(reader.read());
 
 		let result = TransactionInput {
 			previous_output: previous_output,
-			signature_script: signature_script,
+			script_sig: script_sig,
 			sequence: sequence,
 		};
 
@@ -78,27 +78,27 @@ impl Deserializable for TransactionInput {
 #[derive(Debug)]
 pub struct TransactionOutput {
 	value: u64,
-	pk_script: Vec<u8>,
+	script_pubkey: Vec<u8>,
 }
 
 impl Serializable for TransactionOutput {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&self.value)
-			.append(&CompactInteger::from(self.pk_script.len()))
-			.append_bytes(&self.pk_script);
+			.append(&CompactInteger::from(self.script_pubkey.len()))
+			.append_bytes(&self.script_pubkey);
 	}
 }
 
 impl Deserializable for TransactionOutput {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
 		let value = try!(reader.read());
-		let pk_script_len = try!(reader.read::<CompactInteger>());
-		let pk_script = try!(reader.read_bytes(pk_script_len.into())).to_vec();
+		let script_pubkey_len = try!(reader.read::<CompactInteger>());
+		let script_pubkey = try!(reader.read_bytes(script_pubkey_len.into())).to_vec();
 
 		let result = TransactionOutput {
 			value: value,
-			pk_script: pk_script,
+			script_pubkey: script_pubkey,
 		};
 
 		Ok(result)
@@ -179,10 +179,10 @@ mod tests {
 		assert_eq!(t.transaction_outputs.len(), 1);
 		let tx_input = &t.transaction_inputs[0];
 		assert_eq!(tx_input.sequence, 4294967295);
-		assert_eq!(tx_input.signature_script, "48304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501".from_hex().unwrap());
+		assert_eq!(tx_input.script_sig, "48304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501".from_hex().unwrap());
 		let tx_output = &t.transaction_outputs[0];
 		assert_eq!(tx_output.value, 5000000000);
-		assert_eq!(tx_output.pk_script, "76a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac".from_hex().unwrap());
+		assert_eq!(tx_output.script_pubkey, "76a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac".from_hex().unwrap());
 	}
 
 	#[test]

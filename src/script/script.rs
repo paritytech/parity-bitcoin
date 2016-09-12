@@ -1,5 +1,7 @@
 //! Serialized script, used inside transaction inputs and outputs.
 
+use std::fmt;
+use hex::ToHex;
 use script::{Opcode, Error, Num};
 
 /// Maximum number of bytes pushable to the stack
@@ -104,6 +106,71 @@ impl Script {
 	}
 }
 
+pub fn read_usize(data: &[u8], size: usize) -> Result<usize, Error> {
+	if data.len() < size {
+		return Err(Error::BadOpcode);
+	}
+
+	let result = data
+		.iter()
+		.take(size)
+		.enumerate()
+		.fold(0, |acc, (i, x)| acc + ((*x as usize) << (i * 8)));
+	Ok(result)
+}
+
+macro_rules! try_or_fmt {
+	($fmt: expr, $expr: expr) => {
+		match $expr {
+			Ok(o) => o,
+			Err(e) => return e.fmt($fmt),
+		}
+	}
+}
+
+impl fmt::Debug for Script {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		f.write_str(&self.data.to_hex())
+	}
+}
+
+impl fmt::Display for Script {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		let mut pc = 0;
+		while pc < self.len() {
+			let opcode = try_or_fmt!(f, self.get_opcode(pc));
+
+			match opcode {
+				Opcode::OP_PUSHDATA1 |
+				Opcode::OP_PUSHDATA2 |
+				Opcode::OP_PUSHDATA4 => {
+					let len = match opcode {
+						Opcode::OP_PUSHDATA1 => 1,
+						Opcode::OP_PUSHDATA2 => 2,
+						_ => 4,
+					};
+
+					let slice = try_or_fmt!(f, self.take(pc + 1, len));
+					let n = try_or_fmt!(f, read_usize(slice, len));
+					let bytes = try_or_fmt!(f, self.take_checked(pc + 1 + len, n));
+					pc += len + n;
+					try!(writeln!(f, "{:?} 0x{}", opcode, bytes.to_hex()));
+				},
+				o if o >= Opcode::OP_0 && o <= Opcode::OP_PUSHBYTES_75 => {
+					let bytes = try_or_fmt!(f, self.take_checked(pc + 1, opcode as usize));
+					pc += opcode as usize;
+					try!(writeln!(f, "{:?} 0x{}", opcode, bytes.to_hex()));
+				},
+				_ => {
+					try!(writeln!(f, "{:?}", opcode));
+				},
+			}
+			pc += 1;
+		}
+		Ok(())
+	}
+}
+
 pub struct ScriptWitness {
 	script: Vec<Vec<u8>>,
 }
@@ -111,6 +178,7 @@ pub struct ScriptWitness {
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
+	use script::{Builder, Opcode};
 	use super::Script;
 
 	#[test]
@@ -127,5 +195,34 @@ mod tests {
 		let data2 = "01203b80842f4ea32806ce5e723a255ddd6490cfd28dac38c58bf9254c0577330693".from_hex().unwrap();
 		assert!(Script::new(data).is_pay_to_witness_script_hash());
 		assert!(!Script::new(data2).is_pay_to_witness_script_hash());
+	}
+
+	#[test]
+	fn test_script_debug() {
+		use std::fmt::Write;
+
+		let script = Builder::default()
+			.push_num(3.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_ADD)
+			.into_script();
+		let s = "0103010293";
+		let mut res = String::new();
+		write!(&mut res, "{:?}", script).unwrap();
+		assert_eq!(s.to_string(), res);
+	}
+
+	#[test]
+	fn test_script_display() {
+		let script = Builder::default()
+			.push_num(3.into())
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_ADD)
+			.into_script();
+		let s = r#"OP_PUSHBYTES_1 0x03
+OP_PUSHBYTES_1 0x02
+OP_ADD
+"#;
+		assert_eq!(script.to_string(), s.to_string());
 	}
 }
