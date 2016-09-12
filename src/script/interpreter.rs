@@ -34,7 +34,14 @@ impl From<Sighash> for u32 {
 }
 
 impl Sighash {
-	fn from_u32(u: u32) -> Option<Self> {
+	pub fn new(base: SighashBase, anyone_can_pay: bool) -> Self {
+		Sighash {
+			base: base,
+			anyone_can_pay: anyone_can_pay,
+		}
+	}
+
+	pub fn from_u32(u: u32) -> Option<Self> {
 		let (base, anyone_can_pay) = match u {
 			1 => (SighashBase::All, false),
 			2 => (SighashBase::None, false),
@@ -45,12 +52,7 @@ impl Sighash {
 			_ => return None,
 		};
 
-		let sighash = Sighash {
-			base: base,
-			anyone_can_pay: anyone_can_pay
-		};
-
-		Some(sighash)
+		Some(Sighash::new(base, anyone_can_pay))
 	}
 }
 

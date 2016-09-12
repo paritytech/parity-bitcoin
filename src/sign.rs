@@ -104,4 +104,57 @@ impl TransactionInputSigner {
 	}
 }
 
+#[cfg(test)]
+mod tests {
+	use hex::{ToHex, FromHex};
+	use hash::h256_from_str;
+	use keys::{KeyPair, Private, Address};
+	use transaction::{OutPoint, TransactionOutput};
+	use script::{Script, Sighash, SighashBase};
+	use super::{UnsignedTransactionInput, TransactionInputSigner};
 
+	// http://www.righto.com/2014/02/bitcoins-hard-way-using-raw-bitcoin.html
+	// https://blockchain.info/rawtx/81b4c832d70cb56ff957589752eb4125a4cab78a25a8fc52d6a09e5bd4404d48
+	// https://blockchain.info/rawtx/3f285f083de7c0acabd9f106a43ec42687ab0bebe2e6f0d529db696794540fea
+	#[test]
+	fn sign_transaction_input() {
+		let private: Private = "5HusYj2b2x4nroApgfvaSfKYZhRbKFH41bVyPooymbC6KfgSXdD".into();
+		let previous_tx_hash = h256_from_str("81b4c832d70cb56ff957589752eb4125a4cab78a25a8fc52d6a09e5bd4404d48");
+		let previous_output_index = 0;
+		let from: Address = "1MMMMSUb1piy2ufrSguNUdFmAcvqrQF8M5".into();
+		let to: Address = "1KKKK6N21XKo48zWKuQKXdvSsCf95ibHFa".into();
+		let previous_output = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
+		let current_output = "76a914c8e90996c7c6080ee06284600c684ed904d14c5c88ac".from_hex().unwrap();
+		let value = 91234;
+		let expected_script_sig = "47304402202cb265bf10707bf49346c3515dd3d16fc454618c58ec0a0ff448a676c54ff71302206c6624d762a1fcef4618284ead8f08678ac05b13c84235f1654e6ad168233e8201410414e301b2328f17442c0b8310d787bf3d8a404cfbd0704f135b6ad4b2d3ee751310f981926e53a6e8c39bd7d3fefd576c543cce493cbac06388f2651d1aacbfcd".from_hex().unwrap();
+
+		let unsigned_input = UnsignedTransactionInput {
+			sequence: 0xffff_ffff,
+			previous_output: OutPoint {
+				index: previous_output_index,
+				hash: previous_tx_hash,
+			},
+		};
+
+		let output = TransactionOutput {
+			value: value,
+			script_pubkey: current_output,
+		};
+
+		let input_signer = TransactionInputSigner {
+			version: 1,
+			lock_time: 0,
+			inputs: vec![unsigned_input],
+			outputs: vec![output],
+		};
+
+		let kp = KeyPair::from_private(private).unwrap();
+		let input = input_signer.signed_input(&kp, 0, &previous_output, Sighash::new(SighashBase::All, false));
+
+		println!("input seq: {:?}", input.sequence);
+		println!("input outpoint index: {:?}", input.previous_output.index);
+		println!("input outpoint hash: {:?}", input.previous_output.hash.to_hex());
+		println!("input sig: {:?}", input.script_sig.to_hex());
+		assert_eq!(input.script_sig, expected_script_sig);
+	}
+}

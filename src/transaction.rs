@@ -16,8 +16,8 @@ pub const SEQUENCE_LOCKTIME_DISABLE_FLAG: u32 = 1u32 << 31;
 
 #[derive(Debug, Clone)]
 pub struct OutPoint {
-	hash: H256,
-	index: u32,
+	pub hash: H256,
+	pub index: u32,
 }
 
 impl Serializable for OutPoint {
@@ -102,8 +102,8 @@ impl TransactionInput {
 
 #[derive(Debug, Clone)]
 pub struct TransactionOutput {
-	value: u64,
-	script_pubkey: Vec<u8>,
+	pub value: u64,
+	pub script_pubkey: Vec<u8>,
 }
 
 impl Serializable for TransactionOutput {
