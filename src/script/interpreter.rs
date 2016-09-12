@@ -1,6 +1,6 @@
 use std::cmp;
 use keys::{Public, Signature};
-use hash::{H256, h256_from_u8};
+use hash::H256;
 use transaction::{Transaction, SEQUENCE_LOCKTIME_DISABLE_FLAG};
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
 use script::{script, Script, Num, VerificationFlags, Opcode, Error, read_usize};
@@ -13,15 +13,19 @@ pub enum SighashBase {
 	Single = 3,
 }
 
+
+/// Documentation
+/// https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE
+/// TODO: Possibly handle other integers when deserialing
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Sighash {
-	base: SighashBase,
-	anyone_can_pay: bool,
+	pub base: SighashBase,
+	pub anyone_can_pay: bool,
 }
 
-impl From<Sighash> for u8 {
+impl From<Sighash> for u32 {
 	fn from(s: Sighash) -> Self {
-		let base = s.base as u8;
+		let base = s.base as u32;
 		match s.anyone_can_pay {
 			true => base | 0x80,
 			false => base,
@@ -30,7 +34,7 @@ impl From<Sighash> for u8 {
 }
 
 impl Sighash {
-	fn from_u8(u: u8) -> Option<Self> {
+	fn from_u32(u: u32) -> Option<Self> {
 		let (base, anyone_can_pay) = match u {
 			1 => (SighashBase::All, false),
 			2 => (SighashBase::None, false),
@@ -128,27 +132,6 @@ impl SignatureChecker for TransactionSignatureChecker {
 		unimplemented!();
 	}
 
-}
-
-fn signature_hash(
-	_script_code: &Script,
-	tx: &Transaction,
-	i: usize,
-	hash_type: i32,
-	_amount: u32,
-	_version: SignatureVersion
-) -> H256 {
-	if i >= tx.transaction_inputs().len() {
-		return h256_from_u8(1);
-	}
-
-	if (hash_type & 0x1f) == SighashBase::Single as i32 {
-		if i >= tx.transaction_outputs().len() {
-			return h256_from_u8(1);
-		}
-	}
-
-	unimplemented!();
 }
 
 fn is_public_key(v: &[u8]) -> bool {
@@ -274,7 +257,7 @@ fn is_defined_hashtype_signature(sig: &[u8]) -> bool {
 		return false;
 	}
 
-	Sighash::from_u8(sig[sig.len() -1]).is_some()
+	Sighash::from_u32(sig[sig.len() -1] as u32).is_some()
 }
 
 fn check_signature_encoding(sig: &[u8], flags: &VerificationFlags) -> Result<(), Error> {

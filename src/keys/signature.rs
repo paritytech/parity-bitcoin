@@ -54,6 +54,12 @@ impl From<Vec<u8>> for Signature {
 	}
 }
 
+impl From<Signature> for Vec<u8> {
+	fn from(s: Signature) -> Self {
+		s.0
+	}
+}
+
 impl Signature {
 	pub fn check_low_s(&self) -> bool {
 		unimplemented!();

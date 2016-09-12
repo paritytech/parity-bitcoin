@@ -1,7 +1,7 @@
 //! Serialized script, used inside transaction inputs and outputs.
 
-use std::fmt;
-use hex::ToHex;
+use std::{fmt, ops};
+use hex::{ToHex, FromHex};
 use script::{Opcode, Error};
 
 /// Maximum number of bytes pushable to the stack
@@ -25,6 +25,12 @@ pub struct Script {
 	data: Vec<u8>,
 }
 
+impl From<&'static str> for Script {
+	fn from(s: &'static str) -> Self {
+		Script::new(s.from_hex().unwrap())
+	}
+}
+
 impl Script {
 	/// Script constructor.
 	pub fn new(data: Vec<u8>) -> Self {
@@ -46,14 +52,6 @@ impl Script {
 		self.data.len() == 34 &&
 			self.data[0] == Opcode::OP_0 as u8 &&
 			self.data[1] == 0x20
-	}
-
-	pub fn is_empty(&self) -> bool {
-		self.data.is_empty()
-	}
-
-	pub fn len(&self) -> usize {
-		self.data.len()
 	}
 
 	pub fn subscript(&self, from: usize) -> Script {
@@ -103,6 +101,14 @@ impl Script {
 		} else {
 			self.take(offset, len)
 		}
+	}
+}
+
+impl ops::Deref for Script {
+	type Target = [u8];
+
+	fn deref(&self) -> &Self::Target {
+		&self.data
 	}
 }
 
@@ -237,4 +243,12 @@ OP_ADD
 		//println!("2:\n{}", script2);
 		//assert!(false);
 	//}
+
+	//#[test]
+	//fn test_playpen() {
+		//let script: Script = "47304402202cb265bf10707bf49346c3515dd3d16fc454618c58ec0a0ff448a676c54ff71302206c6624d762a1fcef4618284ead8f08678ac05b13c84235f1654e6ad168233e8201410414e301b2328f17442c0b8310d787bf3d8a404cfbd0704f135b6ad4b2d3ee751310f981926e53a6e8c39bd7d3fefd576c543cce493cbac06388f2651d1aacbfcd".into();
+		//println!("{}", script);
+		//assert!(false);
+	//}
+
 }

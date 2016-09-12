@@ -2,7 +2,8 @@
 //! Bitcoin trainsaction.
 //! https://en.bitcoin.it/wiki/Protocol_documentation#tx
 
-use reader::{Deserializable, Reader, Error as ReaderError};
+use hex::FromHex;
+use reader::{Deserializable, Reader, Error as ReaderError, deserialize};
 use crypto::dhash256;
 use hash::H256;
 use stream::{Serializable, Stream, serialize};
@@ -13,7 +14,7 @@ use compact_integer::CompactInteger;
 // relative lock-time.
 pub const SEQUENCE_LOCKTIME_DISABLE_FLAG: u32 = 1u32 << 31;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OutPoint {
 	hash: H256,
 	index: u32,
@@ -53,9 +54,9 @@ impl OutPoint {
 
 #[derive(Debug)]
 pub struct TransactionInput {
-	previous_output: OutPoint,
-	script_sig: Vec<u8>,
-	sequence: u32,
+	pub previous_output: OutPoint,
+	pub script_sig: Vec<u8>,
+	pub sequence: u32,
 }
 
 impl Serializable for TransactionInput {
@@ -99,7 +100,7 @@ impl TransactionInput {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TransactionOutput {
 	value: u64,
 	script_pubkey: Vec<u8>,
@@ -129,12 +130,31 @@ impl Deserializable for TransactionOutput {
 	}
 }
 
+impl Default for TransactionOutput {
+	fn default() -> Self {
+		TransactionOutput {
+			value: 0xffffffffffffffffu64,
+			script_pubkey: Vec::new(),
+		}
+	}
+}
+
+impl TransactionOutput {
+	pub fn value(&self) -> u64 {
+		self.value
+	}
+
+	pub fn script_pubkey(&self) -> &[u8] {
+		&self.script_pubkey
+	}
+}
+
 #[derive(Debug)]
 pub struct Transaction {
-	version: i32,
-	transaction_inputs: Vec<TransactionInput>,
-	transaction_outputs: Vec<TransactionOutput>,
-	lock_time: u32,
+	pub version: i32,
+	pub transaction_inputs: Vec<TransactionInput>,
+	pub transaction_outputs: Vec<TransactionOutput>,
+	pub lock_time: u32,
 }
 
 impl Serializable for Transaction {
@@ -169,6 +189,12 @@ impl Deserializable for Transaction {
 	}
 }
 
+impl From<&'static str> for Transaction {
+	fn from(s: &'static str) -> Self {
+		deserialize(&s.from_hex().unwrap()).unwrap()
+	}
+}
+
 impl Transaction {
 	pub fn hash(&self) -> H256 {
 		dhash256(&serialize(self))
@@ -181,13 +207,6 @@ impl Transaction {
 	pub fn transaction_outputs(&self) -> &[TransactionOutput] {
 		&self.transaction_outputs
 	}
-}
-
-pub struct MutableTransaction {
-	pub version: i32,
-	pub transaction_inputs: Vec<TransactionInput>,
-	pub transaction_outputs: Vec<TransactionOutput>,
-	pub lock_time: u32,
 }
 
 #[cfg(test)]
