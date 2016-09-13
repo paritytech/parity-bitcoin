@@ -27,6 +27,8 @@ impl TransactionInputSigner {
 			return h256_from_u8(1);
 		}
 
+		let script_pubkey = script_pubkey.without_separators();
+
 		let inputs = if sighash.anyone_can_pay {
 			let input = &self.inputs[input_index];
 			vec![TransactionInput {

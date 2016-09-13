@@ -102,6 +102,46 @@ impl Script {
 			self.take(offset, len)
 		}
 	}
+
+	/// Returns Script without OP_CODESEPARATOR opcodes
+	pub fn without_separators(&self) -> Script {
+		let mut pc = 0;
+		let mut result = Vec::new();
+		while pc < self.len() {
+			match self.get_opcode(pc) {
+				Ok(opcode @ Opcode::OP_PUSHDATA1) |
+				Ok(opcode @ Opcode::OP_PUSHDATA2) |
+				Ok(opcode @ Opcode::OP_PUSHDATA4) => {
+					let len = match opcode {
+						Opcode::OP_PUSHDATA1 => 1,
+						Opcode::OP_PUSHDATA2 => 2,
+						_ => 4,
+					};
+
+					let slice = match self.take(pc + 1, len) {
+						Ok(slice) => slice,
+						_ => {
+							result.extend_from_slice(&self[pc..]);
+							break;
+						}
+					};
+
+					let n = read_usize(slice, len).expect("slice.len() is equal len");
+					result.extend(&self[pc..pc + len + n + 1]);
+					pc += len + n;
+				},
+				Ok(o) if o >= Opcode::OP_0 && o <= Opcode::OP_PUSHBYTES_75 => {
+					result.extend(&self[pc..pc + o as usize + 1]);
+					pc += o as usize;
+				},
+				Ok(Opcode::OP_CODESEPARATOR) => {},
+				_ => result.push(self[pc]),
+			}
+			pc += 1;
+		}
+
+		Script::new(result)
+	}
 }
 
 impl ops::Deref for Script {
