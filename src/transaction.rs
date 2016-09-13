@@ -152,8 +152,8 @@ impl TransactionOutput {
 #[derive(Debug)]
 pub struct Transaction {
 	pub version: i32,
-	pub transaction_inputs: Vec<TransactionInput>,
-	pub transaction_outputs: Vec<TransactionOutput>,
+	pub inputs: Vec<TransactionInput>,
+	pub outputs: Vec<TransactionOutput>,
 	pub lock_time: u32,
 }
 
@@ -161,10 +161,10 @@ impl Serializable for Transaction {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&self.version)
-			.append(&CompactInteger::from(self.transaction_inputs.len()))
-			.append_list(&self.transaction_inputs)
-			.append(&CompactInteger::from(self.transaction_outputs.len()))
-			.append_list(&self.transaction_outputs)
+			.append(&CompactInteger::from(self.inputs.len()))
+			.append_list(&self.inputs)
+			.append(&CompactInteger::from(self.outputs.len()))
+			.append_list(&self.outputs)
 			.append(&self.lock_time);
 	}
 }
@@ -180,8 +180,8 @@ impl Deserializable for Transaction {
 
 		let result = Transaction {
 			version: version,
-			transaction_inputs: tx_inputs,
-			transaction_outputs: tx_outputs,
+			inputs: tx_inputs,
+			outputs: tx_outputs,
 			lock_time: lock_time,
 		};
 
@@ -200,12 +200,12 @@ impl Transaction {
 		dhash256(&serialize(self))
 	}
 
-	pub fn transaction_inputs(&self) -> &[TransactionInput] {
-		&self.transaction_inputs
+	pub fn inputs(&self) -> &[TransactionInput] {
+		&self.inputs
 	}
 
-	pub fn transaction_outputs(&self) -> &[TransactionOutput] {
-		&self.transaction_outputs
+	pub fn outputs(&self) -> &[TransactionOutput] {
+		&self.outputs
 	}
 }
 
@@ -225,12 +225,12 @@ mod tests {
 		let t: Transaction = deserialize(&encoded_tx).unwrap();
 		assert_eq!(t.version, 1);
 		assert_eq!(t.lock_time, 0);
-		assert_eq!(t.transaction_inputs.len(), 1);
-		assert_eq!(t.transaction_outputs.len(), 1);
-		let tx_input = &t.transaction_inputs[0];
+		assert_eq!(t.inputs.len(), 1);
+		assert_eq!(t.outputs.len(), 1);
+		let tx_input = &t.inputs[0];
 		assert_eq!(tx_input.sequence, 4294967295);
 		assert_eq!(tx_input.script_sig, "48304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501".from_hex().unwrap());
-		let tx_output = &t.transaction_outputs[0];
+		let tx_output = &t.outputs[0];
 		assert_eq!(tx_output.value, 5000000000);
 		assert_eq!(tx_output.script_pubkey, "76a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac".from_hex().unwrap());
 	}

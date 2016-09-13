@@ -13,6 +13,11 @@ pub enum SighashBase {
 	Single = 3,
 }
 
+impl From<SighashBase> for u32 {
+	fn from(s: SighashBase) -> Self {
+		s as u32
+	}
+}
 
 /// Documentation
 /// https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE
@@ -33,6 +38,23 @@ impl From<Sighash> for u32 {
 	}
 }
 
+impl From<u32> for Sighash {
+	fn from(u: u32) -> Self {
+		// use 0x9f istead of 0x1f to catch 0x80
+		match u & 0x9f {
+			1 => Sighash::new(SighashBase::All, false),
+			2 => Sighash::new(SighashBase::None, false),
+			3 => Sighash::new(SighashBase::Single, false),
+			0x81 => Sighash::new(SighashBase::All, true),
+			0x82 => Sighash::new(SighashBase::None, true),
+			0x83 => Sighash::new(SighashBase::Single, true),
+			x if x & 0x80 == 0x80 => Sighash::new(SighashBase::All, true),
+			// 0 is handled like all...
+			_ => Sighash::new(SighashBase::All, false),
+		}
+	}
+}
+
 impl Sighash {
 	pub fn new(base: SighashBase, anyone_can_pay: bool) -> Self {
 		Sighash {
@@ -42,13 +64,15 @@ impl Sighash {
 	}
 
 	pub fn from_u32(u: u32) -> Option<Self> {
-		let (base, anyone_can_pay) = match u {
+		// use 0x9f istead of 0x1f to catch 0x80
+		let (base, anyone_can_pay) = match u & 0x9f {
 			1 => (SighashBase::All, false),
 			2 => (SighashBase::None, false),
 			3 => (SighashBase::Single, false),
 			0x81 => (SighashBase::All, true),
 			0x82 => (SighashBase::None, true),
 			0x83 => (SighashBase::Single, true),
+			x if x & 0x80 == 0x80 => (SighashBase::All, true),
 			_ => return None,
 		};
 
