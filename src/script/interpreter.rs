@@ -1,154 +1,33 @@
 use std::cmp;
-use keys::{Public, Signature};
-use hash::H256;
-use transaction::{Transaction, SEQUENCE_LOCKTIME_DISABLE_FLAG};
+use keys::{Signature, Public};
+use transaction::{SEQUENCE_LOCKTIME_DISABLE_FLAG};
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
-use script::{script, Script, Num, VerificationFlags, Opcode, Error, read_usize, TransactionInputSigner};
+use script::{
+	script, Script, Num, VerificationFlags, Opcode, Error, read_usize,
+	Sighash, SignatureChecker, SignatureVersion
+};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-#[repr(u8)]
-pub enum SighashBase {
-	All = 1,
-	None = 2,
-	Single = 3,
-}
+/// Helper function.
+fn check_signature(
+	checker: &SignatureChecker,
+	script_sig: Vec<u8>,
+	public: Vec<u8>,
+	script_code: &Script,
+	version: SignatureVersion
+) -> bool {
+	let public = match Public::from_slice(&public) {
+		Ok(public) => public,
+		_ => return false,
+	};
 
-impl From<SighashBase> for u32 {
-	fn from(s: SighashBase) -> Self {
-		s as u32
-	}
-}
-
-/// Documentation
-/// https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub struct Sighash {
-	pub base: SighashBase,
-	pub anyone_can_pay: bool,
-}
-
-impl From<Sighash> for u32 {
-	fn from(s: Sighash) -> Self {
-		let base = s.base as u32;
-		match s.anyone_can_pay {
-			true => base | 0x80,
-			false => base,
-		}
-	}
-}
-
-impl From<u32> for Sighash {
-	fn from(u: u32) -> Self {
-		// use 0x9f istead of 0x1f to catch 0x80
-		match u & 0x9f {
-			1 => Sighash::new(SighashBase::All, false),
-			2 => Sighash::new(SighashBase::None, false),
-			3 => Sighash::new(SighashBase::Single, false),
-			0x81 => Sighash::new(SighashBase::All, true),
-			0x82 => Sighash::new(SighashBase::None, true),
-			0x83 => Sighash::new(SighashBase::Single, true),
-			x if x & 0x80 == 0x80 => Sighash::new(SighashBase::All, true),
-			// 0 is handled like all...
-			_ => Sighash::new(SighashBase::All, false),
-		}
-	}
-}
-
-impl Sighash {
-	pub fn new(base: SighashBase, anyone_can_pay: bool) -> Self {
-		Sighash {
-			base: base,
-			anyone_can_pay: anyone_can_pay,
-		}
+	if script_sig.is_empty() {
+		return false;
 	}
 
-	pub fn from_u32(u: u32) -> Option<Self> {
-		// use 0x9f istead of 0x1f to catch 0x80
-		let (base, anyone_can_pay) = match u & 0x9f {
-			1 => (SighashBase::All, false),
-			2 => (SighashBase::None, false),
-			3 => (SighashBase::Single, false),
-			0x81 => (SighashBase::All, true),
-			0x82 => (SighashBase::None, true),
-			0x83 => (SighashBase::Single, true),
-			x if x & 0x80 == 0x80 => (SighashBase::All, true),
-			_ => return None,
-		};
+	let hash_type = *script_sig.last().unwrap() as u32;
+	let signature = script_sig[..script_sig.len() - 1].into();
 
-		Some(Sighash::new(base, anyone_can_pay))
-	}
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum SignatureVersion {
-	Base,
-	WitnessV0,
-}
-
-pub trait SignatureChecker {
-	fn check_signature(
-		&self,
-		script_signature: &[u8],
-		public: &[u8],
-		script: &Script,
-		version: SignatureVersion
-	) -> bool;
-
-	fn check_lock_time(&self, lock_time: Num) -> bool;
-
-	fn check_sequence(&self, sequence: Num) -> bool;
-}
-
-pub struct NoopSignatureChecker;
-
-impl SignatureChecker for NoopSignatureChecker {
-	fn check_signature(&self, _: &[u8], _: &[u8], _: &Script, _: SignatureVersion) -> bool {
-		false
-	}
-
-	fn check_lock_time(&self, _: Num) -> bool {
-		false
-	}
-
-	fn check_sequence(&self, _: Num) -> bool {
-		false
-	}
-}
-
-pub struct TransactionSignatureChecker {
-	pub signer: TransactionInputSigner,
-	pub input_index: usize,
-}
-
-impl SignatureChecker for TransactionSignatureChecker {
-	fn check_signature(
-		&self,
-		script_sig: &[u8],
-		public: &[u8],
-		script_code: &Script,
-		_version: SignatureVersion
-	) -> bool {
-		let public = match Public::from_slice(public) {
-			Ok(public) => public,
-			_ => return false,
-		};
-
-		if script_sig.is_empty() {
-			return false;
-		}
-
-		let hash_type = *script_sig.last().unwrap() as u32;
-		let hash = self.signer.signature_hash(self.input_index, script_code, hash_type);
-		public.verify(&hash, &script_sig[..script_sig.len() - 1].into()).unwrap_or(false)
-	}
-
-	fn check_lock_time(&self, _lock_time: Num) -> bool {
-		unimplemented!();
-	}
-
-	fn check_sequence(&self, _sequence: Num) -> bool {
-		unimplemented!();
-	}
+	checker.check_signature(&signature, &public, script_code, hash_type, version)
 }
 
 fn is_public_key(v: &[u8]) -> bool {
@@ -274,7 +153,7 @@ fn is_defined_hashtype_signature(sig: &[u8]) -> bool {
 		return false;
 	}
 
-	Sighash::from_u32(sig[sig.len() -1] as u32).is_some()
+	Sighash::is_defined(sig[sig.len() -1] as u32)
 }
 
 fn check_signature_encoding(sig: &[u8], flags: &VerificationFlags) -> Result<(), Error> {
@@ -916,7 +795,7 @@ pub fn eval_script(
 				try!(check_signature_encoding(&signature, flags));
 				try!(check_pubkey_encoding(&pubkey, flags));
 
-				let success = checker.check_signature(&signature, &pubkey, &subscript, version);
+				let success = check_signature(checker, signature, pubkey, &subscript, version);
 				match opcode {
 					Opcode::OP_CHECKSIG => {
 						let to_push = match success {
@@ -948,8 +827,11 @@ pub fn eval_script(
 mod tests {
 	use hex::FromHex;
 	use transaction::Transaction;
-	use script::{Opcode, Script, VerificationFlags, Builder, Error, Num, TransactionInputSigner};
-	use super::{is_public_key, eval_script, NoopSignatureChecker, SignatureVersion, TransactionSignatureChecker};
+	use script::{
+		Opcode, Script, VerificationFlags, Builder, Error, Num, TransactionInputSigner,
+		NoopSignatureChecker, SignatureVersion, TransactionSignatureChecker
+	};
+	use super::{eval_script, is_public_key};
 
 	#[test]
 	fn tests_is_public_key() {

@@ -1,9 +1,99 @@
-use script::{Sighash, SighashBase, Script, Builder};
+use script::{Script, Builder};
 use keys::KeyPair;
 use crypto::dhash256;
 use hash::{H256, h256_from_u8};
 use stream::Stream;
 use transaction::{Transaction, TransactionOutput, OutPoint, TransactionInput};
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum SignatureVersion {
+	Base,
+	WitnessV0,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+#[repr(u8)]
+pub enum SighashBase {
+	All = 1,
+	None = 2,
+	Single = 3,
+}
+
+impl From<SighashBase> for u32 {
+	fn from(s: SighashBase) -> Self {
+		s as u32
+	}
+}
+
+/// Documentation
+/// https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Sighash {
+	pub base: SighashBase,
+	pub anyone_can_pay: bool,
+}
+
+impl From<Sighash> for u32 {
+	fn from(s: Sighash) -> Self {
+		let base = s.base as u32;
+		match s.anyone_can_pay {
+			true => base | 0x80,
+			false => base,
+		}
+	}
+}
+
+impl From<u32> for Sighash {
+	fn from(u: u32) -> Self {
+		// use 0x9f istead of 0x1f to catch 0x80
+		match u & 0x9f {
+			1 => Sighash::new(SighashBase::All, false),
+			2 => Sighash::new(SighashBase::None, false),
+			3 => Sighash::new(SighashBase::Single, false),
+			0x81 => Sighash::new(SighashBase::All, true),
+			0x82 => Sighash::new(SighashBase::None, true),
+			0x83 => Sighash::new(SighashBase::Single, true),
+			x if x & 0x80 == 0x80 => Sighash::new(SighashBase::All, true),
+			// 0 is handled like all...
+			_ => Sighash::new(SighashBase::All, false),
+		}
+	}
+}
+
+impl Sighash {
+	pub fn new(base: SighashBase, anyone_can_pay: bool) -> Self {
+		Sighash {
+			base: base,
+			anyone_can_pay: anyone_can_pay,
+		}
+	}
+
+	pub fn is_defined(u: u32) -> bool {
+		// use 0x9f istead of 0x1f to catch 0x80
+		match u & 0x9f {
+			1 | 2 | 3 |
+			0x81 | 0x82 | 0x83 => true,
+			x if x & 0x80 == 0x80 => true,
+			_ => false,
+		}
+	}
+
+	pub fn from_u32(u: u32) -> Option<Self> {
+		// use 0x9f istead of 0x1f to catch 0x80
+		let (base, anyone_can_pay) = match u & 0x9f {
+			1 => (SighashBase::All, false),
+			2 => (SighashBase::None, false),
+			3 => (SighashBase::Single, false),
+			0x81 => (SighashBase::All, true),
+			0x82 => (SighashBase::None, true),
+			0x83 => (SighashBase::Single, true),
+			x if x & 0x80 == 0x80 => (SighashBase::All, true),
+			_ => return None,
+		};
+
+		Some(Sighash::new(base, anyone_can_pay))
+	}
+}
 
 pub struct UnsignedTransactionInput {
 	pub previous_output: OutPoint,
@@ -136,8 +226,8 @@ mod tests {
 	use hash::h256_from_str;
 	use keys::{KeyPair, Private, Address};
 	use transaction::{OutPoint, TransactionOutput, Transaction};
-	use script::{SighashBase, Script};
-	use super::{UnsignedTransactionInput, TransactionInputSigner};
+	use script::Script;
+	use super::{UnsignedTransactionInput, TransactionInputSigner, SighashBase};
 
 	// http://www.righto.com/2014/02/bitcoins-hard-way-using-raw-bitcoin.html
 	// https://blockchain.info/rawtx/81b4c832d70cb56ff957589752eb4125a4cab78a25a8fc52d6a09e5bd4404d48
