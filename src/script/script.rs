@@ -21,6 +21,7 @@ pub const MAX_SCRIPT_SIZE: usize = 10000;
 const _LOCKTIME_THRESHOLD: u32 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 
 /// Serialized script, used inside transaction inputs and outputs.
+#[derive(PartialEq)]
 pub struct Script {
 	data: Vec<u8>,
 }
@@ -28,6 +29,12 @@ pub struct Script {
 impl From<&'static str> for Script {
 	fn from(s: &'static str) -> Self {
 		Script::new(s.from_hex().unwrap())
+	}
+}
+
+impl From<Vec<u8>> for Script {
+	fn from(s: Vec<u8>) -> Self {
+		Script::new(s)
 	}
 }
 
@@ -270,5 +277,12 @@ OP_PUSHBYTES_1 0x02
 OP_ADD
 "#;
 		assert_eq!(script.to_string(), s.to_string());
+	}
+
+	#[test]
+	fn test_script_without_op_codeseparator() {
+		let script: Script = "ab00270025512102e485fdaa062387c0bbb5ab711a093b6635299ec155b7b852fce6b992d5adbfec51ae".into();
+		let scr_goal: Script = "00270025512102e485fdaa062387c0bbb5ab711a093b6635299ec155b7b852fce6b992d5adbfec51ae".into();
+		assert_eq!(script.without_separators(), scr_goal);
 	}
 }

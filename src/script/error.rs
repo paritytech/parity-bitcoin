@@ -4,6 +4,7 @@ use script::Opcode;
 #[derive(Debug, PartialEq)]
 pub enum Error {
 	Unknown,
+	EvalFalse,
 	ReturnOpcode,
 
 	// Max sizes.
@@ -48,6 +49,7 @@ impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match *self {
 			Error::Unknown => "Unknown error".fmt(f),
+			Error::EvalFalse => "Script evaluated to false".fmt(f),
 			Error::ReturnOpcode => "Used return opcode".fmt(f),
 
 			// Failed verify operations

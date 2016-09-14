@@ -1,4 +1,4 @@
-use std::cmp;
+use std::{cmp, mem};
 use keys::{Signature, Public};
 use transaction::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
@@ -242,6 +242,50 @@ fn require_len(stack: &Vec<Vec<u8>>, len: usize) -> Result<(), Error> {
 		true => Err(Error::InvalidStackOperation),
 		false => Ok(()),
 	}
+}
+
+pub fn verify_script(
+	script_sig: &Script,
+	script_pubkey: &Script,
+	flags: &VerificationFlags,
+	checker: &SignatureChecker
+) -> Result<(), Error> {
+	// TODO: do all the required verification here!
+
+	let mut stack = Vec::new();
+	let mut stack_copy = Vec::new();
+
+	try!(eval_script(&mut stack, script_sig, flags, checker, SignatureVersion::Base));
+
+	if flags.verify_p2sh {
+		stack_copy = stack.clone();
+	}
+
+	let res = try!(eval_script(&mut stack, script_pubkey, flags, checker, SignatureVersion::Base));
+	if !res {
+		return Err(Error::EvalFalse);
+	}
+
+    // Additional validation for spend-to-script-hash transactions:
+	if flags.verify_p2sh && script_pubkey.is_pay_to_script_hash() {
+		// TODO: verify that script sig is push only!
+
+		mem::swap(&mut stack, &mut stack_copy);
+
+        // stack cannot be empty here, because if it was the
+        // P2SH  HASH <> EQUAL  scriptPubKey would be evaluated with
+        // an empty stack and the EvalScript above would return false.
+        assert!(!stack.is_empty());
+
+		let pubkey2: Script = stack.pop().unwrap().into();
+
+		let res = try!(eval_script(&mut stack, &pubkey2, flags, checker, SignatureVersion::Base));
+		if !res {
+			return Err(Error::EvalFalse);
+		}
+	}
+
+	Ok(())
 }
 
 pub fn eval_script(
@@ -931,7 +975,7 @@ mod tests {
 		Opcode, Script, VerificationFlags, Builder, Error, Num, TransactionInputSigner,
 		NoopSignatureChecker, SignatureVersion, TransactionSignatureChecker
 	};
-	use super::{eval_script, is_public_key};
+	use super::{eval_script, verify_script, is_public_key};
 
 	#[test]
 	fn tests_is_public_key() {
@@ -1866,9 +1910,23 @@ mod tests {
 		let output: Script = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		let version = SignatureVersion::Base;
-		let mut stack = vec![];
-		assert!(eval_script(&mut stack, &input, &flags, &checker, version).is_ok());
-		assert!(eval_script(&mut stack, &output, &flags, &checker, version).unwrap());
+		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+	}
+
+	// https://blockchain.info/rawtx/02b082113e35d5386285094c2829e7e2963fa0b5369fb7f4b79c4c90877dcd3d
+	#[test]
+	fn test_check_transaction_multisig() {
+		let tx: Transaction = "01000000013dcd7d87904c9cb7f4b79f36b5a03f96e2e729284c09856238d5353e1182b00200000000fd5e0100483045022100deeb1f13b5927b5e32d877f3c42a4b028e2e0ce5010fdb4e7f7b5e2921c1dcd2022068631cb285e8c1be9f061d2968a18c3163b780656f30a049effee640e80d9bff01483045022100ee80e164622c64507d243bd949217d666d8b16486e153ac6a1f8e04c351b71a502203691bef46236ca2b4f5e60a82a853a33d6712d6a1e7bf9a65e575aeb7328db8c014cc9524104a882d414e478039cd5b52a92ffb13dd5e6bd4515497439dffd691a0f12af9575fa349b5694ed3155b136f09e63975a1700c9f4d4df849323dac06cf3bd6458cd41046ce31db9bdd543e72fe3039a1f1c047dab87037c36a669ff90e28da1848f640de68c2fe913d363a51154a0c62d7adea1b822d05035077418267b1a1379790187410411ffd36c70776538d079fbae117dc38effafb33304af83ce4894589747aee1ef992f63280567f52f5ba870678b4ab4ff6c8ea600bd217870a8b4f1f09f3a8e8353aeffffffff0130d90000000000001976a914569076ba39fc4ff6a2291d9ea9196d8c08f9c7ab88ac00000000".into();
+		let signer: TransactionInputSigner = tx.into();
+		let checker = TransactionSignatureChecker {
+			signer: signer,
+			input_index: 0,
+		};
+		let input: Script =
+			"00483045022100deeb1f13b5927b5e32d877f3c42a4b028e2e0ce5010fdb4e7f7b5e2921c1dcd2022068631cb285e8c1be9f061d2968a18c3163b780656f30a049effee640e80d9bff01483045022100ee80e164622c64507d243bd949217d666d8b16486e153ac6a1f8e04c351b71a502203691bef46236ca2b4f5e60a82a853a33d6712d6a1e7bf9a65e575aeb7328db8c014cc9524104a882d414e478039cd5b52a92ffb13dd5e6bd4515497439dffd691a0f12af9575fa349b5694ed3155b136f09e63975a1700c9f4d4df849323dac06cf3bd6458cd41046ce31db9bdd543e72fe3039a1f1c047dab87037c36a669ff90e28da1848f640de68c2fe913d363a51154a0c62d7adea1b822d05035077418267b1a1379790187410411ffd36c70776538d079fbae117dc38effafb33304af83ce4894589747aee1ef992f63280567f52f5ba870678b4ab4ff6c8ea600bd217870a8b4f1f09f3a8e8353ae".into();
+		let output: Script = "a9141a8b0026343166625c7475f01e48b5ede8c0252e87".into();
+		let flags = VerificationFlags::default()
+			.verify_p2sh(true);
+		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
 	}
 }
