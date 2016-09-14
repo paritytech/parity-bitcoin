@@ -1,6 +1,6 @@
 use std::cmp;
 use keys::{Signature, Public};
-use transaction::{SEQUENCE_LOCKTIME_DISABLE_FLAG};
+use transaction::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
 use script::{
 	script, Script, Num, VerificationFlags, Opcode, Error, read_usize,
@@ -10,7 +10,7 @@ use script::{
 /// Helper function.
 fn check_signature(
 	checker: &SignatureChecker,
-	script_sig: Vec<u8>,
+	mut script_sig: Vec<u8>,
 	public: Vec<u8>,
 	script_code: &Script,
 	version: SignatureVersion
@@ -24,8 +24,8 @@ fn check_signature(
 		return false;
 	}
 
-	let hash_type = *script_sig.last().unwrap() as u32;
-	let signature = script_sig[..script_sig.len() - 1].into();
+	let hash_type = script_sig.pop().unwrap() as u32;
+	let signature = script_sig.into();
 
 	checker.check_signature(&signature, &public, script_code, hash_type, version)
 }
@@ -261,8 +261,20 @@ pub fn eval_script(
 	let mut altstack = Vec::<Vec<u8>>::new();
 
 	while pc < script.len() {
-		let fexec = exec_stack.iter().find(|&x| !x).is_some();
+		let executing = exec_stack.iter().all(|x| *x);
 		let opcode = try!(script.get_opcode(pc));
+
+		// TODO: verify push opcodes minimal data and size
+		// even if they are not executed
+
+		// TODO: verify maximum number of opcodes per script
+
+		if !(executing || (Opcode::OP_IF <= opcode && opcode <= Opcode::OP_ENDIF)) {
+			// TODO: instead of moving pc counter, move to next opcode
+			pc += 1;
+			continue;
+		}
+
 		match opcode {
 			Opcode::OP_PUSHDATA1 |
 			Opcode::OP_PUSHDATA2 |
@@ -365,6 +377,7 @@ pub fn eval_script(
 				stack.push(bytes.to_vec());
 				pc += opcode as usize;
 			},
+			Opcode::OP_1NEGATE |
 			Opcode::OP_1 |
 			Opcode::OP_2 |
 			Opcode::OP_3 |
@@ -448,15 +461,21 @@ pub fn eval_script(
 					}
 				}
 			},
-			Opcode::OP_NOP1 | Opcode::OP_NOP4 | Opcode::OP_NOP5 | Opcode::OP_NOP6 |
-				Opcode::OP_NOP7 | Opcode::OP_NOP8 | Opcode::OP_NOP9 | Opcode::OP_NOP10 => {
+			Opcode::OP_NOP1 |
+			Opcode::OP_NOP4 |
+			Opcode::OP_NOP5 |
+			Opcode::OP_NOP6 |
+			Opcode::OP_NOP7 |
+			Opcode::OP_NOP8 |
+			Opcode::OP_NOP9 |
+			Opcode::OP_NOP10 => {
 				if flags.verify_discourage_upgradable_nops {
 					return Err(Error::DiscourageUpgradableNops);
 				}
 			},
 			Opcode::OP_IF | Opcode::OP_NOTIF => {
 				let mut exec_value = false;
-				if fexec {
+				if executing {
 					try!(require_not_empty(stack).map_err(|_| Error::UnbalancedConditional));
 					exec_value = cast_to_bool(&stack.pop().unwrap());
 					if opcode == Opcode::OP_NOTIF {
@@ -810,9 +829,90 @@ pub fn eval_script(
 					_ => {},
 				}
 			},
-			_ => {},
+			Opcode::OP_CHECKMULTISIG | Opcode::OP_CHECKMULTISIGVERIFY => {
+				try!(require_not_empty(stack));
+				let keys_count = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				if keys_count < 0.into() || keys_count > script::MAX_PUBKEYS_PER_MULTISIG.into() {
+					return Err(Error::PubkeyCount);
+				}
+
+				try!(require_len(stack, usize::from(keys_count) + 1));
+				let sigs_count = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				if sigs_count < 0.into() || sigs_count > keys_count {
+					return Err(Error::SigCount);
+				}
+
+				let sigs_count: usize = sigs_count.into();
+				let keys_count: usize = keys_count.into();
+
+				try!(require_len(stack, keys_count + sigs_count));
+				let mut subscript = script.subscript(begincode);
+
+				let keys: Vec<_> = (0..keys_count).into_iter().map(|_| stack.pop().unwrap()).rev().collect();
+				let sigs: Vec<_> = (0..sigs_count).into_iter().map(|_| stack.pop().unwrap()).rev().collect();
+
+				if version == SignatureVersion::Base {
+					for signature in &sigs {
+						subscript = subscript.find_and_delete(signature);
+					}
+				}
+
+				let mut success = true;
+				let mut k = 0;
+				let mut s = 0;
+				while s < sigs.len() && success {
+					// TODO: remove redundant copying
+					let key = keys[k].clone();
+					let sig = sigs[s].clone();
+
+					try!(check_signature_encoding(&sig, flags));
+					try!(check_pubkey_encoding(&key, flags));
+
+					let ok = check_signature(checker, sig, key, &subscript, version);
+					if ok {
+						s += 1;
+					}
+					k += 1;
+
+					success = sigs.len() - s <= keys.len() - k;
+				}
+
+				try!(require_not_empty(stack));
+				if !stack.pop().unwrap().is_empty() && flags.verify_nulldummy {
+					return Err(Error::SignatureNullDummy);
+				}
+
+				match opcode {
+					Opcode::OP_CHECKMULTISIG => {
+						let to_push = match success {
+							true => vec![1],
+							false => vec![0],
+						};
+						stack.push(to_push);
+					},
+					Opcode::OP_CHECKMULTISIGVERIFY if !success => {
+						return Err(Error::CheckSigVerify);
+					},
+					_ => {},
+				}
+			},
+			Opcode::OP_RESERVED |
+			Opcode::OP_VER |
+			Opcode::OP_RESERVED1 |
+			Opcode::OP_RESERVED2 => {},
+			Opcode::OP_VERIF |
+			Opcode::OP_VERNOTIF => {},
 		}
+
+		if stack.len() + altstack.len() > 1000 {
+			return Err(Error::StackSize);
+		}
+
 		pc += 1;
+	}
+
+	if !exec_stack.is_empty() {
+		return Err(Error::UnbalancedConditional);
 	}
 
 	let success = !stack.is_empty() && {

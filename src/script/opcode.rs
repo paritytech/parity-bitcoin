@@ -212,14 +212,6 @@ pub enum Opcode {
 	OP_NOP8 = 0xb7,
 	OP_NOP9 = 0xb8,
 	OP_NOP10 = 0xb9,
-
-	// template matching params
-	OP_SMALLINTEGER = 0xfa,
-	OP_PUBKEYS = 0xfb,
-	OP_PUBKEYHASH = 0xfd,
-	OP_PUBKEY = 0xfe,
-
-	OP_INVALIDOPCODE = 0xff,
 }
 
 impl fmt::Display for Opcode {
@@ -437,15 +429,6 @@ impl Opcode {
 			0xb7 => Some(OP_NOP8),
 			0xb8 => Some(OP_NOP9),
 			0xb9 => Some(OP_NOP10),
-
-			// template matching params
-			0xfa => Some(OP_SMALLINTEGER),
-			0xfb => Some(OP_PUBKEYS),
-			0xfd => Some(OP_PUBKEYHASH),
-			0xfe => Some(OP_PUBKEY),
-
-			0xff => Some(OP_INVALIDOPCODE),
-
 			_ => None,
 		}
 	}
@@ -681,13 +664,5 @@ mod tests {
 		assert_eq!(Opcode::OP_NOP8, Opcode::from_u8(Opcode::OP_NOP8 as u8).unwrap());
 		assert_eq!(Opcode::OP_NOP9, Opcode::from_u8(Opcode::OP_NOP9 as u8).unwrap());
 		assert_eq!(Opcode::OP_NOP10, Opcode::from_u8(Opcode::OP_NOP10 as u8).unwrap());
-
-		// template matching params
-		assert_eq!(Opcode::OP_SMALLINTEGER, Opcode::from_u8(Opcode::OP_SMALLINTEGER as u8).unwrap());
-		assert_eq!(Opcode::OP_PUBKEYS, Opcode::from_u8(Opcode::OP_PUBKEYS as u8).unwrap());
-		assert_eq!(Opcode::OP_PUBKEYHASH, Opcode::from_u8(Opcode::OP_PUBKEYHASH as u8).unwrap());
-		assert_eq!(Opcode::OP_PUBKEY, Opcode::from_u8(Opcode::OP_PUBKEY as u8).unwrap());
-
-		assert_eq!(Opcode::OP_INVALIDOPCODE, Opcode::from_u8(Opcode::OP_INVALIDOPCODE as u8).unwrap());
 	}
 }

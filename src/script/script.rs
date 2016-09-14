@@ -11,7 +11,7 @@ const MAX_SCRIPT_ELEMENT_SIZE: usize = 520;
 const _MAX_OPS_PER_SCRIPT: u32 = 201;
 
 /// Maximum number of public keys per multisig
-const _MAX_PUBKEYS_PER_MULTISIG: u32 = 20;
+pub const MAX_PUBKEYS_PER_MULTISIG: usize = 20;
 
 /// Maximum script length in bytes
 pub const MAX_SCRIPT_SIZE: usize = 10000;

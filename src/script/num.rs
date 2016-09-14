@@ -63,6 +63,12 @@ impl From<Num> for i64 {
 	}
 }
 
+impl From<Num> for usize {
+	fn from(n: Num) -> Self {
+		n.value as usize
+	}
+}
+
 impl Num {
 	pub fn from_slice(data: &[u8], require_minimal: bool, max_size: usize) -> Result<Self, Error> {
 		if data.len() > max_size {

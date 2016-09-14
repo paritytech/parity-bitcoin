@@ -9,8 +9,11 @@ pub enum Error {
 	// Max sizes.
 	ScriptSize,
 	PushSize,
+	StackSize,
 	NumberOverflow,
 	NumberNotMinimallyEncoded,
+	SigCount,
+	PubkeyCount,
 
 	// Failed verify operations
 	Verify,
@@ -34,6 +37,7 @@ pub enum Error {
 	SignatureDer,
 	Minimaldata,
 	SignatureHighS,
+	SignatureNullDummy,
 	PubkeyType,
 
 	// Softfork safeness
@@ -51,10 +55,13 @@ impl fmt::Display for Error {
 			Error::EqualVerify => "Failed equal verify operation".fmt(f),
 			Error::CheckSigVerify => "Failed signature check".fmt(f),
 			Error::NumEqualVerify => "Failed num equal verify operation".fmt(f),
+			Error::SigCount => "Maximum number of signature exceeded".fmt(f),
+			Error::PubkeyCount => "Maximum number of pubkeys per multisig exceeded".fmt(f),
 
 			// Max sizes.
 			Error::ScriptSize => "Script is too long".fmt(f),
 			Error::PushSize => "Pushing too many bytes".fmt(f),
+			Error::StackSize => "Stack is too big".fmt(f),
 			Error::NumberOverflow => "Number overflow".fmt(f),
 			Error::NumberNotMinimallyEncoded => "Number not minimally encoded".fmt(f),
 
@@ -74,6 +81,7 @@ impl fmt::Display for Error {
 			Error::SignatureDer => "Invalid Signature".fmt(f),
 			Error::Minimaldata => "Check minimaldata failed".fmt(f),
 			Error::SignatureHighS => "Invalid High S in Signature".fmt(f),
+			Error::SignatureNullDummy => "Multisig extra stack element is not empty".fmt(f),
 			Error::PubkeyType => "Invalid Pubkey".fmt(f),
 
 			// Softfork safeness
