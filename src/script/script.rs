@@ -76,7 +76,7 @@ impl Script {
 		}
 
 		while current < end - len {
-			if &self.data[current..len] != data {
+			if &self.data[current..current + len] != data {
 				result.push(self.data[current]);
 				current += 1;
 			} else {
