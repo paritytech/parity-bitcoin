@@ -92,6 +92,45 @@ impl Script {
 		Opcode::from_u8(self.data[position]).ok_or(Error::BadOpcode)
 	}
 
+	pub fn get_instruction(&self, position: usize) -> Result<Instruction, Error> {
+		let opcode = try!(self.get_opcode(position));
+		let instruction = match opcode {
+			Opcode::OP_PUSHDATA1 |
+			Opcode::OP_PUSHDATA2 |
+			Opcode::OP_PUSHDATA4 => {
+				let len = match opcode {
+					Opcode::OP_PUSHDATA1 => 1,
+					Opcode::OP_PUSHDATA2 => 2,
+					_ => 4,
+				};
+
+				let slice = try!(self.take(position + 1, len));
+				let n = try!(read_usize(slice, len));
+				let bytes = try!(self.take_checked(position + 1 + len, n));
+				Instruction {
+					opcode: opcode,
+					step: len + n + 1,
+					data: Some(bytes),
+				}
+			},
+			o if o >= Opcode::OP_0 && o <= Opcode::OP_PUSHBYTES_75 => {
+				let bytes = try!(self.take_checked(position+ 1, opcode as usize));
+				Instruction {
+					opcode: o,
+					step: opcode as usize + 1,
+					data: Some(bytes),
+				}
+			},
+			_ => Instruction {
+				opcode: opcode,
+				step: 1,
+				data: None,
+			}
+		};
+
+		Ok(instruction)
+	}
+
 	#[inline]
 	pub fn take(&self, offset: usize, len: usize) -> Result<&[u8], Error> {
 		if offset + len > self.data.len() {
@@ -114,37 +153,21 @@ impl Script {
 	pub fn without_separators(&self) -> Script {
 		let mut pc = 0;
 		let mut result = Vec::new();
+
 		while pc < self.len() {
-			match self.get_opcode(pc) {
-				Ok(opcode @ Opcode::OP_PUSHDATA1) |
-				Ok(opcode @ Opcode::OP_PUSHDATA2) |
-				Ok(opcode @ Opcode::OP_PUSHDATA4) => {
-					let len = match opcode {
-						Opcode::OP_PUSHDATA1 => 1,
-						Opcode::OP_PUSHDATA2 => 2,
-						_ => 4,
-					};
+			match self.get_instruction(pc) {
+				Ok(instruction) => {
+					if instruction.opcode != Opcode::OP_CODESEPARATOR {
+						result.extend_from_slice(&self[pc..pc + instruction.step]);
+					}
 
-					let slice = match self.take(pc + 1, len) {
-						Ok(slice) => slice,
-						_ => {
-							result.extend_from_slice(&self[pc..]);
-							break;
-						}
-					};
-
-					let n = read_usize(slice, len).expect("slice.len() is equal len");
-					result.extend(&self[pc..pc + len + n + 1]);
-					pc += len + n;
+					pc += instruction.step;
 				},
-				Ok(o) if o >= Opcode::OP_0 && o <= Opcode::OP_PUSHBYTES_75 => {
-					result.extend(&self[pc..pc + o as usize + 1]);
-					pc += o as usize;
-				},
-				Ok(Opcode::OP_CODESEPARATOR) => {},
-				_ => result.push(self[pc]),
+				_ => {
+					result.push(self[pc]);
+					pc += 1;
+				}
 			}
-			pc += 1;
 		}
 
 		Script::new(result)
@@ -157,6 +180,12 @@ impl ops::Deref for Script {
 	fn deref(&self) -> &Self::Target {
 		&self.data
 	}
+}
+
+pub struct Instruction<'a> {
+	opcode: Opcode,
+	step: usize,
+	data: Option<&'a [u8]>,
 }
 
 pub fn read_usize(data: &[u8], size: usize) -> Result<usize, Error> {
@@ -190,36 +219,18 @@ impl fmt::Debug for Script {
 impl fmt::Display for Script {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		let mut pc = 0;
+
 		while pc < self.len() {
-			let opcode = try_or_fmt!(f, self.get_opcode(pc));
+			let instruction = try_or_fmt!(f, self.get_instruction(pc));
 
-			match opcode {
-				Opcode::OP_PUSHDATA1 |
-				Opcode::OP_PUSHDATA2 |
-				Opcode::OP_PUSHDATA4 => {
-					let len = match opcode {
-						Opcode::OP_PUSHDATA1 => 1,
-						Opcode::OP_PUSHDATA2 => 2,
-						_ => 4,
-					};
-
-					let slice = try_or_fmt!(f, self.take(pc + 1, len));
-					let n = try_or_fmt!(f, read_usize(slice, len));
-					let bytes = try_or_fmt!(f, self.take_checked(pc + 1 + len, n));
-					pc += len + n;
-					try!(writeln!(f, "{:?} 0x{}", opcode, bytes.to_hex()));
-				},
-				o if o >= Opcode::OP_0 && o <= Opcode::OP_PUSHBYTES_75 => {
-					let bytes = try_or_fmt!(f, self.take_checked(pc + 1, opcode as usize));
-					pc += opcode as usize;
-					try!(writeln!(f, "{:?} 0x{}", opcode, bytes.to_hex()));
-				},
-				_ => {
-					try!(writeln!(f, "{:?}", opcode));
-				},
+			match instruction.data {
+				Some(data) => try!(writeln!(f, "{:?} 0x{}", instruction.opcode, data.to_hex())),
+				None => try!(writeln!(f, "{:?}", instruction.opcode)),
 			}
-			pc += 1;
+
+			pc += instruction.step;
 		}
+
 		Ok(())
 	}
 }
