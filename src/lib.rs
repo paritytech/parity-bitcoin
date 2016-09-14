@@ -19,7 +19,6 @@ pub mod hash;
 pub mod merkle_root;
 pub mod network;
 pub mod reader;
-pub mod sign;
 pub mod stream;
 pub mod transaction;
 

@@ -65,7 +65,7 @@ impl Script {
 		let end = self.data.len();
 
 		if len > end {
-			return Script::new(data.to_vec());
+			return Script::new(self.data.to_vec());
 		}
 
 		while current < end - len {

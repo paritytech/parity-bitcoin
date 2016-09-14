@@ -3,7 +3,7 @@ use keys::{Public, Signature};
 use hash::H256;
 use transaction::{Transaction, SEQUENCE_LOCKTIME_DISABLE_FLAG};
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
-use script::{script, Script, Num, VerificationFlags, Opcode, Error, read_usize};
+use script::{script, Script, Num, VerificationFlags, Opcode, Error, read_usize, TransactionInputSigner};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
@@ -21,7 +21,6 @@ impl From<SighashBase> for u32 {
 
 /// Documentation
 /// https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE
-/// TODO: Possibly handle other integers when deserialing
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Sighash {
 	pub base: SighashBase,
@@ -117,23 +116,16 @@ impl SignatureChecker for NoopSignatureChecker {
 }
 
 pub struct TransactionSignatureChecker {
-	transaction: Transaction,
-	i: u32,
-	amount: i64,
-}
-
-impl TransactionSignatureChecker {
-	fn verify_signature(&self, _signature: &[u8], _public: &[u8], _hash: &H256) -> bool {
-		unimplemented!();
-	}
+	pub signer: TransactionInputSigner,
+	pub input_index: usize,
 }
 
 impl SignatureChecker for TransactionSignatureChecker {
 	fn check_signature(
 		&self,
-		script_signature: &[u8],
+		script_sig: &[u8],
 		public: &[u8],
-		_script: &Script,
+		script_code: &Script,
 		_version: SignatureVersion
 	) -> bool {
 		let public = match Public::from_slice(public) {
@@ -141,13 +133,13 @@ impl SignatureChecker for TransactionSignatureChecker {
 			_ => return false,
 		};
 
-		if script_signature.is_empty() {
+		if script_sig.is_empty() {
 			return false;
 		}
 
-		let _hash_type = script_signature.last().unwrap();
-
-		unimplemented!();
+		let hash_type = *script_sig.last().unwrap() as u32;
+		let hash = self.signer.signature_hash(self.input_index, script_code, hash_type);
+		public.verify(&hash, &script_sig[..script_sig.len() - 1].into()).unwrap_or(false)
 	}
 
 	fn check_lock_time(&self, _lock_time: Num) -> bool {
@@ -157,7 +149,6 @@ impl SignatureChecker for TransactionSignatureChecker {
 	fn check_sequence(&self, _sequence: Num) -> bool {
 		unimplemented!();
 	}
-
 }
 
 fn is_public_key(v: &[u8]) -> bool {
@@ -947,7 +938,7 @@ pub fn eval_script(
 
 	let success = !stack.is_empty() && {
 		let last = stack.last().unwrap();
-		last != &vec![0; last.len()]
+		cast_to_bool(last)
 	};
 
 	Ok(success)
@@ -956,8 +947,9 @@ pub fn eval_script(
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
-	use script::{Opcode, Script, VerificationFlags, Builder, Error, Num};
-	use super::{is_public_key, eval_script, NoopSignatureChecker, SignatureVersion};
+	use transaction::Transaction;
+	use script::{Opcode, Script, VerificationFlags, Builder, Error, Num, TransactionInputSigner};
+	use super::{is_public_key, eval_script, NoopSignatureChecker, SignatureVersion, TransactionSignatureChecker};
 
 	#[test]
 	fn tests_is_public_key() {
@@ -1877,5 +1869,24 @@ mod tests {
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
 		basic_test(&script, result, vec![]);
+	}
+
+	// https://blockchain.info/rawtx/3f285f083de7c0acabd9f106a43ec42687ab0bebe2e6f0d529db696794540fea
+	#[test]
+	fn test_check_transaction_signature() {
+		let tx: Transaction = "0100000001484d40d45b9ea0d652fca8258ab7caa42541eb52975857f96fb50cd732c8b481000000008a47304402202cb265bf10707bf49346c3515dd3d16fc454618c58ec0a0ff448a676c54ff71302206c6624d762a1fcef4618284ead8f08678ac05b13c84235f1654e6ad168233e8201410414e301b2328f17442c0b8310d787bf3d8a404cfbd0704f135b6ad4b2d3ee751310f981926e53a6e8c39bd7d3fefd576c543cce493cbac06388f2651d1aacbfcdffffffff0162640100000000001976a914c8e90996c7c6080ee06284600c684ed904d14c5c88ac00000000".into();
+		let signer: TransactionInputSigner = tx.into();
+		let checker = TransactionSignatureChecker {
+			signer: signer,
+			input_index: 0,
+		};
+		let input: Script = "47304402202cb265bf10707bf49346c3515dd3d16fc454618c58ec0a0ff448a676c54ff71302206c6624d762a1fcef4618284ead8f08678ac05b13c84235f1654e6ad168233e8201410414e301b2328f17442c0b8310d787bf3d8a404cfbd0704f135b6ad4b2d3ee751310f981926e53a6e8c39bd7d3fefd576c543cce493cbac06388f2651d1aacbfcd".into();
+		let output: Script = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
+		let flags = VerificationFlags::default()
+			.verify_p2sh(true);
+		let version = SignatureVersion::Base;
+		let mut stack = vec![];
+		assert!(eval_script(&mut stack, &input, &flags, &checker, version).is_ok());
+		assert!(eval_script(&mut stack, &output, &flags, &checker, version).unwrap());
 	}
 }
