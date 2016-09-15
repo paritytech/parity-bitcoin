@@ -323,15 +323,6 @@ fn read_usize(data: &[u8], size: usize) -> Result<usize, Error> {
 	Ok(result)
 }
 
-macro_rules! try_or_fmt {
-	($fmt: expr, $expr: expr) => {
-		match $expr {
-			Ok(o) => o,
-			Err(e) => return e.fmt($fmt),
-		}
-	}
-}
-
 impl fmt::Debug for Script {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		f.write_str(&self.data.to_hex())
@@ -343,7 +334,10 @@ impl fmt::Display for Script {
 		let mut pc = 0;
 
 		while pc < self.len() {
-			let instruction = try_or_fmt!(f, self.get_instruction(pc));
+			let instruction = match self.get_instruction(pc) {
+				Ok(i) => i,
+				Err(e) => return e.fmt(f),
+			};
 
 			match instruction.data {
 				Some(data) => try!(writeln!(f, "{:?} 0x{}", instruction.opcode, data.to_hex())),
