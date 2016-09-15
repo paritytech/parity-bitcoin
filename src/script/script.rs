@@ -20,6 +20,16 @@ pub const MAX_SCRIPT_SIZE: usize = 10000;
 /// otherwise as UNIX timestamp.
 pub const LOCKTIME_THRESHOLD: u32 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 
+#[derive(PartialEq, Debug)]
+pub enum ScriptType {
+	NonStandard,
+	PubKey,
+	PubKeyHash,
+	ScriptHash,
+	Multisig,
+	NullData,
+}
+
 /// Serialized script, used inside transaction inputs and outputs.
 #[derive(PartialEq)]
 pub struct Script {
@@ -46,11 +56,36 @@ impl Script {
 		}
 	}
 
-	/// Extra-fast test for pay-to-script-hash scripts.
+	/// Extra-fast test for pay-to-public-key-hash (P2PKH) scripts.
+	pub fn is_pay_to_public_key_hash(&self) -> bool {
+		self.data.len() == 25 &&
+			self.data[0] == Opcode::OP_DUP as u8 &&
+			self.data[1] == Opcode::OP_HASH160 as u8 &&
+			self.data[2] == Opcode::OP_PUSHBYTES_20 as u8 &&
+			self.data[23] == Opcode::OP_EQUALVERIFY as u8 &&
+			self.data[24] == Opcode::OP_CHECKSIG as u8
+	}
+
+	/// Extra-fast test for pay-to-public-key (P2PK) scripts.
+	pub fn is_pay_to_public_key(&self) -> bool {
+		if self.data.is_empty() {
+			return false;
+		}
+
+		let len = match self.data[0] {
+			x if x == Opcode::OP_PUSHBYTES_33 as u8 => 35,
+			x if x == Opcode::OP_PUSHBYTES_65 as u8 => 67,
+			_ => return false,
+		};
+
+		self.data.len() == len && self.data[len - 1] == Opcode::OP_CHECKSIG as u8
+	}
+
+	/// Extra-fast test for pay-to-script-hash (P2SH) scripts.
 	pub fn is_pay_to_script_hash(&self) -> bool {
 		self.data.len() == 23 &&
 			self.data[0] == Opcode::OP_HASH160 as u8 &&
-			self.data[1] == 0x14 &&
+			self.data[1] == Opcode::OP_PUSHBYTES_20 as u8 &&
 			self.data[22] == Opcode::OP_EQUAL as u8
 	}
 
@@ -58,7 +93,60 @@ impl Script {
 	pub fn is_pay_to_witness_script_hash(&self) -> bool {
 		self.data.len() == 34 &&
 			self.data[0] == Opcode::OP_0 as u8 &&
-			self.data[1] == 0x20
+			self.data[1] == Opcode::OP_PUSHBYTES_32 as u8
+	}
+
+	/// Extra-fast test for multisig scripts.
+	pub fn is_multisig_script(&self) -> bool {
+		if self.data.len() < 3 {
+			return false;
+		}
+
+		let siglen = match self.get_opcode(0) {
+			Ok(Opcode::OP_0) => 0,
+			Ok(o) if o >= Opcode::OP_1 && o <= Opcode::OP_16 => o as u8 - (Opcode::OP_1 as u8 - 1),
+			_ => return false,
+		};
+
+		let keylen = match self.get_opcode(self.data.len() - 2) {
+			Ok(Opcode::OP_0) => 0,
+			Ok(o) if o >= Opcode::OP_1 && o <= Opcode::OP_16 => o as u8 - (Opcode::OP_1 as u8 - 1),
+			_ => return false,
+		};
+
+		if siglen > keylen {
+			return false;
+		}
+
+		if self.data[self.data.len() - 1] != Opcode::OP_CHECKMULTISIG as u8 {
+			return false;
+		}
+
+		let mut pc = 1;
+		let mut keys = 0;
+		while pc < self.len() - 2 {
+			let instruction = match self.get_instruction(pc) {
+				Ok(i) => i,
+				_ => return false,
+			};
+
+			match instruction.opcode {
+				Opcode::OP_PUSHBYTES_33 |
+				Opcode::OP_PUSHBYTES_65 => keys += 1,
+				_ => return false,
+			}
+
+			pc += instruction.step;
+		}
+
+		keys == keylen
+	}
+
+	pub fn is_null_data_script(&self) -> bool {
+		// TODO: optimise it
+		!self.data.is_empty() &&
+			self.data[0] == Opcode::OP_RETURN as u8 &&
+			self.subscript(1).is_push_only()
 	}
 
 	pub fn subscript(&self, from: usize) -> Script {
@@ -190,6 +278,22 @@ impl Script {
 		}
 		true
 	}
+
+	pub fn script_type(&self) -> ScriptType {
+		if self.is_pay_to_public_key() {
+			ScriptType::PubKey
+		} else if self.is_pay_to_public_key_hash() {
+			ScriptType::PubKeyHash
+		} else if self.is_pay_to_script_hash() {
+			ScriptType::ScriptHash
+		} else if self.is_multisig_script() {
+			ScriptType::Multisig
+		} else if self.is_null_data_script() {
+			ScriptType::NullData
+		} else {
+			ScriptType::NonStandard
+		}
+	}
 }
 
 impl ops::Deref for Script {
@@ -257,7 +361,7 @@ impl fmt::Display for Script {
 mod tests {
 	use hex::FromHex;
 	use script::{Builder, Opcode};
-	use super::Script;
+	use super::{Script, ScriptType};
 
 	#[test]
 	fn test_is_pay_to_script_hash() {
@@ -309,5 +413,22 @@ OP_ADD
 		let script: Script = "ab00270025512102e485fdaa062387c0bbb5ab711a093b6635299ec155b7b852fce6b992d5adbfec51ae".into();
 		let scr_goal: Script = "00270025512102e485fdaa062387c0bbb5ab711a093b6635299ec155b7b852fce6b992d5adbfec51ae".into();
 		assert_eq!(script.without_separators(), scr_goal);
+	}
+
+	#[test]
+	fn test_script_is_multisig() {
+		let script: Script = "524104a882d414e478039cd5b52a92ffb13dd5e6bd4515497439dffd691a0f12af9575fa349b5694ed3155b136f09e63975a1700c9f4d4df849323dac06cf3bd6458cd41046ce31db9bdd543e72fe3039a1f1c047dab87037c36a669ff90e28da1848f640de68c2fe913d363a51154a0c62d7adea1b822d05035077418267b1a1379790187410411ffd36c70776538d079fbae117dc38effafb33304af83ce4894589747aee1ef992f63280567f52f5ba870678b4ab4ff6c8ea600bd217870a8b4f1f09f3a8e8353ae".into();
+		let not: Script = "ab00270025512102e485fdaa062387c0bbb5ab711a093b6635299ec155b7b852fce6b992d5adbfec51ae".into();
+		assert!(script.is_multisig_script());
+		assert!(!not.is_multisig_script());
+	}
+
+	// https://github.com/libbtc/libbtc/blob/998badcdac95a226a8f8c00c8f6abbd8a77917c1/test/tx_tests.c#L640
+	#[test]
+	fn test_script_type() {
+		assert_eq!(ScriptType::PubKeyHash, Script::from("76a914aab76ba4877d696590d94ea3e02948b55294815188ac").script_type());
+		assert_eq!(ScriptType::Multisig, Script::from("522102004525da5546e7603eefad5ef971e82f7dad2272b34e6b3036ab1fe3d299c22f21037d7f2227e6c646707d1c61ecceb821794124363a2cf2c1d2a6f28cf01e5d6abe52ae").script_type());
+		assert_eq!(ScriptType::ScriptHash, Script::from("a9146262b64aec1f4a4c1d21b32e9c2811dd2171fd7587").script_type());
+		assert_eq!(ScriptType::PubKey, Script::from("4104ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84cac").script_type());
 	}
 }
