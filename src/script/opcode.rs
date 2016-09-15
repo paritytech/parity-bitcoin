@@ -443,13 +443,17 @@ impl Opcode {
 		}
 	}
 
+	/// Returns true if opcode is countable
+	pub fn is_countable(&self) -> bool {
+		*self > Opcode::OP_16
+	}
+
 	pub fn is_simple_push(&self) -> bool {
-		(*self as u8) < (Opcode::OP_PUSHDATA1 as u8)
+		*self < Opcode::OP_PUSHDATA1
 	}
 
 	pub fn is_push_value(&self) -> bool {
-		let s = *self as u8;
-		s >= Opcode::OP_1NEGATE as u8 && s <= Opcode::OP_16 as u8
+		*self >= Opcode::OP_1NEGATE && *self <= Opcode::OP_16
 	}
 }
 

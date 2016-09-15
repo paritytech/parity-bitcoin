@@ -63,6 +63,12 @@ impl From<Num> for i64 {
 	}
 }
 
+impl From<Num> for u32 {
+	fn from(n: Num) -> Self {
+		n.value as u32
+	}
+}
+
 impl From<Num> for usize {
 	fn from(n: Num) -> Self {
 		n.value as usize

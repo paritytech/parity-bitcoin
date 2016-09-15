@@ -5,10 +5,10 @@ use hex::{ToHex, FromHex};
 use script::{Opcode, Error};
 
 /// Maximum number of bytes pushable to the stack
-const MAX_SCRIPT_ELEMENT_SIZE: usize = 520;
+pub const MAX_SCRIPT_ELEMENT_SIZE: usize = 520;
 
 /// Maximum number of non-push operations per script
-const _MAX_OPS_PER_SCRIPT: u32 = 201;
+pub const MAX_OPS_PER_SCRIPT: u32 = 201;
 
 /// Maximum number of public keys per multisig
 pub const MAX_PUBKEYS_PER_MULTISIG: usize = 20;
@@ -18,7 +18,7 @@ pub const MAX_SCRIPT_SIZE: usize = 10000;
 
 /// Threshold for nLockTime: below this value it is interpreted as block number,
 /// otherwise as UNIX timestamp.
-const _LOCKTIME_THRESHOLD: u32 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
+pub const LOCKTIME_THRESHOLD: u32 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 
 /// Serialized script, used inside transaction inputs and outputs.
 #[derive(PartialEq)]
@@ -172,6 +172,24 @@ impl Script {
 
 		Script::new(result)
 	}
+
+	/// Returns true if script contains only push opcodes
+	pub fn is_push_only(&self) -> bool {
+		let mut pc = 0;
+		while pc < self.len() {
+			let instruction = match self.get_instruction(pc) {
+				Ok(i) => i,
+				_ => return false,
+			};
+
+			if instruction.opcode > Opcode::OP_16 {
+				return false;
+			}
+
+			pc += instruction.step;
+		}
+		true
+	}
 }
 
 impl ops::Deref for Script {
@@ -183,12 +201,12 @@ impl ops::Deref for Script {
 }
 
 pub struct Instruction<'a> {
-	opcode: Opcode,
-	step: usize,
-	data: Option<&'a [u8]>,
+	pub opcode: Opcode,
+	pub step: usize,
+	pub data: Option<&'a [u8]>,
 }
 
-pub fn read_usize(data: &[u8], size: usize) -> Result<usize, Error> {
+fn read_usize(data: &[u8], size: usize) -> Result<usize, Error> {
 	if data.len() < size {
 		return Err(Error::BadOpcode);
 	}
@@ -233,10 +251,6 @@ impl fmt::Display for Script {
 
 		Ok(())
 	}
-}
-
-pub struct ScriptWitness {
-	_script: Vec<Vec<u8>>,
 }
 
 #[cfg(test)]

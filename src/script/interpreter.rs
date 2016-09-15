@@ -3,7 +3,7 @@ use keys::{Signature, Public};
 use transaction::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
 use script::{
-	script, Script, Num, VerificationFlags, Opcode, Error, read_usize,
+	script, Script, Num, VerificationFlags, Opcode, Error,
 	Sighash, SignatureChecker, SignatureVersion
 };
 
@@ -250,7 +250,9 @@ pub fn verify_script(
 	flags: &VerificationFlags,
 	checker: &SignatureChecker
 ) -> Result<(), Error> {
-	// TODO: do all the required verification here!
+	if flags.verify_sigpushonly && !script_sig.is_push_only() {
+		return Err(Error::SignaturePushOnly);
+	}
 
 	let mut stack = Vec::new();
 	let mut stack_copy = Vec::new();
@@ -268,7 +270,9 @@ pub fn verify_script(
 
     // Additional validation for spend-to-script-hash transactions:
 	if flags.verify_p2sh && script_pubkey.is_pay_to_script_hash() {
-		// TODO: verify that script sig is push only!
+		if !script_sig.is_push_only() {
+			return Err(Error::SignaturePushOnly);
+		}
 
 		mem::swap(&mut stack, &mut stack_copy);
 
@@ -282,6 +286,19 @@ pub fn verify_script(
 		let res = try!(eval_script(&mut stack, &pubkey2, flags, checker, SignatureVersion::Base));
 		if !res {
 			return Err(Error::EvalFalse);
+		}
+	}
+
+    // The CLEANSTACK check is only performed after potential P2SH evaluation,
+    // as the non-P2SH evaluation of a P2SH script will obviously not result in
+    // a clean stack (the P2SH inputs remain). The same holds for witness evaluation.
+	if flags.verify_cleanstack {
+        // Disallow CLEANSTACK without P2SH, as otherwise a switch CLEANSTACK->P2SH+CLEANSTACK
+        // would be possible, which is not a softfork (and P2SH should be one).
+		assert!(flags.verify_p2sh);
+		assert!(flags.verify_witness);
+		if stack.len() != 1 {
+			return Err(Error::Cleanstack);
 		}
 	}
 
@@ -300,44 +317,46 @@ pub fn eval_script(
 	}
 
 	let mut pc = 0;
+	let mut op_count = 0;
 	let mut begincode = 0;
 	let mut exec_stack = Vec::<bool>::new();
 	let mut altstack = Vec::<Vec<u8>>::new();
 
 	while pc < script.len() {
 		let executing = exec_stack.iter().all(|x| *x);
-		let opcode = try!(script.get_opcode(pc));
+		let instruction = try!(script.get_instruction(pc));
+		let opcode = instruction.opcode;
 
-		// TODO: verify push opcodes minimal data and size
-		// even if they are not executed
+		if let Some(data) = instruction.data {
+			if data.len() > script::MAX_SCRIPT_ELEMENT_SIZE {
+				return Err(Error::PushSize);
+			}
 
-		// TODO: verify maximum number of opcodes per script
+			if executing && flags.verify_minimaldata && !check_minimal_push(data, opcode) {
+				return Err(Error::Minimaldata);
+			}
+		}
+
+		if opcode.is_countable() {
+			op_count += 1;
+			if op_count > script::MAX_OPS_PER_SCRIPT {
+				return Err(Error::OpCount);
+			}
+		}
+
+		if opcode.is_disabled() {
+			return Err(Error::DisabledOpcode(opcode));
+		}
 
 		if !(executing || (Opcode::OP_IF <= opcode && opcode <= Opcode::OP_ENDIF)) {
-			// TODO: instead of moving pc counter, move to next opcode
-			pc += 1;
+			pc += instruction.step;
 			continue;
 		}
 
 		match opcode {
 			Opcode::OP_PUSHDATA1 |
 			Opcode::OP_PUSHDATA2 |
-			Opcode::OP_PUSHDATA4 => {
-				let len = match opcode {
-					Opcode::OP_PUSHDATA1 => 1,
-					Opcode::OP_PUSHDATA2 => 2,
-					_ => 4,
-				};
-
-				let slice = try!(script.take(pc + 1, len));
-				let n = try!(read_usize(slice, len));
-				let bytes = try!(script.take_checked(pc + 1 + len, n));
-				if flags.verify_minimaldata && !check_minimal_push(bytes, opcode) {
-					return Err(Error::Minimaldata);
-				}
-				stack.push(bytes.to_vec());
-				pc += len + n;
-			},
+			Opcode::OP_PUSHDATA4 |
 			Opcode::OP_0 |
 			Opcode::OP_PUSHBYTES_1 |
 			Opcode::OP_PUSHBYTES_2 |
@@ -414,12 +433,9 @@ pub fn eval_script(
 			Opcode::OP_PUSHBYTES_73 |
 			Opcode::OP_PUSHBYTES_74 |
 			Opcode::OP_PUSHBYTES_75 => {
-				let bytes = try!(script.take_checked(pc + 1, opcode as usize));
-				if flags.verify_minimaldata && !check_minimal_push(bytes, opcode) {
-					return Err(Error::Minimaldata);
+				if let Some(data) = instruction.data {
+					stack.push(data.to_vec());
 				}
-				stack.push(bytes.to_vec());
-				pc += opcode as usize;
 			},
 			Opcode::OP_1NEGATE |
 			Opcode::OP_1 |
@@ -944,16 +960,22 @@ pub fn eval_script(
 			Opcode::OP_RESERVED |
 			Opcode::OP_VER |
 			Opcode::OP_RESERVED1 |
-			Opcode::OP_RESERVED2 => {},
+			Opcode::OP_RESERVED2 => {
+				if executing {
+					return Err(Error::DisabledOpcode(opcode));
+				}
+			},
 			Opcode::OP_VERIF |
-			Opcode::OP_VERNOTIF => {},
+			Opcode::OP_VERNOTIF => {
+				return Err(Error::DisabledOpcode(opcode));
+			},
 		}
 
 		if stack.len() + altstack.len() > 1000 {
 			return Err(Error::StackSize);
 		}
 
-		pc += 1;
+		pc += instruction.step;
 	}
 
 	if !exec_stack.is_empty() {
