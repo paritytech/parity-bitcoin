@@ -4,7 +4,7 @@ use transaction::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
 use script::{
 	script, Script, Num, VerificationFlags, Opcode, Error,
-	Sighash, SignatureChecker, SignatureVersion
+	Sighash, SignatureChecker, SignatureVersion, Stack
 };
 
 /// Helper function.
@@ -228,22 +228,6 @@ fn cast_to_bool(data: &[u8]) -> bool {
 	}
 }
 
-#[inline]
-fn require_not_empty(stack: &Vec<Vec<u8>>) -> Result<(), Error> {
-	match stack.is_empty() {
-		true => Err(Error::InvalidStackOperation),
-		false => Ok(()),
-	}
-}
-
-#[inline]
-fn require_len(stack: &Vec<Vec<u8>>, len: usize) -> Result<(), Error> {
-	match stack.len() < len {
-		true => Err(Error::InvalidStackOperation),
-		false => Ok(()),
-	}
-}
-
 pub fn verify_script(
 	script_sig: &Script,
 	script_pubkey: &Script,
@@ -254,8 +238,8 @@ pub fn verify_script(
 		return Err(Error::SignaturePushOnly);
 	}
 
-	let mut stack = Vec::new();
-	let mut stack_copy = Vec::new();
+	let mut stack = Stack::new();
+	let mut stack_copy = Stack::new();
 
 	try!(eval_script(&mut stack, script_sig, flags, checker, SignatureVersion::Base));
 
@@ -281,7 +265,7 @@ pub fn verify_script(
         // an empty stack and the EvalScript above would return false.
         assert!(!stack.is_empty());
 
-		let pubkey2: Script = stack.pop().unwrap().into();
+		let pubkey2: Script = try!(stack.pop()).into();
 
 		let res = try!(eval_script(&mut stack, &pubkey2, flags, checker, SignatureVersion::Base));
 		if !res {
@@ -306,7 +290,7 @@ pub fn verify_script(
 }
 
 pub fn eval_script(
-	stack: &mut Vec<Vec<u8>>,
+	stack: &mut Stack<Vec<u8>>,
 	script: &Script,
 	flags: &VerificationFlags,
 	checker: &SignatureChecker,
@@ -320,7 +304,7 @@ pub fn eval_script(
 	let mut op_count = 0;
 	let mut begincode = 0;
 	let mut exec_stack = Vec::<bool>::new();
-	let mut altstack = Vec::<Vec<u8>>::new();
+	let mut altstack = Stack::<Vec<u8>>::new();
 
 	while pc < script.len() {
 		let executing = exec_stack.iter().all(|x| *x);
@@ -471,8 +455,6 @@ pub fn eval_script(
 					}
 				}
 
-				try!(require_not_empty(stack));
-
 				// Note that elsewhere numeric opcodes are limited to
 				// operands in the range -2**31+1 to 2**31-1, however it is
 				// legal for opcodes to produce results exceeding that
@@ -487,7 +469,7 @@ pub fn eval_script(
 				// Thus as a special case we tell CScriptNum to accept up
 				// to 5-byte bignums, which are good until 2**39-1, well
 				// beyond the 2**32-1 limit of the nLockTime field itself.
-				let lock_time = try!(Num::from_slice(stack.last().unwrap(), flags.verify_minimaldata, 5));
+				let lock_time = try!(Num::from_slice(try!(stack.last()), flags.verify_minimaldata, 5));
 
 				// In the rare event that the argument may be < 0 due to
 				// some arithmetic being done first, you can always use
@@ -507,9 +489,7 @@ pub fn eval_script(
 					}
 				}
 
-				try!(require_not_empty(stack));
-
-				let sequence = try!(Num::from_slice(stack.last().unwrap(), flags.verify_minimaldata, 5));
+				let sequence = try!(Num::from_slice(try!(stack.last()), flags.verify_minimaldata, 5));
 
 				if sequence.is_negative() {
 					return Err(Error::NegativeLocktime);
@@ -536,8 +516,7 @@ pub fn eval_script(
 			Opcode::OP_IF | Opcode::OP_NOTIF => {
 				let mut exec_value = false;
 				if executing {
-					try!(require_not_empty(stack).map_err(|_| Error::UnbalancedConditional));
-					exec_value = cast_to_bool(&stack.pop().unwrap());
+					exec_value = cast_to_bool(&try!(stack.pop().map_err(|_| Error::UnbalancedConditional)));
 					if opcode == Opcode::OP_NOTIF {
 						exec_value = !exec_value;
 					}
@@ -558,9 +537,7 @@ pub fn eval_script(
 				exec_stack.pop();
 			},
 			Opcode::OP_VERIFY => {
-				try!(require_not_empty(stack));
-				// should we return an error without popping the value?
-				let exec_value = cast_to_bool(&stack.pop().unwrap());
+				let exec_value = cast_to_bool(&try!(stack.pop()));
 				if !exec_value {
 					return Err(Error::Verify);
 				}
@@ -569,63 +546,32 @@ pub fn eval_script(
 				return Err(Error::ReturnOpcode);
 			},
 			Opcode::OP_TOALTSTACK => {
-				try!(require_not_empty(stack));
-				altstack.push(stack.pop().unwrap());
+				altstack.push(try!(stack.pop()));
 			},
 			Opcode::OP_FROMALTSTACK => {
-				try!(require_not_empty(&altstack).map_err(|_| Error::InvalidAltstackOperation));
-				stack.push(altstack.pop().unwrap());
+				stack.push(try!(altstack.pop().map_err(|_| Error::InvalidAltstackOperation)));
 			},
 			Opcode::OP_2DROP => {
-				try!(require_len(stack, 2));
-				stack.pop();
-				stack.pop();
+				try!(stack.drop(2));
 			},
 			Opcode::OP_2DUP => {
-				try!(require_len(stack, 2));
-				let v1 = stack[stack.len() - 2].clone();
-				let v2 = stack[stack.len() - 1].clone();
-				stack.push(v1);
-				stack.push(v2);
+				try!(stack.dup(2));
 			},
 			Opcode::OP_3DUP => {
-				try!(require_len(stack, 3));
-				let v1 = stack[stack.len() - 3].clone();
-				let v2 = stack[stack.len() - 2].clone();
-				let v3 = stack[stack.len() - 1].clone();
-				stack.push(v1);
-				stack.push(v2);
-				stack.push(v3);
+				try!(stack.dup(3));
 			},
 			Opcode::OP_2OVER => {
-				try!(require_len(stack, 4));
-				let v1 = stack[stack.len() - 4].clone();
-				let v2 = stack[stack.len() - 3].clone();
-				stack.push(v1);
-				stack.push(v2);
+				try!(stack.over(2));
 			},
 			Opcode::OP_2ROT => {
-				try!(require_len(stack, 6));
-				let v1 = stack[stack.len() - 6].clone();
-				let v2 = stack[stack.len() - 5].clone();
-				let len = stack.len();
-				stack.remove(len - 6);
-				// -5 -just removed element
-				stack.remove(len - 6);
-				stack.push(v1);
-				stack.push(v2);
+				try!(stack.rot(2));
 			},
 			Opcode::OP_2SWAP => {
-				try!(require_len(stack, 4));
-				let len = stack.len();
-				stack.swap(len - 4, len - 2);
-				stack.swap(len - 3, len - 1);
+				try!(stack.swap(2));
 			},
 			Opcode::OP_IFDUP => {
-				try!(require_not_empty(stack));
-				if cast_to_bool(stack.last().unwrap()) {
-					let last = stack.last().unwrap().clone();
-					stack.push(last);
+				if cast_to_bool(try!(stack.last())) {
+					try!(stack.dup(1));
 				}
 			},
 			Opcode::OP_DEPTH => {
@@ -633,63 +579,46 @@ pub fn eval_script(
 				stack.push(depth.to_vec());
 			},
 			Opcode::OP_DROP => {
-				try!(require_not_empty(stack));
-				stack.pop();
+				try!(stack.pop());
 			},
 			Opcode::OP_DUP => {
-				try!(require_not_empty(stack));
-				let v1 = stack[stack.len() - 1].clone();
-				stack.push(v1);
+				try!(stack.dup(1));
 			},
 			Opcode::OP_NIP => {
-				try!(require_len(stack, 2));
-				let len = stack.len();
-				stack.swap_remove(len - 2);
+				try!(stack.nip());
 			},
 			Opcode::OP_OVER => {
-				try!(require_len(stack, 2));
-				let v = stack[stack.len() - 2].clone();
-				stack.push(v);
+				try!(stack.over(1));
 			},
 			Opcode::OP_PICK | Opcode::OP_ROLL => {
-				try!(require_len(stack, 2));
-				let n: i64 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).into();
+				let n: i64 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)).into();
 				if n < 0 || n >= stack.len() as i64 {
 					return Err(Error::InvalidStackOperation);
 				}
 
-				let v = stack[n as usize + 1].clone();
-				if opcode == Opcode::OP_ROLL {
-					stack.remove(n as usize + 1);
-				}
+				let v = match opcode {
+					Opcode::OP_PICK => try!(stack.top(n as usize)).clone(),
+					_ => try!(stack.remove(n as usize)),
+				};
+
 				stack.push(v);
 			},
 			Opcode::OP_ROT => {
-				try!(require_len(stack, 3));
-				let len = stack.len();
-				stack.swap(len - 3, len - 2);
-				stack.swap(len - 2, len - 1);
+				try!(stack.rot(1));
 			},
 			Opcode::OP_SWAP => {
-				try!(require_len(stack, 2));
-				let len = stack.len();
-				stack.swap(len - 2, len - 1);
+				try!(stack.swap(1));
 			},
 			Opcode::OP_TUCK => {
-				try!(require_len(stack, 2));
-				let len = stack.len();
-				let v = stack[len - 1].clone();
-				stack.insert(len - 2, v);
+				try!(stack.tuck());
 			},
 			Opcode::OP_SIZE => {
-				try!(require_not_empty(stack));
-				let n = Num::from(stack.last().unwrap().len());
+				let n = Num::from(try!(stack.last()).len());
 				stack.push(n.to_vec());
 			},
 			Opcode::OP_EQUAL => {
-				try!(require_len(stack, 2));
-				let v1 = stack.pop();
-				let v2 = stack.pop();
+				let v1 = try!(stack.pop());
+				let v2 = try!(stack.pop());
 				let to_push = match v1 == v2 {
 					true => vec![1],
 					false => vec![0],
@@ -697,137 +626,116 @@ pub fn eval_script(
 				stack.push(to_push);
 			},
 			Opcode::OP_EQUALVERIFY => {
-				try!(require_len(stack, 2));
-				let equal = stack.pop() == stack.pop();
+				let equal = try!(stack.pop()) == try!(stack.pop());
 				if !equal {
 					return Err(Error::EqualVerify);
 				}
 			},
 			Opcode::OP_1ADD => {
-				try!(require_not_empty(stack));
-				let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)) + 1.into();
+				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)) + 1.into();
 				stack.push(n.to_vec());
 			},
 			Opcode::OP_1SUB => {
-				try!(require_not_empty(stack));
-				let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)) - 1.into();
+				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)) - 1.into();
 				stack.push(n.to_vec());
 			},
 			Opcode::OP_NEGATE => {
-				try!(require_not_empty(stack));
-				let n = -try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let n = -try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				stack.push(n.to_vec());
 			},
 			Opcode::OP_ABS => {
-				try!(require_not_empty(stack));
-				let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).abs();
+				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)).abs();
 				stack.push(n.to_vec());
 			},
 			Opcode::OP_NOT => {
-				try!(require_not_empty(stack));
-				let n = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).is_zero();
+				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)).is_zero();
 				let n = Num::from(n);
 				stack.push(n.to_vec());
 			},
 			Opcode::OP_0NOTEQUAL => {
-				try!(require_not_empty(stack));
-				let n = !try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4)).is_zero();
+				let n = !try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)).is_zero();
 				let n = Num::from(n);
 				stack.push(n.to_vec());
 			},
 			Opcode::OP_ADD => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				stack.push((v1 + v2).to_vec());
 			},
 			Opcode::OP_SUB => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				stack.push((v2 - v1).to_vec());
 			},
 			Opcode::OP_BOOLAND => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(!v1.is_zero() && !v2.is_zero());
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_BOOLOR => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(!v1.is_zero() || !v2.is_zero());
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_NUMEQUAL => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 == v2);
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_NUMEQUALVERIFY => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				if v1 != v2 {
 					return Err(Error::NumEqualVerify);
 				}
 			},
 			Opcode::OP_NUMNOTEQUAL => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 != v2);
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_LESSTHAN => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 > v2);
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_GREATERTHAN => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 < v2);
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_LESSTHANOREQUAL => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 >= v2);
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_GREATERTHANOREQUAL => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 <= v2);
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_MIN => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				stack.push(cmp::min(v1, v2).to_vec());
 			},
 			Opcode::OP_MAX => {
-				try!(require_len(stack, 2));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				stack.push(cmp::max(v1, v2).to_vec());
 			},
 			Opcode::OP_WITHIN => {
-				try!(require_len(stack, 3));
-				let v1 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
-				let v3 = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v3 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let to_push = match v2 <= v3 && v3 <= v1 {
 					true => vec![1],
 					false => vec![0],
@@ -835,37 +743,31 @@ pub fn eval_script(
 				stack.push(to_push);
 			},
 			Opcode::OP_RIPEMD160 => {
-				try!(require_not_empty(stack));
-				let v = ripemd160(&stack.pop().unwrap());
+				let v = ripemd160(&try!(stack.pop()));
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_SHA1 => {
-				try!(require_not_empty(stack));
-				let v = sha1(&stack.pop().unwrap());
+				let v = sha1(&try!(stack.pop()));
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_SHA256 => {
-				try!(require_not_empty(stack));
-				let v = sha256(&stack.pop().unwrap());
+				let v = sha256(&try!(stack.pop()));
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_HASH160 => {
-				try!(require_not_empty(stack));
-				let v = dhash160(&stack.pop().unwrap());
+				let v = dhash160(&try!(stack.pop()));
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_HASH256 => {
-				try!(require_not_empty(stack));
-				let v = dhash256(&stack.pop().unwrap());
+				let v = dhash256(&try!(stack.pop()));
 				stack.push(v.to_vec());
 			},
 			Opcode::OP_CODESEPARATOR => {
 				begincode = pc;
 			},
 			Opcode::OP_CHECKSIG | Opcode::OP_CHECKSIGVERIFY => {
-				try!(require_len(stack, 2));
-				let pubkey = stack.pop().unwrap();
-				let signature = stack.pop().unwrap();
+				let pubkey = try!(stack.pop());
+				let signature = try!(stack.pop());
 				let mut subscript = script.subscript(begincode);
 				if version == SignatureVersion::Base {
 					subscript = script.find_and_delete(&signature);
@@ -890,25 +792,21 @@ pub fn eval_script(
 				}
 			},
 			Opcode::OP_CHECKMULTISIG | Opcode::OP_CHECKMULTISIGVERIFY => {
-				try!(require_not_empty(stack));
-				let keys_count = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let keys_count = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				if keys_count < 0.into() || keys_count > script::MAX_PUBKEYS_PER_MULTISIG.into() {
 					return Err(Error::PubkeyCount);
 				}
 
 				let keys_count: usize = keys_count.into();
-				try!(require_len(stack, keys_count));
-				let keys: Vec<_> = (0..keys_count).into_iter().map(|_| stack.pop().unwrap()).rev().collect();
+				let keys: Vec<_> = try!((0..keys_count).into_iter().map(|_| stack.pop()).rev().collect());
 
-				try!(require_not_empty(stack));
-				let sigs_count = try!(Num::from_slice(&stack.pop().unwrap(), flags.verify_minimaldata, 4));
+				let sigs_count = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				if sigs_count < 0.into() || sigs_count > keys_count.into() {
 					return Err(Error::SigCount);
 				}
 
 				let sigs_count: usize = sigs_count.into();
-				try!(require_len(stack, sigs_count));
-				let sigs: Vec<_> = (0..sigs_count).into_iter().map(|_| stack.pop().unwrap()).rev().collect();
+				let sigs: Vec<_> = try!((0..sigs_count).into_iter().map(|_| stack.pop()).rev().collect());
 
 				let mut subscript = script.subscript(begincode);
 
@@ -938,8 +836,7 @@ pub fn eval_script(
 					success = sigs.len() - s <= keys.len() - k;
 				}
 
-				try!(require_not_empty(stack));
-				if !stack.pop().unwrap().is_empty() && flags.verify_nulldummy {
+				if !try!(stack.pop()).is_empty() && flags.verify_nulldummy {
 					return Err(Error::SignatureNullDummy);
 				}
 
@@ -983,7 +880,7 @@ pub fn eval_script(
 	}
 
 	let success = !stack.is_empty() && {
-		let last = stack.last().unwrap();
+		let last = try!(stack.last());
 		cast_to_bool(last)
 	};
 
@@ -996,7 +893,7 @@ mod tests {
 	use transaction::Transaction;
 	use script::{
 		Opcode, Script, VerificationFlags, Builder, Error, Num, TransactionInputSigner,
-		NoopSignatureChecker, SignatureVersion, TransactionSignatureChecker
+		NoopSignatureChecker, SignatureVersion, TransactionSignatureChecker, Stack
 	};
 	use super::{eval_script, verify_script, is_public_key};
 
@@ -1013,7 +910,7 @@ mod tests {
 	// https://github.com/bitcoin/bitcoin/blob/d612837814020ae832499d18e6ee5eb919a87907/src/test/script_tests.cpp#L900
 	#[test]
 	fn test_push_data() {
-		let expected = vec![vec![0x5a]];
+		let expected = vec![vec![0x5a]].into();
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
 		let checker = NoopSignatureChecker;
@@ -1023,19 +920,19 @@ mod tests {
 		let pushdata2 = Script::new(vec![Opcode::OP_PUSHDATA2 as u8, 0x1, 0, 0x5a]);
 		let pushdata4 = Script::new(vec![Opcode::OP_PUSHDATA4 as u8, 0x1, 0, 0, 0, 0x5a]);
 
-		let mut direct_stack = vec![];
-		let mut pushdata1_stack= vec![];
-		let mut pushdata2_stack= vec![];
-		let mut pushdata4_stack= vec![];
+		let mut direct_stack = Stack::new();
+		let mut pushdata1_stack = Stack::new();
+		let mut pushdata2_stack = Stack::new();
+		let mut pushdata4_stack = Stack::new();
 		assert!(eval_script(&mut direct_stack, &direct, &flags, &checker, version).unwrap());
 		assert!(eval_script(&mut pushdata1_stack, &pushdata1, &flags, &checker, version).unwrap());
 		assert!(eval_script(&mut pushdata2_stack, &pushdata2, &flags, &checker, version).unwrap());
 		assert!(eval_script(&mut pushdata4_stack, &pushdata4, &flags, &checker, version).unwrap());
 
-		assert_eq!(expected, direct_stack);
-		assert_eq!(expected, pushdata1_stack);
-		assert_eq!(expected, pushdata2_stack);
-		assert_eq!(expected, pushdata4_stack);
+		assert_eq!(direct_stack, expected);
+		assert_eq!(pushdata1_stack, expected);
+		assert_eq!(pushdata2_stack, expected);
+		assert_eq!(pushdata4_stack, expected);
 	}
 
 	fn basic_test(script: &Script, expected: Result<bool, Error>, expected_stack: Vec<Vec<u8>>) {
@@ -1043,10 +940,10 @@ mod tests {
 			.verify_p2sh(true);
 		let checker = NoopSignatureChecker;
 		let version = SignatureVersion::Base;
-		let mut stack = vec![];
+		let mut stack = Stack::new();
 		assert_eq!(eval_script(&mut stack, script, &flags, &checker, version), expected);
 		if expected.is_ok() {
-			assert_eq!(stack, expected_stack);
+			assert_eq!(stack, expected_stack.into());
 		}
 	}
 

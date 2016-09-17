@@ -6,6 +6,7 @@ mod num;
 mod opcode;
 mod script;
 mod sign;
+mod stack;
 mod verify;
 
 pub use self::builder::Builder;
@@ -19,5 +20,6 @@ pub use self::sign::{
 	TransactionInputSigner, UnsignedTransactionInput,
 	Sighash, SighashBase, SignatureVersion
 };
+pub use self::stack::Stack;
 pub use self::verify::{SignatureChecker, NoopSignatureChecker, TransactionSignatureChecker};
 
