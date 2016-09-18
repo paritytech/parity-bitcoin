@@ -85,10 +85,10 @@ impl Serializable for CompactInteger {
 impl Deserializable for CompactInteger {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
 		let result = match try!(reader.read::<u8>()) {
-			i @ 0...0xfc => CompactInteger::from(i),
-			0xfd => CompactInteger::from(try!(reader.read::<u16>())),
-			0xfe => CompactInteger::from(try!(reader.read::<u32>())),
-			_ => CompactInteger::from(try!(reader.read::<u64>())),
+			i @ 0...0xfc => i.into(),
+			0xfd => try!(reader.read::<u16>()).into(),
+			0xfe => try!(reader.read::<u32>()).into(),
+			_ => try!(reader.read::<u64>()).into(),
 		};
 
 		Ok(result)
