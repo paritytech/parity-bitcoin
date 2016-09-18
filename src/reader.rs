@@ -28,6 +28,7 @@ pub trait Deserializable {
 	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized;
 }
 
+#[derive(Debug)]
 pub struct Reader<'a> {
 	buffer: &'a [u8],
 	read: usize,

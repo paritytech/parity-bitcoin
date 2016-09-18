@@ -1,91 +1,89 @@
 use stream::{Serializable, Stream};
 use reader::{Deserializable, Reader, Error as ReaderError};
 
-#[derive(Debug, Default, PartialEq, Clone)]
-pub struct ServiceFlags {
-	pub network: bool,
-	pub getutxo: bool,
-	pub bloom: bool,
-	pub witness: bool,
-	pub xthin: bool,
-}
+#[derive(Debug, Default, PartialEq, Clone, Copy)]
+pub struct ServiceFlags(u64);
 
-impl<'a> From<&'a ServiceFlags> for u64 {
-	fn from(s: &'a ServiceFlags) -> Self {
-		let mut result = 0u64;
-
-		if s.network {
-			result |= 1 << 0;
-		}
-
-		if s.getutxo {
-			result |= 1 << 1;
-		}
-
-		if s.bloom {
-			result |= 1 << 2;
-		}
-
-		if s.witness {
-			result |= 1 << 3;
-		}
-
-		if s.xthin {
-			result |= 1 << 4;
-		}
-
-		result
+impl From<ServiceFlags> for u64 {
+	fn from(s: ServiceFlags) -> Self {
+		s.0
 	}
 }
 
-// TODO: do we need to throw err on unknown service flags?
 impl From<u64> for ServiceFlags {
 	fn from(v: u64) -> Self {
-		ServiceFlags {
-			network: v & 0x1 != 0,
-			getutxo: v & 0x10 != 0,
-			bloom: v & 0x100 != 0,
-			witness: v & 0x1000 != 0,
-			xthin: v & 0x10000 != 0,
-		}
+		ServiceFlags(v)
 	}
 }
 
+
 impl ServiceFlags {
-	pub fn network(mut self, v: bool) -> Self {
-		self.network = v;
+	pub fn network(&self) -> bool {
+		self.bit_at(0)
+	}
+
+	pub fn with_network(mut self, v: bool) -> Self {
+		self.set_bit(0, v);
 		self
 	}
 
-	pub fn getutxo(mut self, v: bool) -> Self {
-		self.getutxo = v;
+	pub fn getutxo(&self) -> bool {
+		self.bit_at(1)
+	}
+
+	pub fn with_getutxo(mut self, v: bool) -> Self {
+		self.set_bit(1, v);
 		self
 	}
 
-	pub fn bloom(mut self, v: bool) -> Self {
-		self.bloom = v;
+	pub fn bloom(&self) -> bool {
+		self.bit_at(2)
+	}
+
+	pub fn with_bloom(mut self, v: bool) -> Self {
+		self.set_bit(2, v);
 		self
 	}
 
-	pub fn witness(mut self, v: bool) -> Self {
-		self.witness = v;
+	pub fn witness(&self) -> bool {
+		self.bit_at(3)
+	}
+
+	pub fn with_witness(mut self, v: bool) -> Self {
+		self.set_bit(3, v);
 		self
 	}
 
-	pub fn xthin(mut self, v: bool) -> Self {
-		self.xthin = v;
+	pub fn xthin(&self) -> bool {
+		self.bit_at(4)
+	}
+
+	pub fn with_xthin(mut self, v: bool) -> Self {
+		self.set_bit(4, v);
 		self
+		}
+
+	fn set_bit(&mut self, bit: usize, bit_value: bool) {
+		if bit_value {
+			self.0 |= 1 << bit
+		} else {
+			self.0 &= !(1 << bit)
+		}
+	}
+
+	fn bit_at(&self, bit: usize) -> bool {
+		self.0 & (1 << bit) != 0
 	}
 }
 
 impl Serializable for ServiceFlags {
 	fn serialize(&self, stream: &mut Stream) {
-		stream.append(&u64::from(self));
+		stream.append(&self.0);
 	}
 }
 
 impl Deserializable for ServiceFlags {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		reader.read().map(|v: u64| v.into())
+		reader.read().map(ServiceFlags)
 	}
 }
