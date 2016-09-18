@@ -53,8 +53,8 @@ impl Serializable for IpAddress {
 		match self.0 {
 			net::IpAddr::V4(address) => {
 				stream
-					.append_bytes(&[0u8; 12])
-					.append_bytes(&address.octets());
+					.append_slice(&[0u8; 12])
+					.append_slice(&address.octets());
 			},
 			net::IpAddr::V6(address) => {
 				for segment in &address.segments() {
@@ -67,9 +67,9 @@ impl Serializable for IpAddress {
 
 impl Deserializable for IpAddress {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let mut bytes = try!(reader.read_bytes(12));
+		let mut bytes = try!(reader.read_slice(12));
 		if bytes == &[0u8; 12] {
-			let address = try!(reader.read_bytes(4));
+			let address = try!(reader.read_slice(4));
 			let address = net::Ipv4Addr::new(address[0], address[1], address[2], address[3]);
 			Ok(IpAddress(net::IpAddr::V4(address)))
 		} else {

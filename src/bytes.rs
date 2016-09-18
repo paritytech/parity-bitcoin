@@ -57,14 +57,14 @@ impl Serializable for Bytes {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&CompactInteger::from(self.0.len()))
-			.append_bytes(&self.0);
+			.append_slice(&self.0);
 	}
 }
 
 impl Deserializable for Bytes {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
 		let len = try!(reader.read::<CompactInteger>());
-		reader.read_bytes(len.into()).map(|b| Bytes(b.to_vec()))
+		reader.read_slice(len.into()).map(|b| Bytes(b.to_vec()))
 	}
 }
 

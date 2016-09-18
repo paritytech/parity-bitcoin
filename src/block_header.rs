@@ -28,8 +28,8 @@ impl Serializable for BlockHeader {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&self.version)
-			.append_bytes(&self.previous_header_hash)
-			.append_bytes(&self.merkle_root_hash)
+			.append_slice(&self.previous_header_hash)
+			.append_slice(&self.merkle_root_hash)
 			.append(&self.time)
 			.append(&self.nbits)
 			.append(&self.nonce);
@@ -40,9 +40,9 @@ impl Deserializable for BlockHeader {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
 		let version = try!(reader.read());
 		let mut previous_header_hash = [0u8; 32];
-		previous_header_hash.copy_from_slice(try!(reader.read_bytes(32)));
-		let mut merkle_root_hash = [0u8; 32]; 
-		merkle_root_hash.copy_from_slice(try!(reader.read_bytes(32)));
+		previous_header_hash.copy_from_slice(try!(reader.read_slice(32)));
+		let mut merkle_root_hash = [0u8; 32];
+		merkle_root_hash.copy_from_slice(try!(reader.read_slice(32)));
 		let time = try!(reader.read());
 		let nbits = try!(reader.read());
 		let nonce = try!(reader.read());

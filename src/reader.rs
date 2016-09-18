@@ -55,7 +55,7 @@ impl<'a> Reader<'a> {
 		T::deserialize(self)
 	}
 
-	pub fn read_bytes(&mut self, len: usize) -> Result<&'a [u8], Error> {
+	pub fn read_slice(&mut self, len: usize) -> Result<&'a [u8], Error> {
 		if self.read + len > self.buffer.len() {
 			return Err(Error::UnexpectedEnd);
 		}
