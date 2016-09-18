@@ -1,5 +1,5 @@
 //! Stream used for serialization.
-use std::io::Write;
+use std::io::{self, Write};
 use byteorder::{LittleEndian, WriteBytesExt};
 
 pub fn serialize(t: &Serializable) -> Vec<u8> {
@@ -9,7 +9,7 @@ pub fn serialize(t: &Serializable) -> Vec<u8> {
 }
 
 pub trait Serializable {
-	/// Serialize the struct and appends it to the end of stream. 
+	/// Serialize the struct and appends it to the end of stream.
 	fn serialize(&self, s: &mut Stream);
 }
 
@@ -20,7 +20,7 @@ pub struct Stream {
 }
 
 impl Stream {
-	/// Serializes the struct and appends it to the end of stream. 
+	/// Serializes the struct and appends it to the end of stream.
 	pub fn append(&mut self, t: &Serializable) -> &mut Self {
 		t.serialize(self);
 		self
@@ -47,38 +47,50 @@ impl Stream {
 	}
 }
 
+impl Write for Stream {
+	#[inline]
+	fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+		self.buffer.write(buf)
+	}
+
+	#[inline]
+	fn flush(&mut self) -> Result<(), io::Error> {
+		self.buffer.flush()
+	}
+}
+
 impl Serializable for i32 {
 	#[inline]
 	fn serialize(&self, s: &mut Stream) {
-		s.buffer.write_i32::<LittleEndian>(*self).unwrap();
+		s.write_i32::<LittleEndian>(*self).unwrap();
 	}
 }
 
 impl Serializable for u8 {
 	#[inline]
 	fn serialize(&self, s: &mut Stream) {
-		s.buffer.write_u8(*self).unwrap();
+		s.write_u8(*self).unwrap();
 	}
 }
 
 impl Serializable for u16 {
 	#[inline]
 	fn serialize(&self, s: &mut Stream) {
-		s.buffer.write_u16::<LittleEndian>(*self).unwrap();
+		s.write_u16::<LittleEndian>(*self).unwrap();
 	}
 }
 
 impl Serializable for u32 {
 	#[inline]
 	fn serialize(&self, s: &mut Stream) {
-		s.buffer.write_u32::<LittleEndian>(*self).unwrap();
+		s.write_u32::<LittleEndian>(*self).unwrap();
 	}
 }
 
 impl Serializable for u64 {
 	#[inline]
 	fn serialize(&self, s: &mut Stream) {
-		s.buffer.write_u64::<LittleEndian>(*self).unwrap();
+		s.write_u64::<LittleEndian>(*self).unwrap();
 	}
 }
 

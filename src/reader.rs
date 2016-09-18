@@ -1,4 +1,4 @@
-
+use std::{io, cmp};
 use byteorder::{LittleEndian, ReadBytesExt};
 
 pub fn deserialize<T>(buffer: &[u8]) -> Result<T, Error> where T: Deserializable {
@@ -18,6 +18,12 @@ pub enum Error {
 	UnreadData,
 }
 
+impl From<io::Error> for Error {
+	fn from(_: io::Error) -> Self {
+		Error::UnexpectedEnd
+	}
+}
+
 pub trait Deserializable {
 	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized;
 }
@@ -25,6 +31,15 @@ pub trait Deserializable {
 pub struct Reader<'a> {
 	buffer: &'a [u8],
 	read: usize,
+}
+
+impl<'a> io::Read for Reader<'a> {
+	fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+		let to_read = cmp::min(self.buffer.len() - self.read, buf.len());
+		buf[0..to_read].copy_from_slice(&self.buffer[self.read..self.read + to_read]);
+		self.read += to_read;
+		Ok(to_read)
+	}
 }
 
 impl<'a> Reader<'a> {
@@ -68,35 +83,35 @@ impl<'a> Reader<'a> {
 impl Deserializable for i32 {
 	#[inline]
 	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-		Ok(try!(reader.read_bytes(4)).read_i32::<LittleEndian>().unwrap())
+		Ok(try!(reader.read_i32::<LittleEndian>()))
 	}
 }
 
 impl Deserializable for u8 {
 	#[inline]
 	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-		Ok(try!(reader.read_bytes(1)).read_u8().unwrap())
+		Ok(try!(reader.read_u8()))
 	}
 }
 
 impl Deserializable for u16 {
 	#[inline]
 	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-		Ok(try!(reader.read_bytes(2)).read_u16::<LittleEndian>().unwrap())
+		Ok(try!(reader.read_u16::<LittleEndian>()))
 	}
 }
 
 impl Deserializable for u32 {
 	#[inline]
 	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-		Ok(try!(reader.read_bytes(4)).read_u32::<LittleEndian>().unwrap())
+		Ok(try!(reader.read_u32::<LittleEndian>()))
 	}
 }
 
 impl Deserializable for u64 {
 	#[inline]
 	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-		Ok(try!(reader.read_bytes(8)).read_u64::<LittleEndian>().unwrap())
+		Ok(try!(reader.read_u64::<LittleEndian>()))
 	}
 }
 
