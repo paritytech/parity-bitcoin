@@ -1,4 +1,5 @@
 use std::{cmp, mem};
+use bytes::Bytes;
 use keys::{Signature, Public};
 use transaction::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
@@ -290,7 +291,7 @@ pub fn verify_script(
 }
 
 pub fn eval_script(
-	stack: &mut Stack<Vec<u8>>,
+	stack: &mut Stack<Bytes>,
 	script: &Script,
 	flags: &VerificationFlags,
 	checker: &SignatureChecker,
@@ -304,7 +305,7 @@ pub fn eval_script(
 	let mut op_count = 0;
 	let mut begincode = 0;
 	let mut exec_stack = Vec::<bool>::new();
-	let mut altstack = Stack::<Vec<u8>>::new();
+	let mut altstack = Stack::<Bytes>::new();
 
 	while pc < script.len() {
 		let executing = exec_stack.iter().all(|x| *x);
@@ -418,7 +419,7 @@ pub fn eval_script(
 			Opcode::OP_PUSHBYTES_74 |
 			Opcode::OP_PUSHBYTES_75 => {
 				if let Some(data) = instruction.data {
-					stack.push(data.to_vec());
+					stack.push(data.to_vec().into());
 				}
 			},
 			Opcode::OP_1NEGATE |
@@ -439,7 +440,7 @@ pub fn eval_script(
 			Opcode::OP_15 |
 			Opcode::OP_16 => {
 				let value = opcode as u8 - (Opcode::OP_1 as u8 - 1);
-				stack.push(Num::from(value).to_vec());
+				stack.push(Num::from(value).to_bytes());
 			},
 			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_LEFT | Opcode::OP_RIGHT |
 			Opcode::OP_INVERT | Opcode::OP_AND | Opcode::OP_OR | Opcode::OP_XOR |
@@ -576,7 +577,7 @@ pub fn eval_script(
 			},
 			Opcode::OP_DEPTH => {
 				let depth = Num::from(stack.len());
-				stack.push(depth.to_vec());
+				stack.push(depth.to_bytes());
 			},
 			Opcode::OP_DROP => {
 				try!(stack.pop());
@@ -614,7 +615,7 @@ pub fn eval_script(
 			},
 			Opcode::OP_SIZE => {
 				let n = Num::from(try!(stack.last()).len());
-				stack.push(n.to_vec());
+				stack.push(n.to_bytes());
 			},
 			Opcode::OP_EQUAL => {
 				let v1 = try!(stack.pop());
@@ -623,7 +624,7 @@ pub fn eval_script(
 					true => vec![1],
 					false => vec![0],
 				};
-				stack.push(to_push);
+				stack.push(to_push.into());
 			},
 			Opcode::OP_EQUALVERIFY => {
 				let equal = try!(stack.pop()) == try!(stack.pop());
@@ -633,57 +634,57 @@ pub fn eval_script(
 			},
 			Opcode::OP_1ADD => {
 				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)) + 1.into();
-				stack.push(n.to_vec());
+				stack.push(n.to_bytes());
 			},
 			Opcode::OP_1SUB => {
 				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)) - 1.into();
-				stack.push(n.to_vec());
+				stack.push(n.to_bytes());
 			},
 			Opcode::OP_NEGATE => {
 				let n = -try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				stack.push(n.to_vec());
+				stack.push(n.to_bytes());
 			},
 			Opcode::OP_ABS => {
 				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)).abs();
-				stack.push(n.to_vec());
+				stack.push(n.to_bytes());
 			},
 			Opcode::OP_NOT => {
 				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)).is_zero();
 				let n = Num::from(n);
-				stack.push(n.to_vec());
+				stack.push(n.to_bytes());
 			},
 			Opcode::OP_0NOTEQUAL => {
 				let n = !try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)).is_zero();
 				let n = Num::from(n);
-				stack.push(n.to_vec());
+				stack.push(n.to_bytes());
 			},
 			Opcode::OP_ADD => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				stack.push((v1 + v2).to_vec());
+				stack.push((v1 + v2).to_bytes());
 			},
 			Opcode::OP_SUB => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				stack.push((v2 - v1).to_vec());
+				stack.push((v2 - v1).to_bytes());
 			},
 			Opcode::OP_BOOLAND => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(!v1.is_zero() && !v2.is_zero());
-				stack.push(v.to_vec());
+				stack.push(v.to_bytes());
 			},
 			Opcode::OP_BOOLOR => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(!v1.is_zero() || !v2.is_zero());
-				stack.push(v.to_vec());
+				stack.push(v.to_bytes());
 			},
 			Opcode::OP_NUMEQUAL => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 == v2);
-				stack.push(v.to_vec());
+				stack.push(v.to_bytes());
 			},
 			Opcode::OP_NUMEQUALVERIFY => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
@@ -696,41 +697,41 @@ pub fn eval_script(
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 != v2);
-				stack.push(v.to_vec());
+				stack.push(v.to_bytes());
 			},
 			Opcode::OP_LESSTHAN => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 > v2);
-				stack.push(v.to_vec());
+				stack.push(v.to_bytes());
 			},
 			Opcode::OP_GREATERTHAN => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 < v2);
-				stack.push(v.to_vec());
+				stack.push(v.to_bytes());
 			},
 			Opcode::OP_LESSTHANOREQUAL => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 >= v2);
-				stack.push(v.to_vec());
+				stack.push(v.to_bytes());
 			},
 			Opcode::OP_GREATERTHANOREQUAL => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v = Num::from(v1 <= v2);
-				stack.push(v.to_vec());
+				stack.push(v.to_bytes());
 			},
 			Opcode::OP_MIN => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				stack.push(cmp::min(v1, v2).to_vec());
+				stack.push(cmp::min(v1, v2).to_bytes());
 			},
 			Opcode::OP_MAX => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				stack.push(cmp::max(v1, v2).to_vec());
+				stack.push(cmp::max(v1, v2).to_bytes());
 			},
 			Opcode::OP_WITHIN => {
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
@@ -740,27 +741,27 @@ pub fn eval_script(
 					true => vec![1],
 					false => vec![0],
 				};
-				stack.push(to_push);
+				stack.push(to_push.into());
 			},
 			Opcode::OP_RIPEMD160 => {
 				let v = ripemd160(&try!(stack.pop()));
-				stack.push(v.to_vec());
+				stack.push(v.to_vec().into());
 			},
 			Opcode::OP_SHA1 => {
 				let v = sha1(&try!(stack.pop()));
-				stack.push(v.to_vec());
+				stack.push(v.to_vec().into());
 			},
 			Opcode::OP_SHA256 => {
 				let v = sha256(&try!(stack.pop()));
-				stack.push(v.to_vec());
+				stack.push(v.to_vec().into());
 			},
 			Opcode::OP_HASH160 => {
 				let v = dhash160(&try!(stack.pop()));
-				stack.push(v.to_vec());
+				stack.push(v.to_vec().into());
 			},
 			Opcode::OP_HASH256 => {
 				let v = dhash256(&try!(stack.pop()));
-				stack.push(v.to_vec());
+				stack.push(v.to_vec().into());
 			},
 			Opcode::OP_CODESEPARATOR => {
 				begincode = pc;
@@ -776,14 +777,14 @@ pub fn eval_script(
 				try!(check_signature_encoding(&signature, flags));
 				try!(check_pubkey_encoding(&pubkey, flags));
 
-				let success = check_signature(checker, signature, pubkey, &subscript, version);
+				let success = check_signature(checker, signature.into(), pubkey.into(), &subscript, version);
 				match opcode {
 					Opcode::OP_CHECKSIG => {
 						let to_push = match success {
 							true => vec![1],
 							false => vec![0],
 						};
-						stack.push(to_push);
+						stack.push(to_push.into());
 					},
 					Opcode::OP_CHECKSIGVERIFY if !success => {
 						return Err(Error::CheckSigVerify);
@@ -827,7 +828,7 @@ pub fn eval_script(
 					try!(check_signature_encoding(&sig, flags));
 					try!(check_pubkey_encoding(&key, flags));
 
-					let ok = check_signature(checker, sig, key, &subscript, version);
+					let ok = check_signature(checker, sig.into(), key.into(), &subscript, version);
 					if ok {
 						s += 1;
 					}
@@ -846,7 +847,7 @@ pub fn eval_script(
 							true => vec![1],
 							false => vec![0],
 						};
-						stack.push(to_push);
+						stack.push(to_push.into());
 					},
 					Opcode::OP_CHECKMULTISIGVERIFY if !success => {
 						return Err(Error::CheckSigVerify);
@@ -890,6 +891,7 @@ pub fn eval_script(
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
+	use bytes::Bytes;
 	use transaction::Transaction;
 	use script::{
 		Opcode, Script, VerificationFlags, Builder, Error, Num, TransactionInputSigner,
@@ -910,15 +912,15 @@ mod tests {
 	// https://github.com/bitcoin/bitcoin/blob/d612837814020ae832499d18e6ee5eb919a87907/src/test/script_tests.cpp#L900
 	#[test]
 	fn test_push_data() {
-		let expected = vec![vec![0x5a]].into();
+		let expected: Stack<Bytes> = vec![vec![0x5a].into()].into();
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
 		let checker = NoopSignatureChecker;
 		let version = SignatureVersion::Base;
-		let direct = Script::new(vec![Opcode::OP_PUSHBYTES_1 as u8, 0x5a]);
-		let pushdata1 = Script::new(vec![Opcode::OP_PUSHDATA1 as u8, 0x1, 0x5a]);
-		let pushdata2 = Script::new(vec![Opcode::OP_PUSHDATA2 as u8, 0x1, 0, 0x5a]);
-		let pushdata4 = Script::new(vec![Opcode::OP_PUSHDATA4 as u8, 0x1, 0, 0, 0, 0x5a]);
+		let direct: Script = vec![Opcode::OP_PUSHBYTES_1 as u8, 0x5a].into();
+		let pushdata1: Script = vec![Opcode::OP_PUSHDATA1 as u8, 0x1, 0x5a].into();
+		let pushdata2: Script = vec![Opcode::OP_PUSHDATA2 as u8, 0x1, 0, 0x5a].into();
+		let pushdata4: Script = vec![Opcode::OP_PUSHDATA4 as u8, 0x1, 0, 0, 0, 0x5a].into();
 
 		let mut direct_stack = Stack::new();
 		let mut pushdata1_stack = Stack::new();
@@ -935,7 +937,7 @@ mod tests {
 		assert_eq!(pushdata4_stack, expected);
 	}
 
-	fn basic_test(script: &Script, expected: Result<bool, Error>, expected_stack: Vec<Vec<u8>>) {
+	fn basic_test(script: &Script, expected: Result<bool, Error>, expected_stack: Stack<Bytes>) {
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
 		let checker = NoopSignatureChecker;
@@ -943,7 +945,7 @@ mod tests {
 		let mut stack = Stack::new();
 		assert_eq!(eval_script(&mut stack, script, &flags, &checker, version), expected);
 		if expected.is_ok() {
-			assert_eq!(stack, expected_stack.into());
+			assert_eq!(stack, expected_stack);
 		}
 	}
 
@@ -955,7 +957,7 @@ mod tests {
 			.push_opcode(Opcode::OP_EQUAL)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![vec![1]];
+		let stack = vec![vec![1].into()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -967,7 +969,7 @@ mod tests {
 			.push_opcode(Opcode::OP_EQUAL)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![vec![0]];
+		let stack = vec![vec![0].into()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -978,7 +980,7 @@ mod tests {
 			.push_opcode(Opcode::OP_EQUAL)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -989,7 +991,7 @@ mod tests {
 			.push_opcode(Opcode::OP_EQUALVERIFY)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![];
+		let stack = Stack::default();
 		basic_test(&script, result, stack);
 	}
 
@@ -1001,7 +1003,7 @@ mod tests {
 			.push_opcode(Opcode::OP_EQUALVERIFY)
 			.into_script();
 		let result = Err(Error::EqualVerify);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1011,7 +1013,7 @@ mod tests {
 			.push_opcode(Opcode::OP_EQUALVERIFY)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1021,7 +1023,7 @@ mod tests {
 			.push_opcode(Opcode::OP_SIZE)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![vec![0x12, 0x34], vec![0x2]];
+		let stack = vec![vec![0x12, 0x34].into(), vec![0x2].into()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1032,7 +1034,7 @@ mod tests {
 			.push_opcode(Opcode::OP_SIZE)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![vec![], vec![]];
+		let stack = vec![vec![].into(), vec![].into()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1042,7 +1044,7 @@ mod tests {
 			.push_opcode(Opcode::OP_SIZE)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1052,7 +1054,7 @@ mod tests {
 			.push_opcode(Opcode::OP_HASH256)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec!["9595c9df90075148eb06860365df33584b75bff782a510c6cd4883a419833d50".from_hex().unwrap()];
+		let stack = vec!["9595c9df90075148eb06860365df33584b75bff782a510c6cd4883a419833d50".into()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1062,7 +1064,7 @@ mod tests {
 			.push_opcode(Opcode::OP_HASH256)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1072,7 +1074,7 @@ mod tests {
 			.push_opcode(Opcode::OP_RIPEMD160)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec!["108f07b8382412612c048d07d13f814118445acd".from_hex().unwrap()];
+		let stack = vec!["108f07b8382412612c048d07d13f814118445acd".into()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1082,7 +1084,7 @@ mod tests {
 			.push_opcode(Opcode::OP_RIPEMD160)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1092,7 +1094,7 @@ mod tests {
 			.push_opcode(Opcode::OP_SHA1)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec!["aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".from_hex().unwrap()];
+		let stack = vec!["aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".into()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1102,7 +1104,7 @@ mod tests {
 			.push_opcode(Opcode::OP_SHA1)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1112,7 +1114,7 @@ mod tests {
 			.push_opcode(Opcode::OP_SHA256)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec!["2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".from_hex().unwrap()];
+		let stack = vec!["2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".into()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1122,7 +1124,7 @@ mod tests {
 			.push_opcode(Opcode::OP_SHA256)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1132,7 +1134,7 @@ mod tests {
 			.push_opcode(Opcode::OP_1ADD)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(6).to_vec()];
+		let stack = vec![Num::from(6).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1142,7 +1144,7 @@ mod tests {
 			.push_opcode(Opcode::OP_1ADD)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1152,7 +1154,7 @@ mod tests {
 			.push_opcode(Opcode::OP_1SUB)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(4).to_vec()];
+		let stack = vec![Num::from(4).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1162,7 +1164,7 @@ mod tests {
 			.push_opcode(Opcode::OP_1SUB)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1172,7 +1174,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NEGATE)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(-5).to_vec()];
+		let stack = vec![Num::from(-5).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1183,7 +1185,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NEGATE)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(5).to_vec()];
+		let stack = vec![Num::from(5).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1193,7 +1195,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NEGATE)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1203,7 +1205,7 @@ mod tests {
 			.push_opcode(Opcode::OP_ABS)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(5).to_vec()];
+		let stack = vec![Num::from(5).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1214,7 +1216,7 @@ mod tests {
 			.push_opcode(Opcode::OP_ABS)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(5).to_vec()];
+		let stack = vec![Num::from(5).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1224,7 +1226,7 @@ mod tests {
 			.push_opcode(Opcode::OP_ABS)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1234,7 +1236,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NOT)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1245,7 +1247,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NOT)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1255,7 +1257,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NOT)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1265,7 +1267,7 @@ mod tests {
 			.push_opcode(Opcode::OP_0NOTEQUAL)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1276,7 +1278,7 @@ mod tests {
 			.push_opcode(Opcode::OP_0NOTEQUAL)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1286,7 +1288,7 @@ mod tests {
 			.push_opcode(Opcode::OP_0NOTEQUAL)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1297,7 +1299,7 @@ mod tests {
 			.push_opcode(Opcode::OP_ADD)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(5).to_vec()];
+		let stack = vec![Num::from(5).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1308,7 +1310,7 @@ mod tests {
 			.push_opcode(Opcode::OP_ADD)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1319,7 +1321,7 @@ mod tests {
 			.push_opcode(Opcode::OP_SUB)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1330,7 +1332,7 @@ mod tests {
 			.push_opcode(Opcode::OP_SUB)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1341,7 +1343,7 @@ mod tests {
 			.push_opcode(Opcode::OP_BOOLAND)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1353,7 +1355,7 @@ mod tests {
 			.push_opcode(Opcode::OP_BOOLAND)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1365,7 +1367,7 @@ mod tests {
 			.push_opcode(Opcode::OP_BOOLAND)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1377,7 +1379,7 @@ mod tests {
 			.push_opcode(Opcode::OP_BOOLAND)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1388,7 +1390,7 @@ mod tests {
 			.push_opcode(Opcode::OP_BOOLAND)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1399,7 +1401,7 @@ mod tests {
 			.push_opcode(Opcode::OP_BOOLOR)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1411,7 +1413,7 @@ mod tests {
 			.push_opcode(Opcode::OP_BOOLOR)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1423,7 +1425,7 @@ mod tests {
 			.push_opcode(Opcode::OP_BOOLOR)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1435,7 +1437,7 @@ mod tests {
 			.push_opcode(Opcode::OP_BOOLOR)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1446,7 +1448,7 @@ mod tests {
 			.push_opcode(Opcode::OP_BOOLOR)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1457,7 +1459,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NUMEQUAL)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1469,7 +1471,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NUMEQUAL)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1480,7 +1482,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NUMEQUAL)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1491,8 +1493,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NUMEQUALVERIFY)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![];
-		basic_test(&script, result, stack);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1503,8 +1504,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NUMEQUALVERIFY)
 			.into_script();
 		let result = Err(Error::NumEqualVerify);
-		let stack = vec![];
-		basic_test(&script, result, stack);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1514,8 +1514,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NUMEQUALVERIFY)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		let stack = vec![];
-		basic_test(&script, result, stack);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1526,7 +1525,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NUMNOTEQUAL)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1538,7 +1537,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NUMNOTEQUAL)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1549,7 +1548,7 @@ mod tests {
 			.push_opcode(Opcode::OP_NUMNOTEQUAL)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1560,7 +1559,7 @@ mod tests {
 			.push_opcode(Opcode::OP_LESSTHAN)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1572,7 +1571,7 @@ mod tests {
 			.push_opcode(Opcode::OP_LESSTHAN)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1583,7 +1582,7 @@ mod tests {
 			.push_opcode(Opcode::OP_LESSTHAN)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1594,7 +1593,7 @@ mod tests {
 			.push_opcode(Opcode::OP_GREATERTHAN)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1606,7 +1605,7 @@ mod tests {
 			.push_opcode(Opcode::OP_GREATERTHAN)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1617,7 +1616,7 @@ mod tests {
 			.push_opcode(Opcode::OP_GREATERTHAN)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1628,7 +1627,7 @@ mod tests {
 			.push_opcode(Opcode::OP_LESSTHANOREQUAL)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1640,7 +1639,7 @@ mod tests {
 			.push_opcode(Opcode::OP_LESSTHANOREQUAL)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1652,7 +1651,7 @@ mod tests {
 			.push_opcode(Opcode::OP_LESSTHANOREQUAL)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1663,7 +1662,7 @@ mod tests {
 			.push_opcode(Opcode::OP_LESSTHANOREQUAL)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1674,7 +1673,7 @@ mod tests {
 			.push_opcode(Opcode::OP_GREATERTHANOREQUAL)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1686,7 +1685,7 @@ mod tests {
 			.push_opcode(Opcode::OP_GREATERTHANOREQUAL)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(1).to_vec()];
+		let stack = vec![Num::from(1).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1698,7 +1697,7 @@ mod tests {
 			.push_opcode(Opcode::OP_GREATERTHANOREQUAL)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![Num::from(0).to_vec()];
+		let stack = vec![Num::from(0).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1709,7 +1708,7 @@ mod tests {
 			.push_opcode(Opcode::OP_GREATERTHANOREQUAL)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1720,7 +1719,7 @@ mod tests {
 			.push_opcode(Opcode::OP_MIN)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(2).to_vec()];
+		let stack = vec![Num::from(2).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1732,7 +1731,7 @@ mod tests {
 			.push_opcode(Opcode::OP_MIN)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(3).to_vec()];
+		let stack = vec![Num::from(3).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1743,7 +1742,7 @@ mod tests {
 			.push_opcode(Opcode::OP_MIN)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1754,7 +1753,7 @@ mod tests {
 			.push_opcode(Opcode::OP_MAX)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(3).to_vec()];
+		let stack = vec![Num::from(3).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1766,7 +1765,7 @@ mod tests {
 			.push_opcode(Opcode::OP_MAX)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![Num::from(4).to_vec()];
+		let stack = vec![Num::from(4).to_bytes()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1777,7 +1776,7 @@ mod tests {
 			.push_opcode(Opcode::OP_MAX)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	#[test]
@@ -1789,7 +1788,7 @@ mod tests {
 			.push_opcode(Opcode::OP_WITHIN)
 			.into_script();
 		let result = Ok(true);
-		let stack = vec![vec![1]];
+		let stack = vec![vec![1].into()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1802,7 +1801,7 @@ mod tests {
 			.push_opcode(Opcode::OP_WITHIN)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![vec![0]];
+		let stack = vec![vec![0].into()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -1814,7 +1813,7 @@ mod tests {
 			.push_opcode(Opcode::OP_WITHIN)
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
-		basic_test(&script, result, vec![]);
+		basic_test(&script, result, Stack::default());
 	}
 
 	// https://blockchain.info/rawtx/3f285f083de7c0acabd9f106a43ec42687ab0bebe2e6f0d529db696794540fea

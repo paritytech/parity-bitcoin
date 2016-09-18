@@ -1,5 +1,6 @@
 //! Script numeric.
 use std::ops;
+use bytes::Bytes;
 use script::Error;
 
 /// Numeric opcodes (OP_1ADD, etc) are restricted to operating on 4-byte integers.
@@ -113,9 +114,9 @@ impl Num {
 		}
 	}
 
-	pub fn to_vec(&self) -> Vec<u8> {
+	pub fn to_bytes(&self) -> Bytes {
 		if self.value == 0 {
-			return vec![];
+			return Bytes::default();
 		}
 
 		let mut result = vec![];
@@ -150,7 +151,7 @@ impl Num {
 			result[rlen - 1] |= 0x80;
 		}
 
-		result
+		result.into()
 	}
 
 	pub fn is_negative(&self) -> bool {

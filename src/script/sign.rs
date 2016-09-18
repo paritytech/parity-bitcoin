@@ -1,4 +1,5 @@
 use script::{Script, Builder};
+use bytes::Bytes;
 use keys::KeyPair;
 use crypto::dhash256;
 use hash::{H256, h256_from_u8};
@@ -146,7 +147,7 @@ impl TransactionInputSigner {
 			let input = &self.inputs[input_index];
 			vec![TransactionInput {
 				previous_output: input.previous_output.clone(),
-				script_sig: script_pubkey.to_vec(),
+				script_sig: script_pubkey.to_bytes(),
 				sequence: input.sequence,
 			}]
 		} else {
@@ -155,8 +156,8 @@ impl TransactionInputSigner {
 				.map(|(n, input)| TransactionInput {
 					previous_output: input.previous_output.clone(),
 					script_sig: match n == input_index {
-						true => script_pubkey.to_vec(),
-						false => Vec::new(),
+						true => script_pubkey.to_bytes(),
+						false => Bytes::default(),
 					},
 					sequence: match sighash.base {
 						SighashBase::Single | SighashBase::None if n != input_index => 0,
@@ -215,7 +216,7 @@ impl TransactionInputSigner {
 		TransactionInput {
 			previous_output: unsigned_input.previous_output.clone(),
 			sequence: unsigned_input.sequence,
-			script_sig: script_sig.to_vec(),
+			script_sig: script_sig.to_bytes(),
 		}
 	}
 }
@@ -223,6 +224,7 @@ impl TransactionInputSigner {
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
+	use bytes::Bytes;
 	use hash::h256_from_str;
 	use keys::{KeyPair, Private, Address};
 	use transaction::{OutPoint, TransactionOutput, Transaction};
@@ -240,7 +242,7 @@ mod tests {
 		let from: Address = "1MMMMSUb1piy2ufrSguNUdFmAcvqrQF8M5".into();
 		let to: Address = "1KKKK6N21XKo48zWKuQKXdvSsCf95ibHFa".into();
 		let previous_output = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
-		let current_output = "76a914c8e90996c7c6080ee06284600c684ed904d14c5c88ac".from_hex().unwrap();
+		let current_output: Bytes = "76a914c8e90996c7c6080ee06284600c684ed904d14c5c88ac".into();
 		let value = 91234;
 		let expected_signature_hash = "5fda68729a6312e17e641e9a49fac2a4a6a680126610af573caab270d232f850".from_hex().unwrap();
 

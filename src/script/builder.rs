@@ -1,8 +1,9 @@
+use bytes::Bytes;
 use script::{Opcode, Script, Num};
 
 #[derive(Default)]
 pub struct Builder {
-	data: Vec<u8>,
+	data: Bytes,
 }
 
 impl Builder {
@@ -21,7 +22,7 @@ impl Builder {
 	}
 
 	pub fn push_num(self, num: Num) -> Self {
-		self.push_data(&num.to_vec())
+		self.push_data(&num.to_bytes())
 	}
 
 	pub fn push_data(mut self, data: &[u8]) -> Self {

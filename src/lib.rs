@@ -15,6 +15,7 @@ pub mod script;
 
 pub mod block;
 pub mod block_header;
+pub mod bytes;
 pub mod compact_integer;
 pub mod crypto;
 pub mod hash;

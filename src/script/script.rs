@@ -1,7 +1,8 @@
 //! Serialized script, used inside transaction inputs and outputs.
 
 use std::{fmt, ops};
-use hex::{ToHex, FromHex};
+use bytes::Bytes;
+use hex::ToHex;
 use script::{Opcode, Error};
 
 /// Maximum number of bytes pushable to the stack
@@ -31,29 +32,39 @@ pub enum ScriptType {
 }
 
 /// Serialized script, used inside transaction inputs and outputs.
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct Script {
-	data: Vec<u8>,
+	data: Bytes,
 }
 
 impl From<&'static str> for Script {
 	fn from(s: &'static str) -> Self {
-		Script::new(s.from_hex().unwrap())
+		Script::new(s.into())
+	}
+}
+
+impl From<Bytes> for Script {
+	fn from(s: Bytes) -> Self {
+		Script::new(s)
 	}
 }
 
 impl From<Vec<u8>> for Script {
-	fn from(s: Vec<u8>) -> Self {
-		Script::new(s)
+	fn from(v: Vec<u8>) -> Self {
+		Script::new(v.into())
 	}
 }
 
 impl Script {
 	/// Script constructor.
-	pub fn new(data: Vec<u8>) -> Self {
+	pub fn new(data: Bytes) -> Self {
 		Script {
 			data: data,
 		}
+	}
+
+	pub fn to_bytes(&self) -> Bytes {
+		self.data.clone()
 	}
 
 	/// Extra-fast test for pay-to-public-key-hash (P2PKH) scripts.
@@ -150,7 +161,7 @@ impl Script {
 	}
 
 	pub fn subscript(&self, from: usize) -> Script {
-		Script::new(self.data[from..].to_vec())
+		self.data[from..].to_vec().into()
 	}
 
 	pub fn find_and_delete(&self, data: &[u8]) -> Script {
@@ -160,7 +171,7 @@ impl Script {
 		let end = self.data.len();
 
 		if len > end {
-			return Script::new(self.data.to_vec());
+			return self.data.to_vec().into()
 		}
 
 		while current < end - len {
@@ -173,7 +184,7 @@ impl Script {
 		}
 
 		result.extend_from_slice(&self.data[current..]);
-		Script::new(result)
+		result.into()
 	}
 
 	pub fn get_opcode(&self, position: usize) -> Result<Opcode, Error> {
@@ -258,7 +269,7 @@ impl Script {
 			}
 		}
 
-		Script::new(result)
+		result.into()
 	}
 
 	/// Returns true if script contains only push opcodes
@@ -323,12 +334,6 @@ fn read_usize(data: &[u8], size: usize) -> Result<usize, Error> {
 	Ok(result)
 }
 
-impl fmt::Debug for Script {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		f.write_str(&self.data.to_hex())
-	}
-}
-
 impl fmt::Display for Script {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		let mut pc = 0;
@@ -353,24 +358,23 @@ impl fmt::Display for Script {
 
 #[cfg(test)]
 mod tests {
-	use hex::FromHex;
 	use script::{Builder, Opcode};
 	use super::{Script, ScriptType};
 
 	#[test]
 	fn test_is_pay_to_script_hash() {
-		let data = "a9143b80842f4ea32806ce5e723a255ddd6490cfd28d87".from_hex().unwrap();
-		let data2 = "a9143b80842f4ea32806ce5e723a255ddd6490cfd28d88".from_hex().unwrap();
-		assert!(Script::new(data).is_pay_to_script_hash());
-		assert!(!Script::new(data2).is_pay_to_script_hash());
+		let script: Script = "a9143b80842f4ea32806ce5e723a255ddd6490cfd28d87".into();
+		let script2: Script = "a9143b80842f4ea32806ce5e723a255ddd6490cfd28d88".into();
+		assert!(script.is_pay_to_script_hash());
+		assert!(!script2.is_pay_to_script_hash());
 	}
 
 	#[test]
 	fn test_is_pay_to_witness_script_hash() {
-		let data = "00203b80842f4ea32806ce5e723a255ddd6490cfd28dac38c58bf9254c0577330693".from_hex().unwrap();
-		let data2 = "01203b80842f4ea32806ce5e723a255ddd6490cfd28dac38c58bf9254c0577330693".from_hex().unwrap();
-		assert!(Script::new(data).is_pay_to_witness_script_hash());
-		assert!(!Script::new(data2).is_pay_to_witness_script_hash());
+		let script: Script = "00203b80842f4ea32806ce5e723a255ddd6490cfd28dac38c58bf9254c0577330693".into();
+		let script2: Script = "01203b80842f4ea32806ce5e723a255ddd6490cfd28dac38c58bf9254c0577330693".into();
+		assert!(script.is_pay_to_witness_script_hash());
+		assert!(!script2.is_pay_to_witness_script_hash());
 	}
 
 	#[test]
@@ -382,7 +386,7 @@ mod tests {
 			.push_num(2.into())
 			.push_opcode(Opcode::OP_ADD)
 			.into_script();
-		let s = "0103010293";
+		let s = "Script { data: 0103010293 }";
 		let mut res = String::new();
 		write!(&mut res, "{:?}", script).unwrap();
 		assert_eq!(s.to_string(), res);

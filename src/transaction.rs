@@ -3,6 +3,7 @@
 //! https://en.bitcoin.it/wiki/Protocol_documentation#tx
 
 use hex::FromHex;
+use bytes::Bytes;
 use reader::{Deserializable, Reader, Error as ReaderError, deserialize};
 use crypto::dhash256;
 use hash::H256;
@@ -69,7 +70,7 @@ impl OutPoint {
 #[derive(Debug)]
 pub struct TransactionInput {
 	pub previous_output: OutPoint,
-	pub script_sig: Vec<u8>,
+	pub script_sig: Bytes,
 	pub sequence: u32,
 }
 
@@ -77,8 +78,7 @@ impl Serializable for TransactionInput {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&self.previous_output)
-			.append(&CompactInteger::from(self.script_sig.len()))
-			.append_bytes(&self.script_sig)
+			.append(&self.script_sig)
 			.append(&self.sequence);
 	}
 }
@@ -86,8 +86,7 @@ impl Serializable for TransactionInput {
 impl Deserializable for TransactionInput {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
 		let previous_output = try!(reader.read());
-		let script_sig_len = try!(reader.read::<CompactInteger>());
-		let script_sig = try!(reader.read_bytes(script_sig_len.into())).to_vec();
+		let script_sig = try!(reader.read());
 		let sequence = try!(reader.read());
 
 		let result = TransactionInput {
@@ -117,23 +116,21 @@ impl TransactionInput {
 #[derive(Debug, Clone)]
 pub struct TransactionOutput {
 	pub value: u64,
-	pub script_pubkey: Vec<u8>,
+	pub script_pubkey: Bytes,
 }
 
 impl Serializable for TransactionOutput {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&self.value)
-			.append(&CompactInteger::from(self.script_pubkey.len()))
-			.append_bytes(&self.script_pubkey);
+			.append(&self.script_pubkey);
 	}
 }
 
 impl Deserializable for TransactionOutput {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
 		let value = try!(reader.read());
-		let script_pubkey_len = try!(reader.read::<CompactInteger>());
-		let script_pubkey = try!(reader.read_bytes(script_pubkey_len.into())).to_vec();
+		let script_pubkey = try!(reader.read());
 
 		let result = TransactionOutput {
 			value: value,
@@ -148,7 +145,7 @@ impl Default for TransactionOutput {
 	fn default() -> Self {
 		TransactionOutput {
 			value: 0xffffffffffffffffu64,
-			script_pubkey: Vec::new(),
+			script_pubkey: Bytes::default(),
 		}
 	}
 }
@@ -243,10 +240,10 @@ mod tests {
 		assert_eq!(t.outputs.len(), 1);
 		let tx_input = &t.inputs[0];
 		assert_eq!(tx_input.sequence, 4294967295);
-		assert_eq!(tx_input.script_sig, "48304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501".from_hex().unwrap());
+		assert_eq!(tx_input.script_sig, "48304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501".into());
 		let tx_output = &t.outputs[0];
 		assert_eq!(tx_output.value, 5000000000);
-		assert_eq!(tx_output.script_pubkey, "76a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac".from_hex().unwrap());
+		assert_eq!(tx_output.script_pubkey, "76a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac".into());
 	}
 
 	#[test]
