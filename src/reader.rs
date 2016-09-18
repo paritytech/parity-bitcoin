@@ -1,5 +1,6 @@
 use std::{io, cmp};
 use byteorder::{LittleEndian, ReadBytesExt};
+use compact_integer::CompactInteger;
 
 pub fn deserialize<T>(buffer: &[u8]) -> Result<T, Error> where T: Deserializable {
 	let mut reader = Reader::new(buffer);
@@ -65,7 +66,8 @@ impl<'a> Reader<'a> {
 		Ok(result)
 	}
 
-	pub fn read_list<T>(&mut self, len: usize) -> Result<Vec<T>, Error> where T: Deserializable {
+	pub fn read_list<T>(&mut self) -> Result<Vec<T>, Error> where T: Deserializable {
+		let len: usize = try!(self.read::<CompactInteger>()).into();
 		let mut result = vec![];
 
 		for _ in 0..len {

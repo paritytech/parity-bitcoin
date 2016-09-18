@@ -1,5 +1,4 @@
 use block_header::BlockHeader;
-use compact_integer::CompactInteger;
 use crypto::dhash256;
 use hash::H256;
 use merkle_root::merkle_root;
@@ -16,7 +15,6 @@ impl Serializable for Block {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&self.block_header)
-			.append(&CompactInteger::from(self.transactions.len()))
 			.append_list(&self.transactions);
 	}
 }
@@ -24,8 +22,7 @@ impl Serializable for Block {
 impl Deserializable for Block {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
 		let block_header = try!(reader.read());
-		let tx_len = try!(reader.read::<CompactInteger>());
-		let transactions = try!(reader.read_list(tx_len.into()));
+		let transactions = try!(reader.read_list());
 
 		let result = Block {
 			block_header: block_header,

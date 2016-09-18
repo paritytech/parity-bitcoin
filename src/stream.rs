@@ -1,6 +1,7 @@
 //! Stream used for serialization.
 use std::io::{self, Write};
 use byteorder::{LittleEndian, WriteBytesExt};
+use compact_integer::CompactInteger;
 
 pub fn serialize(t: &Serializable) -> Vec<u8> {
 	let mut stream = Stream::default();
@@ -35,6 +36,7 @@ impl Stream {
 
 	/// Appends a list of serializable structs to the end of the stream.
 	pub fn append_list<T>(&mut self, t: &[T]) -> &mut Self where T: Serializable {
+		CompactInteger::from(t.len()).serialize(self);
 		for i in t {
 			i.serialize(self);
 		}

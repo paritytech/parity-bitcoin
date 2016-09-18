@@ -8,7 +8,6 @@ use reader::{Deserializable, Reader, Error as ReaderError, deserialize};
 use crypto::dhash256;
 use hash::H256;
 use stream::{Serializable, Stream, serialize};
-use compact_integer::CompactInteger;
 
 // Below flags apply in the context of BIP 68
 // If this flag set, CTxIn::nSequence is NOT interpreted as a
@@ -172,9 +171,7 @@ impl Serializable for Transaction {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&self.version)
-			.append(&CompactInteger::from(self.inputs.len()))
 			.append_list(&self.inputs)
-			.append(&CompactInteger::from(self.outputs.len()))
 			.append_list(&self.outputs)
 			.append(&self.lock_time);
 	}
@@ -183,10 +180,8 @@ impl Serializable for Transaction {
 impl Deserializable for Transaction {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
 		let version = try!(reader.read());
-		let tx_inputs_len= try!(reader.read::<CompactInteger>());
-		let tx_inputs = try!(reader.read_list(tx_inputs_len.into()));
-		let tx_outputs_len= try!(reader.read::<CompactInteger>());
-		let tx_outputs = try!(reader.read_list(tx_outputs_len.into()));
+		let tx_inputs = try!(reader.read_list());
+		let tx_outputs = try!(reader.read_list());
 		let lock_time = try!(reader.read());
 
 		let result = Transaction {
