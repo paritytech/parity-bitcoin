@@ -1,7 +1,9 @@
 use std::{net, str};
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
-use stream::{Stream, Serializable};
-use reader::{Reader, Deserializable, Error as ReaderError};
+use ser::{
+	Stream, Serializable,
+	Reader, Deserializable, Error as ReaderError
+};
 use net::ServiceFlags;
 
 #[derive(Debug, PartialEq)]
@@ -117,8 +119,7 @@ impl Deserializable for NetAddress {
 
 #[cfg(test)]
 mod tests {
-	use stream::serialize;
-	use reader::deserialize;
+	use ser::{serialize, deserialize};
 	use net::ServiceFlags;
 	use super::NetAddress;
 

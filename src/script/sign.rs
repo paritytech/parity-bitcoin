@@ -1,10 +1,10 @@
 use script::{Script, Builder};
-use bytes::Bytes;
+use primitives::Bytes;
 use keys::KeyPair;
 use crypto::dhash256;
 use hash::{H256, h256_from_u8};
-use stream::Stream;
-use transaction::{Transaction, TransactionOutput, OutPoint, TransactionInput};
+use ser::Stream;
+use chain::{Transaction, TransactionOutput, OutPoint, TransactionInput};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SignatureVersion {
@@ -224,10 +224,10 @@ impl TransactionInputSigner {
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
-	use bytes::Bytes;
+	use primitives::Bytes;
 	use hash::h256_from_str;
 	use keys::{KeyPair, Private, Address};
-	use transaction::{OutPoint, TransactionOutput, Transaction};
+	use chain::{OutPoint, TransactionOutput, Transaction};
 	use script::Script;
 	use super::{UnsignedTransactionInput, TransactionInputSigner, SighashBase};
 

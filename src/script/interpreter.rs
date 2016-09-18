@@ -1,7 +1,7 @@
 use std::{cmp, mem};
-use bytes::Bytes;
+use primitives::Bytes;
 use keys::{Signature, Public};
-use transaction::SEQUENCE_LOCKTIME_DISABLE_FLAG;
+use chain::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
 use script::{
 	script, Script, Num, VerificationFlags, Opcode, Error,
@@ -891,8 +891,8 @@ pub fn eval_script(
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
-	use bytes::Bytes;
-	use transaction::Transaction;
+	use primitives::Bytes;
+	use chain::Transaction;
 	use script::{
 		Opcode, Script, VerificationFlags, Builder, Error, Num, TransactionInputSigner,
 		NoopSignatureChecker, SignatureVersion, TransactionSignatureChecker, Stack

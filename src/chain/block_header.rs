@@ -1,6 +1,8 @@
 use std::fmt;
-use reader::{Deserializable, Reader, Error as ReaderError};
-use stream::{Serializable, Stream};
+use ser::{
+	Deserializable, Reader, Error as ReaderError,
+	Serializable, Stream
+};
 use hash::{H256, h256_to_str};
 
 #[derive(Debug, PartialEq)]
@@ -62,8 +64,7 @@ impl Deserializable for BlockHeader {
 
 #[cfg(test)]
 mod tests {
-	use reader::{Reader, Error as ReaderError};
-	use stream::Stream;
+	use ser::{Reader, Error as ReaderError, Stream};
 	use super::BlockHeader;
 
 	#[test]

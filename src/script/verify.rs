@@ -1,6 +1,6 @@
 use keys::{Public, Signature};
 use script::{script, SignatureVersion, Script, TransactionInputSigner, Num};
-use transaction::{
+use chain::{
 	SEQUENCE_FINAL, SEQUENCE_LOCKTIME_DISABLE_FLAG,
 	SEQUENCE_LOCKTIME_MASK, SEQUENCE_LOCKTIME_TYPE_FLAG
 };

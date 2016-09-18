@@ -3,11 +3,13 @@
 //! https://en.bitcoin.it/wiki/Protocol_documentation#tx
 
 use hex::FromHex;
-use bytes::Bytes;
-use reader::{Deserializable, Reader, Error as ReaderError, deserialize};
+use primitives::Bytes;
+use ser::{
+	Deserializable, Reader, Error as ReaderError, deserialize,
+	Serializable, Stream, serialize
+};
 use crypto::dhash256;
 use hash::H256;
-use stream::{Serializable, Stream, serialize};
 
 // Below flags apply in the context of BIP 68
 // If this flag set, CTxIn::nSequence is NOT interpreted as a
@@ -218,7 +220,7 @@ impl Transaction {
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
-	use reader::deserialize;
+	use ser::deserialize;
 	use hash::h256_from_str;
 	use super::Transaction;
 

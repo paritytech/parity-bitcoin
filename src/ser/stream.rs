@@ -1,7 +1,8 @@
 //! Stream used for serialization.
 use std::io::{self, Write};
 use byteorder::{LittleEndian, WriteBytesExt};
-use compact_integer::CompactInteger;
+use primitives::Bytes;
+use ser::compact_integer::CompactInteger;
 
 pub fn serialize(t: &Serializable) -> Vec<u8> {
 	let mut stream = Stream::default();
@@ -96,9 +97,18 @@ impl Serializable for u64 {
 	}
 }
 
+impl Serializable for Bytes {
+	fn serialize(&self, stream: &mut Stream) {
+		stream
+			.append(&CompactInteger::from(self.len()))
+			.append_slice(&self);
+	}
+}
+
 #[cfg(test)]
 mod tests {
-	use super::Stream;
+	use primitives::Bytes;
+	use super::{Stream, serialize};
 
 	#[test]
 	fn test_stream_append() {
@@ -119,4 +129,12 @@ mod tests {
 
 		assert_eq!(expected, stream.out());
 	}
+
+	#[test]
+	fn test_bytes_serialize() {
+		let expected = vec![0x02, 0x01, 0x45];
+		let bytes: Bytes = "0145".into();
+		assert_eq!(expected, serialize(&bytes));
+	}
+
 }

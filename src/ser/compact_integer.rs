@@ -2,8 +2,10 @@
 //! https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers
 
 use std::fmt;
-use stream::{Serializable, Stream};
-use reader::{Deserializable, Reader, Error as ReaderError};
+use ser::{
+	Serializable, Stream,
+	Deserializable, Reader, Error as ReaderError
+};
 
 /// A type of variable-length integer commonly used in the Bitcoin P2P protocol and Bitcoin serialized data structures.
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
@@ -97,8 +99,7 @@ impl Deserializable for CompactInteger {
 
 #[cfg(test)]
 mod tests {
-	use reader::{Reader, Error as ReaderError};
-	use stream::Stream;
+	use ser::{Reader, Error as ReaderError, Stream};
 	use super::CompactInteger;
 
 	#[test]

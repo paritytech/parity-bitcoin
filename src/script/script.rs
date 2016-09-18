@@ -1,8 +1,8 @@
 //! Serialized script, used inside transaction inputs and outputs.
 
 use std::{fmt, ops};
-use bytes::Bytes;
 use hex::ToHex;
+use primitives::Bytes;
 use script::{Opcode, Error};
 
 /// Maximum number of bytes pushable to the stack

@@ -1,5 +1,7 @@
-use stream::{Serializable, Stream};
-use reader::{Deserializable, Reader, Error as ReaderError};
+use ser::{
+	Serializable, Stream,
+	Deserializable, Reader, Error as ReaderError
+};
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub struct ServiceFlags(u64);

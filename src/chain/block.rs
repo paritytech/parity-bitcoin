@@ -1,10 +1,11 @@
-use block_header::BlockHeader;
+use chain::{BlockHeader, Transaction};
+use chain::merkle_root::merkle_root;
 use crypto::dhash256;
 use hash::H256;
-use merkle_root::merkle_root;
-use reader::{Deserializable, Reader, Error as ReaderError};
-use stream::{Serializable, Stream, serialize};
-use transaction::Transaction;
+use ser::{
+	Deserializable, Reader, Error as ReaderError,
+	Serializable, Stream, serialize
+};
 
 pub struct Block {
 	block_header: BlockHeader,
@@ -48,7 +49,7 @@ impl Block {
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
-	use reader::deserialize;
+	use ser::deserialize;
 	use hash::h256_from_str;
 	use super::Block;
 

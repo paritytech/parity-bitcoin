@@ -1,6 +1,6 @@
 //! Script numeric.
 use std::ops;
-use bytes::Bytes;
+use primitives::Bytes;
 use script::Error;
 
 /// Numeric opcodes (OP_1ADD, etc) are restricted to operating on 4-byte integers.
