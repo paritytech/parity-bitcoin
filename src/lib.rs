@@ -18,11 +18,12 @@ extern crate rustc_serialize;
 extern crate lazy_static;
 extern crate secp256k1;
 extern crate base58;
+extern crate primitives;
 
 pub mod chain;
 pub mod keys;
 pub mod net;
-pub mod primitives;
+//pub mod primitives;
 pub mod script;
 pub mod ser;
 
