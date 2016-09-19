@@ -5,6 +5,7 @@ dependencies = [
  "base58 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitcrypto 0.1.0",
  "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "chain 0.1.0",
  "eth-secp256k1 0.5.6 (git+https://github.com/ethcore/rust-secp256k1)",
  "lazy_static 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
@@ -39,6 +40,16 @@ dependencies = [
 name = "byteorder"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "chain"
+version = "0.1.0"
+dependencies = [
+ "bitcrypto 0.1.0",
+ "primitives 0.1.0",
+ "rustc-serialize 0.3.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serialization 0.1.0",
+]
 
 [[package]]
 name = "eth-secp256k1"

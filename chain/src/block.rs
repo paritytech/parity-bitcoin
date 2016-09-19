@@ -1,12 +1,12 @@
 use hex::FromHex;
-use chain::{BlockHeader, Transaction};
-use chain::merkle_root::merkle_root;
 use crypto::dhash256;
 use hash::H256;
 use ser::{
 	Deserializable, Reader, Error as ReaderError, deserialize,
 	Serializable, Stream, serialize
 };
+use merkle_root::merkle_root;
+use {BlockHeader, Transaction};
 
 pub struct Block {
 	block_header: BlockHeader,

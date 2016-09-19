@@ -1,7 +1,15 @@
+extern crate rustc_serialize;
+extern crate primitives;
+extern crate bitcrypto as crypto;
+extern crate serialization as ser;
+
 mod block;
 mod block_header;
 mod merkle_root;
 mod transaction;
+
+pub use rustc_serialize::hex;
+pub use primitives::{hash, bytes};
 
 pub use self::block::Block;
 pub use self::block_header::BlockHeader;
