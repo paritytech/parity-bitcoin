@@ -4,12 +4,10 @@ version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 
 [dependencies]
-byteorder = "0.5"
-rustc-serialize = "0.3"
-
 bitcrypto = { path = "crypto" }
 chain = { path = "chain" }
 keys = { path = "keys" }
+net = { path = "net" }
 primitives = { path = "primitives" }
 script = { path = "script" }
 serialization = { path = "serialization" }

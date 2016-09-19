@@ -1,3 +1,6 @@
+extern crate byteorder;
+extern crate serialization as ser;
+
 mod address;
 mod service;
 

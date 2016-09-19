@@ -4,7 +4,7 @@ use ser::{
 	Stream, Serializable,
 	Reader, Deserializable, Error as ReaderError
 };
-use net::ServiceFlags;
+use ServiceFlags;
 
 #[derive(Debug, PartialEq)]
 pub struct Port(u16);
@@ -120,7 +120,7 @@ impl Deserializable for NetAddress {
 #[cfg(test)]
 mod tests {
 	use ser::{serialize, deserialize};
-	use net::ServiceFlags;
+	use ServiceFlags;
 	use super::NetAddress;
 
 	#[test]

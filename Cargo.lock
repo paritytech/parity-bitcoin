@@ -3,11 +3,10 @@ name = "pbtc"
 version = "0.1.0"
 dependencies = [
  "bitcrypto 0.1.0",
- "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "chain 0.1.0",
  "keys 0.1.0",
+ "net 0.1.0",
  "primitives 0.1.0",
- "rustc-serialize 0.3.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "script 0.1.0",
  "serialization 0.1.0",
 ]
@@ -97,6 +96,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "libc"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "net"
+version = "0.1.0"
+dependencies = [
+ "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serialization 0.1.0",
+]
 
 [[package]]
 name = "nodrop"
