@@ -134,9 +134,17 @@ pub fn dhash256(input: &[u8]) -> H256 {
 	result
 }
 
+/// Data checksum
+#[inline]
+pub fn checksum(data: &[u8]) -> [u8; 4] {
+	let mut result = [0u8; 4];
+	result.copy_from_slice(&dhash256(data)[0..4]);
+	result
+}
+
 #[cfg(test)]
 mod tests {
-	use super::{ripemd160, sha1, sha256, dhash160, dhash256};
+	use super::{ripemd160, sha1, sha256, dhash160, dhash256, checksum};
 
 	#[test]
 	fn test_ripemd160() {
@@ -172,4 +180,9 @@ mod tests {
 		let result = dhash256(b"hello");
 		assert_eq!(result, expected);
     }
+
+	#[test]
+	fn test_checksum() {
+		assert_eq!(checksum(b"hello"), [0x95, 0x95, 0xc9, 0xdf]);
+	}
 }

@@ -101,6 +101,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "net"
 version = "0.1.0"
 dependencies = [
+ "bitcrypto 0.1.0",
  "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
  "serialization 0.1.0",

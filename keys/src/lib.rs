@@ -16,7 +16,6 @@ extern crate bitcrypto as crypto;
 extern crate primitives;
 
 mod address;
-mod checksum;
 pub mod display;
 pub mod generator;
 pub mod keypair;
@@ -30,7 +29,6 @@ pub use rustc_serialize::hex;
 pub use primitives::{hash, bytes};
 
 pub use self::address::{Type, Address};
-pub use self::checksum::checksum;
 pub use self::display::DisplayLayout;
 pub use self::keypair::KeyPair;
 pub use self::error::Error;

@@ -4,9 +4,10 @@ use secp256k1::key;
 use secp256k1::Message as SecpMessage;
 use hex::ToHex;
 use base58::{ToBase58, FromBase58};
+use crypto::checksum;
 use hash::H520;
 use network::Network;
-use {Secret, DisplayLayout, checksum, Error, Message, Signature, CompactSignature, SECP256K1};
+use {Secret, DisplayLayout, Error, Message, Signature, CompactSignature, SECP256K1};
 
 #[derive(PartialEq)]
 pub struct Private {

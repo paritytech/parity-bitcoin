@@ -6,6 +6,7 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 [dependencies]
 byteorder = "0.5"
 
+bitcrypto = { path = "../crypto" }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
 
