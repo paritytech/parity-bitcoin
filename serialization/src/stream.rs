@@ -2,8 +2,9 @@
 use std::io::{self, Write};
 use byteorder::{LittleEndian, WriteBytesExt};
 use compact_integer::CompactInteger;
+use bytes::Bytes;
 
-pub fn serialize(t: &Serializable) -> Vec<u8> {
+pub fn serialize(t: &Serializable) -> Bytes {
 	let mut stream = Stream::default();
 	stream.append(t);
 	stream.out()
@@ -44,8 +45,8 @@ impl Stream {
 	}
 
 	/// Full stream.
-	pub fn out(self) -> Vec<u8> {
-		self.buffer
+	pub fn out(self) -> Bytes {
+		self.buffer.into()
 	}
 }
 
@@ -115,8 +116,8 @@ mod tests {
 			2, 0,
 			3, 0, 0, 0,
 			4, 0, 0, 0, 0, 0, 0, 0,
-		];
+		].into();
 
-		assert_eq!(expected, stream.out());
+		assert_eq!(stream.out(), expected);
 	}
 }

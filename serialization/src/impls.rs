@@ -50,14 +50,14 @@ mod tests {
 
 	#[test]
 	fn test_bytes_deserialize() {
-		let raw = vec![0x02, 0x01, 0x45];
+		let raw: Bytes = "020145".into();
 		let expected: Bytes = "0145".into();
 		assert_eq!(expected, deserialize(&raw).unwrap());
 	}
 
 	#[test]
 	fn test_bytes_serialize() {
-		let expected = vec![0x02, 0x01, 0x45];
+		let expected: Bytes = "020145".into();
 		let bytes: Bytes = "0145".into();
 		assert_eq!(expected, serialize(&bytes));
 	}

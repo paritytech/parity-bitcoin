@@ -35,8 +35,8 @@ mod	tests {
 
 	#[test]
 	fn test_port_serialize() {
-		assert_eq!(serialize(&Port::from(1)), vec![0x00, 0x01]);
-		assert_eq!(serialize(&Port::from(0x1234)), vec![0x12, 0x34]);
+		assert_eq!(serialize(&Port::from(1)), "0001".into());
+		assert_eq!(serialize(&Port::from(0x1234)), "1234".into());
 	}
 
 	#[test]

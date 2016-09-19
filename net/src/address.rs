@@ -39,11 +39,11 @@ mod tests {
 
 	#[test]
 	fn test_net_address_serialize() {
-		let expeted = vec![
+		let expected = vec![
 			0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x0a, 0x00, 0x00, 0x01,
 			0x20, 0x8d
-		];
+		].into();
 
 		let address = NetAddress {
 			services: ServiceFlags::default().with_network(true),
@@ -51,7 +51,7 @@ mod tests {
 			port: 8333.into(),
 		};
 
-		assert_eq!(expeted, serialize(&address));
+		assert_eq!(serialize(&address), expected);
 	}
 
 	#[test]
