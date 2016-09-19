@@ -12,22 +12,20 @@
 
 extern crate rand;
 extern crate byteorder;
-extern crate crypto as rcrypto;
 extern crate rustc_serialize;
 #[macro_use]
 extern crate lazy_static;
 extern crate secp256k1;
 extern crate base58;
 extern crate primitives;
+extern crate bitcrypto as crypto;
 
 pub mod chain;
 pub mod keys;
 pub mod net;
-//pub mod primitives;
 pub mod script;
 pub mod ser;
 
-pub mod crypto;
 pub mod network;
 
 pub use rustc_serialize::hex;

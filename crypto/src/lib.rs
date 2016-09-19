@@ -1,8 +1,11 @@
+extern crate crypto as rcrypto;
+extern crate primitives;
+
 use rcrypto::sha1::Sha1;
 use rcrypto::sha2::Sha256;
 use rcrypto::ripemd160::Ripemd160;
 use rcrypto::digest::Digest;
-use hash::{H160, H256};
+use primitives::hash::{H160, H256};
 
 pub struct DHash160 {
 	sha256: Sha256,
@@ -134,7 +137,6 @@ pub fn dhash256(input: &[u8]) -> H256 {
 #[cfg(test)]
 mod tests {
 	use super::{ripemd160, sha1, sha256, dhash160, dhash256};
-	use hex::FromHex;
 
 	#[test]
 	fn test_ripemd160() {
@@ -152,9 +154,9 @@ mod tests {
 
 	#[test]
 	fn test_sha256() {
-		let expected = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".from_hex().unwrap();
+		let expected = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".into();
 		let result = sha256(b"hello");
-		assert_eq!(result.to_vec(), expected);
+		assert_eq!(result, expected);
 	}
 
 	#[test]
@@ -166,8 +168,8 @@ mod tests {
 
     #[test]
     fn test_dhash256() {
-		let expected = "9595c9df90075148eb06860365df33584b75bff782a510c6cd4883a419833d50".from_hex().unwrap();
+		let expected = "9595c9df90075148eb06860365df33584b75bff782a510c6cd4883a419833d50".into();
 		let result = dhash256(b"hello");
-		assert_eq!(result.to_vec(), expected);
+		assert_eq!(result, expected);
     }
 }

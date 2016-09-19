@@ -6,9 +6,9 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 [dependencies]
 rand = "0.3.14"
 byteorder = "0.5"
-rust-crypto = "0.2.36"
 rustc-serialize = "0.3"
 lazy_static = "0.2"
 eth-secp256k1 = { git = "https://github.com/ethcore/rust-secp256k1" }
 base58 = "0.1"
 primitives = { path = "primitives" }
+bitcrypto = { path = "crypto" }
