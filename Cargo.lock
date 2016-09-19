@@ -10,6 +10,7 @@ dependencies = [
  "primitives 0.1.0",
  "rand 0.3.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serialization 0.1.0",
 ]
 
 [[package]]
@@ -119,6 +120,14 @@ dependencies = [
 name = "rustc-serialize"
 version = "0.3.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "serialization"
+version = "0.1.0"
+dependencies = [
+ "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "primitives 0.1.0",
+]
 
 [[package]]
 name = "time"

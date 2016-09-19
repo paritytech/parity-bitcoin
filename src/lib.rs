@@ -19,12 +19,12 @@ extern crate secp256k1;
 extern crate base58;
 extern crate primitives;
 extern crate bitcrypto as crypto;
+extern crate serialization as ser;
 
 pub mod chain;
 pub mod keys;
 pub mod net;
 pub mod script;
-pub mod ser;
 
 pub mod network;
 

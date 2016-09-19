@@ -1,7 +1,7 @@
 //! Stream used for serialization.
 use std::io::{self, Write};
 use byteorder::{LittleEndian, WriteBytesExt};
-use ser::compact_integer::CompactInteger;
+use compact_integer::CompactInteger;
 
 pub fn serialize(t: &Serializable) -> Vec<u8> {
 	let mut stream = Stream::default();

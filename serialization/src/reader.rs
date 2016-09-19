@@ -1,6 +1,6 @@
 use std::{io, cmp};
 use byteorder::{LittleEndian, ReadBytesExt};
-use ser::compact_integer::CompactInteger;
+use compact_integer::CompactInteger;
 
 pub fn deserialize<T>(buffer: &[u8]) -> Result<T, Error> where T: Deserializable {
 	let mut reader = Reader::new(buffer);

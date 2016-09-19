@@ -2,7 +2,7 @@
 //! https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers
 
 use std::fmt;
-use ser::{
+use {
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError
 };
@@ -99,7 +99,7 @@ impl Deserializable for CompactInteger {
 
 #[cfg(test)]
 mod tests {
-	use ser::{Reader, Error as ReaderError, Stream};
+	use {Reader, Error as ReaderError, Stream};
 	use super::CompactInteger;
 
 	#[test]

@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use hash::{H160, H256, H264, H512, H520};
-use ser::{Serializable, Stream, Deserializable, Reader, Error};
-use ser::compact_integer::CompactInteger;
+use compact_integer::CompactInteger;
+use {Serializable, Stream, Deserializable, Reader, Error};
 
 macro_rules! impl_ser_for_hash {
 	($name: ident, $size: expr) => {
@@ -46,7 +46,7 @@ impl Deserializable for Bytes {
 #[cfg(test)]
 mod tests {
 	use bytes::Bytes;
-	use ser::{serialize, deserialize};
+	use {serialize, deserialize};
 
 	#[test]
 	fn test_bytes_deserialize() {
