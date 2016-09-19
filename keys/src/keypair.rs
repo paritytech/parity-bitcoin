@@ -2,9 +2,9 @@
 
 use std::fmt;
 use secp256k1::key;
-use network::Network;
-use keys::{Public, Error, SECP256K1, Address, Type, Private, Secret};
 use hash::{H264, H520};
+use network::Network;
+use {Public, Error, SECP256K1, Address, Type, Private, Secret};
 
 pub struct KeyPair {
 	private: Private,
@@ -88,7 +88,7 @@ impl KeyPair {
 #[cfg(test)]
 mod tests {
 	use crypto::dhash256;
-	use keys::Public;
+	use Public;
 	use super::KeyPair;
 
 	/// Tests from:

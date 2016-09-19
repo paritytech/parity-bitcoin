@@ -4,14 +4,11 @@ version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 
 [dependencies]
-rand = "0.3.14"
 byteorder = "0.5"
 rustc-serialize = "0.3"
-lazy_static = "0.2"
-eth-secp256k1 = { git = "https://github.com/ethcore/rust-secp256k1" }
-base58 = "0.1"
 
 bitcrypto = { path = "crypto" }
 chain = { path = "chain" }
+keys = { path = "keys" }
 primitives = { path = "primitives" }
 serialization = { path = "serialization" }

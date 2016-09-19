@@ -5,7 +5,7 @@ use secp256k1::{Message as SecpMessage, RecoveryId, RecoverableSignature, Error 
 use hex::ToHex;
 use crypto::dhash160;
 use hash::{H264, H520};
-use keys::{AddressHash, Error, CompactSignature, Signature, Message, SECP256K1};
+use {AddressHash, Error, CompactSignature, Signature, Message, SECP256K1};
 
 pub enum Public {
 	Normal(H520),

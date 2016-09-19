@@ -5,7 +5,7 @@
 use std::{fmt, ops, str};
 use hex::{ToHex, FromHex};
 use hash::H520;
-use keys::Error;
+use Error;
 
 #[derive(PartialEq)]
 pub struct Signature(Vec<u8>);

@@ -8,7 +8,7 @@ use std::str::FromStr;
 use std::ops::Deref;
 use base58::{ToBase58, FromBase58};
 use network::Network;
-use keys::{DisplayLayout, checksum, Error, AddressHash};
+use {DisplayLayout, checksum, Error, AddressHash};
 
 /// There are two address formats currently in use.
 /// https://bitcoin.org/en/developer-reference#address-conversion

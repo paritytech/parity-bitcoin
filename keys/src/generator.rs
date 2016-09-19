@@ -1,6 +1,6 @@
 use rand::os::OsRng;
 use network::Network;
-use keys::{KeyPair, SECP256K1, Error};
+use {KeyPair, SECP256K1, Error};
 
 pub trait Generator {
 	fn generate(&self) -> Result<KeyPair, Error>;
