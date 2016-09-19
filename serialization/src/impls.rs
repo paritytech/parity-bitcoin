@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use hash::{H160, H256, H264, H512, H520};
+use hash::{H96, H160, H256, H264, H512, H520};
 use compact_integer::CompactInteger;
 use {Serializable, Stream, Deserializable, Reader, Error};
 
@@ -22,6 +22,7 @@ macro_rules! impl_ser_for_hash {
 	}
 }
 
+impl_ser_for_hash!(H96, 12);
 impl_ser_for_hash!(H160, 20);
 impl_ser_for_hash!(H256, 32);
 impl_ser_for_hash!(H264, 33);

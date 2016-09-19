@@ -106,6 +106,7 @@ macro_rules! impl_hash {
 	}
 }
 
+impl_hash!(H96, 12);
 impl_hash!(H160, 20);
 impl_hash!(H256, 32);
 impl_hash!(H264, 33);
