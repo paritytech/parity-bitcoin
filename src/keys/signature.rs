@@ -2,10 +2,7 @@
 //!
 //! http://bitcoin.stackexchange.com/q/12554/40688
 
-use std::fmt;
-use std::cmp::PartialEq;
-use std::ops::Deref;
-use std::str::FromStr;
+use std::{fmt, ops, str};
 use hex::{ToHex, FromHex};
 use hash::H520;
 use keys::Error;
@@ -25,7 +22,7 @@ impl fmt::Display for Signature {
 	}
 }
 
-impl Deref for Signature {
+impl ops::Deref for Signature {
 	type Target = [u8];
 
 	fn deref(&self) -> &Self::Target {
@@ -33,7 +30,7 @@ impl Deref for Signature {
 	}
 }
 
-impl FromStr for Signature {
+impl str::FromStr for Signature {
 	type Err = Error;
 
 	fn from_str(s: &str) -> Result<Self, Error> {
@@ -72,48 +69,36 @@ impl<'a> From<&'a [u8]> for Signature {
 	}
 }
 
+#[derive(PartialEq)]
 pub struct CompactSignature(H520);
 
 impl fmt::Debug for CompactSignature {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		self.0.to_hex().fmt(f)
+		f.write_str(&self.0.to_hex())
 	}
 }
 
 impl fmt::Display for CompactSignature {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		self.0.to_hex().fmt(f)
+		f.write_str(&self.0.to_hex())
 	}
 }
 
-impl Deref for CompactSignature {
+impl ops::Deref for CompactSignature {
 	type Target = [u8];
 
 	fn deref(&self) -> &Self::Target {
-		&self.0
+		&*self.0
 	}
 }
 
-impl PartialEq for CompactSignature {
-	fn eq(&self, other: &Self) -> bool {
-		let s_slice: &[u8] = self;
-		let o_slice: &[u8] = other;
-		s_slice == o_slice
-	}
-}
-
-impl FromStr for CompactSignature {
+impl str::FromStr for CompactSignature {
 	type Err = Error;
 
 	fn from_str(s: &str) -> Result<Self, Error> {
-		let vec = try!(s.from_hex().map_err(|_| Error::InvalidSignature));
-		match vec.len() {
-			65 => {
-				let mut compact = [0u8; 65];
-				compact.copy_from_slice(&vec);
-				Ok(CompactSignature(compact))
-			},
-			_ => Err(Error::InvalidSignature)
+		match s.parse() {
+			Ok(hash) => Ok(CompactSignature(hash)),
+			_ => Err(Error::InvalidSignature),
 		}
 	}
 }

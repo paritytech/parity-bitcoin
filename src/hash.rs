@@ -1,10 +1,112 @@
-use hex::{ToHex, FromHex};
+use std::{fmt, ops, cmp, str};
+use hex::{ToHex, FromHex, FromHexError};
+use ser::{Stream, Serializable, Reader, Deserializable, Error as ReaderError};
 
-pub type H160 = [u8; 20];
-pub type H256 = [u8; 32];
-pub type H264 = [u8; 33];
-pub type H512 = [u8; 64];
-pub type H520 = [u8; 65];
+macro_rules! impl_hash {
+	($name: ident, $size: expr) => {
+		#[repr(C)]
+		pub struct $name([u8; $size]);
+
+		impl Default for $name {
+			fn default() -> Self {
+				$name([0u8; $size])
+			}
+		}
+
+		impl Clone for $name {
+			fn clone(&self) -> Self {
+				let mut result = Self::default();
+				result.copy_from_slice(&self.0);
+				result
+			}
+		}
+
+		impl From<[u8; $size]> for $name {
+			fn from(h: [u8; $size]) -> Self {
+				$name(h)
+			}
+		}
+
+		impl From<$name> for [u8; $size] {
+			fn from(h: $name) -> Self {
+				h.0
+			}
+		}
+
+		impl From<&'static str> for $name {
+			fn from(s: &'static str) -> Self {
+				s.parse().unwrap()
+			}
+		}
+
+		impl str::FromStr for $name {
+			type Err = FromHexError;
+
+			fn from_str(s: &str) -> Result<Self, Self::Err> {
+				let vec = try!(s.from_hex());
+				match vec.len() {
+					$size => {
+						let mut result = [0u8; $size];
+						result.copy_from_slice(&vec);
+						Ok($name(result))
+					},
+					_ => Err(FromHexError::InvalidHexLength)
+				}
+			}
+		}
+
+		impl fmt::Debug for $name {
+			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+				f.write_str(&self.0.to_hex())
+			}
+		}
+
+		impl ops::Deref for $name {
+			type Target = [u8; $size];
+
+			fn deref(&self) -> &Self::Target {
+				&self.0
+			}
+		}
+
+		impl ops::DerefMut for $name {
+			fn deref_mut(&mut self) -> &mut Self::Target {
+				&mut self.0
+			}
+		}
+
+		impl cmp::PartialEq for $name {
+			fn eq(&self, other: &Self) -> bool {
+				let self_ref: &[u8] = &self.0;
+				let other_ref: &[u8] = &other.0;
+				self_ref == other_ref
+			}
+		}
+
+		// TODO: move to ser module
+
+		impl Serializable for $name {
+			fn serialize(&self, stream: &mut Stream) {
+				stream.append_slice(&self.0);
+			}
+		}
+
+		impl Deserializable for $name {
+			fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+				let slice = try!(reader.read_slice($size));
+				let mut result = Self::default();
+				result.copy_from_slice(slice);
+				Ok(result)
+			}
+		}
+	}
+}
+
+impl_hash!(H160, 20);
+impl_hash!(H256, 32);
+impl_hash!(H264, 33);
+impl_hash!(H512, 64);
+impl_hash!(H520, 65);
 
 /// Reverses the hash. Commonly used to display
 #[inline]
@@ -17,7 +119,7 @@ pub fn reverse(hash: &H256) -> H256 {
 /// Loads hash from display str
 #[inline]
 pub fn h256_from_str(s: &'static str) -> H256 {
-	let mut result = [0u8; 32];
+	let mut result = H256::default();
 	result.copy_from_slice(&s.from_hex().unwrap());
 	result.reverse();
 	result
@@ -31,7 +133,7 @@ pub fn h256_to_str(hash: &H256) -> String {
 
 #[inline]
 pub fn h256_from_u8(u: u8) -> H256 {
-	let mut result = [0u8; 32];
+	let mut result = H256::default();
 	result[31] = u;
 	result
 }

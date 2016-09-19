@@ -6,6 +6,7 @@ use hex::ToHex;
 use base58::{ToBase58, FromBase58};
 use network::Network;
 use keys::{Secret, DisplayLayout, checksum, Error, Message, Signature, CompactSignature, SECP256K1};
+use hash::H520;
 
 #[derive(PartialEq)]
 pub struct Private {
@@ -20,8 +21,8 @@ pub struct Private {
 impl Private {
 	pub fn sign(&self, message: &Message) -> Result<Signature, Error> {
 		let context = &SECP256K1;
-		let secret = try!(key::SecretKey::from_slice(context, &self.secret));
-		let message = try!(SecpMessage::from_slice(message));
+		let secret = try!(key::SecretKey::from_slice(context, &*self.secret));
+		let message = try!(SecpMessage::from_slice(&**message));
 		let signature = try!(context.sign(&message, &secret));
 		let data = signature.serialize_der(context);
 		Ok(data.into())
@@ -29,12 +30,12 @@ impl Private {
 
 	pub fn sign_compact(&self, message: &Message) -> Result<CompactSignature, Error> {
 		let context = &SECP256K1;
-		let secret = try!(key::SecretKey::from_slice(context, &self.secret));
-		let message = try!(SecpMessage::from_slice(message));
+		let secret = try!(key::SecretKey::from_slice(context, &*self.secret));
+		let message = try!(SecpMessage::from_slice(&**message));
 		let signature = try!(context.sign_recoverable(&message, &secret));
 		let (recovery_id, data) = signature.serialize_compact(context);
 		let recovery_id = recovery_id.to_i32() as u8;
-		let mut signature = [0; 65];
+		let mut signature = H520::default();
 		signature[1..65].copy_from_slice(&data[0..64]);
 		signature[0] = match self.compressed {
 			true => 27 + recovery_id + 4,
@@ -55,7 +56,7 @@ impl DisplayLayout for Private {
 		};
 
 		result.push(network_byte);
-		result.extend(&self.secret);
+		result.extend(&*self.secret);
 		if self.compressed {
 			result.push(1);
 		}
@@ -86,7 +87,7 @@ impl DisplayLayout for Private {
 			_ => return Err(Error::InvalidPrivate),
 		};
 
-		let mut secret = [0u8; 32];
+		let mut secret = Secret::default();
 		secret.copy_from_slice(&data[1..33]);
 
 		let private = Private {

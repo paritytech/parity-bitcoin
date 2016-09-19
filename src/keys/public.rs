@@ -16,12 +16,12 @@ impl Public {
 	pub fn from_slice(data: &[u8]) -> Result<Self, Error> {
 		match data.len() {
 			33 => {
-				let mut public = [0u8; 33];
+				let mut public = H264::default();
 				public.copy_from_slice(data);
 				Ok(Public::Compressed(public))
 			},
 			65 => {
-				let mut public = [0u8; 65];
+				let mut public = H520::default();
 				public.copy_from_slice(data);
 				Ok(Public::Normal(public))
 			},
@@ -37,7 +37,7 @@ impl Public {
 		let context = &SECP256K1;
 		let public = try!(key::PublicKey::from_slice(context, self));
 		let signature = try!(SecpSignature::from_der(context, signature));
-		let message = try!(SecpMessage::from_slice(message));
+		let message = try!(SecpMessage::from_slice(&**message));
 		match context.verify(&message, &signature, &public) {
 			Ok(_) => Ok(true),
 			Err(SecpError::IncorrectSignature) => Ok(false),
@@ -51,15 +51,15 @@ impl Public {
 		let compressed = (signature[0] - 27) & 4 != 0;
 		let recovery_id = try!(RecoveryId::from_i32(recovery_id as i32));
 		let signature = try!(RecoverableSignature::from_compact(context, &signature[1..65], recovery_id));
-		let message = try!(SecpMessage::from_slice(message));
+		let message = try!(SecpMessage::from_slice(&**message));
 		let pubkey = try!(context.recover(&message, &signature));
 		let serialized = pubkey.serialize_vec(context, compressed);
 		let public = if compressed {
-			let mut public = [0u8; 33];
+			let mut public = H264::default();
 			public.copy_from_slice(&serialized[0..33]);
 			Public::Compressed(public)
 		} else {
-			let mut public = [0u8; 65];
+			let mut public = H520::default();
 			public.copy_from_slice(&serialized[0..65]);
 			Public::Normal(public)
 		};
@@ -72,8 +72,8 @@ impl Deref for Public {
 
 	fn deref(&self) -> &Self::Target {
 		match *self {
-			Public::Normal(ref hash) => hash,
-			Public::Compressed(ref hash) => hash,
+			Public::Normal(ref hash) => &**hash,
+			Public::Compressed(ref hash) => &**hash,
 		}
 	}
 }

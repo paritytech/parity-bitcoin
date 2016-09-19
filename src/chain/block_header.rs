@@ -30,8 +30,8 @@ impl Serializable for BlockHeader {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&self.version)
-			.append_slice(&self.previous_header_hash)
-			.append_slice(&self.merkle_root_hash)
+			.append(&self.previous_header_hash)
+			.append(&self.merkle_root_hash)
 			.append(&self.time)
 			.append(&self.nbits)
 			.append(&self.nonce);
@@ -41,10 +41,8 @@ impl Serializable for BlockHeader {
 impl Deserializable for BlockHeader {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
 		let version = try!(reader.read());
-		let mut previous_header_hash = [0u8; 32];
-		previous_header_hash.copy_from_slice(try!(reader.read_slice(32)));
-		let mut merkle_root_hash = [0u8; 32];
-		merkle_root_hash.copy_from_slice(try!(reader.read_slice(32)));
+		let previous_header_hash = try!(reader.read());
+		let merkle_root_hash = try!(reader.read());
 		let time = try!(reader.read());
 		let nbits = try!(reader.read());
 		let nonce = try!(reader.read());
@@ -71,8 +69,8 @@ mod tests {
 	fn test_block_header_stream() {
 		let block_header = BlockHeader {
 			version: 1,
-			previous_header_hash: [2; 32],
-			merkle_root_hash: [3; 32],
+			previous_header_hash: [2; 32].into(),
+			merkle_root_hash: [3; 32].into(),
 			time: 4,
 			nbits: 5,
 			nonce: 6,
@@ -108,8 +106,8 @@ mod tests {
 
 		let expected = BlockHeader {
 			version: 1,
-			previous_header_hash: [2; 32],
-			merkle_root_hash: [3; 32],
+			previous_header_hash: [2; 32].into(),
+			merkle_root_hash: [3; 32].into(),
 			time: 4,
 			nbits: 5,
 			nonce: 6,

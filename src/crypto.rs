@@ -4,16 +4,6 @@ use rcrypto::ripemd160::Ripemd160;
 use rcrypto::digest::Digest;
 use hash::{H160, H256};
 
-/// SHA-256
-#[inline]
-pub fn hash(input: &[u8]) -> H256 {
-	let mut result = [0u8; 32];
-	let mut hasher = Sha256::new();
-	hasher.input(input);
-	hasher.result(&mut result);
-	result
-}
-
 pub struct DHash160 {
 	sha256: Sha256,
 	ripemd: Ripemd160,
@@ -94,50 +84,50 @@ impl Digest for DHash256 {
 /// RIPEMD160
 #[inline]
 pub fn ripemd160(input: &[u8]) -> H160 {
-	let mut result = [0u8; 20];
+	let mut result = H160::default();
 	let mut hasher = Ripemd160::new();
 	hasher.input(input);
-	hasher.result(&mut result);
+	hasher.result(&mut *result);
 	result
 }
 
 /// SHA-1
 #[inline]
 pub fn sha1(input: &[u8]) -> H160 {
-	let mut result = [0u8; 20];
+	let mut result = H160::default();
 	let mut hasher = Sha1::new();
 	hasher.input(input);
-	hasher.result(&mut result);
+	hasher.result(&mut *result);
 	result
 }
 
 /// SHA-256
 #[inline]
 pub fn sha256(input: &[u8]) -> H256 {
-	let mut result = [0u8; 32];
+	let mut result = H256::default();
 	let mut hasher = Sha256::new();
 	hasher.input(input);
-	hasher.result(&mut result);
+	hasher.result(&mut *result);
 	result
 }
 
 /// SHA-256 and RIPEMD160
 #[inline]
 pub fn dhash160(input: &[u8]) -> H160 {
-	let mut result = [0u8; 20];
+	let mut result = H160::default();
 	let mut hasher = DHash160::new();
 	hasher.input(input);
-	hasher.result(&mut result);
+	hasher.result(&mut *result);
 	result
 }
 
 /// Double SHA-256
 #[inline]
 pub fn dhash256(input: &[u8]) -> H256 {
-	let mut result = [0u8; 32];
+	let mut result = H256::default();
 	let mut hasher = DHash256::new();
 	hasher.input(input);
-	hasher.result(&mut result);
+	hasher.result(&mut *result);
 	result
 }
 
@@ -148,16 +138,16 @@ mod tests {
 
 	#[test]
 	fn test_ripemd160() {
-		let expected = "108f07b8382412612c048d07d13f814118445acd".from_hex().unwrap();
+		let expected = "108f07b8382412612c048d07d13f814118445acd".into();
 		let result = ripemd160(b"hello");
-		assert_eq!(result.to_vec(), expected);
+		assert_eq!(result, expected);
 	}
 
 	#[test]
 	fn test_sha1() {
-		let expected = "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".from_hex().unwrap();
+		let expected = "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".into();
 		let result = sha1(b"hello");
-		assert_eq!(result.to_vec(), expected);
+		assert_eq!(result, expected);
 	}
 
 	#[test]
@@ -169,9 +159,9 @@ mod tests {
 
 	#[test]
 	fn test_dhash160() {
-		let expected = "b6a9c8c230722b7c748331a8b450f05566dc7d0f".from_hex().unwrap();
+		let expected = "b6a9c8c230722b7c748331a8b450f05566dc7d0f".into();
 		let result = dhash160(b"hello");
-		assert_eq!(result.to_vec(), expected);
+		assert_eq!(result, expected);
 	}
 
     #[test]

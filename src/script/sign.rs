@@ -249,7 +249,7 @@ mod tests {
 		// this is irrelevant
 		let kp = KeyPair::from_private(private).unwrap();
 		assert_eq!(kp.address(), from);
-		assert_eq!(&current_output[3..23], &to.hash);
+		assert_eq!(&current_output[3..23], &*to.hash);
 
 		let unsigned_input = UnsignedTransactionInput {
 			sequence: 0xffff_ffff,

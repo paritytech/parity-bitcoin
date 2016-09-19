@@ -39,15 +39,14 @@ pub struct OutPoint {
 impl Serializable for OutPoint {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
-			.append_slice(&self.hash)
+			.append(&self.hash)
 			.append(&self.index);
 	}
 }
 
 impl Deserializable for OutPoint {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let mut hash = [0u8; 32];
-		hash.copy_from_slice(try!(reader.read_slice(32)));
+		let hash = try!(reader.read());
 		let index = try!(reader.read());
 		let result = OutPoint {
 			hash: hash,

@@ -3,7 +3,8 @@
 use std::fmt;
 use secp256k1::key;
 use network::Network;
-use keys::{Public, Error, SECP256K1, Address, Type, Private};
+use keys::{Public, Error, SECP256K1, Address, Type, Private, Secret};
+use hash::{H264, H520};
 
 pub struct KeyPair {
 	private: Private,
@@ -35,16 +36,16 @@ impl KeyPair {
 
 	pub fn from_private(private: Private) -> Result<KeyPair, Error> {
 		let context = &SECP256K1;
-		let s: key::SecretKey = try!(key::SecretKey::from_slice(context, &private.secret));
+		let s: key::SecretKey = try!(key::SecretKey::from_slice(context, &*private.secret));
 		let pub_key = try!(key::PublicKey::from_secret_key(context, &s));
 		let serialized = pub_key.serialize_vec(context, private.compressed);
 
 		let public = if private.compressed {
-			let mut public = [0u8; 33];
+			let mut public = H264::default();
 			public.copy_from_slice(&serialized[0..33]);
 			Public::Compressed(public)
 		} else {
-			let mut public = [0u8; 65];
+			let mut public = H520::default();
 			public.copy_from_slice(&serialized[0..65]);
 			Public::Normal(public)
 		};
@@ -60,9 +61,9 @@ impl KeyPair {
 	pub fn from_keypair(sec: key::SecretKey, public: key::PublicKey, network: Network) -> Self {
 		let context = &SECP256K1;
 		let serialized = public.serialize_vec(context, false);
-		let mut secret = [0u8; 32];
+		let mut secret = Secret::default();
 		secret.copy_from_slice(&sec[0..32]);
-		let mut public = [0u8; 65];
+		let mut public = H520::default();
 		public.copy_from_slice(&serialized[0..65]);
 
 		KeyPair {

@@ -57,7 +57,7 @@ impl DisplayLayout for Address {
 			(Network::Testnet, Type::P2SH) => 196,
 		};
 
-		result[1..21].copy_from_slice(&self.hash);
+		result[1..21].copy_from_slice(&*self.hash);
 		let cs = checksum(&result[0..21]);
 		result[21..25].copy_from_slice(&cs);
 		AddressDisplayLayout(result)
@@ -81,7 +81,7 @@ impl DisplayLayout for Address {
 			_ => return Err(Error::InvalidAddress),
 		};
 
-		let mut hash = [0u8; 20];
+		let mut hash = AddressHash::default();
 		hash.copy_from_slice(&data[1..21]);
 
 		let address = Address {
@@ -117,22 +117,15 @@ impl From<&'static str> for Address {
 
 #[cfg(test)]
 mod tests {
-	use hex::FromHex;
 	use network::Network;
 	use super::{Address, Type};
-
-	fn load_hash(s: &str) -> [u8; 20] {
-		let mut address = [0u8; 20];
-		address.copy_from_slice(&s.from_hex().unwrap());
-		address
-	}
 
 	#[test]
 	fn test_address_to_string() {
 		let address = Address {
 			kind: Type::P2PKH,
 			network: Network::Mainnet,
-			hash: load_hash("3f4aa1fedf1f54eeb03b759deadb36676b184911"),
+			hash: "3f4aa1fedf1f54eeb03b759deadb36676b184911".into(),
 		};
 
 		assert_eq!("16meyfSoQV6twkAAxPe51RtMVz7PGRmWna".to_owned(), address.to_string());
@@ -143,7 +136,7 @@ mod tests {
 		let address = Address {
 			kind: Type::P2PKH,
 			network: Network::Mainnet,
-			hash: load_hash("3f4aa1fedf1f54eeb03b759deadb36676b184911"),
+			hash: "3f4aa1fedf1f54eeb03b759deadb36676b184911".into(),
 		};
 
 		assert_eq!(address, "16meyfSoQV6twkAAxPe51RtMVz7PGRmWna".into());
