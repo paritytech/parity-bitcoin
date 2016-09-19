@@ -1,5 +1,5 @@
 use std::fmt;
-use script::Opcode;
+use Opcode;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {

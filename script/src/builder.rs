@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use script::{Opcode, Script, Num};
+use {Opcode, Script, Num};
 
 #[derive(Default)]
 pub struct Builder {

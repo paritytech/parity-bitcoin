@@ -17,10 +17,10 @@ extern crate bitcrypto as crypto;
 extern crate chain;
 extern crate keys;
 extern crate primitives;
+extern crate script;
 extern crate serialization as ser;
 
 pub mod net;
-pub mod script;
 
 pub use rustc_serialize::hex;
 pub use primitives::{hash, bytes};

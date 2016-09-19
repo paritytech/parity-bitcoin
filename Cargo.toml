@@ -11,4 +11,5 @@ bitcrypto = { path = "crypto" }
 chain = { path = "chain" }
 keys = { path = "keys" }
 primitives = { path = "primitives" }
+script = { path = "script" }
 serialization = { path = "serialization" }

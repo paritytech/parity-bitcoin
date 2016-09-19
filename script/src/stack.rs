@@ -1,5 +1,5 @@
 use std::ops;
-use script::Error;
+use Error;
 
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct Stack<T> {
@@ -151,7 +151,7 @@ impl<T> Stack<T> {
 
 #[cfg(test)]
 mod tests {
-	use script::Error;
+	use Error;
 	use super::Stack;
 
 	#[test]

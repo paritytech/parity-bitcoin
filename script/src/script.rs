@@ -1,9 +1,8 @@
 //! Serialized script, used inside transaction inputs and outputs.
 
 use std::{fmt, ops};
-use hex::ToHex;
 use bytes::Bytes;
-use script::{Opcode, Error};
+use {Opcode, Error};
 
 /// Maximum number of bytes pushable to the stack
 pub const MAX_SCRIPT_ELEMENT_SIZE: usize = 520;
@@ -345,7 +344,7 @@ impl fmt::Display for Script {
 			};
 
 			match instruction.data {
-				Some(data) => try!(writeln!(f, "{:?} 0x{}", instruction.opcode, data.to_hex())),
+				Some(data) => try!(writeln!(f, "{:?} 0x{:?}", instruction.opcode, Bytes::from(data.to_vec()))),
 				None => try!(writeln!(f, "{:?}", instruction.opcode)),
 			}
 
@@ -358,7 +357,7 @@ impl fmt::Display for Script {
 
 #[cfg(test)]
 mod tests {
-	use script::{Builder, Opcode};
+	use {Builder, Opcode};
 	use super::{Script, ScriptType};
 
 	#[test]

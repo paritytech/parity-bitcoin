@@ -3,7 +3,7 @@ use bytes::Bytes;
 use keys::{Signature, Public};
 use chain::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
-use script::{
+use {
 	script, Script, Num, VerificationFlags, Opcode, Error,
 	Sighash, SignatureChecker, SignatureVersion, Stack
 };
@@ -890,10 +890,9 @@ pub fn eval_script(
 
 #[cfg(test)]
 mod tests {
-	use hex::FromHex;
 	use bytes::Bytes;
 	use chain::Transaction;
-	use script::{
+	use {
 		Opcode, Script, VerificationFlags, Builder, Error, Num, TransactionInputSigner,
 		NoopSignatureChecker, SignatureVersion, TransactionSignatureChecker, Stack
 	};
@@ -903,7 +902,7 @@ mod tests {
 	fn tests_is_public_key() {
 		assert!(!is_public_key(&[]));
 		assert!(!is_public_key(&[1]));
-		assert!(is_public_key(&"0495dfb90f202c7d016ef42c65bc010cd26bb8237b06253cc4d12175097bef767ed6b1fcb3caf1ed57c98d92e6cb70278721b952e29a335134857acd4c199b9d2f".from_hex().unwrap()));
+		assert!(is_public_key(&Bytes::from("0495dfb90f202c7d016ef42c65bc010cd26bb8237b06253cc4d12175097bef767ed6b1fcb3caf1ed57c98d92e6cb70278721b952e29a335134857acd4c199b9d2f")));
 		assert!(is_public_key(&[2; 33]));
 		assert!(is_public_key(&[3; 33]));
 		assert!(!is_public_key(&[4; 33]));

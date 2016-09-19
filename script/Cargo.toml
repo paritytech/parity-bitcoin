@@ -1,0 +1,13 @@
+[package]
+name = "script"
+version = "0.1.0"
+authors = ["debris <marek.kotewicz@gmail.com>"]
+
+[dependencies]
+bitcrypto = { path = "../crypto" }
+chain = { path = "../chain" }
+keys = { path = "../keys" }
+primitives = { path = "../primitives" }
+serialization = { path = "../serialization" }
+
+
