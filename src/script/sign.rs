@@ -2,7 +2,7 @@ use script::{Script, Builder};
 use primitives::Bytes;
 use keys::KeyPair;
 use crypto::dhash256;
-use hash::{H256, h256_from_u8};
+use hash::H256;
 use ser::Stream;
 use chain::{Transaction, TransactionOutput, OutPoint, TransactionInput};
 
@@ -134,11 +134,11 @@ impl TransactionInputSigner {
 	pub fn signature_hash(&self, input_index: usize, script_pubkey: &Script, sighashtype: u32) -> H256 {
 		let sighash = Sighash::from(sighashtype);
 		if input_index >= self.inputs.len() {
-			return h256_from_u8(1);
+			return 1u8.into();
 		}
 
 		if sighash.base == SighashBase::Single && input_index >= self.outputs.len() {
-			return h256_from_u8(1);
+			return 1u8.into();
 		}
 
 		let script_pubkey = script_pubkey.without_separators();
@@ -225,7 +225,7 @@ impl TransactionInputSigner {
 mod tests {
 	use hex::FromHex;
 	use primitives::Bytes;
-	use hash::h256_from_str;
+	use hash::H256;
 	use keys::{KeyPair, Private, Address};
 	use chain::{OutPoint, TransactionOutput, Transaction};
 	use script::Script;
@@ -237,7 +237,7 @@ mod tests {
 	#[test]
 	fn test_signature_hash_simple() {
 		let private: Private = "5HusYj2b2x4nroApgfvaSfKYZhRbKFH41bVyPooymbC6KfgSXdD".into();
-		let previous_tx_hash = h256_from_str("81b4c832d70cb56ff957589752eb4125a4cab78a25a8fc52d6a09e5bd4404d48");
+		let previous_tx_hash = H256::from_reversed_str("81b4c832d70cb56ff957589752eb4125a4cab78a25a8fc52d6a09e5bd4404d48");
 		let previous_output_index = 0;
 		let from: Address = "1MMMMSUb1piy2ufrSguNUdFmAcvqrQF8M5".into();
 		let to: Address = "1KKKK6N21XKo48zWKuQKXdvSsCf95ibHFa".into();
@@ -285,7 +285,7 @@ mod tests {
 		let tx: Transaction = tx.into();
 		let signer: TransactionInputSigner = tx.into();
 		let script: Script = script.into();
-		let expected = h256_from_str(result);
+		let expected = H256::from_reversed_str(result);
 
 		let hash = signer.signature_hash(input_index, &script, hash_type as u32);
 		assert_eq!(expected, hash);

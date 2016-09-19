@@ -46,11 +46,9 @@ impl Serializable for OutPoint {
 
 impl Deserializable for OutPoint {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let hash = try!(reader.read());
-		let index = try!(reader.read());
 		let result = OutPoint {
-			hash: hash,
-			index: index,
+			hash: try!(reader.read()),
+			index: try!(reader.read()),
 		};
 
 		Ok(result)
@@ -85,14 +83,10 @@ impl Serializable for TransactionInput {
 
 impl Deserializable for TransactionInput {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let previous_output = try!(reader.read());
-		let script_sig = try!(reader.read());
-		let sequence = try!(reader.read());
-
 		let result = TransactionInput {
-			previous_output: previous_output,
-			script_sig: script_sig,
-			sequence: sequence,
+			previous_output: try!(reader.read()),
+			script_sig: try!(reader.read()),
+			sequence: try!(reader.read()),
 		};
 
 		Ok(result)
@@ -129,12 +123,9 @@ impl Serializable for TransactionOutput {
 
 impl Deserializable for TransactionOutput {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let value = try!(reader.read());
-		let script_pubkey = try!(reader.read());
-
 		let result = TransactionOutput {
-			value: value,
-			script_pubkey: script_pubkey,
+			value: try!(reader.read()),
+			script_pubkey: try!(reader.read()),
 		};
 
 		Ok(result)
@@ -180,16 +171,11 @@ impl Serializable for Transaction {
 
 impl Deserializable for Transaction {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let version = try!(reader.read());
-		let tx_inputs = try!(reader.read_list());
-		let tx_outputs = try!(reader.read_list());
-		let lock_time = try!(reader.read());
-
 		let result = Transaction {
-			version: version,
-			inputs: tx_inputs,
-			outputs: tx_outputs,
-			lock_time: lock_time,
+			version: try!(reader.read()),
+			inputs: try!(reader.read_list()),
+			outputs: try!(reader.read_list()),
+			lock_time: try!(reader.read()),
 		};
 
 		Ok(result)
@@ -218,9 +204,7 @@ impl Transaction {
 
 #[cfg(test)]
 mod tests {
-	use hex::FromHex;
-	use ser::deserialize;
-	use hash::h256_from_str;
+	use hash::H256;
 	use super::Transaction;
 
 	// real transaction from block 80000
@@ -228,8 +212,7 @@ mod tests {
 	// https://blockchain.info/rawtx/5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2?format=hex
 	#[test]
 	fn test_transaction_reader() {
-		let encoded_tx = "0100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000".from_hex().unwrap();
-		let t: Transaction = deserialize(&encoded_tx).unwrap();
+		let t: Transaction = "0100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000".into();
 		assert_eq!(t.version, 1);
 		assert_eq!(t.lock_time, 0);
 		assert_eq!(t.inputs.len(), 1);
@@ -244,9 +227,8 @@ mod tests {
 
 	#[test]
 	fn test_transaction_hash() {
-		let encoded_tx = "0100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000".from_hex().unwrap();
-		let hash = h256_from_str("5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2");
-		let t: Transaction = deserialize(&encoded_tx).unwrap();
+		let t: Transaction = "0100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000".into();
+		let hash = H256::from_reversed_str("5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2");
 		assert_eq!(t.hash(), hash);
 	}
 }

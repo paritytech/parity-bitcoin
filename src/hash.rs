@@ -39,6 +39,14 @@ macro_rules! impl_hash {
 			}
 		}
 
+		impl From<u8> for $name {
+			fn from(v: u8) -> Self {
+				let mut result = Self::default();
+				result.0[$size - 1] = v;
+				result
+			}
+		}
+
 		impl str::FromStr for $name {
 			type Err = FromHexError;
 
@@ -56,6 +64,12 @@ macro_rules! impl_hash {
 		}
 
 		impl fmt::Debug for $name {
+			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+				f.write_str(&self.0.to_hex())
+			}
+		}
+
+		impl fmt::Display for $name {
 			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 				f.write_str(&self.0.to_hex())
 			}
@@ -99,6 +113,14 @@ macro_rules! impl_hash {
 				Ok(result)
 			}
 		}
+
+		impl $name {
+			pub fn reversed(&self) -> Self {
+				let mut result = self.clone();
+				result.reverse();
+				result
+			}
+		}
 	}
 }
 
@@ -108,32 +130,14 @@ impl_hash!(H264, 33);
 impl_hash!(H512, 64);
 impl_hash!(H520, 65);
 
-/// Reverses the hash. Commonly used to display
-#[inline]
-pub fn reverse(hash: &H256) -> H256 {
-	let mut result = hash.clone();
-	result.reverse();
-	result
-}
+impl H256 {
+	#[inline]
+	pub fn from_reversed_str(s: &'static str) -> Self {
+		H256::from(s).reversed()
+	}
 
-/// Loads hash from display str
-#[inline]
-pub fn h256_from_str(s: &'static str) -> H256 {
-	let mut result = H256::default();
-	result.copy_from_slice(&s.from_hex().unwrap());
-	result.reverse();
-	result
-}
-
-/// Transforms hash to display string.
-#[inline]
-pub fn h256_to_str(hash: &H256) -> String {
-	reverse(hash).to_hex()
-}
-
-#[inline]
-pub fn h256_from_u8(u: u8) -> H256 {
-	let mut result = H256::default();
-	result[31] = u;
-	result
+	#[inline]
+	pub fn to_reversed_str(&self) -> String {
+		self.reversed().to_string()
+	}
 }

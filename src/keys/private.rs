@@ -131,7 +131,7 @@ impl From<&'static str> for Private {
 
 #[cfg(test)]
 mod tests {
-	use hash::h256_from_str;
+	use hash::H256;
 	use network::Network;
 	use super::Private;
 
@@ -139,7 +139,7 @@ mod tests {
 	fn test_private_to_string() {
 		let private = Private {
 			network: Network::Mainnet,
-			secret: h256_from_str("063377054c25f98bc538ac8dd2cf9064dd5d253a725ece0628a34e2f84803bd5"),
+			secret: H256::from_reversed_str("063377054c25f98bc538ac8dd2cf9064dd5d253a725ece0628a34e2f84803bd5"),
 			compressed: false,
 		};
 
@@ -150,7 +150,7 @@ mod tests {
 	fn test_private_from_str() {
 		let private = Private {
 			network: Network::Mainnet,
-			secret: h256_from_str("063377054c25f98bc538ac8dd2cf9064dd5d253a725ece0628a34e2f84803bd5"),
+			secret: H256::from_reversed_str("063377054c25f98bc538ac8dd2cf9064dd5d253a725ece0628a34e2f84803bd5"),
 			compressed: false,
 		};
 

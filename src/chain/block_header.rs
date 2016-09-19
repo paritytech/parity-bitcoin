@@ -3,9 +3,9 @@ use ser::{
 	Deserializable, Reader, Error as ReaderError,
 	Serializable, Stream
 };
-use hash::{H256, h256_to_str};
+use hash::H256;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub struct BlockHeader {
 	version: u32,
 	previous_header_hash: H256,
@@ -15,14 +15,16 @@ pub struct BlockHeader {
 	nonce: u32,
 }
 
-impl fmt::Display for BlockHeader {
+impl fmt::Debug for BlockHeader {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		try!(writeln!(f, "version: {}", self.version));;
-		try!(writeln!(f, "previous header hash: {}", h256_to_str(&self.previous_header_hash)));
-		try!(writeln!(f, "merkle root hash: {}", h256_to_str(&self.merkle_root_hash)));
-		try!(writeln!(f, "time: {}", self.time));
-		try!(writeln!(f, "nbits: {}", self.nbits));
-		writeln!(f, "nonce: {}", self.nonce)
+		f.debug_struct("BlockHeader")
+			.field("version", &self.version)
+			.field("previous_header_hash", &self.previous_header_hash.reversed())
+			.field("merkle_root_hash", &self.merkle_root_hash.reversed())
+			.field("time", &self.time)
+			.field("nbits", &self.nbits)
+			.field("nonce", &self.nonce)
+			.finish()
 	}
 }
 
@@ -40,20 +42,13 @@ impl Serializable for BlockHeader {
 
 impl Deserializable for BlockHeader {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let version = try!(reader.read());
-		let previous_header_hash = try!(reader.read());
-		let merkle_root_hash = try!(reader.read());
-		let time = try!(reader.read());
-		let nbits = try!(reader.read());
-		let nonce = try!(reader.read());
-
 		let block_header = BlockHeader {
-			version: version,
-			previous_header_hash: previous_header_hash,
-			merkle_root_hash: merkle_root_hash,
-			time: time,
-			nbits: nbits,
-			nonce: nonce,
+			version: try!(reader.read()),
+			previous_header_hash: try!(reader.read()),
+			merkle_root_hash: try!(reader.read()),
+			time: try!(reader.read()),
+			nbits: try!(reader.read()),
+			nonce: try!(reader.read()),
 		};
 
 		Ok(block_header)
