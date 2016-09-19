@@ -1,4 +1,5 @@
 mod compact_integer;
+mod impls;
 pub mod reader;
 pub mod stream;
 

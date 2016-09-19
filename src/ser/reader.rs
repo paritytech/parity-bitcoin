@@ -1,6 +1,5 @@
 use std::{io, cmp};
 use byteorder::{LittleEndian, ReadBytesExt};
-use primitives::Bytes;
 use ser::compact_integer::CompactInteger;
 
 pub fn deserialize<T>(buffer: &[u8]) -> Result<T, Error> where T: Deserializable {
@@ -119,17 +118,9 @@ impl Deserializable for u64 {
 	}
 }
 
-impl Deserializable for Bytes {
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-		let len = try!(reader.read::<CompactInteger>());
-		reader.read_slice(len.into()).map(|b| b.to_vec().into())
-	}
-}
-
 #[cfg(test)]
 mod test {
-	use primitives::Bytes;
-	use super::{Reader, Error, deserialize};
+	use super::{Reader, Error};
 
 	#[test]
 	fn test_reader_read() {
@@ -148,12 +139,5 @@ mod test {
 		assert_eq!(4u64, reader.read().unwrap());
 		assert!(reader.is_finished());
 		assert_eq!(Error::UnexpectedEnd, reader.read::<u8>().unwrap_err());
-	}
-
-	#[test]
-	fn test_bytes_deserialize() {
-		let raw = vec![0x02, 0x01, 0x45];
-		let expected: Bytes = "0145".into();
-		assert_eq!(expected, deserialize(&raw).unwrap());
 	}
 }

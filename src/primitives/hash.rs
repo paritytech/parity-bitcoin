@@ -1,6 +1,5 @@
 use std::{fmt, ops, cmp, str};
 use hex::{ToHex, FromHex, FromHexError};
-use ser::{Stream, Serializable, Reader, Deserializable, Error as ReaderError};
 
 macro_rules! impl_hash {
 	($name: ident, $size: expr) => {
@@ -94,23 +93,6 @@ macro_rules! impl_hash {
 				let self_ref: &[u8] = &self.0;
 				let other_ref: &[u8] = &other.0;
 				self_ref == other_ref
-			}
-		}
-
-		// TODO: move to ser module
-
-		impl Serializable for $name {
-			fn serialize(&self, stream: &mut Stream) {
-				stream.append_slice(&self.0);
-			}
-		}
-
-		impl Deserializable for $name {
-			fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-				let slice = try!(reader.read_slice($size));
-				let mut result = Self::default();
-				result.copy_from_slice(slice);
-				Ok(result)
 			}
 		}
 

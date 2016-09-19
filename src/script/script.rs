@@ -2,7 +2,7 @@
 
 use std::{fmt, ops};
 use hex::ToHex;
-use primitives::Bytes;
+use bytes::Bytes;
 use script::{Opcode, Error};
 
 /// Maximum number of bytes pushable to the stack

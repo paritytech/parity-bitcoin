@@ -27,7 +27,7 @@ pub mod script;
 pub mod ser;
 
 pub mod crypto;
-pub mod hash;
 pub mod network;
 
 pub use rustc_serialize::hex;
+pub use primitives::{hash, bytes};

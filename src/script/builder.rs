@@ -1,4 +1,4 @@
-use primitives::Bytes;
+use bytes::Bytes;
 use script::{Opcode, Script, Num};
 
 #[derive(Default)]

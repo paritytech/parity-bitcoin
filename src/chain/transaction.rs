@@ -3,7 +3,7 @@
 //! https://en.bitcoin.it/wiki/Protocol_documentation#tx
 
 use hex::FromHex;
-use primitives::Bytes;
+use bytes::Bytes;
 use ser::{
 	Deserializable, Reader, Error as ReaderError, deserialize,
 	Serializable, Stream, serialize

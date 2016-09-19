@@ -1,5 +1,5 @@
 use script::{Script, Builder};
-use primitives::Bytes;
+use bytes::Bytes;
 use keys::KeyPair;
 use crypto::dhash256;
 use hash::H256;
@@ -224,7 +224,7 @@ impl TransactionInputSigner {
 #[cfg(test)]
 mod tests {
 	use hex::FromHex;
-	use primitives::Bytes;
+	use bytes::Bytes;
 	use hash::H256;
 	use keys::{KeyPair, Private, Address};
 	use chain::{OutPoint, TransactionOutput, Transaction};
