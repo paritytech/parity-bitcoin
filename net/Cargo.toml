@@ -6,5 +6,6 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 [dependencies]
 byteorder = "0.5"
 
+primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
 
