@@ -241,4 +241,13 @@ mod tests {
 		let expected: String = "".into();
 		assert_eq!(expected, deserialize::<String>(&raw).unwrap());
 	}
+
+	#[test]
+	fn test_steam_append_slice() {
+		let mut slice = [0u8; 4];
+		slice[0] = 0x64;
+		let mut stream = Stream::default();
+		stream.append_slice(&slice);
+		assert_eq!(stream.out(), "64000000".into());
+	}
 }
