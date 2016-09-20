@@ -3,12 +3,13 @@ use ser::{
 	Reader, Error as ReaderError
 };
 use common::Command;
-use messages::{Version};
+use messages::{Version, Addr};
 
 #[derive(Debug, PartialEq)]
 pub enum Payload {
 	Version(Version),
 	Verack,
+	Addr(Addr),
 }
 
 impl Payload {
@@ -16,6 +17,7 @@ impl Payload {
 		match *self {
 			Payload::Version(_) => "version".into(),
 			Payload::Verack => "verack".into(),
+			Payload::Addr(_) => "addr".into(),
 		}
 	}
 
@@ -35,6 +37,9 @@ impl Serializable for Payload {
 				stream.append(version);
 			},
 			Payload::Verack => {},
+			Payload::Addr(ref addr) => {
+				stream.append(addr);
+			},
 		}
 	}
 }
