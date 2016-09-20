@@ -1,5 +1,9 @@
+use bytes::Bytes;
+use ser::{
+	Serializable, Stream,
+	Deserializable, Reader, Error as ReaderError, deserialize
+};
 use {ServiceFlags, NetAddress};
-use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 
 #[derive(Debug, PartialEq)]
 pub enum Version {
@@ -127,6 +131,13 @@ impl Deserializable for V70001 {
 		};
 
 		Ok(result)
+	}
+}
+
+impl From<&'static str> for Version {
+	fn from(s: &'static str) -> Self {
+		let bytes: Bytes = s.into();
+		deserialize(&bytes).unwrap()
 	}
 }
 

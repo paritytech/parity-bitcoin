@@ -1,4 +1,4 @@
-use std::str;
+use std::{str, fmt};
 use std::ascii::AsciiExt;
 use hash::H96;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
@@ -27,6 +27,26 @@ impl From<&'static str> for Command {
 	}
 }
 
+impl Command {
+	fn as_string(&self) -> String {
+		let trailing_zeros = self.0.iter().rev().take_while(|&x| x == &0).count();
+		let limit = self.0.len() - trailing_zeros;
+		String::from_utf8_lossy(&self.0[..limit]).to_ascii_lowercase()
+	}
+}
+
+impl From<Command> for String {
+	fn from(c: Command) -> Self {
+		c.as_string()
+	}
+}
+
+impl fmt::Display for Command {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		f.write_str(&self.as_string())
+	}
+}
+
 impl Serializable for Command {
 	fn serialize(&self, stream: &mut Stream) {
 		stream.append(&self.0);
@@ -46,8 +66,15 @@ mod tests {
 	use super::Command;
 
 	#[test]
-	fn test_parse() {
+	fn test_command_parse() {
 		assert_eq!(Command("76657273696f6e0000000000".into()), "version".into());
+	}
+
+	#[test]
+	fn test_command_to_string() {
+		let command: Command = "version".into();
+		let expected: String = "version".into();
+		assert_eq!(expected, String::from(command));
 	}
 
 	#[test]
