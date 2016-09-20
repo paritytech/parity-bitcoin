@@ -1,5 +1,4 @@
 use std::{io, cmp};
-use byteorder::{LittleEndian, ReadBytesExt};
 use compact_integer::CompactInteger;
 
 pub fn deserialize<T>(buffer: &[u8]) -> Result<T, Error> where T: Deserializable {
@@ -80,64 +79,5 @@ impl<'a> Reader<'a> {
 	/// Returns true if reading is finished.
 	pub fn is_finished(&self) -> bool {
 		self.read == self.buffer.len()
-	}
-}
-
-impl Deserializable for i32 {
-	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-		Ok(try!(reader.read_i32::<LittleEndian>()))
-	}
-}
-
-impl Deserializable for u8 {
-	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-		Ok(try!(reader.read_u8()))
-	}
-}
-
-impl Deserializable for u16 {
-	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-		Ok(try!(reader.read_u16::<LittleEndian>()))
-	}
-}
-
-impl Deserializable for u32 {
-	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-		Ok(try!(reader.read_u32::<LittleEndian>()))
-	}
-}
-
-impl Deserializable for u64 {
-	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-		Ok(try!(reader.read_u64::<LittleEndian>()))
-	}
-}
-
-#[cfg(test)]
-mod test {
-	use super::{Reader, Error};
-
-	#[test]
-	fn test_reader_read() {
-		let buffer = vec![
-			1,
-			2, 0,
-			3, 0, 0, 0,
-			4, 0, 0, 0, 0, 0, 0, 0
-		];
-
-		let mut reader = Reader::new(&buffer);
-		assert!(!reader.is_finished());
-		assert_eq!(1u8, reader.read().unwrap());
-		assert_eq!(2u16, reader.read().unwrap());
-		assert_eq!(3u32, reader.read().unwrap());
-		assert_eq!(4u64, reader.read().unwrap());
-		assert!(reader.is_finished());
-		assert_eq!(Error::UnexpectedEnd, reader.read::<u8>().unwrap_err());
 	}
 }

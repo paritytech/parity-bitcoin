@@ -1,6 +1,7 @@
+use bytes::Bytes;
 use ser::{
 	Stream, Serializable,
-	Reader, Deserializable, Error as ReaderError
+	Reader, Deserializable, Error as ReaderError, deserialize,
 };
 use {Port, IpAddress, ServiceFlags};
 
@@ -28,6 +29,13 @@ impl Deserializable for NetAddress {
 			port: try!(reader.read()),
 		};
 		Ok(net)
+	}
+}
+
+impl From<&'static str> for NetAddress {
+	fn from(s: &'static str) -> Self {
+		let bytes: Bytes = s.into();
+		deserialize(&bytes).unwrap()
 	}
 }
 
@@ -69,5 +77,17 @@ mod tests {
 		};
 
 		assert_eq!(expected, deserialize(&bytes).unwrap());
+	}
+
+	#[test]
+	fn test_net_address_from_static_str() {
+		let expected = NetAddress {
+			services: ServiceFlags::default().with_network(true),
+			address: "::ffff:a00:1".into(),
+			port: 8333.into(),
+
+		};
+		let s = "010000000000000000000000000000000000ffff0a000001208d";
+		assert_eq!(expected, s.into());
 	}
 }
