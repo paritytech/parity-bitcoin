@@ -3,7 +3,7 @@ use ser::{
 	Stream, Serializable,
 	Reader, Deserializable, Error as ReaderError, deserialize,
 };
-use {Port, IpAddress, ServiceFlags};
+use common::{Port, IpAddress, ServiceFlags};
 
 #[derive(Debug, PartialEq)]
 pub struct NetAddress {
@@ -42,7 +42,7 @@ impl From<&'static str> for NetAddress {
 #[cfg(test)]
 mod tests {
 	use ser::{serialize, deserialize};
-	use ServiceFlags;
+	use common::ServiceFlags;
 	use super::NetAddress;
 
 	#[test]

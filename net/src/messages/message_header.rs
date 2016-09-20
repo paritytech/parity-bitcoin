@@ -3,7 +3,7 @@ use ser::{
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError
 };
-use Command;
+use common::Command;
 
 #[derive(Debug, PartialEq)]
 pub struct MessageHeader {

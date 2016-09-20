@@ -2,7 +2,8 @@ use ser::{
 	Serializable, Stream,
 	Reader, Error as ReaderError
 };
-use {Version, Command};
+use common::Command;
+use messages::{Version};
 
 #[derive(Debug, PartialEq)]
 pub enum Payload {

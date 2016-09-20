@@ -3,7 +3,7 @@ use ser::{
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError, deserialize
 };
-use {ServiceFlags, NetAddress};
+use common::{NetAddress, ServiceFlags};
 
 #[derive(Debug, PartialEq)]
 pub enum Version {

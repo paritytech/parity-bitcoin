@@ -3,7 +3,7 @@ use ser::{
 	Deserializable, Reader, Error as ReaderError,
 	Serializable, Stream, serialize
 };
-use {MessageHeader, Payload};
+use messages::{MessageHeader, Payload};
 
 #[derive(Debug, PartialEq)]
 pub struct Message {
@@ -59,7 +59,7 @@ impl Deserializable for Message {
 mod tests {
 	use bytes::Bytes;
 	use ser::{serialize, deserialize};
-	use {Version, Payload};
+	use messages::{Payload, Version};
 	use super::Message;
 
 	#[test]

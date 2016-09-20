@@ -2,7 +2,7 @@ use std::{str, fmt};
 use std::ascii::AsciiExt;
 use hash::H96;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
-use Error;
+use common::Error;
 
 #[derive(Debug, PartialEq)]
 pub struct Command(H96);
