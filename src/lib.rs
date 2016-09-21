@@ -13,7 +13,5 @@
 extern crate bitcrypto as crypto;
 extern crate chain;
 extern crate keys;
-extern crate net;
 extern crate primitives;
 extern crate script;
-extern crate serialization as ser;

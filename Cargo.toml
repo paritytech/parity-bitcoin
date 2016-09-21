@@ -7,7 +7,6 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 bitcrypto = { path = "crypto" }
 chain = { path = "chain" }
 keys = { path = "keys" }
-net = { path = "net" }
+p2p = { path = "p2p" }
 primitives = { path = "primitives" }
 script = { path = "script" }
-serialization = { path = "serialization" }

@@ -1,0 +1,12 @@
+[package]
+name = "p2p"
+version = "0.1.0"
+authors = ["debris <marek.kotewicz@gmail.com>"]
+
+[dependencies]
+tokio-core = "0.1"
+futures = "0.1"
+
+primitives = { path = "../primitives" }
+serialization = { path = "../serialization" }
+net = { path = "../net" }
