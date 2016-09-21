@@ -4,6 +4,12 @@ use hex::{ToHex, FromHex, FromHexError};
 #[derive(Default, PartialEq, Clone)]
 pub struct Bytes(Vec<u8>);
 
+impl Bytes {
+	pub fn new_with_len(len: usize) -> Self {
+		Bytes(vec![0; len])
+	}
+}
+
 impl From<Vec<u8>> for Bytes {
 	fn from(v: Vec<u8>) -> Self {
 		Bytes(v)
@@ -46,6 +52,18 @@ impl ops::Deref for Bytes {
 
 impl ops::DerefMut for Bytes {
 	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
+	}
+}
+
+impl AsRef<[u8]> for Bytes {
+	fn as_ref(&self) -> &[u8] {
+		&self.0
+	}
+}
+
+impl AsMut<[u8]> for Bytes {
+	fn as_mut(&mut self) -> &mut [u8] {
 		&mut self.0
 	}
 }

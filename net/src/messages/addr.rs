@@ -42,7 +42,30 @@ impl Serializable for Addr {
 
 impl Deserializable for Addr {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+		// TODO: limit to 1000
 		let result = Addr {
+			addresses: try!(reader.read_list()),
+		};
+
+		Ok(result)
+	}
+}
+
+#[derive(Debug, PartialEq)]
+pub struct AddrBelow31402 {
+	pub addresses: Vec<NetAddress>,
+}
+
+impl Serializable for AddrBelow31402 {
+	fn serialize(&self, stream: &mut Stream) {
+		stream.append_list(&self.addresses);
+	}
+}
+
+impl Deserializable for AddrBelow31402 {
+	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+		// TODO: limit to 1000
+		let result = AddrBelow31402 {
 			addresses: try!(reader.read_list()),
 		};
 

@@ -25,7 +25,7 @@ impl<A> Future for ReadHeader<A> where A: io::Read {
 				let header: MessageHeader = try!(deserialize(&data));
 				Ok(Async::Ready((read, header)))
 			},
-			_ => Ok(Async::NotReady),
+			Async::NotReady => Ok(Async::NotReady),
 		}
 	}
 }
