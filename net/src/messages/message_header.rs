@@ -41,3 +41,35 @@ impl Serializable for MessageHeader {
 	}
 }
 
+#[cfg(test)]
+mod tests {
+	use bytes::Bytes;
+	use ser::{serialize, deserialize};
+	use super::MessageHeader;
+
+	#[test]
+	fn test_message_header_serialization() {
+		let expected = "f9beb4d96164647200000000000000001f000000ed52399b".into();
+		let header = MessageHeader {
+			magic: 0xd9b4bef9,
+			command: "addr".into(),
+			len: 0x1f,
+			checksum: [0xed, 0x52, 0x39, 0x9b],
+		};
+
+		assert_eq!(serialize(&header), expected);
+	}
+
+	#[test]
+	fn test_message_header_deserialization() {
+		let raw: Bytes = "f9beb4d96164647200000000000000001f000000ed52399b".into();
+		let expected = MessageHeader {
+			magic: 0xd9b4bef9,
+			command: "addr".into(),
+			len: 0x1f,
+			checksum: [0xed, 0x52, 0x39, 0x9b],
+		};
+
+		assert_eq!(expected, deserialize(&raw).unwrap());
+	}
+}
