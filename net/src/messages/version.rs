@@ -5,14 +5,24 @@ use ser::{
 };
 use common::{NetAddress, ServiceFlags};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Version {
 	Simple(Simple),
 	V106(Simple, V106),
 	V70001(Simple, V106, V70001),
 }
 
-#[derive(Debug, PartialEq)]
+impl Version {
+	pub fn version(&self) -> u32 {
+		match *self {
+			Version::Simple(ref s) => s.version,
+			Version::V106(ref s, _) => s.version,
+			Version::V70001(ref s, _, _) => s.version,
+		}
+	}
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct Simple {
 	pub version: u32,
 	pub services: ServiceFlags,
@@ -20,7 +30,7 @@ pub struct Simple {
 	pub receiver: NetAddress,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct V106 {
 	pub from: NetAddress,
 	pub nonce: u64,
@@ -28,7 +38,7 @@ pub struct V106 {
 	pub start_height: i32,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct V70001 {
 	pub relay: bool,
 }
