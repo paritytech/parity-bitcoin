@@ -1,4 +1,4 @@
-use std::{io, cmp};
+use std::io;
 use futures::{Future, Poll, Async};
 use net::messages::{Version, Message, Payload};
 use io::{write_message, read_message, ReadMessage, WriteMessage, Error};
@@ -15,29 +15,29 @@ fn verack() -> Message {
 
 pub struct HandshakeResult {
 	pub version: Version,
-	pub negotiated_version: u32,
 }
-
 
 enum HandshakeState<A> {
 	SendVersion(WriteMessage<A>),
 	ReceiveVersion(ReadMessage<A>),
 	ReceiveVerack {
-		version: Version,
+		version: Option<Version>,
 		future: ReadMessage<A>,
 	},
+	Finished,
 }
 
 enum AcceptHandshakeState<A> {
 	ReceiveVersion(ReadMessage<A>),
 	SendVersion {
-		version: Version,
+		version: Option<Version>,
 		future: WriteMessage<A>,
 	},
 	SendVerack {
-		version: Version,
+		version: Option<Version>,
 		future: WriteMessage<A>,
-	}
+	},
+	Finished,
 }
 
 pub fn handshake<A>(a: A) -> Handshake<A> where A: io::Write + io::Read {
@@ -65,10 +65,10 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 	type Error = Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-		let next = match self.state {
+		let (next, result) = match self.state {
 			HandshakeState::SendVersion(ref mut future) => {
 				let (stream, _) = try_async!(future.poll());
-				HandshakeState::ReceiveVersion(read_message(stream, 0))
+				(HandshakeState::ReceiveVersion(read_message(stream, 0)), Async::NotReady)
 			},
 			HandshakeState::ReceiveVersion(ref mut future) => {
 				let (stream, message) = try_async!(future.poll());
@@ -77,28 +77,30 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 					_ => return Err(Error::HandshakeFailed),
 				};
 
-				HandshakeState::ReceiveVerack {
-					version: version,
+				let next = HandshakeState::ReceiveVerack {
+					version: Some(version),
 					future: read_message(stream, 0),
-				}
+				};
+
+				(next, Async::NotReady)
 			},
-			HandshakeState::ReceiveVerack { ref version, ref mut future } => {
+			HandshakeState::ReceiveVerack { ref mut version, ref mut future } => {
 				let (stream, message) = try_async!(future.poll());
 				if message.payload != Payload::Verack {
 					return Err(Error::HandshakeFailed);
 				}
 
 				let result = HandshakeResult {
-					version: version.clone(),
-					negotiated_version: cmp::min(VERSION, version.version()),
+					version: version.take().expect("verack must be preceded by version"),
 				};
 
-				return Ok(Async::Ready((stream, result)));
-			}
+				(HandshakeState::Finished, Async::Ready((stream, result)))
+			},
+			HandshakeState::Finished => panic!("poll Handshake after it's done"),
 		};
 
 		self.state = next;
-		Ok(Async::NotReady)
+		Ok(result)
 	}
 }
 
@@ -107,38 +109,43 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 	type Error = Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-		let next = match self.state {
+		let (next, result) = match self.state {
 			AcceptHandshakeState::ReceiveVersion(ref mut future) => {
 				let (stream, message) = try_async!(future.poll());
 				let version = match message.payload {
 					Payload::Version(version) => version,
 					_ => return Err(Error::HandshakeFailed),
 				};
-				AcceptHandshakeState::SendVersion {
-					version: version,
+
+				let next = AcceptHandshakeState::SendVersion {
+					version: Some(version),
 					future: write_message(stream, &local_version()),
-				}
+				};
+
+				(next, Async::NotReady)
 			},
-			AcceptHandshakeState::SendVersion { ref version, ref mut future } => {
+			AcceptHandshakeState::SendVersion { ref mut version, ref mut future } => {
 				let (stream, _) = try_async!(future.poll());
-				AcceptHandshakeState::SendVerack {
-					version: version.clone(),
+				let next = AcceptHandshakeState::SendVerack {
+					version: version.take(),
 					future: write_message(stream, &verack()),
-				}
+				};
+
+				(next, Async::NotReady)
 			},
-			AcceptHandshakeState::SendVerack { ref version, ref mut future } => {
+			AcceptHandshakeState::SendVerack { ref mut version, ref mut future } => {
 				let (stream, _) = try_async!(future.poll());
 
 				let result = HandshakeResult {
-					version: version.clone(),
-					negotiated_version: cmp::min(VERSION, version.version()),
+					version: version.take().expect("verack must be preceded by version"),
 				};
 
-				return Ok(Async::Ready((stream, result)));
-			}
+				(AcceptHandshakeState::Finished, Async::Ready((stream, result)))
+			},
+			AcceptHandshakeState::Finished => panic!("poll AcceptHandshake after it's done"),
 		};
 
 		self.state = next;
-		Ok(Async::NotReady)
+		Ok(result)
 	}
 }

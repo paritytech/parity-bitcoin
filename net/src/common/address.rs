@@ -5,7 +5,7 @@ use ser::{
 };
 use common::{Port, IpAddress, ServiceFlags};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct NetAddress {
 	pub services: ServiceFlags,
 	pub address: IpAddress,
