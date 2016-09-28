@@ -20,13 +20,9 @@ impl<A> Future for ReadHeader<A> where A: io::Read {
 	type Error = Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-		match try_nb!(self.reader.poll()) {
-			Async::Ready((read, data)) => {
-				let header: MessageHeader = try!(deserialize(&data));
-				Ok(Async::Ready((read, header)))
-			},
-			Async::NotReady => Ok(Async::NotReady),
-		}
+		let (read, data) = try_async!(self.reader.poll());
+		let header = try!(deserialize(&data));
+		Ok(Async::Ready((read, header)))
 	}
 }
 

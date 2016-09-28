@@ -25,12 +25,8 @@ impl<A> Future for ReadPayload<A> where A: io::Read {
 	type Error = Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-		match try_nb!(self.reader.poll()) {
-			Async::Ready((read, data)) => {
-				let payload = try!(deserialize_payload(&data, self.version, &self.command));
-				Ok(Async::Ready((read, payload)))
-			},
-			Async::NotReady => Ok(Async::NotReady),
-		}
+		let (read, data) = try_async!(self.reader.poll());
+		let payload = try!(deserialize_payload(&data, self.version, &self.command));
+		Ok(Async::Ready((read, payload)))
 	}
 }

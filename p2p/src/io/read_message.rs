@@ -9,9 +9,10 @@ enum ReadMessageState<A> {
 		future: ReadHeader<A>,
 	},
 	ReadPayload {
-		header: MessageHeader,
+		header: Option<MessageHeader>,
 		future: ReadPayload<A>
 	},
+	Finished,
 }
 
 pub fn read_message<A>(a: A, version: u32) -> ReadMessage<A> where A: io::Read {
@@ -32,27 +33,29 @@ impl<A> Future for ReadMessage<A> where A: io::Read {
 	type Error = Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-		let next = match self.state {
+		let (next, result) = match self.state {
 			ReadMessageState::ReadHeader { version, ref mut future } => {
 				let (read, header) = try_async!(future.poll());
-				ReadMessageState::ReadPayload {
+				let next = ReadMessageState::ReadPayload {
 					future: read_payload(read, version, header.len as usize, header.command.clone()),
-					header: header,
-				}
+					header: Some(header),
+				};
+				(next, Async::NotReady)
 			},
-			ReadMessageState::ReadPayload { ref header, ref mut future } => {
+			ReadMessageState::ReadPayload { ref mut header, ref mut future } => {
 				let (read, payload) = try_async!(future.poll());
 				let message = Message {
-					header: header.clone(),
+					header: header.take().expect("payload must be preceded by header"),
 					payload: payload,
 				};
 
-				return Ok(Async::Ready((read, message)))
+				(ReadMessageState::Finished, Async::Ready((read, message)))
 			},
+			ReadMessageState::Finished => panic!("poll AcceptHandshake after it's done"),
 		};
 
 		self.state = next;
-		Ok(Async::NotReady)
+		Ok(result)
 	}
 }
 

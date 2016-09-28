@@ -5,7 +5,7 @@ use ser::{
 };
 use common::Command;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct MessageHeader {
 	pub magic: u32,
 	pub command: Command,
