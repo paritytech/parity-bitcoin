@@ -12,11 +12,11 @@ dependencies = [
 
 [[package]]
 name = "arrayvec"
-version = "0.3.17"
+version = "0.3.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "nodrop 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "odds 0.2.16 (registry+https://github.com/rust-lang/crates.io-index)",
+ "odds 0.2.18 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -62,7 +62,7 @@ name = "eth-secp256k1"
 version = "0.5.6"
 source = "git+https://github.com/ethcore/rust-secp256k1#f998f9a8c18227af200f0f7fdadf8a6560d391ff"
 dependencies = [
- "arrayvec 0.3.17 (registry+https://github.com/rust-lang/crates.io-index)",
+ "arrayvec 0.3.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "gcc 0.3.35 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.14 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -191,12 +191,12 @@ name = "nodrop"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "odds 0.2.16 (registry+https://github.com/rust-lang/crates.io-index)",
+ "odds 0.2.18 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "odds"
-version = "0.2.16"
+version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]

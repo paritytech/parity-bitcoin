@@ -5,6 +5,7 @@ cargo test\
 	-p bitcrypto\
 	-p keys\
 	-p net\
+	-p p2p\
 	-p primitives\
 	-p script\
 	-p serialization\
