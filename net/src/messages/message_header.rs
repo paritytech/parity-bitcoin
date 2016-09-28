@@ -3,11 +3,11 @@ use ser::{
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError
 };
-use common::Command;
+use common::{Command, Magic};
 
 #[derive(Debug, PartialEq)]
 pub struct MessageHeader {
-	pub magic: u32,
+	pub magic: Magic,
 	pub command: Command,
 	pub len: u32,
 	pub checksum: [u8; 4],
@@ -45,13 +45,14 @@ impl Serializable for MessageHeader {
 mod tests {
 	use bytes::Bytes;
 	use ser::{serialize, deserialize};
+	use common::Magic;
 	use super::MessageHeader;
 
 	#[test]
 	fn test_message_header_serialization() {
 		let expected = "f9beb4d96164647200000000000000001f000000ed52399b".into();
 		let header = MessageHeader {
-			magic: 0xd9b4bef9,
+			magic: Magic::Mainnet,
 			command: "addr".into(),
 			len: 0x1f,
 			checksum: [0xed, 0x52, 0x39, 0x9b],
@@ -64,7 +65,7 @@ mod tests {
 	fn test_message_header_deserialization() {
 		let raw: Bytes = "f9beb4d96164647200000000000000001f000000ed52399b".into();
 		let expected = MessageHeader {
-			magic: 0xd9b4bef9,
+			magic: Magic::Mainnet,
 			command: "addr".into(),
 			len: 0x1f,
 			checksum: [0xed, 0x52, 0x39, 0x9b],

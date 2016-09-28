@@ -1,16 +1,18 @@
 use std::io;
 use futures::{Future, Poll, Async};
 use net::messages::{Version, Message, Payload};
+use net::common::Magic;
 use io::{write_message, read_message, ReadMessage, WriteMessage, Error};
 
 pub const VERSION: u32 = 106;
 
-fn local_version() -> Message {
-	unimplemented!();
+/// TODO: take into account negotiated version
+fn version_message(magic: Magic, version: Version) -> Message {
+	Message::new(magic, Payload::Version(version))
 }
 
-fn verack() -> Message {
-	unimplemented!();
+fn verack_message(magic: Magic) -> Message {
+	Message::new(magic, Payload::Verack)
 }
 
 pub struct HandshakeResult {
@@ -28,7 +30,10 @@ enum HandshakeState<A> {
 }
 
 enum AcceptHandshakeState<A> {
-	ReceiveVersion(ReadMessage<A>),
+	ReceiveVersion {
+		local_version: Option<Version>,
+		future: ReadMessage<A>
+	},
 	SendVersion {
 		version: Option<Version>,
 		future: WriteMessage<A>,
@@ -40,24 +45,31 @@ enum AcceptHandshakeState<A> {
 	Finished,
 }
 
-pub fn handshake<A>(a: A) -> Handshake<A> where A: io::Write + io::Read {
+pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where A: io::Write + io::Read {
 	Handshake {
-		state: HandshakeState::SendVersion(write_message(a, &local_version())),
+		state: HandshakeState::SendVersion(write_message(a, &version_message(magic, version))),
+		magic: magic,
 	}
 }
 
-pub fn accept_handshake<A>(a: A) -> AcceptHandshake<A> where A: io::Write + io::Read {
+pub fn accept_handshake<A>(a: A, magic: Magic, version: Version) -> AcceptHandshake<A> where A: io::Write + io::Read {
 	AcceptHandshake {
-		state: AcceptHandshakeState::ReceiveVersion(read_message(a, 0)),
+		state: AcceptHandshakeState::ReceiveVersion {
+			local_version: Some(version),
+			future: read_message(a, magic, 0),
+		},
+		magic: magic,
 	}
 }
 
 pub struct Handshake<A> {
 	state: HandshakeState<A>,
+	magic: Magic,
 }
 
 pub struct AcceptHandshake<A> {
 	state: AcceptHandshakeState<A>,
+	magic: Magic,
 }
 
 impl<A> Future for Handshake<A> where A: io::Read + io::Write {
@@ -68,7 +80,7 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 		let (next, result) = match self.state {
 			HandshakeState::SendVersion(ref mut future) => {
 				let (stream, _) = try_async!(future.poll());
-				(HandshakeState::ReceiveVersion(read_message(stream, 0)), Async::NotReady)
+				(HandshakeState::ReceiveVersion(read_message(stream, self.magic, 0)), Async::NotReady)
 			},
 			HandshakeState::ReceiveVersion(ref mut future) => {
 				let (stream, message) = try_async!(future.poll());
@@ -79,7 +91,7 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 
 				let next = HandshakeState::ReceiveVerack {
 					version: Some(version),
-					future: read_message(stream, 0),
+					future: read_message(stream, self.magic, 0),
 				};
 
 				(next, Async::NotReady)
@@ -110,16 +122,17 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (next, result) = match self.state {
-			AcceptHandshakeState::ReceiveVersion(ref mut future) => {
+			AcceptHandshakeState::ReceiveVersion { ref mut local_version, ref mut future } => {
 				let (stream, message) = try_async!(future.poll());
 				let version = match message.payload {
 					Payload::Version(version) => version,
 					_ => return Err(Error::HandshakeFailed),
 				};
 
+				let local_version = local_version.take().expect("local version must be set");
 				let next = AcceptHandshakeState::SendVersion {
 					version: Some(version),
-					future: write_message(stream, &local_version()),
+					future: write_message(stream, &version_message(self.magic, local_version)),
 				};
 
 				(next, Async::NotReady)
@@ -128,7 +141,7 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 				let (stream, _) = try_async!(future.poll());
 				let next = AcceptHandshakeState::SendVerack {
 					version: version.take(),
-					future: write_message(stream, &verack()),
+					future: write_message(stream, &verack_message(self.magic)),
 				};
 
 				(next, Async::NotReady)

@@ -1,6 +1,7 @@
 use std::io;
 use futures::{Future, Poll, Async};
 use net::messages::{Message, MessageHeader};
+use net::common::Magic;
 use io::{read_header, read_payload, ReadHeader, ReadPayload, Error};
 
 enum ReadMessageState<A> {
@@ -15,11 +16,11 @@ enum ReadMessageState<A> {
 	Finished,
 }
 
-pub fn read_message<A>(a: A, version: u32) -> ReadMessage<A> where A: io::Read {
+pub fn read_message<A>(a: A, magic: Magic, version: u32) -> ReadMessage<A> where A: io::Read {
 	ReadMessage {
 		state: ReadMessageState::ReadHeader {
 			version: version,
-			future: read_header(a)
+			future: read_header(a, magic)
 		},
 	}
 }

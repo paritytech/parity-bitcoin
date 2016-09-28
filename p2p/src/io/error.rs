@@ -5,6 +5,7 @@ use ser::{Error as ReaderError};
 pub enum Error {
 	Io(io::Error),
 	Data(ReaderError),
+	InvalidNetwork,
 	HandshakeFailed,
 }
 
@@ -12,7 +13,9 @@ impl Error {
 	pub fn kind(&self) -> io::ErrorKind {
 		match *self {
 			Error::Io(ref e) => e.kind(),
-			Error::Data(_) | Error::HandshakeFailed => io::ErrorKind::Other,
+			Error::Data(_) |
+			Error::HandshakeFailed |
+			Error::InvalidNetwork => io::ErrorKind::Other,
 		}
 	}
 }
