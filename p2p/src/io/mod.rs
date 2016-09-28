@@ -1,11 +1,4 @@
 
-macro_rules! try_async {
-	($e: expr) => (match try_nb!($e) {
-		Async::Ready(i) => i,
-		Async::NotReady => return Ok(Async::NotReady),
-	})
-}
-
 mod error;
 mod handshake;
 mod read_header;

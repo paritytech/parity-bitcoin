@@ -15,6 +15,7 @@ fn verack_message(magic: Magic) -> Message {
 	Message::new(magic, Payload::Verack)
 }
 
+#[derive(Debug)]
 pub struct HandshakeResult {
 	pub version: Version,
 }
