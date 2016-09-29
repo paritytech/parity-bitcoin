@@ -50,7 +50,6 @@ pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where 
 	Handshake {
 		state: HandshakeState::SendVersion(write_message(a, &version_message(magic, version))),
 		magic: magic,
-		counter: 0,
 	}
 }
 
@@ -67,7 +66,6 @@ pub fn accept_handshake<A>(a: A, magic: Magic, version: Version) -> AcceptHandsh
 pub struct Handshake<A> {
 	state: HandshakeState<A>,
 	magic: Magic,
-	counter: u32,
 }
 
 pub struct AcceptHandshake<A> {
