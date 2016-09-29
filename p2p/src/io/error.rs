@@ -6,6 +6,7 @@ pub enum Error {
 	Io(io::Error),
 	Data(ReaderError),
 	InvalidNetwork,
+	InvalidChecksum,
 	HandshakeFailed,
 }
 
@@ -15,6 +16,7 @@ impl Error {
 			Error::Io(ref e) => e.kind(),
 			Error::Data(_) |
 			Error::HandshakeFailed |
+			Error::InvalidChecksum |
 			Error::InvalidNetwork => io::ErrorKind::Other,
 		}
 	}

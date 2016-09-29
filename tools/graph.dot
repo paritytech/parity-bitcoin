@@ -37,8 +37,8 @@ digraph dependencies {
 	N35[label="rustc_version",shape=box];
 	N36[label="semver",shape=box];
 	N37[label="void",shape=box];
-	N38[label="tokio-core",shape=box];
-	N39[label="time",shape=box];
+	N38[label="time",shape=box];
+	N39[label="tokio-core",shape=box];
 	N40[label="scoped-tls",shape=box];
 	N0 -> N1[label="",style=dashed];
 	N0 -> N2[label="",style=dashed];
@@ -59,11 +59,13 @@ digraph dependencies {
 	N3 -> N17[label="",style=dashed];
 	N3 -> N20[label="",style=dashed];
 	N3 -> N26[label="",style=dashed];
+	N4 -> N1[label="",style=dashed];
 	N4 -> N5[label="",style=dashed];
 	N4 -> N16[label="",style=dashed];
 	N4 -> N21[label="",style=dashed];
 	N4 -> N34[label="",style=dashed];
 	N4 -> N38[label="",style=dashed];
+	N4 -> N39[label="",style=dashed];
 	N5 -> N15[label="",style=dashed];
 	N6 -> N1[label="",style=dashed];
 	N6 -> N2[label="",style=dashed];
@@ -77,7 +79,7 @@ digraph dependencies {
 	N11 -> N18[label="",style=dashed];
 	N11 -> N19[label="",style=dashed];
 	N11 -> N20[label="",style=dashed];
-	N11 -> N39[label="",style=dashed];
+	N11 -> N38[label="",style=dashed];
 	N16 -> N5[label="",style=dashed];
 	N16 -> N13[label="",style=dashed];
 	N17 -> N7[label="",style=dashed];
@@ -120,12 +122,12 @@ digraph dependencies {
 	N34 -> N13[label="",style=dashed];
 	N34 -> N16[label="",style=dashed];
 	N35 -> N36[label=""];
-	N38 -> N21[label="",style=dashed];
-	N38 -> N22[label="",style=dashed];
-	N38 -> N28[label="",style=dashed];
-	N38 -> N32[label="",style=dashed];
-	N38 -> N40[label="",style=dashed];
-	N39 -> N19[label="",style=dashed];
-	N39 -> N23[label="",style=dashed];
-	N39 -> N24[label="",style=dashed];
+	N38 -> N19[label="",style=dashed];
+	N38 -> N23[label="",style=dashed];
+	N38 -> N24[label="",style=dashed];
+	N39 -> N21[label="",style=dashed];
+	N39 -> N22[label="",style=dashed];
+	N39 -> N28[label="",style=dashed];
+	N39 -> N32[label="",style=dashed];
+	N39 -> N40[label="",style=dashed];
 }

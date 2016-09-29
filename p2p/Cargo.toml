@@ -9,5 +9,6 @@ futures = "0.1"
 time = "0.1"
 
 primitives = { path = "../primitives" }
+bitcrypto = { path = "../crypto" }
 serialization = { path = "../serialization" }
 net = { path = "../net" }

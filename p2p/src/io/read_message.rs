@@ -37,8 +37,12 @@ impl<A> Future for ReadMessage<A> where A: io::Read {
 		let (next, result) = match self.state {
 			ReadMessageState::ReadHeader { version, ref mut future } => {
 				let (read, header) = try_ready!(future.poll());
+				let future = read_payload(
+					read, version, header.len as usize,
+					header.command.clone(), header.checksum.clone()
+				);
 				let next = ReadMessageState::ReadPayload {
-					future: read_payload(read, version, header.len as usize, header.command.clone()),
+					future: future,
 					header: Some(header),
 				};
 				(next, Async::NotReady)
