@@ -1,23 +1,47 @@
-use std::io;
+use std::{io, cmp};
 use futures::{Future, Poll, Async};
 use net::messages::{Version, Message, Payload};
 use net::common::Magic;
 use io::{write_message, read_message, ReadMessage, WriteMessage, Error};
 
-pub const VERSION: u32 = 106;
+pub const VERSION: u32 = 70_000;
 
-/// TODO: take into account negotiated version
+pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where A: io::Write + io::Read {
+	Handshake {
+		version: version.version(),
+		state: HandshakeState::SendVersion(write_message(a, &version_message(magic, version))),
+		magic: magic,
+	}
+}
+
+pub fn accept_handshake<A>(a: A, magic: Magic, version: Version) -> AcceptHandshake<A> where A: io::Write + io::Read {
+	AcceptHandshake {
+		version: version.version(),
+		state: AcceptHandshakeState::ReceiveVersion {
+			local_version: Some(version),
+			future: read_message(a, magic, 0),
+		},
+		magic: magic,
+	}
+}
+
+/// TODO: return Err if other version is not supported
+pub fn negotiate_version(local: u32, other: u32) -> Result<u32, Error> {
+	Ok(cmp::min(local, other))
+}
+
+#[derive(Debug)]
+pub struct HandshakeResult {
+	pub version: Version,
+	pub negotiated_version: u32,
+}
+
 fn version_message(magic: Magic, version: Version) -> Message {
 	Message::new(magic, Payload::Version(version))
 }
 
 fn verack_message(magic: Magic) -> Message {
 	Message::new(magic, Payload::Verack)
-}
-
-#[derive(Debug)]
-pub struct HandshakeResult {
-	pub version: Version,
 }
 
 enum HandshakeState<A> {
@@ -46,31 +70,16 @@ enum AcceptHandshakeState<A> {
 	Finished,
 }
 
-pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where A: io::Write + io::Read {
-	Handshake {
-		state: HandshakeState::SendVersion(write_message(a, &version_message(magic, version))),
-		magic: magic,
-	}
-}
-
-pub fn accept_handshake<A>(a: A, magic: Magic, version: Version) -> AcceptHandshake<A> where A: io::Write + io::Read {
-	AcceptHandshake {
-		state: AcceptHandshakeState::ReceiveVersion {
-			local_version: Some(version),
-			future: read_message(a, magic, 0),
-		},
-		magic: magic,
-	}
-}
-
 pub struct Handshake<A> {
 	state: HandshakeState<A>,
 	magic: Magic,
+	version: u32,
 }
 
 pub struct AcceptHandshake<A> {
 	state: AcceptHandshakeState<A>,
 	magic: Magic,
+	version: u32,
 }
 
 impl<A> Future for Handshake<A> where A: io::Read + io::Write {
@@ -103,8 +112,11 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 					return Err(Error::HandshakeFailed);
 				}
 
+				let version = version.take().expect("verack must be preceded by version");
+
 				let result = HandshakeResult {
-					version: version.take().expect("verack must be preceded by version"),
+					negotiated_version: try!(negotiate_version(self.version, version.version())),
+					version: version,
 				};
 
 				(HandshakeState::Finished, Async::Ready((stream, result)))
@@ -154,8 +166,11 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 			AcceptHandshakeState::SendVerack { ref mut version, ref mut future } => {
 				let (stream, _) = try_ready!(future.poll());
 
+				let version = version.take().expect("verack must be preceded by version");
+
 				let result = HandshakeResult {
-					version: version.take().expect("verack must be preceded by version"),
+					negotiated_version: try!(negotiate_version(self.version, version.version())),
+					version: version,
 				};
 
 				(AcceptHandshakeState::Finished, Async::Ready((stream, result)))
