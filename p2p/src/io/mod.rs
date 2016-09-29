@@ -1,10 +1,12 @@
-
 mod error;
 mod handshake;
 mod read_header;
 mod read_message;
 mod read_payload;
 mod write_message;
+
+pub const VERSION: u32 = 70_000;
+pub const USER_AGENT: &'static str = "pbtc";
 
 pub use self::error::Error;
 pub use self::handshake::{handshake, accept_handshake, Handshake, AcceptHandshake};

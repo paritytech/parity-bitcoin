@@ -4,8 +4,6 @@ use net::messages::{Version, Message, Payload};
 use net::common::Magic;
 use io::{write_message, read_message, ReadMessage, WriteMessage, Error};
 
-pub const VERSION: u32 = 70_000;
-
 pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where A: io::Write + io::Read {
 	Handshake {
 		version: version.version(),
