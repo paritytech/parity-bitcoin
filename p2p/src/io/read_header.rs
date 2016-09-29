@@ -23,7 +23,7 @@ impl<A> Future for ReadHeader<A> where A: io::Read {
 	type Error = Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-		let (read, data) = try_async!(self.reader.poll());
+		let (read, data) = try_ready!(self.reader.poll());
 		let header: MessageHeader = try!(deserialize(&data));
 		if header.magic != self.magic {
 			return Err(Error::InvalidNetwork);

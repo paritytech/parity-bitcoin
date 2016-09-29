@@ -6,6 +6,7 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 [dependencies]
 tokio-core = "0.1"
 futures = "0.1"
+time = "0.1"
 
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }

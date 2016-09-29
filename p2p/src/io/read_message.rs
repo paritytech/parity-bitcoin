@@ -36,7 +36,7 @@ impl<A> Future for ReadMessage<A> where A: io::Read {
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (next, result) = match self.state {
 			ReadMessageState::ReadHeader { version, ref mut future } => {
-				let (read, header) = try_async!(future.poll());
+				let (read, header) = try_ready!(future.poll());
 				let next = ReadMessageState::ReadPayload {
 					future: read_payload(read, version, header.len as usize, header.command.clone()),
 					header: Some(header),
@@ -44,7 +44,7 @@ impl<A> Future for ReadMessage<A> where A: io::Read {
 				(next, Async::NotReady)
 			},
 			ReadMessageState::ReadPayload { ref mut header, ref mut future } => {
-				let (read, payload) = try_async!(future.poll());
+				let (read, payload) = try_ready!(future.poll());
 				let message = Message {
 					header: header.take().expect("payload must be preceded by header"),
 					payload: payload,
@@ -56,7 +56,26 @@ impl<A> Future for ReadMessage<A> where A: io::Read {
 		};
 
 		self.state = next;
-		Ok(result)
+		match result {
+			// by polling again, we register new future
+			Async::NotReady => self.poll(),
+			result => Ok(result)
+		}
 	}
 }
 
+#[cfg(test)]
+mod tests {
+	use futures::Future;
+	use bytes::Bytes;
+	use net::common::Magic;
+	use net::messages::{Message, Payload};
+	use super::read_message;
+
+	#[test]
+	fn test_read_message() {
+		let raw: Bytes = "f9beb4d976657261636b000000000000000000005df6e0e2".into();
+		let expected = Message::new(Magic::Mainnet, Payload::Verack);
+		assert_eq!(read_message(raw.as_ref(), Magic::Mainnet, 0).wait().unwrap().1, expected);
+	}
+}

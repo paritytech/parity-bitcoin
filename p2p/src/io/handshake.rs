@@ -50,6 +50,7 @@ pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where 
 	Handshake {
 		state: HandshakeState::SendVersion(write_message(a, &version_message(magic, version))),
 		magic: magic,
+		counter: 0,
 	}
 }
 
@@ -66,6 +67,7 @@ pub fn accept_handshake<A>(a: A, magic: Magic, version: Version) -> AcceptHandsh
 pub struct Handshake<A> {
 	state: HandshakeState<A>,
 	magic: Magic,
+	counter: u32,
 }
 
 pub struct AcceptHandshake<A> {
@@ -80,11 +82,11 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (next, result) = match self.state {
 			HandshakeState::SendVersion(ref mut future) => {
-				let (stream, _) = try_async!(future.poll());
+				let (stream, _) = try_ready!(future.poll());
 				(HandshakeState::ReceiveVersion(read_message(stream, self.magic, 0)), Async::NotReady)
 			},
 			HandshakeState::ReceiveVersion(ref mut future) => {
-				let (stream, message) = try_async!(future.poll());
+				let (stream, message) = try_ready!(future.poll());
 				let version = match message.payload {
 					Payload::Version(version) => version,
 					_ => return Err(Error::HandshakeFailed),
@@ -98,7 +100,7 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 				(next, Async::NotReady)
 			},
 			HandshakeState::ReceiveVerack { ref mut version, ref mut future } => {
-				let (stream, message) = try_async!(future.poll());
+				let (stream, message) = try_ready!(future.poll());
 				if message.payload != Payload::Verack {
 					return Err(Error::HandshakeFailed);
 				}
@@ -113,7 +115,11 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 		};
 
 		self.state = next;
-		Ok(result)
+		match result {
+			// by polling again, we register new future
+			Async::NotReady => self.poll(),
+			result => Ok(result)
+		}
 	}
 }
 
@@ -124,7 +130,7 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (next, result) = match self.state {
 			AcceptHandshakeState::ReceiveVersion { ref mut local_version, ref mut future } => {
-				let (stream, message) = try_async!(future.poll());
+				let (stream, message) = try_ready!(future.poll());
 				let version = match message.payload {
 					Payload::Version(version) => version,
 					_ => return Err(Error::HandshakeFailed),
@@ -139,7 +145,7 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 				(next, Async::NotReady)
 			},
 			AcceptHandshakeState::SendVersion { ref mut version, ref mut future } => {
-				let (stream, _) = try_async!(future.poll());
+				let (stream, _) = try_ready!(future.poll());
 				let next = AcceptHandshakeState::SendVerack {
 					version: version.take(),
 					future: write_message(stream, &verack_message(self.magic)),
@@ -148,7 +154,7 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 				(next, Async::NotReady)
 			},
 			AcceptHandshakeState::SendVerack { ref mut version, ref mut future } => {
-				let (stream, _) = try_async!(future.poll());
+				let (stream, _) = try_ready!(future.poll());
 
 				let result = HandshakeResult {
 					version: version.take().expect("verack must be preceded by version"),
@@ -160,6 +166,10 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 		};
 
 		self.state = next;
-		Ok(result)
+		match result {
+			// by polling again, we register new future
+			Async::NotReady => self.poll(),
+			result => Ok(result)
+		}
 	}
 }
