@@ -1,12 +1,20 @@
 [package]
 name = "pbtc"
 version = "0.1.0"
-authors = ["debris <marek.kotewicz@gmail.com>"]
+license = "GPL-3.0"
+authors = ["Ethcore <admin@ethcore.io>"]
+description = "Parity bitcoin client."
 
 [dependencies]
+clap = { version = "2", features = ["yaml"] }
+
 bitcrypto = { path = "crypto" }
 chain = { path = "chain" }
 keys = { path = "keys" }
 p2p = { path = "p2p" }
 primitives = { path = "primitives" }
 script = { path = "script" }
+
+[[bin]]
+path = "pbtc/main.rs"
+name = "pbtc"

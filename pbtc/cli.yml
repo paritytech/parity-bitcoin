@@ -1,0 +1,12 @@
+name: pbtc
+version: "0.1.0"
+author: Ethcore <admin@ethcore.io>
+about: Parity bitcoin client
+args:
+    - connect:
+        short: c
+        long: connect
+        value_name: IP
+        help: Connect only to the specified node
+        takes_value: true
+
