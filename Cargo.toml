@@ -11,6 +11,7 @@ clap = { version = "2", features = ["yaml"] }
 bitcrypto = { path = "crypto" }
 chain = { path = "chain" }
 keys = { path = "keys" }
+net = { path = "net" }
 p2p = { path = "p2p" }
 primitives = { path = "primitives" }
 script = { path = "script" }
