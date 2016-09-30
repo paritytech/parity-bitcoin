@@ -18,4 +18,9 @@ args:
         value_name: IP
         help: Connect to a node to retrieve peer addresses, and disconnect
         takes_value: true
+    - port:
+        long: port
+        value_name: PORT
+        help: Listen for connections on PORT
+        takes_value: true
 

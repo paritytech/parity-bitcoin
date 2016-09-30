@@ -16,17 +16,36 @@ use net::common::Magic;
 fn main() {
 	let yaml = load_yaml!("cli.yml");
 	let matches = clap::App::from_yaml(yaml).get_matches();
+	let _cfg = parse(&matches);
+}
 
-	let _magic = match matches.is_present("testnet") {
+struct Config<'a> {
+	magic: Magic,
+	port: u16,
+	connect: Option<&'a str>,
+	seednode: Option<&'a str>,
+}
+
+fn parse<'a>(matches: &'a clap::ArgMatches<'a>) -> Result<Config<'a>, String> {
+	let magic = match matches.is_present("testnet") {
 		true => Magic::Testnet,
 		false => Magic::Mainnet,
 	};
 
-	if let Some(ip) = matches.value_of("connect") {
-		println!("Connecting to ip: {}", ip);
-	}
+	let port = match matches.value_of("port") {
+		Some(port) => try!(port.parse().map_err(|_| "Invalid port".to_owned())),
+		None => match magic {
+			Magic::Mainnet => 8333,
+			Magic::Testnet => 18333,
+		},
+	};
 
-	if let Some(ip) = matches.value_of("seednode") {
-		println!("Seednode ip: {}", ip);
-	}
+	let config = Config {
+		magic: magic,
+		port: port,
+		connect: matches.value_of("connect"),
+		seednode: matches.value_of("seednode"),
+	};
+
+	Ok(config)
 }

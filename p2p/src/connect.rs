@@ -16,6 +16,7 @@ pub struct Connection<A> where A: io::Read + io::Write {
 
 pub struct Config {
 	magic: Magic,
+	port: u16,
 	services: ServiceFlags,
 	user_agent: String,
 	start_height: i32,
