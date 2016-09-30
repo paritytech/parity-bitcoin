@@ -9,6 +9,7 @@ extern crate net;
 extern crate primitives;
 extern crate serialization as ser;
 
+pub mod connect;
 pub mod io;
 pub mod util;
 pub mod stream;

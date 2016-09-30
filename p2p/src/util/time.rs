@@ -4,6 +4,7 @@ pub trait Time {
 	fn get(&self) -> time::Timespec;
 }
 
+#[derive(Default)]
 pub struct RealTime;
 
 impl Time for RealTime {

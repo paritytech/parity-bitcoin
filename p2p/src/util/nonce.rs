@@ -4,6 +4,7 @@ pub trait NonceGenerator {
 	fn get(&self) -> u32;
 }
 
+#[derive(Default)]
 pub struct RandomNonce;
 
 impl NonceGenerator for RandomNonce {
