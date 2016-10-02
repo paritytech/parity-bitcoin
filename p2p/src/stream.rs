@@ -18,6 +18,12 @@ impl Future for TcpStreamNew {
 
 pub struct TcpStream(tnet::TcpStream);
 
+impl From<tnet::TcpStream> for TcpStream {
+	fn from(s: tnet::TcpStream) -> Self {
+		TcpStream(s)
+	}
+}
+
 impl ops::Deref for TcpStream {
 	type Target = tnet::TcpStream;
 

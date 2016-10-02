@@ -5,7 +5,7 @@ mod read_message;
 mod read_payload;
 mod write_message;
 
-pub const VERSION: u32 = 70_000;
+pub const VERSION: u32 = 70_001;
 pub const USER_AGENT: &'static str = "pbtc";
 
 pub use self::error::Error;
