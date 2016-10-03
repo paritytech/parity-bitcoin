@@ -1,7 +1,7 @@
 use crypto::checksum;
 use ser::{Serializable, Stream, serialize};
 use common::Magic;
-use messages::{MessageHeader, Payload};
+use message::{MessageHeader, Payload};
 
 #[derive(Debug, PartialEq)]
 pub struct Message {
@@ -37,8 +37,9 @@ mod tests {
 	use bytes::Bytes;
 	use ser::serialize;
 	use common::Magic;
-	use messages::{Payload, Version};
+	use types::Version;
 	use super::Message;
+	use Payload;
 
 	#[test]
 	fn test_message_serialization() {

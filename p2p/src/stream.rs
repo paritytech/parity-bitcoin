@@ -1,9 +1,9 @@
 use std::{ops, net, io};
 use futures::{Future, Poll, Async};
-use futures::stream::{Stream, BoxStream};
+use futures::stream::Stream;
 use tokio_core::{net as tnet};
 use tokio_core::reactor::Handle;
-use io::Error;
+use Error;
 
 pub struct TcpStreamNew(tnet::TcpStreamNew);
 
@@ -93,4 +93,3 @@ impl TcpListener {
 	}
 }
 
-pub type IoStream<T> = BoxStream<T, Error>;

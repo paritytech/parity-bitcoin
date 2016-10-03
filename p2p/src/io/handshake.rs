@@ -1,8 +1,10 @@
 use std::{io, cmp};
 use futures::{Future, Poll, Async};
-use net::messages::{Version, Message, Payload};
-use net::common::Magic;
-use io::{write_message, read_message, ReadMessage, WriteMessage, Error};
+use message::{Message, Payload};
+use message::types::Version;
+use message::common::Magic;
+use io::{write_message, read_message, ReadMessage, WriteMessage};
+use Error;
 
 pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where A: io::Write + io::Read {
 	Handshake {

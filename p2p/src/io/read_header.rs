@@ -2,9 +2,9 @@ use std::io;
 use futures::{Future, Poll, Async};
 use tokio_core::io::{ReadExact, read_exact};
 use ser::deserialize;
-use net::messages::MessageHeader;
-use net::common::Magic;
-use io::Error;
+use message::MessageHeader;
+use message::common::Magic;
+use Error;
 
 pub fn read_header<A>(a: A, magic: Magic) -> ReadHeader<A> where A: io::Read {
 	ReadHeader {
@@ -36,8 +36,8 @@ impl<A> Future for ReadHeader<A> where A: io::Read {
 mod tests {
 	use futures::Future;
 	use bytes::Bytes;
-	use net::messages::MessageHeader;
-	use net::common::Magic;
+	use message::MessageHeader;
+	use message::common::Magic;
 	use super::read_header;
 
 	#[test]

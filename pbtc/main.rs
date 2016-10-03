@@ -10,7 +10,7 @@ extern crate chain;
 extern crate keys;
 extern crate primitives;
 extern crate script;
-extern crate net;
+extern crate message;
 extern crate p2p;
 
 mod config;

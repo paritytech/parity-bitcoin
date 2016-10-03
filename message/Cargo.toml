@@ -1,5 +1,5 @@
 [package]
-name = "net"
+name = "message"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 

@@ -7,7 +7,7 @@ dependencies = [
  "clap 2.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "keys 0.1.0",
- "net 0.1.0",
+ "message 0.1.0",
  "p2p 0.1.0",
  "primitives 0.1.0",
  "script 0.1.0",
@@ -155,6 +155,16 @@ version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "message"
+version = "0.1.0"
+dependencies = [
+ "bitcrypto 0.1.0",
+ "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "primitives 0.1.0",
+ "serialization 0.1.0",
+]
+
+[[package]]
 name = "mio"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -179,16 +189,6 @@ dependencies = [
  "net2 0.2.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "ws2_32-sys 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "net"
-version = "0.1.0"
-dependencies = [
- "bitcrypto 0.1.0",
- "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "primitives 0.1.0",
- "serialization 0.1.0",
 ]
 
 [[package]]
@@ -235,7 +235,7 @@ version = "0.1.0"
 dependencies = [
  "bitcrypto 0.1.0",
  "futures 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "net 0.1.0",
+ "message 0.1.0",
  "primitives 0.1.0",
  "rand 0.3.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "serialization 0.1.0",

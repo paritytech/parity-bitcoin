@@ -2,7 +2,7 @@ use std::io;
 use tokio_core::io::{WriteAll, write_all};
 use bytes::Bytes;
 use ser::{serialize};
-use net::messages::Message;
+use message::Message;
 
 pub type WriteMessage<A> = WriteAll<A, Bytes>;
 

@@ -3,7 +3,7 @@ use ser::{
 	Reader, Error as ReaderError
 };
 use common::Command;
-use messages::{Version, Addr, AddrBelow31402};
+use types::{Version, Addr, AddrBelow31402};
 
 pub fn deserialize_payload(data: &[u8], version: u32, command: &Command) -> Result<Payload, ReaderError> {
 	let mut reader = Reader::new(data);

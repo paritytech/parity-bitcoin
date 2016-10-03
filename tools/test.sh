@@ -4,7 +4,7 @@ cargo test\
 	-p chain\
 	-p bitcrypto\
 	-p keys\
-	-p net\
+	-p message\
 	-p p2p\
 	-p primitives\
 	-p script\

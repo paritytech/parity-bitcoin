@@ -2,12 +2,13 @@ use std::{net, io};
 use futures::{Future, Poll, Async};
 use futures::stream::Stream;
 use tokio_core::reactor::Handle;
-use net::common::{Magic, ServiceFlags, NetAddress};
-use net::messages::{Version, Simple, V106, V70001};
-use stream::{TcpStream, TcpStreamNew, TcpListener, IoStream};
-use io::{handshake, Handshake, HandshakeResult, Error, accept_handshake, AcceptHandshake, VERSION};
+use message::common::{Magic, ServiceFlags, NetAddress};
+use message::types::{Version, Simple, V106, V70001};
+use stream::{TcpStream, TcpStreamNew, TcpListener};
+use io::{handshake, Handshake, HandshakeResult, accept_handshake, AcceptHandshake, IoStream};
 use util::time::{Time, RealTime};
 use util::nonce::{NonceGenerator, RandomNonce};
+use {VERSION, Error};
 
 pub struct Connection<A> where A: io::Read + io::Write {
 	pub stream: A,
@@ -87,7 +88,6 @@ pub struct Connect {
 }
 
 pub struct Listen {
-	//inner: Incoming,
 	inner: IoStream<Connection<TcpStream>>,
 }
 

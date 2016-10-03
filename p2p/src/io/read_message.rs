@@ -1,8 +1,9 @@
 use std::io;
 use futures::{Future, Poll, Async};
-use net::messages::{Message, MessageHeader};
-use net::common::Magic;
-use io::{read_header, read_payload, ReadHeader, ReadPayload, Error};
+use message::{Message, MessageHeader};
+use message::common::Magic;
+use io::{read_header, read_payload, ReadHeader, ReadPayload};
+use Error;
 
 enum ReadMessageState<A> {
 	ReadHeader {
@@ -72,8 +73,8 @@ impl<A> Future for ReadMessage<A> where A: io::Read {
 mod tests {
 	use futures::Future;
 	use bytes::Bytes;
-	use net::common::Magic;
-	use net::messages::{Message, Payload};
+	use message::{Message, Payload};
+	use message::common::Magic;
 	use super::read_message;
 
 	#[test]

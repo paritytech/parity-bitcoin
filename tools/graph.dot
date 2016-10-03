@@ -5,7 +5,7 @@ digraph dependencies {
 	N3[label="clap",shape=box];
 	N4[label="futures",shape=box];
 	N5[label="keys",shape=box];
-	N6[label="net",shape=box];
+	N6[label="message",shape=box];
 	N7[label="p2p",shape=box];
 	N8[label="primitives",shape=box];
 	N9[label="script",shape=box];

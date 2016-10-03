@@ -2,10 +2,10 @@ use std::io;
 use futures::{Future, Poll, Async};
 use tokio_core::io::{ReadExact, read_exact};
 use bytes::Bytes;
-use net::common::Command;
-use net::messages::{Payload, deserialize_payload};
+use message::{Payload, deserialize_payload};
+use message::common::Command;
 use crypto::checksum;
-use io::Error;
+use Error;
 
 pub fn read_payload<A>(a: A, version: u32, len: usize, command: Command, checksum: [u8; 4]) -> ReadPayload<A> where A: io::Read {
 	ReadPayload {
