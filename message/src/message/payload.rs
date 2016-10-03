@@ -1,30 +1,42 @@
 use ser::{
 	Serializable, Stream,
-	Reader, Error as ReaderError
+	Error as ReaderError, deserialize
 };
-use chain::{Transaction, Block};
+use chain::{Transaction, Block, MerkleBlock};
 use common::Command;
 use types::{
 	Version, Addr, AddrBelow31402, Inv,
-	GetData, NotFound, GetBlocks, GetHeaders
+	GetData, NotFound, GetBlocks, GetHeaders, Headers,
+	Ping, Pong, Reject, FilterLoad, FilterAdd, FeeFilter,
 };
 
 pub fn deserialize_payload(data: &[u8], version: u32, command: &Command) -> Result<Payload, ReaderError> {
-	let mut reader = Reader::new(data);
 	match &command.to_string() as &str {
-		"version" => reader.read().map(Payload::Version),
-		"verack" => Ok(Payload::Verack),
+		"version" => deserialize(data).map(Payload::Version),
+		"verack" if data.is_empty() => Ok(Payload::Verack),
 		"addr" => match version >= 31402 {
-			true => reader.read().map(Payload::Addr),
-			false => reader.read().map(Payload::AddrBelow31402),
+			true => deserialize(data).map(Payload::Addr),
+			false => deserialize(data).map(Payload::AddrBelow31402),
 		},
-		"inv" => reader.read().map(Payload::Inv),
-		"getdata" => reader.read().map(Payload::GetData),
-		"notfound" => reader.read().map(Payload::NotFound),
-		"getblocks" => reader.read().map(Payload::GetBlocks),
-		"getheaders" => reader.read().map(Payload::GetHeaders),
-		"tx" => reader.read().map(Payload::Tx),
-		"block" => reader.read().map(Payload::Block),
+		"inv" => deserialize(data).map(Payload::Inv),
+		"getdata" => deserialize(data).map(Payload::GetData),
+		"notfound" => deserialize(data).map(Payload::NotFound),
+		"getblocks" => deserialize(data).map(Payload::GetBlocks),
+		"getheaders" => deserialize(data).map(Payload::GetHeaders),
+		"tx" => deserialize(data).map(Payload::Tx),
+		"block" => deserialize(data).map(Payload::Block),
+		"headers" => deserialize(data).map(Payload::Headers),
+		"getaddr" if data.is_empty() => Ok(Payload::GetAddr),
+		"mempool" if data.is_empty() => Ok(Payload::MemPool),
+		"ping" => deserialize(data).map(Payload::Ping),
+		"pong" => deserialize(data).map(Payload::Pong),
+		"reject" => deserialize(data).map(Payload::Reject),
+		"filterload" => deserialize(data).map(Payload::FilterLoad),
+		"filteradd" => deserialize(data).map(Payload::FilterAdd),
+		"filterclear" if data.is_empty() => Ok(Payload::FilterClear),
+		"merkleblock" => deserialize(data).map(Payload::MerkleBlock),
+		"sendheaders" if data.is_empty() => Ok(Payload::SendHeaders),
+		"feefilter" => deserialize(data).map(Payload::FeeFilter),
 		_ => Err(ReaderError::MalformedData),
 	}
 }
@@ -42,6 +54,18 @@ pub enum Payload {
 	GetHeaders(GetHeaders),
 	Tx(Transaction),
 	Block(Block),
+	Headers(Headers),
+	GetAddr,
+	MemPool,
+	Ping(Ping),
+	Pong(Pong),
+	Reject(Reject),
+	FilterLoad(FilterLoad),
+	FilterAdd(FilterAdd),
+	FilterClear,
+	MerkleBlock(MerkleBlock),
+	SendHeaders,
+	FeeFilter(FeeFilter),
 }
 
 impl Payload {
@@ -57,6 +81,18 @@ impl Payload {
 			Payload::GetHeaders(_) => "getheaders",
 			Payload::Tx(_) => "tx",
 			Payload::Block(_) => "block",
+			Payload::Headers(_) => "headers",
+			Payload::GetAddr => "getaddr",
+			Payload::MemPool=> "mempool",
+			Payload::Ping(_) => "ping",
+			Payload::Pong(_) => "pong",
+			Payload::Reject(_) => "reject",
+			Payload::FilterLoad(_) => "filterload",
+			Payload::FilterAdd(_) => "filteradd",
+			Payload::FilterClear => "filterclear",
+			Payload::MerkleBlock(_) => "merkleblock",
+			Payload::SendHeaders => "sendheaders",
+			Payload::FeeFilter(_) => "feefilter",
 		};
 
 		cmd.into()
@@ -78,6 +114,18 @@ impl Serializable for Payload {
 			Payload::GetHeaders(ref p) => { stream.append(p); },
 			Payload::Tx(ref p) => { stream.append(p); },
 			Payload::Block(ref p) => { stream.append(p); },
+			Payload::Headers(ref p) => { stream.append(p); },
+			Payload::GetAddr => {},
+			Payload::MemPool => {},
+			Payload::Ping(ref p) => { stream.append(p); },
+			Payload::Pong(ref p) => { stream.append(p); },
+			Payload::Reject(ref p) => { stream.append(p); },
+			Payload::FilterLoad(ref p) => { stream.append(p); },
+			Payload::FilterAdd(ref p) => { stream.append(p); },
+			Payload::FilterClear => {},
+			Payload::MerkleBlock(ref p) => { stream.append(p); },
+			Payload::SendHeaders => {},
+			Payload::FeeFilter(ref p) => { stream.append(p); },
 		}
 	}
 }

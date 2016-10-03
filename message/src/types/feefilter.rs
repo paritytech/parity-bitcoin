@@ -1,23 +1,22 @@
-use chain::BlockHeader;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 
 #[derive(Debug, PartialEq)]
-pub struct Headers {
-	headers: Vec<BlockHeader>,
+pub struct FeeFilter {
+	fee_rate: u64,
 }
 
-impl Serializable for Headers {
+impl Serializable for FeeFilter {
 	fn serialize(&self, stream: &mut Stream) {
-		stream.append_list(&self.headers);
+		stream.append(&self.fee_rate);
 	}
 }
 
-impl Deserializable for Headers {
+impl Deserializable for FeeFilter {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let headers = Headers {
-			headers: try!(reader.read_list()),
+		let fee_filter = FeeFilter {
+			fee_rate: try!(reader.read()),
 		};
 
-		Ok(headers)
+		Ok(fee_filter)
 	}
 }

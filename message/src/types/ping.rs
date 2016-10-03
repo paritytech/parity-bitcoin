@@ -1,23 +1,22 @@
-use chain::BlockHeader;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 
 #[derive(Debug, PartialEq)]
-pub struct Headers {
-	headers: Vec<BlockHeader>,
+pub struct Ping {
+	nonce: u64,
 }
 
-impl Serializable for Headers {
+impl Serializable for Ping {
 	fn serialize(&self, stream: &mut Stream) {
-		stream.append_list(&self.headers);
+		stream.append(&self.nonce);
 	}
 }
 
-impl Deserializable for Headers {
+impl Deserializable for Ping {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let headers = Headers {
-			headers: try!(reader.read_list()),
+		let ping = Ping {
+			nonce: try!(reader.read()),
 		};
 
-		Ok(headers)
+		Ok(ping)
 	}
 }
