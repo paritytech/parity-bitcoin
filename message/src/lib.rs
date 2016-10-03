@@ -1,5 +1,6 @@
 extern crate byteorder;
 extern crate bitcrypto as crypto;
+extern crate chain;
 extern crate primitives;
 extern crate serialization as ser;
 
