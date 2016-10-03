@@ -1,4 +1,3 @@
-use crypto::checksum;
 use ser::{
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError

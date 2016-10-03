@@ -1,14 +1,17 @@
+use std::net;
 use clap;
 use net::common::Magic;
 
-pub struct Config<'a> {
+pub struct Config {
 	pub magic: Magic,
 	pub port: u16,
-	pub connect: Option<&'a str>,
-	pub seednode: Option<&'a str>,
+	pub connect: Option<net::IpAddr>,
+	pub seednode: Option<net::IpAddr>,
+	pub print_to_console: bool,
 }
 
-pub fn parse<'a>(matches: &'a clap::ArgMatches<'a>) -> Result<Config<'a>, String> {
+pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
+	let print_to_console = matches.is_present("printtoconsole");
 	let magic = match matches.is_present("testnet") {
 		true => Magic::Testnet,
 		false => Magic::Mainnet,
@@ -16,17 +19,25 @@ pub fn parse<'a>(matches: &'a clap::ArgMatches<'a>) -> Result<Config<'a>, String
 
 	let port = match matches.value_of("port") {
 		Some(port) => try!(port.parse().map_err(|_| "Invalid port".to_owned())),
-		None => match magic {
-			Magic::Mainnet => 8333,
-			Magic::Testnet => 18333,
-		},
+		None => magic.port(),
+	};
+
+	let connect = match matches.value_of("connect") {
+		Some(s) => Some(try!(s.parse().map_err(|_| "Invalid connect".to_owned()))),
+		None => None,
+	};
+
+	let seednode = match matches.value_of("seednode") {
+		Some(s) => Some(try!(s.parse().map_err(|_| "Invalid seednode".to_owned()))),
+		None => None,
 	};
 
 	let config = Config {
+		print_to_console: print_to_console,
 		magic: magic,
 		port: port,
-		connect: matches.value_of("connect"),
-		seednode: matches.value_of("seednode"),
+		connect: connect,
+		seednode: seednode,
 	};
 
 	Ok(config)

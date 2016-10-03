@@ -2,11 +2,9 @@ use std::{net, io};
 use futures::{Future, Poll, Async};
 use futures::stream::Stream;
 use tokio_core::reactor::Handle;
-use tokio_core::net::TcpListener;
-use tokio_core::io::IoStream;
 use net::common::{Magic, ServiceFlags, NetAddress};
 use net::messages::{Version, Simple, V106, V70001};
-use stream::{TcpStream, TcpStreamNew};
+use stream::{TcpStream, TcpStreamNew, TcpListener, IoStream};
 use io::{handshake, Handshake, HandshakeResult, Error, accept_handshake, AcceptHandshake, VERSION};
 use util::time::{Time, RealTime};
 use util::nonce::{NonceGenerator, RandomNonce};
@@ -66,8 +64,8 @@ pub fn connect(address: &net::SocketAddr, handle: &Handle, config: &Config) -> C
 pub fn listen(handle: &Handle, config: Config) -> Result<Listen, Error> {
 	let listener = try!(TcpListener::bind(&config.local_address, handle));
 	let listen = Listen {
-		incoming: listener.incoming()
-			.map(move |(stream, address)| accept_connection(stream.into(), &config, address))
+		inner: listener.incoming()
+			.and_then(move |(stream, address)| accept_connection(stream.into(), &config, address))
 			.boxed(),
 	};
 	Ok(listen)
@@ -89,13 +87,8 @@ pub struct Connect {
 }
 
 pub struct Listen {
-	incoming: IoStream<AcceptConnection<TcpStream>>,
-}
-
-impl Listen {
-	pub fn incoming(self) -> IoStream<AcceptConnection<TcpStream>> {
-		self.incoming
-	}
+	//inner: Incoming,
+	inner: IoStream<Connection<TcpStream>>,
 }
 
 impl Future for Connect {
@@ -159,5 +152,14 @@ impl<A> Future for AcceptConnection<A> where A: io::Read + io::Write {
 			address: self.address,
 		};
 		Ok(connection.into())
+	}
+}
+
+impl Stream for Listen {
+	type Item = Connection<TcpStream>;
+	type Error = Error;
+
+	fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+		self.inner.poll()
 	}
 }

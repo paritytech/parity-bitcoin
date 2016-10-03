@@ -33,6 +33,20 @@ impl Magic {
 			_ => Err(Error::InvalidMagic),
 		}
 	}
+
+	pub fn port(&self) -> u16 {
+		match *self {
+			Magic::Mainnet => 8333,
+			Magic::Testnet => 18333,
+		}
+	}
+
+	pub fn rpc_port(&self) -> u16 {
+		match *self {
+			Magic::Mainnet => 8332,
+			Magic::Testnet => 18332,
+		}
+	}
 }
 
 impl Serializable for Magic {
@@ -60,5 +74,17 @@ mod tests {
 		assert_eq!(Magic::from_u32(MAGIC_MAINNET).unwrap(), Magic::Mainnet);
 		assert_eq!(Magic::from_u32(MAGIC_TESTNET).unwrap(), Magic::Testnet);
 		assert_eq!(Magic::from_u32(0).unwrap_err(), Error::InvalidMagic);
+	}
+
+	#[test]
+	fn test_network_port() {
+		assert_eq!(Magic::Mainnet.port(), 8333);
+		assert_eq!(Magic::Testnet.port(), 18333);
+	}
+
+	#[test]
+	fn test_network_rpc_port() {
+		assert_eq!(Magic::Mainnet.rpc_port(), 8332);
+		assert_eq!(Magic::Testnet.rpc_port(), 18332);
 	}
 }
