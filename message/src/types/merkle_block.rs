@@ -1,7 +1,7 @@
 use hash::H256;
 use bytes::Bytes;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
-use BlockHeader;
+use chain::BlockHeader;
 
 #[derive(Debug, PartialEq)]
 pub struct MerkleBlock {

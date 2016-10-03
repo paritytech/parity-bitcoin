@@ -2,12 +2,13 @@ use ser::{
 	Serializable, Stream,
 	Error as ReaderError, deserialize
 };
-use chain::{Transaction, Block, MerkleBlock};
+use chain::{Transaction, Block};
 use common::Command;
 use types::{
 	Version, Addr, AddrBelow31402, Inv,
 	GetData, NotFound, GetBlocks, GetHeaders, Headers,
 	Ping, Pong, Reject, FilterLoad, FilterAdd, FeeFilter,
+	MerkleBlock, SendCompact, CompactBlock, GetBlockTxn, BlockTxn,
 };
 
 pub fn deserialize_payload(data: &[u8], version: u32, command: &Command) -> Result<Payload, ReaderError> {
@@ -37,6 +38,10 @@ pub fn deserialize_payload(data: &[u8], version: u32, command: &Command) -> Resu
 		"merkleblock" => deserialize(data).map(Payload::MerkleBlock),
 		"sendheaders" if data.is_empty() => Ok(Payload::SendHeaders),
 		"feefilter" => deserialize(data).map(Payload::FeeFilter),
+		"sendcmpct" => deserialize(data).map(Payload::SendCompact),
+		"cmpctblock" => deserialize(data).map(Payload::CompactBlock),
+		"getblocktxn" => deserialize(data).map(Payload::GetBlockTxn),
+		"blocktxn" => deserialize(data).map(Payload::BlockTxn),
 		_ => Err(ReaderError::MalformedData),
 	}
 }
@@ -66,6 +71,10 @@ pub enum Payload {
 	MerkleBlock(MerkleBlock),
 	SendHeaders,
 	FeeFilter(FeeFilter),
+	SendCompact(SendCompact),
+	CompactBlock(CompactBlock),
+	GetBlockTxn(GetBlockTxn),
+	BlockTxn(BlockTxn),
 }
 
 impl Payload {
@@ -93,6 +102,10 @@ impl Payload {
 			Payload::MerkleBlock(_) => "merkleblock",
 			Payload::SendHeaders => "sendheaders",
 			Payload::FeeFilter(_) => "feefilter",
+			Payload::SendCompact(_) => "sendcmpct",
+			Payload::CompactBlock(_) => "compactblock",
+			Payload::GetBlockTxn(_) => "getblocktxn",
+			Payload::BlockTxn(_) => "blocktxn",
 		};
 
 		cmd.into()
@@ -126,6 +139,10 @@ impl Serializable for Payload {
 			Payload::MerkleBlock(ref p) => { stream.append(p); },
 			Payload::SendHeaders => {},
 			Payload::FeeFilter(ref p) => { stream.append(p); },
+			Payload::SendCompact(ref p) => { stream.append(p); },
+			Payload::CompactBlock(ref p) => { stream.append(p); },
+			Payload::GetBlockTxn(ref p) => { stream.append(p); },
+			Payload::BlockTxn(ref p) => { stream.append(p); },
 		}
 	}
 }

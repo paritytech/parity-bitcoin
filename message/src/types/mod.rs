@@ -1,23 +1,33 @@
 mod addr;
+mod blocktxn;
+mod compactblock;
 mod feefilter;
 mod filterload;
 mod filteradd;
 mod getblocks;
+mod getblocktxn;
 mod headers;
 mod inv;
+mod merkle_block;
 mod ping;
 pub mod reject;
+mod sendcompact;
 pub mod version;
 
 pub use self::addr::{Addr, AddrBelow31402};
+pub use self::blocktxn::BlockTxn;
+pub use self::compactblock::CompactBlock;
 pub use self::feefilter::FeeFilter;
 pub use self::filterload::FilterLoad;
 pub use self::filteradd::FilterAdd;
 pub use self::getblocks::GetBlocks;
+pub use self::getblocktxn::GetBlockTxn;
 pub use self::headers::Headers;
 pub use self::inv::Inv;
+pub use self::merkle_block::MerkleBlock;
 pub use self::ping::Ping;
 pub use self::reject::Reject;
+pub use self::sendcompact::SendCompact;
 pub use self::version::Version;
 
 pub type GetData = Inv;

@@ -1,23 +1,23 @@
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
-use common::InventoryVector;
+use common::BlockTransactions;
 
 #[derive(Debug, PartialEq)]
-pub struct Inv {
-	inventory: Vec<InventoryVector>,
+pub struct BlockTxn {
+	request: BlockTransactions,
 }
 
-impl Serializable for Inv {
+impl Serializable for BlockTxn {
 	fn serialize(&self, stream: &mut Stream) {
-		stream.append_list(&self.inventory);
+		stream.append(&self.request);
 	}
 }
 
-impl Deserializable for Inv {
+impl Deserializable for BlockTxn {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let inv = Inv {
-			inventory: try!(reader.read_list()),
+		let block = BlockTxn {
+			request: try!(reader.read()),
 		};
 
-		Ok(inv)
+		Ok(block)
 	}
 }
