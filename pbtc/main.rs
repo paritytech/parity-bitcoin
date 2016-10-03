@@ -17,7 +17,7 @@ mod config;
 
 use futures::stream::Stream;
 use std::net::SocketAddr;
-use p2p::connect::{Config as P2PConfig, self};
+use p2p::net::{Config as P2PConfig, connect, listen};
 
 pub fn event_loop() -> tokio_core::reactor::Core {
 	tokio_core::reactor::Core::new().unwrap()
@@ -47,12 +47,12 @@ fn run() -> Result<(), String> {
 		relay: false,
 	};
 
-	if let Some(connect) = cfg.connect {
-		let c = connect::connect(&SocketAddr::new(connect, cfg.magic.port()), &handle, &p2p_cfg);
-		let connection = try!(el.run(c).map_err(|_| format!("Connect to {} failed", connect)));
+	if let Some(ip) = cfg.connect {
+		let c = connect(&SocketAddr::new(ip, cfg.magic.port()), &handle, &p2p_cfg);
+		let connection = try!(el.run(c).map_err(|_| format!("Connect to {} failed", ip)));
 	}
 
-	let listen = try!(connect::listen(&handle, p2p_cfg).map_err(|_| "Cannot start listening".to_owned()));
+	let listen = try!(listen(&handle, p2p_cfg).map_err(|_| "Cannot start listening".to_owned()));
 	let server = listen.for_each(|connection| {
 		println!("new connection: {:?}", connection.handshake_result);
 		Ok(())
