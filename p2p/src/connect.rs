@@ -5,10 +5,11 @@ use tokio_core::reactor::Handle;
 use tokio_core::net::TcpListener;
 use tokio_core::io::IoStream;
 use net::common::{Magic, ServiceFlags, NetAddress};
-use net::messages::{Version, Simple};
+use net::messages::{Version, Simple, V106, V70001};
 use stream::{TcpStream, TcpStreamNew};
 use io::{handshake, Handshake, HandshakeResult, Error, accept_handshake, AcceptHandshake, VERSION};
 use util::time::{Time, RealTime};
+use util::nonce::{NonceGenerator, RandomNonce};
 
 pub struct Connection<A> where A: io::Read + io::Write {
 	pub stream: A,
@@ -19,17 +20,16 @@ pub struct Connection<A> where A: io::Read + io::Write {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-	magic: Magic,
-	port: u16,
-	services: ServiceFlags,
-	user_agent: String,
-	start_height: i32,
-	relay: bool,
+	pub magic: Magic,
+	pub local_address: net::SocketAddr,
+	pub services: ServiceFlags,
+	pub user_agent: String,
+	pub start_height: i32,
+	pub relay: bool,
 }
 
-/// TODO: must be VERSION 70_001
 fn version(config: &Config, address: &net::SocketAddr) -> Version {
-	Version::Simple(Simple {
+	Version::V70001(Simple {
 		version: VERSION,
 		services: config.services,
 		timestamp: RealTime.get().sec,
@@ -38,6 +38,17 @@ fn version(config: &Config, address: &net::SocketAddr) -> Version {
 			address: address.ip().into(),
 			port: address.port().into(),
 		},
+	}, V106 {
+		from: NetAddress {
+			services: config.services,
+			address: config.local_address.ip().into(),
+			port: config.local_address.port().into(),
+		},
+		nonce: RandomNonce.get(),
+		user_agent: config.user_agent.clone(),
+		start_height: config.start_height,
+	}, V70001 {
+		relay: config.relay,
 	})
 }
 
@@ -52,8 +63,8 @@ pub fn connect(address: &net::SocketAddr, handle: &Handle, config: &Config) -> C
 	}
 }
 
-pub fn listen(address: &net::SocketAddr, handle: &Handle, config: Config) -> Result<Listen, Error> {
-	let listener = try!(TcpListener::bind(address, handle));
+pub fn listen(handle: &Handle, config: Config) -> Result<Listen, Error> {
+	let listener = try!(TcpListener::bind(&config.local_address, handle));
 	let listen = Listen {
 		incoming: listener.incoming()
 			.map(move |(stream, address)| accept_connection(stream.into(), &config, address))
