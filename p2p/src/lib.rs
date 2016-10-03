@@ -9,11 +9,11 @@ extern crate message;
 extern crate primitives;
 extern crate serialization as ser;
 
-pub mod connect;
 mod error;
 pub mod io;
+pub mod net;
+pub mod tcp;
 pub mod util;
-pub mod stream;
 
 pub const VERSION: u32 = 70_001;
 pub const USER_AGENT: &'static str = "pbtc";
