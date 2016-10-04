@@ -1,11 +1,30 @@
 use std::io;
+use futures::{Future, Poll};
 use tokio_core::io::{WriteAll, write_all};
 use bytes::Bytes;
-use ser::{serialize};
+use ser::serialize;
 use message::Message;
+use Error;
 
-pub type WriteMessage<A> = WriteAll<A, Bytes>;
+pub fn write_message<A>(a: A, message: Message) -> WriteMessage<A> where A: io::Write {
+	WriteMessage {
+		future: write_all(a, serialize(&message)),
+		message: Some(message),
+	}
+}
 
-pub fn write_message<A>(a: A, message: &Message) -> WriteMessage<A> where A: io::Write {
-	write_all(a, serialize(message))
+pub struct WriteMessage<A> {
+	future: WriteAll<A, Bytes>,
+	message: Option<Message>,
+}
+
+impl<A> Future for WriteMessage<A> where A: io::Write {
+	type Item = (A, Message);
+	type Error = Error;
+
+	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+		let (stream, _) = try_ready!(self.future.poll());
+		let message = self.message.take().expect("write message must be initialized with message");
+		Ok((stream, message).into())
+	}
 }

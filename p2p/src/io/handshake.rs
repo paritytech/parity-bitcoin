@@ -9,7 +9,7 @@ use Error;
 pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where A: io::Write + io::Read {
 	Handshake {
 		version: version.version(),
-		state: HandshakeState::SendVersion(write_message(a, &version_message(magic, version))),
+		state: HandshakeState::SendVersion(write_message(a, version_message(magic, version))),
 		magic: magic,
 	}
 }
@@ -149,7 +149,7 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 				let local_version = local_version.take().expect("local version must be set");
 				let next = AcceptHandshakeState::SendVersion {
 					version: Some(version),
-					future: write_message(stream, &version_message(self.magic, local_version)),
+					future: write_message(stream, version_message(self.magic, local_version)),
 				};
 
 				(next, Async::NotReady)
@@ -158,7 +158,7 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 				let (stream, _) = try_ready!(future.poll());
 				let next = AcceptHandshakeState::SendVerack {
 					version: version.take(),
-					future: write_message(stream, &verack_message(self.magic)),
+					future: write_message(stream, verack_message(self.magic)),
 				};
 
 				(next, Async::NotReady)

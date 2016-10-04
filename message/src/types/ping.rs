@@ -2,7 +2,7 @@ use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 
 #[derive(Debug, PartialEq)]
 pub struct Ping {
-	nonce: u64,
+	pub nonce: u64,
 }
 
 impl Serializable for Ping {
