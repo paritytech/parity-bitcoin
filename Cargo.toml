@@ -11,11 +11,9 @@ tokio-core = "0.1"
 futures = "0.1"
 
 bitcrypto = { path = "crypto" }
-chain = { path = "chain" }
 keys = { path = "keys" }
 message = { path = "message" }
 p2p = { path = "p2p" }
-primitives = { path = "primitives" }
 script = { path = "script" }
 
 [[bin]]

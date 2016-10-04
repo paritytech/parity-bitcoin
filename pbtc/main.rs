@@ -6,17 +6,17 @@ extern crate tokio_core;
 extern crate futures;
 
 extern crate bitcrypto as crypto;
-extern crate chain;
 extern crate keys;
-extern crate primitives;
 extern crate script;
 extern crate message;
 extern crate p2p;
 
 mod config;
 
-use futures::stream::Stream;
+use std::thread;
 use std::net::SocketAddr;
+use futures::Future;
+use futures::stream::Stream;
 use p2p::net::{Config as P2PConfig, connect, listen};
 
 pub fn event_loop() -> tokio_core::reactor::Core {
@@ -48,8 +48,17 @@ fn run() -> Result<(), String> {
 	};
 
 	if let Some(ip) = cfg.connect {
-		let c = connect(&SocketAddr::new(ip, cfg.magic.port()), &handle, &p2p_cfg);
-		let connection = try!(el.run(c).map_err(|_| format!("Connect to {} failed", ip)));
+		let connection = connect(&SocketAddr::new(ip, cfg.magic.port()), &handle, &p2p_cfg);
+		thread::spawn(move || {
+			match connection.wait() {
+				Ok(connection) => {
+					println!("Connected to ip {}", ip);
+				},
+				Err(err) => {
+					println!("Connection failed {:?}", err);
+				}
+			}
+		});
 	}
 
 	let listen = try!(listen(&handle, p2p_cfg).map_err(|_| "Cannot start listening".to_owned()));

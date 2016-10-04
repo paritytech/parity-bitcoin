@@ -3,13 +3,11 @@ name = "pbtc"
 version = "0.1.0"
 dependencies = [
  "bitcrypto 0.1.0",
- "chain 0.1.0",
  "clap 2.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "keys 0.1.0",
  "message 0.1.0",
  "p2p 0.1.0",
- "primitives 0.1.0",
  "script 0.1.0",
  "tokio-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
