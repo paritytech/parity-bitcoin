@@ -1,4 +1,4 @@
-mod addr;
+pub mod addr;
 mod blocktxn;
 mod compactblock;
 mod feefilter;

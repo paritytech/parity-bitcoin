@@ -3,7 +3,7 @@ use common::InventoryVector;
 
 #[derive(Debug, PartialEq)]
 pub struct Inv {
-	inventory: Vec<InventoryVector>,
+	pub inventory: Vec<InventoryVector>,
 }
 
 impl Serializable for Inv {
