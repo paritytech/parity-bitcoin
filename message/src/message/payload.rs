@@ -1,8 +1,7 @@
-use ser::{
-	Serializable, Stream,
-	Error as ReaderError, deserialize
-};
+use hash::H32;
+use ser::{Serializable, Stream, deserialize};
 use chain::{Transaction, Block};
+use crypto::checksum;
 use common::Command;
 use types::{
 	Version, Addr, AddrBelow31402, Inv,
@@ -10,41 +9,7 @@ use types::{
 	Ping, Pong, Reject, FilterLoad, FilterAdd, FeeFilter,
 	MerkleBlock, SendCompact, CompactBlock, GetBlockTxn, BlockTxn,
 };
-
-pub fn deserialize_payload(data: &[u8], version: u32, command: &Command) -> Result<Payload, ReaderError> {
-	match &command.to_string() as &str {
-		"version" => deserialize(data).map(Payload::Version),
-		"verack" if data.is_empty() => Ok(Payload::Verack),
-		"addr" => match version >= 31402 {
-			true => deserialize(data).map(Payload::Addr),
-			false => deserialize(data).map(Payload::AddrBelow31402),
-		},
-		"inv" => deserialize(data).map(Payload::Inv),
-		"getdata" => deserialize(data).map(Payload::GetData),
-		"notfound" => deserialize(data).map(Payload::NotFound),
-		"getblocks" => deserialize(data).map(Payload::GetBlocks),
-		"getheaders" => deserialize(data).map(Payload::GetHeaders),
-		"tx" => deserialize(data).map(Payload::Tx),
-		"block" => deserialize(data).map(Payload::Block),
-		"headers" => deserialize(data).map(Payload::Headers),
-		"getaddr" if data.is_empty() => Ok(Payload::GetAddr),
-		"mempool" if data.is_empty() => Ok(Payload::MemPool),
-		"ping" => deserialize(data).map(Payload::Ping),
-		"pong" => deserialize(data).map(Payload::Pong),
-		"reject" => deserialize(data).map(Payload::Reject),
-		"filterload" => deserialize(data).map(Payload::FilterLoad),
-		"filteradd" => deserialize(data).map(Payload::FilterAdd),
-		"filterclear" if data.is_empty() => Ok(Payload::FilterClear),
-		"merkleblock" => deserialize(data).map(Payload::MerkleBlock),
-		"sendheaders" if data.is_empty() => Ok(Payload::SendHeaders),
-		"feefilter" => deserialize(data).map(Payload::FeeFilter),
-		"sendcmpct" => deserialize(data).map(Payload::SendCompact),
-		"cmpctblock" => deserialize(data).map(Payload::CompactBlock),
-		"getblocktxn" => deserialize(data).map(Payload::GetBlockTxn),
-		"blocktxn" => deserialize(data).map(Payload::BlockTxn),
-		_ => Err(ReaderError::MalformedData),
-	}
-}
+use Error;
 
 #[derive(Debug, PartialEq)]
 pub enum Payload {
@@ -111,6 +76,46 @@ impl Payload {
 		cmd.into()
 	}
 
+	pub fn deserialize(data: &[u8], check: &H32, version: u32, command: &Command) -> Result<Self, Error> {
+		if &checksum(data) != check {
+			return Err(Error::InvalidChecksum);
+		}
+
+		let result = match &command.to_string() as &str {
+			"version" => deserialize(data).map(Payload::Version),
+			"verack" if data.is_empty() => Ok(Payload::Verack),
+			"addr" => match version >= 31402 {
+				true => deserialize(data).map(Payload::Addr),
+				false => deserialize(data).map(Payload::AddrBelow31402),
+			},
+			"inv" => deserialize(data).map(Payload::Inv),
+			"getdata" => deserialize(data).map(Payload::GetData),
+			"notfound" => deserialize(data).map(Payload::NotFound),
+			"getblocks" => deserialize(data).map(Payload::GetBlocks),
+			"getheaders" => deserialize(data).map(Payload::GetHeaders),
+			"tx" => deserialize(data).map(Payload::Tx),
+			"block" => deserialize(data).map(Payload::Block),
+			"headers" => deserialize(data).map(Payload::Headers),
+			"getaddr" if data.is_empty() => Ok(Payload::GetAddr),
+			"mempool" if data.is_empty() => Ok(Payload::MemPool),
+			"ping" => deserialize(data).map(Payload::Ping),
+			"pong" => deserialize(data).map(Payload::Pong),
+			"reject" => deserialize(data).map(Payload::Reject),
+			"filterload" => deserialize(data).map(Payload::FilterLoad),
+			"filteradd" => deserialize(data).map(Payload::FilterAdd),
+			"filterclear" if data.is_empty() => Ok(Payload::FilterClear),
+			"merkleblock" => deserialize(data).map(Payload::MerkleBlock),
+			"sendheaders" if data.is_empty() => Ok(Payload::SendHeaders),
+			"feefilter" => deserialize(data).map(Payload::FeeFilter),
+			"sendcmpct" => deserialize(data).map(Payload::SendCompact),
+			"cmpctblock" => deserialize(data).map(Payload::CompactBlock),
+			"getblocktxn" => deserialize(data).map(Payload::GetBlockTxn),
+			"blocktxn" => deserialize(data).map(Payload::BlockTxn),
+			_ => return Err(Error::InvalidCommand),
+		};
+
+		result.map_err(Into::into)
+	}
 }
 
 impl Serializable for Payload {

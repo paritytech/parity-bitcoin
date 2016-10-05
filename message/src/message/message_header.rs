@@ -1,9 +1,7 @@
 use hash::H32;
-use ser::{
-	Serializable, Stream,
-	Deserializable, Reader, Error as ReaderError
-};
+use ser::{Serializable, Stream, Reader};
 use common::{Command, Magic};
+use Error;
 
 #[derive(Debug, PartialEq)]
 pub struct MessageHeader {
@@ -13,10 +11,21 @@ pub struct MessageHeader {
 	pub checksum: H32,
 }
 
-impl Deserializable for MessageHeader {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+impl MessageHeader {
+	pub fn deserialize(data: &[u8], expected: Magic) -> Result<Self, Error> {
+		if data.len() != 24 {
+			return Err(Error::Deserialize);
+		}
+
+		let mut reader = Reader::new(data);
+		let magic: u32 = try!(reader.read());
+		let magic = try!(Magic::from_u32(magic));
+		if expected != magic {
+			return Err(Error::WrongMagic);
+		}
+
 		let header = MessageHeader {
-			magic: try!(reader.read()),
+			magic: magic,
 			command: try!(reader.read()),
 			len: try!(reader.read()),
 			checksum: try!(reader.read()),
@@ -39,7 +48,7 @@ impl Serializable for MessageHeader {
 #[cfg(test)]
 mod tests {
 	use bytes::Bytes;
-	use ser::{serialize, deserialize};
+	use ser::serialize;
 	use common::Magic;
 	use super::MessageHeader;
 
@@ -66,6 +75,6 @@ mod tests {
 			checksum: "ed52399b".into(),
 		};
 
-		assert_eq!(expected, deserialize(&raw).unwrap());
+		assert_eq!(expected, MessageHeader::deserialize(&raw, Magic::Mainnet).unwrap());
 	}
 }

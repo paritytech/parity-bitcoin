@@ -7,7 +7,9 @@ extern crate serialization as ser;
 pub mod common;
 mod message;
 pub mod types;
+mod error;
 
 pub use primitives::{hash, bytes};
 
-pub use message::{Message, MessageHeader, Payload, deserialize_payload};
+pub use message::{Message, MessageHeader, Payload};
+pub use error::Error;

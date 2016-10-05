@@ -1,7 +1,6 @@
 use std::io;
 use futures::{Future, Poll, Async};
 use tokio_core::io::{ReadExact, read_exact};
-use ser::deserialize;
 use message::MessageHeader;
 use message::common::Magic;
 use Error;
@@ -24,10 +23,7 @@ impl<A> Future for ReadHeader<A> where A: io::Read {
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (read, data) = try_ready!(self.reader.poll());
-		let header: MessageHeader = try!(deserialize(&data));
-		if header.magic != self.magic {
-			return Err(Error::InvalidNetwork);
-		}
+		let header= try!(MessageHeader::deserialize(&data, self.magic));
 		Ok(Async::Ready((read, header)))
 	}
 }

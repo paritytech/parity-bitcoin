@@ -1,8 +1,8 @@
 //! Bitcoin network magic number
 //! https://www.anintegratedworld.com/unravelling-the-mysterious-block-chain-magic-number/
 
-use ser::{Stream, Serializable, Reader, Deserializable, Error as ReaderError};
-use common::Error;
+use ser::{Stream, Serializable};
+use Error;
 
 const MAGIC_MAINNET: u32 = 0xD9B4BEF9;
 const MAGIC_TESTNET: u32 = 0x0709110B;
@@ -55,16 +55,9 @@ impl Serializable for Magic {
 	}
 }
 
-impl Deserializable for Magic {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let magic: u32 = try!(reader.read());
-		Magic::from_u32(magic).map_err(|_| ReaderError::MalformedData)
-	}
-}
-
 #[cfg(test)]
 mod tests {
-	use common::Error;
+	use Error;
 	use super::{Magic, MAGIC_MAINNET, MAGIC_TESTNET};
 
 	#[test]

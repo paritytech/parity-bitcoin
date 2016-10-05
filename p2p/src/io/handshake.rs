@@ -96,7 +96,7 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 				let (stream, message) = try_ready!(future.poll());
 				let version = match message.payload {
 					Payload::Version(version) => version,
-					_ => return Err(Error::HandshakeFailed),
+					_ => return Err(Error::Handshake),
 				};
 
 				let next = HandshakeState::ReceiveVerack {
@@ -109,7 +109,7 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 			HandshakeState::ReceiveVerack { ref mut version, ref mut future } => {
 				let (stream, message) = try_ready!(future.poll());
 				if message.payload != Payload::Verack {
-					return Err(Error::HandshakeFailed);
+					return Err(Error::Handshake);
 				}
 
 				let version = version.take().expect("verack must be preceded by version");
@@ -143,7 +143,7 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 				let (stream, message) = try_ready!(future.poll());
 				let version = match message.payload {
 					Payload::Version(version) => version,
-					_ => return Err(Error::HandshakeFailed),
+					_ => return Err(Error::Handshake),
 				};
 
 				let local_version = local_version.take().expect("local version must be set");
