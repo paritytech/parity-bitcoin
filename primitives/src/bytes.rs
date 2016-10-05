@@ -1,4 +1,4 @@
-use std::{ops, str, fmt};
+use std::{ops, str, fmt, io};
 use hex::{ToHex, FromHex, FromHexError};
 
 #[derive(Default, PartialEq, Clone)]
@@ -33,6 +33,16 @@ impl str::FromStr for Bytes {
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		s.from_hex().map(Bytes)
+	}
+}
+
+impl io::Write for Bytes {
+	fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+		self.0.write(buf)
+	}
+
+	fn flush(&mut self) -> Result<(), io::Error> {
+		self.0.flush()
 	}
 }
 

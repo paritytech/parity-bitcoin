@@ -24,7 +24,7 @@ pub fn run(config: Config, handle: &Handle) -> Result<BoxFuture<(), Error>, Erro
 
 	let listen = try!(listen(&handle, config.connection));
 	let server = listen.for_each(|connection| {
-		println!("new connection: {:?}", connection.handshake_result);
+		println!("new connection: {:?}", connection.version);
 		Ok(())
 	}).boxed();
 

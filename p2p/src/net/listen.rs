@@ -45,7 +45,7 @@ impl<A> Future for AcceptConnection<A> where A: io::Read + io::Write {
 		let (stream, handshake_result) = try_ready!(self.handshake.poll());
 		let connection = Connection {
 			stream: stream,
-			handshake_result: handshake_result,
+			version: handshake_result.negotiated_version,
 			magic: self.magic,
 			address: self.address,
 		};

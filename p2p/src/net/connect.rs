@@ -50,7 +50,7 @@ impl Future for Connect {
 				let (stream, result) = try_ready!(future.poll());
 				let connection = Connection {
 					stream: stream,
-					handshake_result: result,
+					version: result.negotiated_version,
 					magic: self.magic,
 					address: self.address,
 				};
