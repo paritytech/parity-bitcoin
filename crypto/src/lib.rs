@@ -5,7 +5,7 @@ use rcrypto::sha1::Sha1;
 use rcrypto::sha2::Sha256;
 use rcrypto::ripemd160::Ripemd160;
 use rcrypto::digest::Digest;
-use primitives::hash::{H160, H256};
+use primitives::hash::{H32, H160, H256};
 
 pub struct DHash160 {
 	sha256: Sha256,
@@ -136,8 +136,8 @@ pub fn dhash256(input: &[u8]) -> H256 {
 
 /// Data checksum
 #[inline]
-pub fn checksum(data: &[u8]) -> [u8; 4] {
-	let mut result = [0u8; 4];
+pub fn checksum(data: &[u8]) -> H32 {
+	let mut result = H32::default();
 	result.copy_from_slice(&dhash256(data)[0..4]);
 	result
 }
@@ -183,6 +183,6 @@ mod tests {
 
 	#[test]
 	fn test_checksum() {
-		assert_eq!(checksum(b"hello"), [0x95, 0x95, 0xc9, 0xdf]);
+		assert_eq!(checksum(b"hello"), "9595c9df".into());
 	}
 }

@@ -1,3 +1,4 @@
+use hash::H32;
 use ser::{
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError
@@ -9,7 +10,7 @@ pub struct MessageHeader {
 	pub magic: Magic,
 	pub command: Command,
 	pub len: u32,
-	pub checksum: [u8; 4],
+	pub checksum: H32,
 }
 
 impl Deserializable for MessageHeader {
@@ -18,12 +19,7 @@ impl Deserializable for MessageHeader {
 			magic: try!(reader.read()),
 			command: try!(reader.read()),
 			len: try!(reader.read()),
-			checksum: {
-				let slice = try!(reader.read_slice(4));
-				let mut checksum = [0u8; 4];
-				checksum.copy_from_slice(slice);
-				checksum
-			},
+			checksum: try!(reader.read()),
 		};
 
 		Ok(header)
@@ -36,7 +32,7 @@ impl Serializable for MessageHeader {
 			.append(&self.magic)
 			.append(&self.command)
 			.append(&self.len)
-			.append_slice(&self.checksum);
+			.append(&self.checksum);
 	}
 }
 
@@ -54,7 +50,7 @@ mod tests {
 			magic: Magic::Mainnet,
 			command: "addr".into(),
 			len: 0x1f,
-			checksum: [0xed, 0x52, 0x39, 0x9b],
+			checksum: "ed52399b".into(),
 		};
 
 		assert_eq!(serialize(&header), expected);
@@ -67,7 +63,7 @@ mod tests {
 			magic: Magic::Mainnet,
 			command: "addr".into(),
 			len: 0x1f,
-			checksum: [0xed, 0x52, 0x39, 0x9b],
+			checksum: "ed52399b".into(),
 		};
 
 		assert_eq!(expected, deserialize(&raw).unwrap());

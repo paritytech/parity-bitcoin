@@ -21,7 +21,7 @@ mod run;
 pub const VERSION: u32 = 70_001;
 pub const USER_AGENT: &'static str = "pbtc";
 
-pub use primitives::bytes;
+pub use primitives::{hash, bytes};
 
 pub use config::Config;
 pub use error::Error;

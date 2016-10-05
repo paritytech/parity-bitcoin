@@ -47,7 +47,7 @@ mod tests {
 			magic: Magic::Mainnet,
 			command: "addr".into(),
 			len: 0x1f,
-			checksum: [0xed, 0x52, 0x39, 0x9b],
+			checksum: "ed52399b".into(),
 		};
 
 		assert_eq!(read_header(raw.as_ref(), Magic::Mainnet).wait().unwrap().1, expected);

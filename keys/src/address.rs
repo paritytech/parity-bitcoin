@@ -60,7 +60,7 @@ impl DisplayLayout for Address {
 
 		result[1..21].copy_from_slice(&*self.hash);
 		let cs = checksum(&result[0..21]);
-		result[21..25].copy_from_slice(&cs);
+		result[21..25].copy_from_slice(&*cs);
 		AddressDisplayLayout(result)
 	}
 
@@ -70,7 +70,7 @@ impl DisplayLayout for Address {
 		}
 
 		let cs = checksum(&data[0..21]);
-		if cs != &data[21..] {
+		if &data[21..] != &*cs {
 			return Err(Error::InvalidChecksum);
 		}
 

@@ -62,7 +62,7 @@ impl DisplayLayout for Private {
 			result.push(1);
 		}
 		let cs = checksum(&result);
-		result.extend(&cs);
+		result.extend(&*cs);
 		result
 	}
 
@@ -78,7 +78,7 @@ impl DisplayLayout for Private {
 		}
 
 		let cs = checksum(&data[0..data.len() - 4]);
-		if cs != &data[data.len() - 4..] {
+		if &data[data.len() - 4..] != &*cs {
 			return Err(Error::InvalidChecksum);
 		}
 
