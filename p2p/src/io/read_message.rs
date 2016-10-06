@@ -1,7 +1,7 @@
 use std::io::{self, Read};
 use futures::{Future, Poll, Async};
 use futures::stream::Stream;
-use message::{Message, MessageHeader};
+use message::Payload;
 use message::common::Magic;
 use io::{read_header, read_payload, ReadHeader, ReadPayload, ReadRc};
 use Error;
@@ -12,7 +12,6 @@ enum ReadMessageState<A> {
 		future: ReadHeader<A>,
 	},
 	ReadPayload {
-		header: Option<MessageHeader>,
 		future: ReadPayload<A>
 	},
 	Finished,
@@ -49,7 +48,7 @@ pub struct ReadMessageStream<A> {
 }
 
 impl<A> Future for ReadMessage<A> where A: io::Read {
-	type Item = (A, Message);
+	type Item = (A, Payload);
 	type Error = Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -58,22 +57,16 @@ impl<A> Future for ReadMessage<A> where A: io::Read {
 				let (read, header) = try_ready!(future.poll());
 				let future = read_payload(
 					read, version, header.len as usize,
-					header.command.clone(), header.checksum.clone()
+					header.command, header.checksum
 				);
 				let next = ReadMessageState::ReadPayload {
 					future: future,
-					header: Some(header),
 				};
 				(next, Async::NotReady)
 			},
-			ReadMessageState::ReadPayload { ref mut header, ref mut future } => {
+			ReadMessageState::ReadPayload { ref mut future } => {
 				let (read, payload) = try_ready!(future.poll());
-				let message = Message {
-					header: header.take().expect("payload must be preceded by header"),
-					payload: payload,
-				};
-
-				(ReadMessageState::Finished, Async::Ready((read, message)))
+				(ReadMessageState::Finished, Async::Ready((read, payload)))
 			},
 			ReadMessageState::Finished => panic!("poll AcceptHandshake after it's done"),
 		};
@@ -88,7 +81,7 @@ impl<A> Future for ReadMessage<A> where A: io::Read {
 }
 
 impl<A> Stream for ReadMessageStream<A> where A: io::Read {
-	type Item = Message;
+	type Item = Payload;
 	type Error = Error;
 
 	fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -113,22 +106,22 @@ mod tests {
 	use futures::Future;
 	use futures::stream::Stream;
 	use bytes::Bytes;
-	use message::{Message, Payload};
+	use message::Payload;
 	use message::common::Magic;
 	use super::{read_message, read_message_stream};
 
 	#[test]
 	fn test_read_message() {
 		let raw: Bytes = "f9beb4d976657261636b000000000000000000005df6e0e2".into();
-		let expected = Message::new(Magic::Mainnet, Payload::Verack);
+		let expected = Payload::Verack;
 		assert_eq!(read_message(raw.as_ref(), Magic::Mainnet, 0).wait().unwrap().1, expected);
 	}
 
 	#[test]
 	fn test_read_message_stream() {
 		let raw: Bytes = "f9beb4d976657261636b000000000000000000005df6e0e2f9beb4d9676574616464720000000000000000005df6e0e2".into();
-		let expected0 = Message::new(Magic::Mainnet, Payload::Verack);
-		let expected1 = Message::new(Magic::Mainnet, Payload::GetAddr);
+		let expected0 = Payload::Verack;
+		let expected1 = Payload::GetAddr;
 
 		let mut stream = read_message_stream(Cursor::new(raw), Magic::Mainnet, 0);
 		assert_eq!(stream.poll().unwrap(), Some(expected0).into());

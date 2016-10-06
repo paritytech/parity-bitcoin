@@ -93,8 +93,8 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 				(HandshakeState::ReceiveVersion(read_message(stream, self.magic, 0)), Async::NotReady)
 			},
 			HandshakeState::ReceiveVersion(ref mut future) => {
-				let (stream, message) = try_ready!(future.poll());
-				let version = match message.payload {
+				let (stream, payload) = try_ready!(future.poll());
+				let version = match payload {
 					Payload::Version(version) => version,
 					_ => return Err(Error::Handshake),
 				};
@@ -107,8 +107,8 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 				(next, Async::NotReady)
 			},
 			HandshakeState::ReceiveVerack { ref mut version, ref mut future } => {
-				let (stream, message) = try_ready!(future.poll());
-				if message.payload != Payload::Verack {
+				let (stream, payload) = try_ready!(future.poll());
+				if payload != Payload::Verack {
 					return Err(Error::Handshake);
 				}
 
@@ -140,8 +140,8 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (next, result) = match self.state {
 			AcceptHandshakeState::ReceiveVersion { ref mut local_version, ref mut future } => {
-				let (stream, message) = try_ready!(future.poll());
-				let version = match message.payload {
+				let (stream, payload) = try_ready!(future.poll());
+				let version = match payload {
 					Payload::Version(version) => version,
 					_ => return Err(Error::Handshake),
 				};
