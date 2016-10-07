@@ -3,9 +3,8 @@ use futures::{Future, Poll, Async};
 use tokio_core::io::{ReadExact, read_exact};
 use bytes::Bytes;
 use hash::H32;
-use message::Payload;
+use message::{Payload, MessageResult};
 use message::common::Command;
-use Error;
 
 pub fn read_payload<A>(a: A, version: u32, len: usize, command: Command, checksum: H32) -> ReadPayload<A> where A: io::Read {
 	ReadPayload {
@@ -24,12 +23,12 @@ pub struct ReadPayload<A> {
 }
 
 impl<A> Future for ReadPayload<A> where A: io::Read {
-	type Item = (A, Payload);
-	type Error = Error;
+	type Item = (A, MessageResult<Payload>);
+	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (read, data) = try_ready!(self.reader.poll());
-		let payload = try!(Payload::deserialize(&data, &self.checksum, self.version, &self.command));
+		let payload = Payload::deserialize(&data, &self.checksum, self.version, &self.command);
 		Ok(Async::Ready((read, payload)))
 	}
 }

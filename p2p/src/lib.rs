@@ -11,7 +11,6 @@ extern crate serialization as ser;
 
 pub mod io;
 pub mod net;
-pub mod tcp;
 pub mod util;
 mod config;
 mod error;
@@ -27,4 +26,5 @@ pub use config::Config;
 pub use error::Error;
 pub use event_loop::event_loop;
 pub use run::run;
+pub type P2PResult<T> = Result<T, Error>;
 

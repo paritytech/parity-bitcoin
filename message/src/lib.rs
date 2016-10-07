@@ -13,3 +13,4 @@ pub use primitives::{hash, bytes};
 
 pub use message::{Message, MessageHeader, Payload};
 pub use error::Error;
+pub type MessageResult<T> = Result<T, Error>;

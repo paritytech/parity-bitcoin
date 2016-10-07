@@ -1,10 +1,11 @@
+use std::io;
 use std::net::SocketAddr;
 use futures::{Future, Poll, Async};
 use tokio_core::reactor::Handle;
+use tokio_core::net::{TcpStream, TcpStreamNew};
 use message::common::Magic;
 use message::types::Version;
 use io::{handshake, Handshake};
-use tcp::{TcpStream, TcpStreamNew};
 use net::{Config, Connection};
 use Error;
 
@@ -35,8 +36,8 @@ pub struct Connect {
 }
 
 impl Future for Connect {
-	type Item = Connection<TcpStream>;
-	type Error = Error;
+	type Item = Result<Connection, Error>;
+	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (next, result) = match self.state {
@@ -48,13 +49,17 @@ impl Future for Connect {
 			},
 			ConnectState::Handshake(ref mut future) => {
 				let (stream, result) = try_ready!(future.poll());
+				let result = match result {
+					Ok(result) => result,
+					Err(err) => return Ok(Async::Ready(Err(err))),
+				};
 				let connection = Connection {
 					stream: stream,
 					version: result.negotiated_version,
 					magic: self.magic,
 					address: self.address,
 				};
-				(ConnectState::Connected, Async::Ready(connection))
+				(ConnectState::Connected, Async::Ready(Ok(connection)))
 			},
 			ConnectState::Connected => panic!("poll Connect after it's done"),
 		};

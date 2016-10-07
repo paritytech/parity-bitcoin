@@ -1,10 +1,9 @@
-use std::io::{self, Read};
+use std::io;
 use futures::{Future, Poll, Async};
 use futures::stream::Stream;
-use message::Payload;
+use message::{Payload, MessageResult};
 use message::common::Magic;
 use io::{read_header, read_payload, ReadHeader, ReadPayload, ReadRc};
-use Error;
 
 enum ReadMessageState<A> {
 	ReadHeader {
@@ -48,13 +47,19 @@ pub struct ReadMessageStream<A> {
 }
 
 impl<A> Future for ReadMessage<A> where A: io::Read {
-	type Item = (A, Payload);
-	type Error = Error;
+	type Item = (A, MessageResult<Payload>);
+	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (next, result) = match self.state {
 			ReadMessageState::ReadHeader { version, ref mut future } => {
 				let (read, header) = try_ready!(future.poll());
+				let header = match header {
+					Ok(header) => header,
+					Err(err) => {
+						return Ok((read, Err(err)).into());
+					}
+				};
 				let future = read_payload(
 					read, version, header.len as usize,
 					header.command, header.checksum
@@ -81,18 +86,14 @@ impl<A> Future for ReadMessage<A> where A: io::Read {
 }
 
 impl<A> Stream for ReadMessageStream<A> where A: io::Read {
-	type Item = Payload;
-	type Error = Error;
+	type Item = MessageResult<Payload>;
+	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
 		let result = match self.future.poll() {
 			Ok(Async::Ready((_, result))) => Ok(Some(result).into()),
 			Ok(Async::NotReady) => return Ok(Async::NotReady),
-			Err(Error::Io(err)) => return Err(Error::Io(err)),
-			Err(err) => {
-				try!(self.stream.read_to_end(&mut Vec::new()));
-				Err(err)
-			}
+			Err(err) => Err(err),
 		};
 
 		self.future = read_message(self.stream.clone(), self.magic, self.version);

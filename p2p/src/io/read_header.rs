@@ -1,9 +1,8 @@
 use std::io;
 use futures::{Future, Poll, Async};
 use tokio_core::io::{ReadExact, read_exact};
-use message::MessageHeader;
+use message::{MessageHeader, MessageResult};
 use message::common::Magic;
-use Error;
 
 pub fn read_header<A>(a: A, magic: Magic) -> ReadHeader<A> where A: io::Read {
 	ReadHeader {
@@ -18,12 +17,12 @@ pub struct ReadHeader<A> {
 }
 
 impl<A> Future for ReadHeader<A> where A: io::Read {
-	type Item = (A, MessageHeader);
-	type Error = Error;
+	type Item = (A, MessageResult<MessageHeader>);
+	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (read, data) = try_ready!(self.reader.poll());
-		let header= try!(MessageHeader::deserialize(&data, self.magic));
+		let header = MessageHeader::deserialize(&data, self.magic);
 		Ok(Async::Ready((read, header)))
 	}
 }

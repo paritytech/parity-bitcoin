@@ -4,7 +4,6 @@ use tokio_core::io::{WriteAll, write_all};
 use bytes::Bytes;
 use ser::serialize;
 use message::Message;
-use Error;
 
 pub fn write_message<A>(a: A, message: Message) -> WriteMessage<A> where A: io::Write {
 	WriteMessage {
@@ -20,7 +19,7 @@ pub struct WriteMessage<A> {
 
 impl<A> Future for WriteMessage<A> where A: io::Write {
 	type Item = (A, Message);
-	type Error = Error;
+	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (stream, _) = try_ready!(self.future.poll());
