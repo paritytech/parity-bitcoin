@@ -6,6 +6,7 @@ extern crate serialization as ser;
 
 pub mod common;
 mod message;
+pub mod serialization;
 pub mod types;
 mod error;
 

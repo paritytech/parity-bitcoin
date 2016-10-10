@@ -12,6 +12,8 @@ pub enum Error {
 	WrongMagic,
 	/// Invalid checksum.
 	InvalidChecksum,
+	/// Invalid version.
+	InvalidVersion,
 }
 
 impl From<ReaderError> for Error {

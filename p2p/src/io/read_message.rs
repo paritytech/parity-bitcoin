@@ -73,7 +73,7 @@ impl<A> Future for ReadMessage<A> where A: io::Read {
 				let (read, payload) = try_ready!(future.poll());
 				(ReadMessageState::Finished, Async::Ready((read, payload)))
 			},
-			ReadMessageState::Finished => panic!("poll AcceptHandshake after it's done"),
+			ReadMessageState::Finished => panic!("poll ReadMessage after it's done"),
 		};
 
 		self.state = next;

@@ -4,18 +4,29 @@ use ser::{
 	Deserializable, Reader, Error as ReaderError, deserialize
 };
 use common::{NetAddress, ServiceFlags};
+use serialization::PayloadType;
 
 #[derive(Debug, PartialEq)]
 pub enum Version {
-	Simple(Simple),
-	V106(Simple, V106),
-	V70001(Simple, V106, V70001),
+	V0(V0),
+	V106(V0, V106),
+	V70001(V0, V106, V70001),
+}
+
+impl PayloadType for Version {
+	fn version() -> u32 {
+		0
+	}
+
+	fn command() -> &'static str {
+		"version"
+	}
 }
 
 impl Version {
 	pub fn version(&self) -> u32 {
 		match *self {
-			Version::Simple(ref s) => s.version,
+			Version::V0(ref s) => s.version,
 			Version::V106(ref s, _) => s.version,
 			Version::V70001(ref s, _, _) => s.version,
 		}
@@ -23,7 +34,7 @@ impl Version {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Simple {
+pub struct V0 {
 	pub version: u32,
 	pub services: ServiceFlags,
 	pub timestamp: i64,
@@ -46,7 +57,7 @@ pub struct V70001 {
 impl Serializable for Version {
 	fn serialize(&self, stream: &mut Stream) {
 		match *self {
-			Version::Simple(ref simple) => {
+			Version::V0(ref simple) => {
 				stream.append(simple);
 			},
 			Version::V106(ref simple, ref v106) => {
@@ -66,10 +77,10 @@ impl Serializable for Version {
 
 impl Deserializable for Version {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let simple: Simple = try!(reader.read());
+		let simple: V0 = try!(reader.read());
 
 		if simple.version < 106 {
-			return Ok(Version::Simple(simple));
+			return Ok(Version::V0(simple));
 		}
 
 		let v106: V106 = try!(reader.read());
@@ -82,7 +93,7 @@ impl Deserializable for Version {
 	}
 }
 
-impl Serializable for Simple {
+impl Serializable for V0 {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&self.version)
@@ -92,9 +103,9 @@ impl Serializable for Simple {
 	}
 }
 
-impl Deserializable for Simple {
+impl Deserializable for V0 {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let result = Simple {
+		let result = V0 {
 			version: try!(reader.read()),
 			services: try!(reader.read()),
 			timestamp: try!(reader.read()),
@@ -155,13 +166,13 @@ impl From<&'static str> for Version {
 mod test {
 	use bytes::Bytes;
 	use ser::{serialize, deserialize};
-	use super::{Version, Simple, V106};
+	use super::{Version, V0, V106};
 
 	#[test]
 	fn test_version_serialize() {
 		let expected: Bytes = "9c7c00000100000000000000e615104d00000000010000000000000000000000000000000000ffff0a000001208d010000000000000000000000000000000000ffff0a000002208ddd9d202c3ab457130055810100".into();
 
-		let version = Version::V106(Simple {
+		let version = Version::V106(V0 {
 			version: 31900,
 			services: 1u64.into(),
 			timestamp: 0x4d1015e6,
@@ -180,7 +191,7 @@ mod test {
 	fn test_version_deserialize() {
 		let raw: Bytes = "9c7c00000100000000000000e615104d00000000010000000000000000000000000000000000ffff0a000001208d010000000000000000000000000000000000ffff0a000002208ddd9d202c3ab457130055810100".into();
 
-		let expected = Version::V106(Simple {
+		let expected = Version::V106(V0 {
 			version: 31900,
 			services: 1u64.into(),
 			timestamp: 0x4d1015e6,

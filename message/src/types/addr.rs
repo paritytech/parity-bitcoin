@@ -2,6 +2,7 @@ use ser::{
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError,
 };
+use serialization::PayloadType;
 use common::NetAddress;
 
 #[derive(Debug, PartialEq)]

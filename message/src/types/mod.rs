@@ -10,8 +10,10 @@ mod headers;
 mod inv;
 mod merkle_block;
 mod ping;
+mod pong;
 pub mod reject;
 mod sendcompact;
+mod verack;
 pub mod version;
 
 pub use self::addr::{Addr, AddrBelow31402};
@@ -26,11 +28,12 @@ pub use self::headers::Headers;
 pub use self::inv::Inv;
 pub use self::merkle_block::MerkleBlock;
 pub use self::ping::Ping;
+pub use self::pong::Pong;
 pub use self::reject::Reject;
 pub use self::sendcompact::SendCompact;
+pub use self::verack::Verack;
 pub use self::version::Version;
 
 pub type GetData = Inv;
 pub type NotFound = Inv;
 pub type GetHeaders = GetBlocks;
-pub type Pong = Ping;

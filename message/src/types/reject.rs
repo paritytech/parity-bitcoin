@@ -1,4 +1,5 @@
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
+use serialization::PayloadType;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
@@ -76,5 +77,15 @@ impl Deserializable for Reject {
 		};
 
 		Ok(reject)
+	}
+}
+
+impl PayloadType for Reject {
+	fn version() -> u32 {
+		0
+	}
+
+	fn command() -> &'static str {
+		"reject"
 	}
 }

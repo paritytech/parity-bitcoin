@@ -1,9 +1,9 @@
 use std::{io, cmp};
 use futures::{Future, Poll, Async};
 use message::{Message, Payload};
-use message::types::Version;
+use message::types::{Version, Verack};
 use message::common::Magic;
-use io::{write_message, read_message, ReadMessage, WriteMessage};
+use io::{write_message, read_message, ReadMessage, WriteMessage, ReadSpecificMessage, read_specific_message};
 use Error;
 
 pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where A: io::Write + io::Read {
@@ -19,7 +19,7 @@ pub fn accept_handshake<A>(a: A, magic: Magic, version: Version) -> AcceptHandsh
 		version: version.version(),
 		state: AcceptHandshakeState::ReceiveVersion {
 			local_version: Some(version),
-			future: read_message(a, magic, 0),
+			future: read_specific_message(a, magic, 0),
 		},
 		magic: magic,
 	}
@@ -49,7 +49,7 @@ enum HandshakeState<A> {
 	ReceiveVersion(ReadMessage<A>),
 	ReceiveVerack {
 		version: Option<Version>,
-		future: ReadMessage<A>,
+		future: ReadSpecificMessage<Verack, A>,
 	},
 	Finished,
 }
@@ -57,7 +57,7 @@ enum HandshakeState<A> {
 enum AcceptHandshakeState<A> {
 	ReceiveVersion {
 		local_version: Option<Version>,
-		future: ReadMessage<A>
+		future: ReadSpecificMessage<Version, A>
 	},
 	SendVersion {
 		version: Option<Version>,
@@ -102,19 +102,13 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 
 				let next = HandshakeState::ReceiveVerack {
 					version: Some(version),
-					future: read_message(stream, self.magic, 0),
+					future: read_specific_message(stream, self.magic, 0),
 				};
 
 				(next, Async::NotReady)
 			},
 			HandshakeState::ReceiveVerack { ref mut version, ref mut future } => {
-				let (stream, payload) = try_ready!(future.poll());
-				match payload {
-					Ok(Payload::Verack) => (),
-					Ok(_) => return Ok((stream, Err(Error::Handshake)).into()),
-					Err(err) => return Ok((stream, Err(err.into())).into()),
-				}
-
+				let (stream, _verack) = try_ready!(future.poll());
 				let version = version.take().expect("verack must be preceded by version");
 
 				let result = HandshakeResult {
@@ -143,10 +137,9 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (next, result) = match self.state {
 			AcceptHandshakeState::ReceiveVersion { ref mut local_version, ref mut future } => {
-				let (stream, payload) = try_ready!(future.poll());
-				let version = match payload {
-					Ok(Payload::Version(version)) => version,
-					Ok(_) => return Ok((stream, Err(Error::Handshake)).into()),
+				let (stream, version) = try_ready!(future.poll());
+				let version = match version {
+					Ok(version) => version,
 					Err(err) => return Ok((stream, Err(err.into())).into()),
 				};
 

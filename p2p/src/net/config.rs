@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use message::common::{Magic, ServiceFlags, NetAddress};
-use message::types::version::{Version, Simple, V106, V70001};
+use message::types::version::{Version, V0, V106, V70001};
 use util::time::{Time, RealTime};
 use util::nonce::{NonceGenerator, RandomNonce};
 use VERSION;
@@ -17,7 +17,7 @@ pub struct Config {
 
 impl Config {
 	pub fn version(&self, to: &SocketAddr) -> Version {
-		Version::V70001(Simple {
+		Version::V70001(V0 {
 			version: VERSION,
 			services: self.services,
 			timestamp: RealTime.get().sec,

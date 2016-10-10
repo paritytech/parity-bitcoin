@@ -2,19 +2,19 @@ use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 use serialization::PayloadType;
 
 #[derive(Debug, PartialEq)]
-pub struct Ping {
+pub struct Pong {
 	pub nonce: u64,
 }
 
-impl Serializable for Ping {
+impl Serializable for Pong {
 	fn serialize(&self, stream: &mut Stream) {
 		stream.append(&self.nonce);
 	}
 }
 
-impl Deserializable for Ping {
+impl Deserializable for Pong {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let ping = Ping {
+		let ping = Pong {
 			nonce: try!(reader.read()),
 		};
 
@@ -22,12 +22,12 @@ impl Deserializable for Ping {
 	}
 }
 
-impl PayloadType for Ping {
+impl PayloadType for Pong {
 	fn version() -> u32 {
 		0
 	}
 
 	fn command() -> &'static str {
-		"ping"
+		"pong"
 	}
 }
