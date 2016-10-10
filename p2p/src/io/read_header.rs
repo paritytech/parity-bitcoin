@@ -45,7 +45,7 @@ mod tests {
 			checksum: "ed52399b".into(),
 		};
 
-		assert_eq!(read_header(raw.as_ref(), Magic::Mainnet).wait().unwrap().1, expected);
-		assert!(read_header(raw.as_ref(), Magic::Testnet).wait().is_err());
+		assert_eq!(read_header(raw.as_ref(), Magic::Mainnet).wait().unwrap().1, Ok(expected));
+		assert!(read_header(raw.as_ref(), Magic::Testnet).wait().unwrap().1.is_err());
 	}
 }

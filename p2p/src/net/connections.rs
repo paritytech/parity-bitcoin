@@ -1,5 +1,5 @@
 use futures::{oneshot, Oneshot};
-use message::Payload;
+use message::PayloadType;
 use net::Connection;
 
 pub struct Connections {
@@ -9,8 +9,8 @@ pub struct Connections {
 impl Connections {
 	/// Broadcast messages to the network.
 	/// Returned future completes of first confirmed receive.
-	pub fn broadcast(&self, payload: Payload) -> Oneshot<Payload> {
-		let (complete, os) = oneshot::<Payload>();
+	pub fn broadcast<T>(&self, payload: T) -> Oneshot<()> where T: PayloadType {
+		let (complete, os) = oneshot::<()>();
 		let mut complete = Some(complete);
 
 		for channel in &self.channels {

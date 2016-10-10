@@ -10,21 +10,21 @@ extern crate primitives;
 extern crate serialization as ser;
 
 pub mod io;
-//pub mod net;
+pub mod net;
 pub mod util;
-//mod config;
+mod config;
 mod error;
 mod event_loop;
-//mod run;
+mod run;
 
 pub const VERSION: u32 = 70_001;
 pub const USER_AGENT: &'static str = "pbtc";
 
 pub use primitives::{hash, bytes};
 
-//pub use config::Config;
+pub use config::Config;
 pub use error::Error;
 pub use event_loop::event_loop;
-//pub use run::run;
+pub use run::run;
 pub type P2PResult<T> = Result<T, Error>;
 
