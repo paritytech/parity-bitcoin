@@ -1,31 +1,31 @@
 use ser::{Stream, Reader};
-use common::BlockTransactions;
-use {MessageResult, PayloadType};
+use common::InventoryVector;
+use {PayloadType, MessageResult};
 
 #[derive(Debug, PartialEq)]
-pub struct BlockTxn {
-	request: BlockTransactions,
+pub struct NotFound {
+	pub inventory: Vec<InventoryVector>,
 }
 
-impl PayloadType for BlockTxn {
+impl PayloadType for NotFound {
 	fn version() -> u32 {
-		70014
+		0
 	}
 
 	fn command() -> &'static str {
-		"blocktxn"
+		"notfound"
 	}
 
 	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
-		let block = BlockTxn {
-			request: try!(reader.read()),
+		let inv = NotFound {
+			inventory: try!(reader.read_list_max(50_000)),
 		};
 
-		Ok(block)
+		Ok(inv)
 	}
 
 	fn serialize_payload(&self, stream: &mut Stream, _version: u32) -> MessageResult<()> {
-		stream.append(&self.request);
+		stream.append_list(&self.inventory);
 		Ok(())
 	}
 }

@@ -1,9 +1,9 @@
 use std::{io, cmp};
 use futures::{Future, Poll, Async};
-use message::{Message, Payload};
+use message::Message;
 use message::types::{Version, Verack};
 use message::common::Magic;
-use io::{write_message, read_message, ReadMessage, WriteMessage, ReadSpecificMessage, read_specific_message};
+use io::{write_message, WriteMessage, ReadSpecificMessage, read_specific_message};
 use Error;
 
 pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where A: io::Write + io::Read {
@@ -25,7 +25,6 @@ pub fn accept_handshake<A>(a: A, magic: Magic, version: Version) -> AcceptHandsh
 	}
 }
 
-/// TODO: return Err if other version is not supported
 pub fn negotiate_version(local: u32, other: u32) -> u32 {
 	cmp::min(local, other)
 }
@@ -36,17 +35,17 @@ pub struct HandshakeResult {
 	pub negotiated_version: u32,
 }
 
-fn version_message(magic: Magic, version: Version) -> Message {
-	Message::new(magic, Payload::Version(version))
+fn version_message(magic: Magic, version: Version) -> Message<Version> {
+	Message::new(magic, version.version(), &version).expect("version message should always be serialized correctly")
 }
 
-fn verack_message(magic: Magic) -> Message {
-	Message::new(magic, Payload::Verack)
+fn verack_message(magic: Magic) -> Message<Verack> {
+	Message::new(magic, 0, &Verack).expect("verack message should always be serialized correctly")
 }
 
 enum HandshakeState<A> {
-	SendVersion(WriteMessage<A>),
-	ReceiveVersion(ReadMessage<A>),
+	SendVersion(WriteMessage<Version, A>),
+	ReceiveVersion(ReadSpecificMessage<Version, A>),
 	ReceiveVerack {
 		version: Option<Version>,
 		future: ReadSpecificMessage<Verack, A>,
@@ -61,11 +60,11 @@ enum AcceptHandshakeState<A> {
 	},
 	SendVersion {
 		version: Option<Version>,
-		future: WriteMessage<A>,
+		future: WriteMessage<Version, A>,
 	},
 	SendVerack {
 		version: Option<Version>,
-		future: WriteMessage<A>,
+		future: WriteMessage<Verack, A>,
 	},
 	Finished,
 }
@@ -90,13 +89,12 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 		let (next, result) = match self.state {
 			HandshakeState::SendVersion(ref mut future) => {
 				let (stream, _) = try_ready!(future.poll());
-				(HandshakeState::ReceiveVersion(read_message(stream, self.magic, 0)), Async::NotReady)
+				(HandshakeState::ReceiveVersion(read_specific_message(stream, self.magic, 0)), Async::NotReady)
 			},
 			HandshakeState::ReceiveVersion(ref mut future) => {
-				let (stream, payload) = try_ready!(future.poll());
-				let version = match payload {
-					Ok(Payload::Version(version)) => version,
-					Ok(_) => return Ok((stream, Err(Error::Handshake)).into()),
+				let (stream, version) = try_ready!(future.poll());
+				let version = match version {
+					Ok(version) => version,
 					Err(err) => return Ok((stream, Err(err.into())).into()),
 				};
 

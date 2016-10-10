@@ -1,5 +1,6 @@
 use bytes::Bytes;
-use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
+use ser::{Stream, Reader};
+use {PayloadType, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct FilterAdd {
@@ -7,18 +8,25 @@ pub struct FilterAdd {
 	data: Bytes,
 }
 
-impl Serializable for FilterAdd {
-	fn serialize(&self, stream: &mut Stream) {
-		stream.append(&self.data);
+impl PayloadType for FilterAdd {
+	fn version() -> u32 {
+		70001
 	}
-}
 
-impl Deserializable for FilterAdd {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let filteradd= FilterAdd {
+	fn command() -> &'static str {
+		"filteradd"
+	}
+
+	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
+		let filteradd = FilterAdd {
 			data: try!(reader.read()),
 		};
 
 		Ok(filteradd)
+	}
+
+	fn serialize_payload(&self, stream: &mut Stream, _version: u32) -> MessageResult<()> {
+		stream.append(&self.data);
+		Ok(())
 	}
 }

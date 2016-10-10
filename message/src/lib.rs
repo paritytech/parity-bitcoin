@@ -12,6 +12,7 @@ mod error;
 
 pub use primitives::{hash, bytes};
 
-pub use message::{Message, MessageHeader, Payload};
+pub use message::{Message, MessageHeader};
 pub use error::Error;
+pub use serialization::PayloadType;
 pub type MessageResult<T> = Result<T, Error>;

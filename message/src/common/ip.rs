@@ -2,7 +2,7 @@ use std::{str, net};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct IpAddress(net::IpAddr);
 
 impl From<net::IpAddr> for IpAddress {

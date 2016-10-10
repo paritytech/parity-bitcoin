@@ -67,7 +67,22 @@ impl<'a> Reader<'a> {
 
 	pub fn read_list<T>(&mut self) -> Result<Vec<T>, Error> where T: Deserializable {
 		let len: usize = try!(self.read::<CompactInteger>()).into();
-		let mut result = vec![];
+		let mut result = Vec::with_capacity(len);
+
+		for _ in 0..len {
+			result.push(try!(self.read()));
+		}
+
+		Ok(result)
+	}
+
+	pub fn read_list_max<T>(&mut self, max: usize) -> Result<Vec<T>, Error> where T: Deserializable {
+		let len: usize = try!(self.read::<CompactInteger>()).into();
+		if len > max {
+			return Err(Error::MalformedData);
+		}
+
+		let mut result = Vec::with_capacity(len);
 
 		for _ in 0..len {
 			result.push(try!(self.read()));

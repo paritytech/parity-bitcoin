@@ -43,6 +43,14 @@ impl Stream {
 		self
 	}
 
+	pub fn append_list_ref<T>(&mut self, t: &[&T]) -> &mut Self where T: Serializable {
+		CompactInteger::from(t.len()).serialize(self);
+		for i in t {
+			i.serialize(self);
+		}
+		self
+	}
+
 	/// Full stream.
 	pub fn out(self) -> Bytes {
 		self.buffer.into()

@@ -1,14 +1,13 @@
 use std::io;
 use std::marker::PhantomData;
 use futures::{Poll, Future, Async};
-use ser::Deserializable;
 use message::{MessageResult, Error};
 use message::common::Magic;
 use message::serialization::PayloadType;
 use io::{read_header, ReadHeader, read_specific_payload, ReadSpecificPayload};
 
 pub fn read_specific_message<M, A>(a: A, magic: Magic, version: u32) -> ReadSpecificMessage<M, A>
-	where A: io::Read, M: PayloadType + Deserializable {
+	where A: io::Read, M: PayloadType {
 	ReadSpecificMessage {
 		state: ReadMessageState::ReadHeader {
 			version: version,
@@ -34,7 +33,7 @@ pub struct ReadSpecificMessage<M, A> {
 	message_type: PhantomData<M>,
 }
 
-impl<M, A> Future for ReadSpecificMessage<M, A> where A: io::Read, M: PayloadType + Deserializable {
+impl<M, A> Future for ReadSpecificMessage<M, A> where A: io::Read, M: PayloadType {
 	type Item = (A, MessageResult<M>);
 	type Error = io::Error;
 

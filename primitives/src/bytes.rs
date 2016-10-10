@@ -1,4 +1,4 @@
-use std::{ops, str, fmt, io};
+use std::{ops, str, fmt, io, marker};
 use hex::{ToHex, FromHex, FromHexError};
 
 #[derive(Default, PartialEq, Clone)]
@@ -75,6 +75,51 @@ impl AsRef<[u8]> for Bytes {
 impl AsMut<[u8]> for Bytes {
 	fn as_mut(&mut self) -> &mut [u8] {
 		&mut self.0
+	}
+}
+
+#[derive(Default, PartialEq, Clone)]
+pub struct TaggedBytes<T> {
+	bytes: Bytes,
+	label: marker::PhantomData<T>,
+}
+
+impl<T> TaggedBytes<T> {
+	pub fn new(bytes: Bytes) -> Self {
+		TaggedBytes {
+			bytes: bytes,
+			label: marker::PhantomData,
+		}
+	}
+
+	pub fn into_raw(self) -> Bytes {
+		self.bytes
+	}
+}
+
+impl<T> ops::Deref for TaggedBytes<T> {
+	type Target = Vec<u8>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.bytes.0
+	}
+}
+
+impl<T> ops::DerefMut for TaggedBytes<T> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.bytes.0
+	}
+}
+
+impl<T> AsRef<[u8]> for TaggedBytes<T> {
+	fn as_ref(&self) -> &[u8] {
+		&self.bytes.0
+	}
+}
+
+impl<T> AsMut<[u8]> for TaggedBytes<T> {
+	fn as_mut(&mut self) -> &mut [u8] {
+		&mut self.bytes.0
 	}
 }
 

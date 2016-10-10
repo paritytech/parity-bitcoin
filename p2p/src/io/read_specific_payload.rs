@@ -4,12 +4,11 @@ use futures::{Poll, Future};
 use tokio_core::io::{read_exact, ReadExact};
 use bytes::Bytes;
 use hash::H32;
-use ser::Deserializable;
 use message::MessageResult;
 use message::serialization::{PayloadType, deserialize_payload};
 
 pub fn read_specific_payload<M, A>(a: A, version: u32, len: usize, checksum: H32) -> ReadSpecificPayload<M, A>
-	where A: io::Read, M: PayloadType + Deserializable {
+	where A: io::Read, M: PayloadType {
 	ReadSpecificPayload {
 		reader: read_exact(a, Bytes::new_with_len(len)),
 		version: version,
@@ -26,7 +25,7 @@ pub struct ReadSpecificPayload<M, A> {
 }
 
 /// TODO: check checksum
-impl<M, A> Future for ReadSpecificPayload<M, A> where A: io::Read, M: PayloadType + Deserializable {
+impl<M, A> Future for ReadSpecificPayload<M, A> where A: io::Read, M: PayloadType {
 	type Item = (A, MessageResult<M>);
 	type Error = io::Error;
 

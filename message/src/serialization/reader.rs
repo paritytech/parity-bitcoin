@@ -26,6 +26,10 @@ impl<'a> PayloadReader<'a> {
 	}
 
 	pub fn read<T>(&mut self) -> Result<T, Error> where T: PayloadType {
+		if T::version() > self.version {
+			return Err(Error::InvalidVersion);
+		}
+
 		T::deserialize_payload(&mut self.reader, self.version)
 	}
 

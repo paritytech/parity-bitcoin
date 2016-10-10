@@ -2,19 +2,19 @@ use ser::{Stream, Reader};
 use {PayloadType, MessageResult};
 
 #[derive(Debug, PartialEq)]
-pub struct Verack;
+pub struct SendHeaders;
 
-impl PayloadType for Verack {
+impl PayloadType for SendHeaders {
 	fn version() -> u32 {
-		0
+		70012
 	}
 
 	fn command() -> &'static str {
-		"verack"
+		"sendheaders"
 	}
 
 	fn deserialize_payload(_reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
-		Ok(Verack)
+		Ok(SendHeaders)
 	}
 
 	fn serialize_payload(&self, _stream: &mut Stream, _version: u32) -> MessageResult<()> {

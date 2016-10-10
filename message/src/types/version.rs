@@ -1,10 +1,11 @@
 use bytes::Bytes;
 use ser::{
 	Serializable, Stream,
-	Deserializable, Reader, Error as ReaderError, deserialize
+	Deserializable, Reader, Error as ReaderError,
 };
 use common::{NetAddress, ServiceFlags};
-use serialization::PayloadType;
+use {PayloadType, MessageResult};
+use serialization::deserialize_payload;
 
 #[derive(Debug, PartialEq)]
 pub enum Version {
@@ -20,6 +21,43 @@ impl PayloadType for Version {
 
 	fn command() -> &'static str {
 		"version"
+	}
+
+	// version package is an serialization excpetion
+	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
+		let simple: V0 = try!(reader.read());
+
+		if simple.version < 106 {
+			return Ok(Version::V0(simple));
+		}
+
+		let v106: V106 = try!(reader.read());
+		if simple.version < 70001 {
+			Ok(Version::V106(simple, v106))
+		} else {
+			let v70001: V70001 = try!(reader.read());
+			Ok(Version::V70001(simple, v106, v70001))
+		}
+	}
+
+	fn serialize_payload(&self, stream: &mut Stream, _version: u32) -> MessageResult<()> {
+		match *self {
+			Version::V0(ref simple) => {
+				stream.append(simple);
+			},
+			Version::V106(ref simple, ref v106) => {
+				stream
+					.append(simple)
+					.append(v106);
+			},
+			Version::V70001(ref simple, ref v106, ref v70001) => {
+				stream
+					.append(simple)
+					.append(v106)
+					.append(v70001);
+			},
+		}
+		Ok(())
 	}
 }
 
@@ -52,45 +90,6 @@ pub struct V106 {
 #[derive(Debug, PartialEq)]
 pub struct V70001 {
 	pub relay: bool,
-}
-
-impl Serializable for Version {
-	fn serialize(&self, stream: &mut Stream) {
-		match *self {
-			Version::V0(ref simple) => {
-				stream.append(simple);
-			},
-			Version::V106(ref simple, ref v106) => {
-				stream
-					.append(simple)
-					.append(v106);
-			},
-			Version::V70001(ref simple, ref v106, ref v70001) => {
-				stream
-					.append(simple)
-					.append(v106)
-					.append(v70001);
-			},
-		}
-	}
-}
-
-impl Deserializable for Version {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let simple: V0 = try!(reader.read());
-
-		if simple.version < 106 {
-			return Ok(Version::V0(simple));
-		}
-
-		let v106: V106 = try!(reader.read());
-		if simple.version < 70001 {
-			Ok(Version::V106(simple, v106))
-		} else {
-			let v70001: V70001 = try!(reader.read());
-			Ok(Version::V70001(simple, v106, v70001))
-		}
-	}
 }
 
 impl Serializable for V0 {
@@ -158,14 +157,14 @@ impl Deserializable for V70001 {
 impl From<&'static str> for Version {
 	fn from(s: &'static str) -> Self {
 		let bytes: Bytes = s.into();
-		deserialize(&bytes).unwrap()
+		deserialize_payload(&bytes, 0).unwrap()
 	}
 }
 
 #[cfg(test)]
 mod test {
 	use bytes::Bytes;
-	use ser::{serialize, deserialize};
+	use serialization::{serialize_payload, deserialize_payload};
 	use super::{Version, V0, V106};
 
 	#[test]
@@ -184,7 +183,7 @@ mod test {
 			start_height: 98645,
 		});
 
-		assert_eq!(serialize(&version), expected);
+		assert_eq!(serialize_payload(&version, 0), Ok(expected));
 	}
 
 	#[test]
@@ -203,6 +202,6 @@ mod test {
 			start_height: 98645,
 		});
 
-		assert_eq!(expected, deserialize(&raw).unwrap());
+		assert_eq!(expected, deserialize_payload(&raw, 0).unwrap());
 	}
 }

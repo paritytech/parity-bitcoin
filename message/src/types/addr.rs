@@ -2,8 +2,49 @@ use ser::{
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError,
 };
-use serialization::PayloadType;
 use common::NetAddress;
+use {PayloadType, MessageResult};
+
+#[derive(Debug, PartialEq)]
+pub enum Addr {
+	V0(V0),
+	V31402(V31402),
+}
+
+impl PayloadType for Addr {
+	fn version() -> u32 {
+		0
+	}
+
+	fn command() -> &'static str {
+		"addr"
+	}
+
+	fn deserialize_payload(reader: &mut Reader, version: u32) -> MessageResult<Self> where Self: Sized {
+		let result = if version < 31402 {
+			reader.read().map(Addr::V0)
+		} else {
+			reader.read().map(Addr::V31402)
+		};
+
+		result.map_err(Into::into)
+	}
+
+	fn serialize_payload(&self, stream: &mut Stream, version: u32) -> MessageResult<()> {
+		match *self {
+			Addr::V0(ref addr) => addr.serialize(stream),
+			Addr::V31402(ref addr) => {
+				if version < 31402 {
+					let view = V31402AsV0::new(addr);
+					view.serialize(stream);
+				} else {
+					addr.serialize(stream);
+				}
+			}
+		}
+		Ok(())
+	}
+}
 
 #[derive(Debug, PartialEq)]
 pub struct AddressEntry {
@@ -31,21 +72,20 @@ impl Deserializable for AddressEntry {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Addr {
+pub struct V31402 {
 	pub addresses: Vec<AddressEntry>,
 }
 
-impl Serializable for Addr {
+impl Serializable for V31402 {
 	fn serialize(&self, stream: &mut Stream) {
 		stream.append_list(&self.addresses);
 	}
 }
 
-impl Deserializable for Addr {
+impl Deserializable for V31402 {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		// TODO: limit to 1000
-		let result = Addr {
-			addresses: try!(reader.read_list()),
+		let result = V31402 {
+			addresses: try!(reader.read_list_max(1000)),
 		};
 
 		Ok(result)
@@ -53,24 +93,42 @@ impl Deserializable for Addr {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct AddrBelow31402 {
+pub struct V0 {
 	pub addresses: Vec<NetAddress>,
 }
 
-impl Serializable for AddrBelow31402 {
+impl Serializable for V0 {
 	fn serialize(&self, stream: &mut Stream) {
 		stream.append_list(&self.addresses);
 	}
 }
 
-impl Deserializable for AddrBelow31402 {
+impl Deserializable for V0 {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		// TODO: limit to 1000
-		let result = AddrBelow31402 {
-			addresses: try!(reader.read_list()),
+		let result = V0 {
+			addresses: try!(reader.read_list_max(1000)),
 		};
 
 		Ok(result)
+	}
+}
+
+struct V31402AsV0<'a> {
+	v: &'a V31402,
+}
+
+impl<'a> V31402AsV0<'a> {
+	fn new(v: &'a V31402) -> Self {
+		V31402AsV0 {
+			v: v,
+		}
+	}
+}
+
+impl<'a> Serializable for V31402AsV0<'a> {
+	fn serialize(&self, stream: &mut Stream) {
+		let vec_ref: Vec<&'a NetAddress> = self.v.addresses.iter().map(|x| &x.address).collect();
+		stream.append_list_ref(&vec_ref);
 	}
 }
 
@@ -78,12 +136,12 @@ impl Deserializable for AddrBelow31402 {
 mod tests {
 	use bytes::Bytes;
 	use ser::{serialize, deserialize};
-	use super::{Addr, AddressEntry};
+	use super::{V31402, AddressEntry};
 
 	#[test]
 	fn test_addr_serialize() {
 		let expected: Bytes = "01e215104d010000000000000000000000000000000000ffff0a000001208d".into();
-		let addr = Addr {
+		let addr = V31402 {
 			addresses: vec![
 				AddressEntry {
 					timestamp: 0x4d1015e2,
@@ -98,7 +156,7 @@ mod tests {
 	#[test]
 	fn test_addr_deserialize() {
 		let raw: Bytes = "01e215104d010000000000000000000000000000000000ffff0a000001208d".into();
-		let expected = Addr {
+		let expected = V31402 {
 			addresses: vec![
 				AddressEntry {
 					timestamp: 0x4d1015e2,

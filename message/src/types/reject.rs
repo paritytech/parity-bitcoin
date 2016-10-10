@@ -1,5 +1,5 @@
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
-use serialization::PayloadType;
+use {PayloadType, MessageResult};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
@@ -59,17 +59,16 @@ pub struct Reject {
 	// TODO: data
 }
 
-impl Serializable for Reject {
-	fn serialize(&self, stream: &mut Stream) {
-		stream
-			.append(&self.message)
-			.append(&self.code)
-			.append(&self.reason);
+impl PayloadType for Reject {
+	fn version() -> u32 {
+		0
 	}
-}
 
-impl Deserializable for Reject {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn command() -> &'static str {
+		"reject"
+	}
+
+	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
 		let reject = Reject {
 			message: try!(reader.read()),
 			code: try!(reader.read()),
@@ -78,14 +77,12 @@ impl Deserializable for Reject {
 
 		Ok(reject)
 	}
-}
 
-impl PayloadType for Reject {
-	fn version() -> u32 {
-		0
-	}
-
-	fn command() -> &'static str {
-		"reject"
+	fn serialize_payload(&self, stream: &mut Stream, _version: u32) -> MessageResult<()> {
+		stream
+			.append(&self.message)
+			.append(&self.code)
+			.append(&self.reason);
+		Ok(())
 	}
 }

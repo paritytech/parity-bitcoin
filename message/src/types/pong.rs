@@ -1,25 +1,9 @@
-use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
-use serialization::PayloadType;
+use ser::{Stream, Reader};
+use {PayloadType, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct Pong {
 	pub nonce: u64,
-}
-
-impl Serializable for Pong {
-	fn serialize(&self, stream: &mut Stream) {
-		stream.append(&self.nonce);
-	}
-}
-
-impl Deserializable for Pong {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		let ping = Pong {
-			nonce: try!(reader.read()),
-		};
-
-		Ok(ping)
-	}
 }
 
 impl PayloadType for Pong {
@@ -29,5 +13,18 @@ impl PayloadType for Pong {
 
 	fn command() -> &'static str {
 		"pong"
+	}
+
+	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
+		let pong = Pong {
+			nonce: try!(reader.read()),
+		};
+
+		Ok(pong)
+	}
+
+	fn serialize_payload(&self, stream: &mut Stream, _version: u32) -> MessageResult<()> {
+		stream.append(&self.nonce);
+		Ok(())
 	}
 }

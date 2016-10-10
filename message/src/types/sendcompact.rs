@@ -1,4 +1,5 @@
-use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
+use ser::{Stream, Reader};
+use {PayloadType, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct SendCompact {
@@ -6,21 +7,28 @@ pub struct SendCompact {
 	second: u64,
 }
 
-impl Serializable for SendCompact {
-	fn serialize(&self, stream: &mut Stream) {
-		stream
-			.append(&self.first)
-			.append(&self.second);
+impl PayloadType for SendCompact {
+	fn version() -> u32 {
+		70014
 	}
-}
 
-impl Deserializable for SendCompact {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn command() -> &'static str {
+		"sendcmpct"
+	}
+
+	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
 		let send_compact = SendCompact {
 			first: try!(reader.read()),
 			second: try!(reader.read()),
 		};
 
 		Ok(send_compact)
+	}
+
+	fn serialize_payload(&self, stream: &mut Stream, _version: u32) -> MessageResult<()> {
+		stream
+			.append(&self.first)
+			.append(&self.second);
+		Ok(())
 	}
 }

@@ -1,5 +1,6 @@
 use hash::H32;
 use ser::{Serializable, Stream, Reader};
+use crypto::checksum;
 use common::{Command, Magic};
 use Error;
 
@@ -9,6 +10,17 @@ pub struct MessageHeader {
 	pub command: Command,
 	pub len: u32,
 	pub checksum: H32,
+}
+
+impl MessageHeader {
+	pub fn for_data(magic: Magic, command: Command, data: &[u8]) -> Self {
+		MessageHeader {
+			magic: magic,
+			command: command,
+			len: data.len() as u32,
+			checksum: checksum(data),
+		}
+	}
 }
 
 impl MessageHeader {
