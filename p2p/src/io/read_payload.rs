@@ -7,9 +7,9 @@ use hash::H32;
 use message::MessageResult;
 use message::serialization::{PayloadType, deserialize_payload};
 
-pub fn read_specific_payload<M, A>(a: A, version: u32, len: usize, checksum: H32) -> ReadSpecificPayload<M, A>
+pub fn read_payload<M, A>(a: A, version: u32, len: usize, checksum: H32) -> ReadPayload<M, A>
 	where A: io::Read, M: PayloadType {
-	ReadSpecificPayload {
+	ReadPayload {
 		reader: read_exact(a, Bytes::new_with_len(len)),
 		version: version,
 		checksum: checksum,
@@ -17,7 +17,7 @@ pub fn read_specific_payload<M, A>(a: A, version: u32, len: usize, checksum: H32
 	}
 }
 
-pub struct ReadSpecificPayload<M, A> {
+pub struct ReadPayload<M, A> {
 	reader: ReadExact<A, Bytes>,
 	version: u32,
 	checksum: H32,
@@ -25,7 +25,7 @@ pub struct ReadSpecificPayload<M, A> {
 }
 
 /// TODO: check checksum
-impl<M, A> Future for ReadSpecificPayload<M, A> where A: io::Read, M: PayloadType {
+impl<M, A> Future for ReadPayload<M, A> where A: io::Read, M: PayloadType {
 	type Item = (A, MessageResult<M>);
 	type Error = io::Error;
 

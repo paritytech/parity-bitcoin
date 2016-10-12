@@ -4,11 +4,11 @@ use futures::{Poll, Future, Async};
 use message::{MessageResult, Error};
 use message::common::Magic;
 use message::serialization::PayloadType;
-use io::{read_header, ReadHeader, read_specific_payload, ReadSpecificPayload};
+use io::{read_header, ReadHeader, read_payload, ReadPayload};
 
-pub fn read_specific_message<M, A>(a: A, magic: Magic, version: u32) -> ReadSpecificMessage<M, A>
+pub fn read_message<M, A>(a: A, magic: Magic, version: u32) -> ReadMessage<M, A>
 	where A: io::Read, M: PayloadType {
-	ReadSpecificMessage {
+	ReadMessage {
 		state: ReadMessageState::ReadHeader {
 			version: version,
 			future: read_header(a, magic),
@@ -23,17 +23,17 @@ enum ReadMessageState<M, A> {
 		future: ReadHeader<A>,
 	},
 	ReadPayload {
-		future: ReadSpecificPayload<M, A>,
+		future: ReadPayload<M, A>,
 	},
 	Finished,
 }
 
-pub struct ReadSpecificMessage<M, A> {
+pub struct ReadMessage<M, A> {
 	state: ReadMessageState<M, A>,
 	message_type: PhantomData<M>,
 }
 
-impl<M, A> Future for ReadSpecificMessage<M, A> where A: io::Read, M: PayloadType {
+impl<M, A> Future for ReadMessage<M, A> where A: io::Read, M: PayloadType {
 	type Item = (A, MessageResult<M>);
 	type Error = io::Error;
 
@@ -50,7 +50,7 @@ impl<M, A> Future for ReadSpecificMessage<M, A> where A: io::Read, M: PayloadTyp
 				if header.command != M::command().into() {
 					return Ok((read, Err(Error::InvalidCommand)).into());
 				}
-				let future = read_specific_payload(
+				let future = read_payload(
 					read, version, header.len as usize, header.checksum,
 				);
 				let next = ReadMessageState::ReadPayload {
@@ -62,7 +62,7 @@ impl<M, A> Future for ReadSpecificMessage<M, A> where A: io::Read, M: PayloadTyp
 				let (read, payload) = try_ready!(future.poll());
 				(ReadMessageState::Finished, Async::Ready((read, payload)))
 			},
-			ReadMessageState::Finished => panic!("poll ReadSpecificMessage after it's done"),
+			ReadMessageState::Finished => panic!("poll ReadMessage after it's done"),
 		};
 
 		self.state = next;

@@ -3,7 +3,7 @@ use futures::{Future, Poll, Async};
 use message::Message;
 use message::types::{Version, Verack};
 use message::common::Magic;
-use io::{write_message, WriteMessage, ReadSpecificMessage, read_specific_message};
+use io::{write_message, WriteMessage, ReadMessage, read_message};
 use Error;
 
 pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where A: io::Write + io::Read {
@@ -19,7 +19,7 @@ pub fn accept_handshake<A>(a: A, magic: Magic, version: Version) -> AcceptHandsh
 		version: version.version(),
 		state: AcceptHandshakeState::ReceiveVersion {
 			local_version: Some(version),
-			future: read_specific_message(a, magic, 0),
+			future: read_message(a, magic, 0),
 		},
 		magic: magic,
 	}
@@ -45,10 +45,10 @@ fn verack_message(magic: Magic) -> Message<Verack> {
 
 enum HandshakeState<A> {
 	SendVersion(WriteMessage<Version, A>),
-	ReceiveVersion(ReadSpecificMessage<Version, A>),
+	ReceiveVersion(ReadMessage<Version, A>),
 	ReceiveVerack {
 		version: Option<Version>,
-		future: ReadSpecificMessage<Verack, A>,
+		future: ReadMessage<Verack, A>,
 	},
 	Finished,
 }
@@ -56,7 +56,7 @@ enum HandshakeState<A> {
 enum AcceptHandshakeState<A> {
 	ReceiveVersion {
 		local_version: Option<Version>,
-		future: ReadSpecificMessage<Version, A>
+		future: ReadMessage<Version, A>
 	},
 	SendVersion {
 		version: Option<Version>,
@@ -89,7 +89,7 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 		let (next, result) = match self.state {
 			HandshakeState::SendVersion(ref mut future) => {
 				let (stream, _) = try_ready!(future.poll());
-				(HandshakeState::ReceiveVersion(read_specific_message(stream, self.magic, 0)), Async::NotReady)
+				(HandshakeState::ReceiveVersion(read_message(stream, self.magic, 0)), Async::NotReady)
 			},
 			HandshakeState::ReceiveVersion(ref mut future) => {
 				let (stream, version) = try_ready!(future.poll());
@@ -100,7 +100,7 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 
 				let next = HandshakeState::ReceiveVerack {
 					version: Some(version),
-					future: read_specific_message(stream, self.magic, 0),
+					future: read_message(stream, self.magic, 0),
 				};
 
 				(next, Async::NotReady)
