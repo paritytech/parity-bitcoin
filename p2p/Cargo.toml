@@ -7,6 +7,7 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 tokio-core = "0.1"
 parking_lot = "0.3"
 futures = "0.1"
+futures-cpupool = "0.1"
 time = "0.1"
 rand = "0.3"
 

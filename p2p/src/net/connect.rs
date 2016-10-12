@@ -3,11 +3,11 @@ use std::net::SocketAddr;
 use futures::{Future, Poll, Async};
 use tokio_core::reactor::Handle;
 use tokio_core::net::{TcpStream, TcpStreamNew};
+use message::Error;
 use message::common::Magic;
 use message::types::Version;
 use io::{handshake, Handshake};
 use net::{Config, Connection};
-use Error;
 
 pub fn connect(address: &SocketAddr, handle: &Handle, config: &Config) -> Connect {
 	Connect {
@@ -54,7 +54,7 @@ impl Future for Connect {
 					Err(err) => return Ok(Async::Ready(Err(err))),
 				};
 				let connection = Connection {
-					stream: stream,
+					stream: stream.into(),
 					version: result.negotiated_version,
 					magic: self.magic,
 					address: self.address,

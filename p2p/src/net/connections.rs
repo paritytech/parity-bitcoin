@@ -1,36 +1,51 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::HashMap;
 use parking_lot::RwLock;
-use futures::{oneshot, Oneshot, Future};
+use futures::{finished, Oneshot, Future};
+use futures_cpupool::CpuPool;
+use tokio_core::reactor::Handle;
 use message::PayloadType;
 use net::Connection;
 use PeerId;
 
-#[derive(Default)]
 pub struct Connections {
-	peer_counter: PeerId,
+	event_loop_handle: Handle,
+	pool: CpuPool,
+	peer_counter: AtomicUsize,
 	channels: RwLock<HashMap<PeerId, Arc<Connection>>>,
 }
 
 impl Connections {
+	pub fn new(pool: CpuPool, handle: Handle) -> Self {
+		Connections {
+			event_loop_handle: handle,
+			pool: pool,
+			peer_counter: AtomicUsize::default(),
+			channels: RwLock::default(),
+		}
+	}
+
 	/// Broadcast messages to the network.
 	/// Returned future completes of first confirmed receive.
-	/// TODO: make is async
-	pub fn broadcast<T>(&self, payload: T) -> Oneshot<()> where T: PayloadType {
-		let (complete, os) = oneshot::<()>();
-		let mut complete = Some(complete);
-
-		for (id, channel) in &self.channels() {
-			let _wait = channel.write_message(&payload).map(|_message| {
-				if let Some(complete) = complete.take() {
-					complete.complete(());
+	pub fn broadcast<T>(connections: &Arc<Connections>, payload: T) where T: PayloadType {
+		let channels = connections.channels();
+		for (id, channel) in channels.into_iter() {
+			let write = channel.write_message(&payload);
+			let cs = connections.clone();
+			let pool_work = connections.pool.spawn(write).then(move |x| {
+				match x {
+					Ok(_) => {
+						// successfully sent message
+					},
+					Err(_) => {
+						cs.remove(id);
+					}
 				}
-			}).map_err(|_err| {
-				self.remove(*id)
-			}).wait();
+				finished(())
+			});
+			connections.event_loop_handle.spawn(pool_work);
 		}
-
-		os
 	}
 
 	/// Returns safe (nonblocking) copy of channels.
@@ -44,9 +59,9 @@ impl Connections {
 	}
 
 	/// Stores new channel.
-	pub fn store(&mut self, connection: Connection) {
-		self.channels.write().insert(self.peer_counter, Arc::new(connection));
-		self.peer_counter += 1;
+	pub fn store(&self, connection: Connection) {
+		let id = self.peer_counter.fetch_add(1, Ordering::AcqRel);
+		self.channels.write().insert(id, Arc::new(connection));
 	}
 
 	/// Removes channel with given id.

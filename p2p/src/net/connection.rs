@@ -1,18 +1,17 @@
 use std::net;
 use message::{Message, PayloadType};
 use message::common::Magic;
-use tokio_core::net::TcpStream;
-use io::{write_message, WriteMessage};
+use io::{write_message, WriteMessage, SharedTcpStream};
 
 pub struct Connection {
-	pub stream: TcpStream,
+	pub stream: SharedTcpStream,
 	pub version: u32,
 	pub magic: Magic,
 	pub address: net::SocketAddr,
 }
 
 impl Connection {
-	pub fn write_message<T>(&self, payload: &T) -> WriteMessage<T, &TcpStream> where T: PayloadType {
+	pub fn write_message<T>(&self, payload: &T) -> WriteMessage<T, SharedTcpStream> where T: PayloadType {
 		let message = match Message::new(self.magic, self.version, payload) {
 			Ok(message) => message,
 			Err(_err) => {
@@ -20,6 +19,6 @@ impl Connection {
 				panic!();
 			}
 		};
-		write_message(&self.stream, message)
+		write_message(self.stream.clone(), message)
 	}
 }

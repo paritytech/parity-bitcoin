@@ -4,10 +4,10 @@ use futures::stream::Stream;
 use tokio_core::reactor::Handle;
 use tokio_core::net::{TcpStream, TcpListener};
 use tokio_core::io::IoStream;
+use message::Error;
 use message::common::Magic;
 use io::{accept_handshake, AcceptHandshake};
 use net::{Config, Connection};
-use Error;
 
 pub fn listen(handle: &Handle, config: Config) -> Result<Listen, io::Error> {
 	let listener = try!(TcpListener::bind(&config.local_address, handle));
@@ -49,7 +49,7 @@ impl Future for AcceptConnection {
 			Err(err) => return Ok(Err(err).into()),
 		};
 		let connection = Connection {
-			stream: stream,
+			stream: stream.into(),
 			version: result.negotiated_version,
 			magic: self.magic,
 			address: self.address,

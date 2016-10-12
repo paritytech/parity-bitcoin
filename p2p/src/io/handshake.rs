@@ -1,10 +1,9 @@
 use std::{io, cmp};
 use futures::{Future, Poll, Async};
-use message::Message;
+use message::{Message, Error};
 use message::types::{Version, Verack};
 use message::common::Magic;
 use io::{write_message, WriteMessage, ReadMessage, read_message};
-use Error;
 
 pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where A: io::Write + io::Read {
 	Handshake {
