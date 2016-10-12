@@ -1,4 +1,4 @@
-use futures::{oneshot, Oneshot};
+use futures::{oneshot, Oneshot, Future};
 use message::PayloadType;
 use net::Connection;
 
@@ -14,9 +14,17 @@ impl Connections {
 		let mut complete = Some(complete);
 
 		for channel in &self.channels {
-			//channel.write_message(
+			// TODO: make is async
+			let _wait = channel.write_message(&payload).map(|_message| {
+				if let Some(complete) = complete.take() {
+					complete.complete(());
+				}
+			}).map_err(|_err| {
+				// reconnect / disconnect
+			}).wait();
 		}
 
 		os
 	}
+	//pub fn subscribe<T>(
 }
