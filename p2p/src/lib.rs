@@ -3,6 +3,7 @@ extern crate futures;
 extern crate rand;
 extern crate time;
 extern crate tokio_core;
+extern crate parking_lot;
 
 extern crate bitcrypto as crypto;
 extern crate message;
@@ -15,6 +16,7 @@ pub mod util;
 mod config;
 mod error;
 mod event_loop;
+mod p2p;
 mod run;
 
 pub const VERSION: u32 = 70_001;
@@ -26,5 +28,8 @@ pub use config::Config;
 pub use error::Error;
 pub use event_loop::event_loop;
 pub use run::run;
+pub use p2p::P2P;
+
 pub type P2PResult<T> = Result<T, Error>;
+pub type PeerId = u32;
 

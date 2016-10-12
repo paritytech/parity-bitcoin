@@ -1,24 +1,22 @@
-use std::collections::HashMap;
 use std::sync::mpsc::{Sender, Receiver, channel};
 use message::{Error, PayloadType};
 use message::common::Command;
 use message::types::{Addr, GetAddr};
 use message::serialization::deserialize_payload;
-use net::Connection;
 
-struct Subscriber<S> {
+struct Handler<S> {
 	sender: Option<Sender<S>>,
 }
 
-impl<S> Default for Subscriber<S> {
+impl<S> Default for Handler<S> {
 	fn default() -> Self {
-		Subscriber {
+		Handler {
 			sender: None,
 		}
 	}
 }
 
-impl<S> Subscriber<S> where S: PayloadType {
+impl<S> Handler<S> where S: PayloadType {
 	fn command(&self) -> Command {
 		S::command().into()
 	}
@@ -26,17 +24,19 @@ impl<S> Subscriber<S> where S: PayloadType {
 	fn handle(&self, payload: &[u8], version: u32) -> Result<(), Error> {
 		if let Some(ref sender) = self.sender {
 			let payload: S = try!(deserialize_payload(payload, version));
-			// TODO: unsubscribe channel on error?
-			sender.send(payload);
+			if let Err(_err) = sender.send(payload) {
+				// TODO: unsubscribe channel on error?
+				// TODO: trace!!!
+			}
 		}
 		Ok(())
 	}
 }
 
 #[derive(Default)]
-pub struct Subscribers {
-	addr: Subscriber<Addr>,
-	getaddr: Subscriber<GetAddr>,
+pub struct Subscriber {
+	addr: Handler<Addr>,
+	getaddr: Handler<GetAddr>,
 }
 
 macro_rules! define_subscribe {
@@ -57,7 +57,7 @@ macro_rules! maybe_handle {
 	}
 }
 
-impl Subscribers {
+impl Subscriber {
 	define_subscribe!(subscribe_addr, Addr, addr);
 	define_subscribe!(subscribe_getaddr, GetAddr, getaddr);
 

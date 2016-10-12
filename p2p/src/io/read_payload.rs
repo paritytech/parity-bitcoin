@@ -4,7 +4,8 @@ use futures::{Poll, Future};
 use tokio_core::io::{read_exact, ReadExact};
 use bytes::Bytes;
 use hash::H32;
-use message::MessageResult;
+use crypto::checksum;
+use message::{Error, MessageResult};
 use message::serialization::{PayloadType, deserialize_payload};
 
 pub fn read_payload<M, A>(a: A, version: u32, len: usize, checksum: H32) -> ReadPayload<M, A>
@@ -24,13 +25,15 @@ pub struct ReadPayload<M, A> {
 	payload_type: PhantomData<M>,
 }
 
-/// TODO: check checksum
 impl<M, A> Future for ReadPayload<M, A> where A: io::Read, M: PayloadType {
 	type Item = (A, MessageResult<M>);
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 		let (read, data) = try_ready!(self.reader.poll());
+		if checksum(&data) != self.checksum {
+			return Ok((read, Err(Error::InvalidChecksum)).into());
+		}
 		let payload = deserialize_payload(&data, self.version);
 		Ok((read, payload).into())
 	}
