@@ -1,6 +1,7 @@
 mod handshake;
 mod read_header;
 mod read_message;
+mod read_message_stream;
 mod read_payload;
 mod readrc;
 mod write_message;
