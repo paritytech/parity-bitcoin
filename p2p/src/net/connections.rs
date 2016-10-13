@@ -10,17 +10,13 @@ use net::Connection;
 use PeerId;
 
 pub struct Connections {
-	event_loop_handle: Handle,
-	pool: CpuPool,
 	peer_counter: AtomicUsize,
 	channels: RwLock<HashMap<PeerId, Arc<Connection>>>,
 }
 
 impl Connections {
-	pub fn new(pool: CpuPool, handle: Handle) -> Self {
+	pub fn new() -> Self {
 		Connections {
-			event_loop_handle: handle,
-			pool: pool,
 			peer_counter: AtomicUsize::default(),
 			channels: RwLock::default(),
 		}
@@ -28,12 +24,12 @@ impl Connections {
 
 	/// Broadcast messages to the network.
 	/// Returned future completes of first confirmed receive.
-	pub fn broadcast<T>(connections: &Arc<Connections>, payload: T) where T: PayloadType {
+	pub fn broadcast<T>(connections: &Arc<Connections>, handle: &Handle, pool: &CpuPool, payload: T) where T: PayloadType {
 		let channels = connections.channels();
 		for (id, channel) in channels.into_iter() {
 			let write = channel.write_message(&payload);
 			let cs = connections.clone();
-			let pool_work = connections.pool.spawn(write).then(move |x| {
+			let pool_work = pool.spawn(write).then(move |x| {
 				match x {
 					Ok(_) => {
 						// successfully sent message
@@ -44,7 +40,7 @@ impl Connections {
 				}
 				finished(())
 			});
-			connections.event_loop_handle.spawn(pool_work);
+			handle.spawn(pool_work);
 		}
 	}
 

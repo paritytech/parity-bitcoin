@@ -4,6 +4,7 @@ use futures::{Future, finished};
 use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::Handle;
+use message::PayloadType;
 use net::{connect, listen, Connections, Subscriber};
 use Config;
 
@@ -28,7 +29,7 @@ impl P2P {
 			event_loop_handle: handle.clone(),
 			pool: pool.clone(),
 			config: config,
-			connections: Arc::new(Connections::new(pool, handle)),
+			connections: Arc::new(Connections::new()),
 			subscriber: Subscriber::default(),
 		}
 	}
@@ -41,7 +42,7 @@ impl P2P {
 		self.listen()
 	}
 
-	fn connect(&self, ip: net::IpAddr) {
+	pub fn connect(&self, ip: net::IpAddr) {
 		let socket = net::SocketAddr::new(ip, self.config.connection.magic.port());
 		let connections = self.connections.clone();
 		let connection = connect(&socket, &self.event_loop_handle, &self.config.connection);
@@ -59,13 +60,18 @@ impl P2P {
 		let connections = self.connections.clone();
 		let server = listen.for_each(move |x| {
 			if let Ok(con) = x {
-				connections.store(con)
+				connections.store(con);
 			}
 			Ok(())
 		}).then(|_| {
 			finished(())
 		});
-		self.event_loop_handle.spawn(server);
+		let pool_work = self.pool.spawn(server);
+		self.event_loop_handle.spawn(pool_work);
 		Ok(())
+	}
+
+	pub fn broadcast<T>(&self, payload: T) where T: PayloadType {
+		Connections::broadcast(&self.connections, &self.event_loop_handle, &self.pool, payload)
 	}
 }
