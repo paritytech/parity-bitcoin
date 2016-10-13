@@ -8,6 +8,7 @@ extern crate primitives;
 #[cfg(test)] extern crate ethcore_devtools as devtools;
 
 mod kvdb;
+mod storage;
 
 pub type Bytes = Vec<u8>;
 

@@ -2,7 +2,7 @@
 
 use kvdb::Database;
 use primitives::hash::H256;
-use super::BlockRef;
+use super::{BlockRef, Bytes};
 
 const COL_COUNT: u32 = 10;
 const COL_META: u32 = 0;
@@ -40,7 +40,7 @@ impl Store for Storage {
 
 	fn block_body(block_ref: BlockRef) -> Option<Bytes> { None }
 
-	fn block_transactions(block_ref: BlockRef) -> Vec<H256> { None }
+	fn block_transactions(block_ref: BlockRef) -> Vec<H256> { Vec::new() }
 
 	fn transaction(hash: H256) -> Option<Bytes> { None }
 }
