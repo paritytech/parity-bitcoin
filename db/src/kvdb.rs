@@ -462,24 +462,23 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
-	use hash::*;
 	use super::*;
 	use devtools::*;
-	use std::str::FromStr;
 
 	fn test_db(config: &DatabaseConfig) {
 		let path = RandomTempPath::create_dir();
 		let db = Database::open(config, path.as_path().to_str().unwrap()).unwrap();
-		let key1 = H256::from_str("02c69be41d0b7e40352fc85be1cd65eb03d40ef8427a0ca4596b1ead9a00e9fc").unwrap();
-		let key2 = H256::from_str("03c69be41d0b7e40352fc85be1cd65eb03d40ef8427a0ca4596b1ead9a00e9fc").unwrap();
-		let key3 = H256::from_str("01c69be41d0b7e40352fc85be1cd65eb03d40ef8427a0ca4596b1ead9a00e9fc").unwrap();
+
+		let key1 = b"key1";
+		let key2 = b"key2";
+		let key3 = b"key3";
 
 		let mut batch = db.transaction();
-		batch.put(None, &key1, b"cat");
-		batch.put(None, &key2, b"dog");
+		batch.put(None, key1, b"cat");
+		batch.put(None, key2, b"dog");
 		db.write(batch).unwrap();
 
-		assert_eq!(&*db.get(None, &key1).unwrap().unwrap(), b"cat");
+		assert_eq!(&*db.get(None, key1).unwrap().unwrap(), b"cat");
 
 		let contents: Vec<_> = db.iter(None).collect();
 		assert_eq!(contents.len(), 2);
@@ -489,35 +488,20 @@ mod tests {
 		assert_eq!(&*contents[1].1, b"dog");
 
 		let mut batch = db.transaction();
-		batch.delete(None, &key1);
+		batch.delete(None, key1);
 		db.write(batch).unwrap();
 
-		assert!(db.get(None, &key1).unwrap().is_none());
+		assert!(db.get(None, key1).unwrap().is_none());
 
 		let mut batch = db.transaction();
-		batch.put(None, &key1, b"cat");
+		batch.put(None, key1, b"cat");
 		db.write(batch).unwrap();
 
 		let mut transaction = db.transaction();
-		transaction.put(None, &key3, b"elephant");
-		transaction.delete(None, &key1);
+		transaction.put(None, key3, b"elephant");
+		transaction.delete(None, key1);
 		db.write(transaction).unwrap();
-		assert!(db.get(None, &key1).unwrap().is_none());
-		assert_eq!(&*db.get(None, &key3).unwrap().unwrap(), b"elephant");
-
-		assert_eq!(&*db.get_by_prefix(None, &key3).unwrap(), b"elephant");
-		assert_eq!(&*db.get_by_prefix(None, &key2).unwrap(), b"dog");
-
-		let mut transaction = db.transaction();
-		transaction.put(None, &key1, b"horse");
-		transaction.delete(None, &key3);
-		db.write_buffered(transaction);
-		assert!(db.get(None, &key3).unwrap().is_none());
-		assert_eq!(&*db.get(None, &key1).unwrap().unwrap(), b"horse");
-
-		db.flush().unwrap();
-		assert!(db.get(None, &key3).unwrap().is_none());
-		assert_eq!(&*db.get(None, &key1).unwrap().unwrap(), b"horse");
+		assert_eq!(&*db.get(None, key3).unwrap().unwrap(), b"elephant");
 	}
 
 	#[test]
