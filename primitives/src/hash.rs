@@ -32,6 +32,14 @@ macro_rules! impl_hash {
 			}
 		}
 
+		impl<'a> From<&'a [u8]> for $name {
+			fn from(slc: &[u8]) -> Self {
+				let mut inner = [0u8; $size];
+				inner[..].clone_from_slice(&slc[0..$size]);
+				$name(inner)
+			}
+		}
+
 		impl From<&'static str> for $name {
 			fn from(s: &'static str) -> Self {
 				s.parse().unwrap()

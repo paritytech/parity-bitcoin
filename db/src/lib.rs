@@ -4,6 +4,9 @@ extern crate elastic_array;
 extern crate rocksdb;
 extern crate parking_lot;
 extern crate primitives;
+extern crate byteorder;
+extern crate chain;
+extern crate serialization;
 
 #[cfg(test)] extern crate ethcore_devtools as devtools;
 
