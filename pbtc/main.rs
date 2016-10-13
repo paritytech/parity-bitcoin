@@ -12,7 +12,7 @@ extern crate p2p;
 mod config;
 
 use std::net::SocketAddr;
-use p2p::{net, event_loop};
+use p2p::{P2P, event_loop, forever, net};
 
 fn main() {
 	match run() {
@@ -41,9 +41,9 @@ fn run() -> Result<(), String> {
 		limited_connect: cfg.connect.map_or(None, |x| Some(vec![x])),
 	};
 
-	let handle = el.handle();
-	let server = try!(p2p::run(p2p_cfg, &handle).map_err(|_| "Failed to start p2p module"));
-	el.run(server).unwrap();
+	let p2p = P2P::new(p2p_cfg, el.handle());
+	try!(p2p.run().map_err(|_| "Failed to start p2p module"));
+	el.run(forever()).unwrap();
 	Ok(())
 }
 

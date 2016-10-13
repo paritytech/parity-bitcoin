@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::HashMap;
 use parking_lot::RwLock;
-use futures::{finished, Oneshot, Future};
+use futures::{finished, Future};
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::Handle;
 use message::PayloadType;
@@ -60,6 +60,7 @@ impl Connections {
 
 	/// Stores new channel.
 	pub fn store(&self, connection: Connection) {
+		println!("new connection!");
 		let id = self.peer_counter.fetch_add(1, Ordering::AcqRel);
 		self.channels.write().insert(id, Arc::new(connection));
 	}

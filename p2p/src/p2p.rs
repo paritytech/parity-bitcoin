@@ -46,6 +46,7 @@ impl P2P {
 		let connections = self.connections.clone();
 		let connection = connect(&socket, &self.event_loop_handle, &self.config.connection);
 		let pool_work = self.pool.spawn(connection).then(move |x| {
+			println!("trie to connect");
 			if let Ok(Ok(con)) = x {
 				connections.store(con);
 			}
@@ -55,14 +56,17 @@ impl P2P {
 	}
 
 	fn listen(&self) -> Result<(), io::Error> {
-		unimplemented!();
-		//let listen = try!(listen(&self.event_loop_handle, self.config.connection));
-		//let server = listen.then(|x| {
-			//if let Ok(Ok(con)) = x {
-				//self.connections.store(con)
-			//}
-			//finished(())
-		//});
-		//self.event_loop_handle.spawn(server);
+		let listen = try!(listen(&self.event_loop_handle, self.config.connection.clone()));
+		let connections = self.connections.clone();
+		let server = listen.for_each(move |x| {
+			if let Ok(con) = x {
+				connections.store(con)
+			}
+			Ok(())
+		}).then(|_| {
+			finished(())
+		});
+		self.event_loop_handle.spawn(server);
+		Ok(())
 	}
 }

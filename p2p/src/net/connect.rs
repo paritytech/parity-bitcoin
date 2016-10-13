@@ -40,6 +40,7 @@ impl Future for Connect {
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+		println!("first poll");
 		let (next, result) = match self.state {
 			ConnectState::TcpConnect { ref mut future, ref mut version } => {
 				let stream = try_ready!(future.poll());

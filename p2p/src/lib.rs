@@ -25,7 +25,7 @@ pub const USER_AGENT: &'static str = "pbtc";
 pub use primitives::{hash, bytes};
 
 pub use config::Config;
-pub use event_loop::event_loop;
+pub use event_loop::{event_loop, forever};
 pub use run::run;
 pub use p2p::P2P;
 
