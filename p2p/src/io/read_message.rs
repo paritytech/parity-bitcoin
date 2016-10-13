@@ -43,9 +43,7 @@ impl<M, A> Future for ReadMessage<M, A> where A: io::Read, M: PayloadType {
 				let (read, header) = try_ready!(future.poll());
 				let header = match header {
 					Ok(header) => header,
-					Err(err) => {
-						return Ok((read, Err(err)).into());
-					}
+					Err(err) => return Ok((read, Err(err)).into()),
 				};
 				if header.command != M::command().into() {
 					return Ok((read, Err(Error::InvalidCommand)).into());

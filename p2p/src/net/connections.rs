@@ -56,7 +56,6 @@ impl Connections {
 
 	/// Stores new channel.
 	pub fn store(&self, connection: Connection) {
-		println!("new connection!");
 		let id = self.peer_counter.fetch_add(1, Ordering::AcqRel);
 		self.channels.write().insert(id, Arc::new(connection));
 	}
