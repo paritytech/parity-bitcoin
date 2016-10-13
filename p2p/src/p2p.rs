@@ -46,7 +46,6 @@ impl P2P {
 		let connections = self.connections.clone();
 		let connection = connect(&socket, &self.event_loop_handle, &self.config.connection);
 		let pool_work = self.pool.spawn(connection).then(move |x| {
-			println!("trie to connect");
 			if let Ok(Ok(con)) = x {
 				connections.store(con);
 			}
