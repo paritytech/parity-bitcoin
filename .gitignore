@@ -6,3 +6,6 @@
 *.swo
 *.swn
 *.DS_Store
+
+# idea ide
+.idea

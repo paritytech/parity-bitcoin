@@ -1,0 +1,10 @@
+[package]
+name = "db"
+version = "0.1.0"
+authors = ["Nikolay Volf <nikvolf@gmail.com>"]
+
+[dependencies]
+elastic-array = "0.5"
+rocksdb = { git = "https://github.com/ethcore/rust-rocksdb" }
+ethcore-devtools = { path = "../devtools" }
+parking_lot = "0.2"
