@@ -8,3 +8,4 @@ elastic-array = "0.5"
 rocksdb = { git = "https://github.com/ethcore/rust-rocksdb" }
 ethcore-devtools = { path = "../devtools" }
 parking_lot = "0.2"
+primitives = { path = "../primitives" }

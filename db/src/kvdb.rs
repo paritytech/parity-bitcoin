@@ -10,8 +10,7 @@ use std::{self, fs, mem};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::convert::From;
-
-type Bytes = Vec<u8>;
+use super::Bytes;
 
 /// Database error
 pub enum Error {
