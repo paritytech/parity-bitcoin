@@ -1,4 +1,5 @@
 use std::{fmt, ops, cmp, str};
+use std::hash::{Hash, Hasher};
 use hex::{ToHex, FromHex, FromHexError};
 
 macro_rules! impl_hash {
@@ -88,11 +89,20 @@ macro_rules! impl_hash {
 			}
 		}
 
+		impl Eq for $name {}
+
 		impl cmp::PartialEq for $name {
 			fn eq(&self, other: &Self) -> bool {
 				let self_ref: &[u8] = &self.0;
 				let other_ref: &[u8] = &other.0;
 				self_ref == other_ref
+			}
+		}
+
+		impl Hash for $name {
+			fn hash<H>(&self, state: &mut H) where H: Hasher {
+				state.write(&self.0);
+				state.finish();
 			}
 		}
 

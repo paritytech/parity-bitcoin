@@ -1,0 +1,9 @@
+[package]
+name = "miner"
+version = "0.1.0"
+authors = ["Ethcore <admin@ethcore.io>"]
+
+[dependencies]
+chain = { path = "../chain" }
+primitives = { path = "../primitives" }
+serialization = { path = "../serialization" }
