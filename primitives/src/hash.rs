@@ -110,6 +110,10 @@ macro_rules! impl_hash {
 				result.reverse();
 				result
 			}
+
+			pub fn size() -> usize {
+				$size
+			}
 		}
 	}
 }

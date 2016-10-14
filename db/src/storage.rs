@@ -6,6 +6,8 @@ use super::{BlockRef, Bytes};
 use byteorder::{LittleEndian, ByteOrder};
 use std::{self, fs};
 use std::path::Path;
+use chain;
+use serialization::{self, Serializable, Deserializable};
 
 const COL_COUNT: u32 = 10;
 const COL_META: u32 = 0;
@@ -28,6 +30,8 @@ pub trait Store {
 	fn block_transactions(&self, block_ref: BlockRef) -> Vec<H256>;
 
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes>;
+
+	fn block(&self, block_ref: BlockRef) -> Option<chain::Block>;
 }
 
 struct Storage {
@@ -106,14 +110,42 @@ impl Store for Storage {
 	}
 
 	fn block_transactions(&self, block_ref: BlockRef) -> Vec<H256> {
-		Vec::new()
+		self.resolve_hash(block_ref)
+			.and_then(|h| self.get(COL_BLOCK_TRANSACTIONS, &*h))
+			.unwrap_or(Vec::new())
+			.chunks(H256::size())
+			.map(H256::from)
+			.collect()
 	}
 
-	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> { None }
+	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
+		self.get(COL_TRANSACTIONS, &**hash)
+	}
+
+	fn block(&self, block_ref: BlockRef) -> Option<chain::Block> {
+		self.resolve_hash(block_ref)
+			//.and_then(|h| (self.get(COL_BLOCK_HEADERS, &*h), self.block_transactions(BlockRef::Hash(h))))
+			.and_then(|(header_bytes, transactions)| {
+				let reader = serialization::Reader::new(&header_bytes[..]);
+				let header = chain::BlockHeader::deserialize(&reader).ok().and_then(
+					|header| None
+				)
+			})
+	}
 }
+//
+//						chain::Block::new(
+//							header,
+//							transactions.into_iter()
+//								.filter_map(|t_hash| {
+//									let maybe_bytes = self.transaction_bytes(t_hash);
+//									maybe_bytes.and_then(|tx_bytes| {
+//										let tx_reader = serialization::Reader::new(&tx_bytes[..]);
+//										chain::Transaction::deserialize(&tx_reader).ok()
+//									})
+//								})
+//							.collect()
 
 #[cfg(test)]
 mod tests {
-
-
 }

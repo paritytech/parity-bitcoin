@@ -40,6 +40,10 @@ impl From<&'static str> for Block {
 }
 
 impl Block {
+	pub fn new(header: BlockHeader, transactions: Vec<Transaction>) -> Self {
+		Block { block_header: header, transactions: transactions }
+	}
+
 	pub fn hash(&self) -> H256 {
 		dhash256(&serialize(&self.block_header))
 	}
