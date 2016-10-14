@@ -78,16 +78,9 @@ impl P2P {
 		let subscriber = self.subscriber.clone();
 		let connections = self.connections.clone();
 		let incoming_future = incoming.for_each(move |result| {
-			match result {
-				(Ok((command, payload)), version, peerid) => {
-					let handled = subscriber.try_handle(&payload, version, command, peerid);
-					if let Err(err) = handled {
-						connections.remove(peerid);
-					}
-				},
-				(Err(err), version, peerid) => {
-					connections.remove(peerid);
-				},
+			let (command, payload, version, peerid) = result;
+			if let Err(_err) = subscriber.try_handle(&payload, version, command, peerid) {
+				connections.remove(peerid);
 			}
 			Ok(())
 		}).then(|_| {

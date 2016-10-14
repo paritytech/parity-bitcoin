@@ -3,7 +3,6 @@ use std::sync::Weak;
 use bytes::Bytes;
 use futures::{Poll, Async};
 use futures::stream::Stream;
-use message::MessageResult;
 use message::common::Command;
 use net::Connections;
 use PeerId;
@@ -11,6 +10,17 @@ use PeerId;
 pub struct MessagesHandler {
 	last_polled: usize,
 	connections: Weak<Connections>,
+}
+
+fn next_to_poll(channels: usize, last_polled: usize) -> usize {
+	// it's irrelevant if we sometimes poll the same peer
+	if channels > last_polled + 1 {
+		// let's poll the next peer
+		last_polled + 1
+	} else {
+		// let's move to the first channel
+		0
+	}
 }
 
 impl MessagesHandler {
@@ -23,7 +33,7 @@ impl MessagesHandler {
 }
 
 impl Stream for MessagesHandler {
-	type Item = (MessageResult<(Command, Bytes)>, u32, PeerId);
+	type Item = (Command, Bytes, u32, PeerId);
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -38,17 +48,34 @@ impl Stream for MessagesHandler {
 			return Ok(Async::NotReady);
 		}
 
-		// it's irrelevant if we sometimes poll the same peer
-		let to_poll = if channels.len() > self.last_polled + 1 {
-			// let's poll the next peer
-			self.last_polled + 1
-		} else {
-			// let's move to the first channel
-			0
-		};
+		let mut to_poll = next_to_poll(channels.len(), self.last_polled);
+		let mut result = None;
 
-		let (id, channel) = channels.into_iter().nth(to_poll).expect("to_poll < channels.len()");
-		unimplemented!();
+		while result.is_none() && to_poll != self.last_polled {
+			let (id, channel) = channels.iter().nth(to_poll).expect("to_poll < channels.len()");
+			let status = channel.poll_message();
+
+			match status {
+				Ok(Async::Ready(Some(Ok((command, message))))) => {
+					result = Some((command, message, channel.version(), *id));
+				},
+				Ok(Async::NotReady) => {
+					// no messages yet, try next channel
+					to_poll = next_to_poll(channels.len(), to_poll);
+				},
+				_ => {
+					// channel has been closed or there was error
+					connections.remove(*id);
+					to_poll = next_to_poll(channels.len(), to_poll);
+				},
+			}
+		}
+
+		self.last_polled = to_poll;
+		match result.is_some() {
+			true => Ok(Async::Ready(result)),
+			false => Ok(Async::NotReady),
+		}
 	}
 }
 

@@ -6,12 +6,12 @@ use futures::{finished, Future};
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::Handle;
 use message::PayloadType;
-use net::Connection;
+use net::{Connection, Channel};
 use PeerId;
 
 pub struct Connections {
 	peer_counter: AtomicUsize,
-	channels: RwLock<HashMap<PeerId, Arc<Connection>>>,
+	channels: RwLock<HashMap<PeerId, Arc<Channel>>>,
 }
 
 impl Connections {
@@ -45,7 +45,7 @@ impl Connections {
 	}
 
 	/// Returns safe (nonblocking) copy of channels.
-	pub fn channels(&self) -> HashMap<PeerId, Arc<Connection>> {
+	pub fn channels(&self) -> HashMap<PeerId, Arc<Channel>> {
 		self.channels.read().clone()
 	}
 
@@ -57,7 +57,7 @@ impl Connections {
 	/// Stores new channel.
 	pub fn store(&self, connection: Connection) {
 		let id = self.peer_counter.fetch_add(1, Ordering::AcqRel);
-		self.channels.write().insert(id, Arc::new(connection));
+		self.channels.write().insert(id, Arc::new(Channel::new(connection)));
 	}
 
 	/// Removes channel with given id.
