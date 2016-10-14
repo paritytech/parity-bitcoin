@@ -1,10 +1,10 @@
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct GetAddr;
 
-impl PayloadType for GetAddr {
+impl Payload for GetAddr {
 	fn version() -> u32 {
 		60002
 	}

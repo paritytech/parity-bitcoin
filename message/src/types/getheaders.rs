@@ -1,6 +1,6 @@
 use hash::H256;
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct GetHeaders {
@@ -9,7 +9,7 @@ pub struct GetHeaders {
 	hash_stop: H256,
 }
 
-impl PayloadType for GetHeaders {
+impl Payload for GetHeaders {
 	fn version() -> u32 {
 		0
 	}

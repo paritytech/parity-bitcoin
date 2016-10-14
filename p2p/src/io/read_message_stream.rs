@@ -3,8 +3,7 @@ use futures::{Future, Poll, Async};
 use futures::stream::Stream;
 use tokio_core::io::{read_exact, ReadExact};
 use crypto::checksum;
-use message::{Error, MessageHeader, MessageResult};
-use message::common::{Magic, Command};
+use message::{Error, MessageHeader, MessageResult, Magic, Command};
 use bytes::Bytes;
 use io::{read_header, ReadHeader};
 

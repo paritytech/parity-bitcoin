@@ -1,5 +1,5 @@
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
@@ -59,7 +59,7 @@ pub struct Reject {
 	// TODO: data
 }
 
-impl PayloadType for Reject {
+impl Payload for Reject {
 	fn version() -> u32 {
 		0
 	}

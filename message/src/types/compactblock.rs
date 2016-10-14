@@ -1,13 +1,13 @@
 use ser::{Stream, Reader};
 use common::BlockHeaderAndIDs;
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct CompactBlock {
 	header: BlockHeaderAndIDs,
 }
 
-impl PayloadType for CompactBlock {
+impl Payload for CompactBlock {
 	fn version() -> u32 {
 		70014
 	}

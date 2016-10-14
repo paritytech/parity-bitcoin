@@ -3,8 +3,7 @@ use futures::Poll;
 use futures::stream::Stream;
 use parking_lot::Mutex;
 use bytes::Bytes;
-use message::{MessageResult, PayloadType};
-use message::common::Command;
+use message::{MessageResult, Payload, Command};
 use net::Connection;
 use io::{read_message_stream, ReadMessageStream, SharedTcpStream, WriteMessage};
 
@@ -22,7 +21,7 @@ impl Channel {
 		}
 	}
 
-	pub fn write_message<T>(&self, payload: &T) -> WriteMessage<T, SharedTcpStream> where T: PayloadType {
+	pub fn write_message<T>(&self, payload: &T) -> WriteMessage<T, SharedTcpStream> where T: Payload {
 		self.connection.write_message(payload)
 	}
 

@@ -1,13 +1,13 @@
 use ser::{Stream, Reader};
 use common::BlockTransactions;
-use {MessageResult, PayloadType};
+use {MessageResult, Payload};
 
 #[derive(Debug, PartialEq)]
 pub struct BlockTxn {
 	request: BlockTransactions,
 }
 
-impl PayloadType for BlockTxn {
+impl Payload for BlockTxn {
 	fn version() -> u32 {
 		70014
 	}

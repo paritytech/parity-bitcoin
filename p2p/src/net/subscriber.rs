@@ -1,10 +1,8 @@
 use std::sync::mpsc::{Sender, Receiver, channel};
 use std::mem;
 use parking_lot::Mutex;
-use message::{Error, PayloadType};
-use message::common::Command;
+use message::{Error, Payload, Command, deserialize_payload};
 use message::types::{Addr, GetAddr};
-use message::serialization::deserialize_payload;
 use PeerId;
 
 struct Handler<S> {
@@ -19,7 +17,7 @@ impl<S> Default for Handler<S> {
 	}
 }
 
-impl<S> Handler<S> where S: PayloadType {
+impl<S> Handler<S> where S: Payload {
 	fn command(&self) -> Command {
 		S::command().into()
 	}

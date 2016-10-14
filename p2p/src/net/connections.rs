@@ -5,7 +5,7 @@ use parking_lot::RwLock;
 use futures::{finished, Future};
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::Handle;
-use message::PayloadType;
+use message::Payload;
 use net::{Connection, Channel};
 use PeerId;
 
@@ -24,7 +24,7 @@ impl Connections {
 
 	/// Broadcast messages to the network.
 	/// Returned future completes of first confirmed receive.
-	pub fn broadcast<T>(connections: &Arc<Connections>, handle: &Handle, pool: &CpuPool, payload: T) where T: PayloadType {
+	pub fn broadcast<T>(connections: &Arc<Connections>, handle: &Handle, pool: &CpuPool, payload: T) where T: Payload {
 		let channels = connections.channels();
 		for (id, channel) in channels.into_iter() {
 			let write = channel.write_message(&payload);

@@ -4,7 +4,7 @@ use futures::{Future, finished};
 use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::Handle;
-use message::PayloadType;
+use message::Payload;
 use net::{connect, listen, Connections, Subscriber, MessagesHandler};
 use Config;
 
@@ -90,7 +90,7 @@ impl P2P {
 		self.event_loop_handle.spawn(pool_work);
 	}
 
-	pub fn broadcast<T>(&self, payload: T) where T: PayloadType {
+	pub fn broadcast<T>(&self, payload: T) where T: Payload {
 		Connections::broadcast(&self.connections, &self.event_loop_handle, &self.pool, payload)
 	}
 }

@@ -4,7 +4,7 @@ use ser::{
 	Deserializable, Reader, Error as ReaderError,
 };
 use common::{NetAddress, ServiceFlags};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 use serialization::deserialize_payload;
 
 #[derive(Debug, PartialEq)]
@@ -14,7 +14,7 @@ pub enum Version {
 	V70001(V0, V106, V70001),
 }
 
-impl PayloadType for Version {
+impl Payload for Version {
 	fn version() -> u32 {
 		0
 	}

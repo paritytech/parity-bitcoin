@@ -1,6 +1,5 @@
 use std::net;
-use message::{Message, PayloadType};
-use message::common::Magic;
+use message::{Message, Payload, Magic};
 use io::{write_message, WriteMessage, SharedTcpStream};
 
 pub struct Connection {
@@ -11,7 +10,7 @@ pub struct Connection {
 }
 
 impl Connection {
-	pub fn write_message<T>(&self, payload: &T) -> WriteMessage<T, SharedTcpStream> where T: PayloadType {
+	pub fn write_message<T>(&self, payload: &T) -> WriteMessage<T, SharedTcpStream> where T: Payload {
 		let message = match Message::new(self.magic, self.version, payload) {
 			Ok(message) => message,
 			Err(_err) => {

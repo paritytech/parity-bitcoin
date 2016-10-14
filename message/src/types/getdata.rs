@@ -1,13 +1,13 @@
 use ser::{Stream, Reader};
 use common::InventoryVector;
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct GetData {
 	pub inventory: Vec<InventoryVector>,
 }
 
-impl PayloadType for GetData {
+impl Payload for GetData {
 	fn version() -> u32 {
 		0
 	}

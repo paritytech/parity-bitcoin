@@ -1,10 +1,10 @@
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct Verack;
 
-impl PayloadType for Verack {
+impl Payload for Verack {
 	fn version() -> u32 {
 		0
 	}
