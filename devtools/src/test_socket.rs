@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Parity.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::io::*;
+use std::io::{Read, Write, Result};
 use std::cmp;
 
 pub struct TestSocket {
