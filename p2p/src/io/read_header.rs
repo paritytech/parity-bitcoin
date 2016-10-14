@@ -1,8 +1,7 @@
 use std::io;
 use futures::{Future, Poll, Async};
 use tokio_core::io::{ReadExact, read_exact};
-use message::{MessageHeader, MessageResult};
-use message::common::Magic;
+use message::{MessageHeader, MessageResult, Magic};
 
 pub fn read_header<A>(a: A, magic: Magic) -> ReadHeader<A> where A: io::Read {
 	ReadHeader {

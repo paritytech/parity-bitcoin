@@ -4,8 +4,8 @@ use futures::{Future, finished};
 use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::Handle;
-use message::PayloadType;
-use net::{connect, listen, Connections, Subscriber};
+use message::Payload;
+use net::{connect, listen, Connections, Subscriber, MessagesHandler};
 use Config;
 
 pub struct P2P {
@@ -18,7 +18,7 @@ pub struct P2P {
 	/// Connections.
 	connections: Arc<Connections>,
 	/// Message subscriber.
-	subscriber: Subscriber,
+	subscriber: Arc<Subscriber>,
 }
 
 impl P2P {
@@ -30,7 +30,7 @@ impl P2P {
 			pool: pool.clone(),
 			config: config,
 			connections: Arc::new(Connections::new()),
-			subscriber: Subscriber::default(),
+			subscriber: Arc::new(Subscriber::default()),
 		}
 	}
 
@@ -39,7 +39,9 @@ impl P2P {
 			self.connect(*seednode)
 		}
 
-		self.listen()
+		try!(self.listen());
+		self.handle_messages();
+		Ok(())
 	}
 
 	pub fn connect(&self, ip: net::IpAddr) {
@@ -71,7 +73,24 @@ impl P2P {
 		Ok(())
 	}
 
-	pub fn broadcast<T>(&self, payload: T) where T: PayloadType {
+	fn handle_messages(&self) {
+		let incoming = MessagesHandler::new(Arc::downgrade(&self.connections));
+		let subscriber = self.subscriber.clone();
+		let connections = self.connections.clone();
+		let incoming_future = incoming.for_each(move |result| {
+			let (command, payload, version, peerid) = result;
+			if let Err(_err) = subscriber.try_handle(&payload, version, command, peerid) {
+				connections.remove(peerid);
+			}
+			Ok(())
+		}).then(|_| {
+			finished(())
+		});
+		let pool_work = self.pool.spawn(incoming_future);
+		self.event_loop_handle.spawn(pool_work);
+	}
+
+	pub fn broadcast<T>(&self, payload: T) where T: Payload {
 		Connections::broadcast(&self.connections, &self.event_loop_handle, &self.pool, payload)
 	}
 }

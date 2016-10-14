@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct FilterAdd {
@@ -8,7 +8,7 @@ pub struct FilterAdd {
 	data: Bytes,
 }
 
-impl PayloadType for FilterAdd {
+impl Payload for FilterAdd {
 	fn version() -> u32 {
 		70001
 	}

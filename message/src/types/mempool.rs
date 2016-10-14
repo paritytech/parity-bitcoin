@@ -1,10 +1,10 @@
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct MemPool;
 
-impl PayloadType for MemPool {
+impl Payload for MemPool {
 	fn version() -> u32 {
 		60002
 	}

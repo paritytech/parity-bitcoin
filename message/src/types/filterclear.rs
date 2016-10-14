@@ -1,10 +1,10 @@
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct FilterClear;
 
-impl PayloadType for FilterClear {
+impl Payload for FilterClear {
 	fn version() -> u32 {
 		70001
 	}

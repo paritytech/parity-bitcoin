@@ -17,7 +17,6 @@ pub mod util;
 mod config;
 mod event_loop;
 mod p2p;
-mod run;
 
 pub const VERSION: u32 = 70_001;
 pub const USER_AGENT: &'static str = "pbtc";
@@ -26,7 +25,6 @@ pub use primitives::{hash, bytes};
 
 pub use config::Config;
 pub use event_loop::{event_loop, forever};
-pub use run::run;
 pub use p2p::P2P;
 
 pub type PeerId = usize;

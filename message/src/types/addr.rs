@@ -3,7 +3,7 @@ use ser::{
 	Deserializable, Reader, Error as ReaderError,
 };
 use common::NetAddress;
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub enum Addr {
@@ -11,7 +11,7 @@ pub enum Addr {
 	V31402(V31402),
 }
 
-impl PayloadType for Addr {
+impl Payload for Addr {
 	fn version() -> u32 {
 		0
 	}

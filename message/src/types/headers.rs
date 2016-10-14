@@ -1,6 +1,6 @@
 use chain::BlockHeader;
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct Headers {
@@ -8,7 +8,7 @@ pub struct Headers {
 	headers: Vec<BlockHeader>,
 }
 
-impl PayloadType for Headers {
+impl Payload for Headers {
 	fn version() -> u32 {
 		0
 	}

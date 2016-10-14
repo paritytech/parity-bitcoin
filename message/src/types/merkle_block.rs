@@ -2,7 +2,7 @@ use hash::H256;
 use bytes::Bytes;
 use ser::{Stream, Reader};
 use chain::BlockHeader;
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct MerkleBlock {
@@ -12,7 +12,7 @@ pub struct MerkleBlock {
 	flags: Bytes,
 }
 
-impl PayloadType for MerkleBlock {
+impl Payload for MerkleBlock {
 	fn version() -> u32 {
 		70014
 	}

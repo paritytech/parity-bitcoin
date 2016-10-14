@@ -1,12 +1,12 @@
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct FeeFilter {
 	fee_rate: u64,
 }
 
-impl PayloadType for FeeFilter {
+impl Payload for FeeFilter {
 	fn version() -> u32 {
 		70013
 	}

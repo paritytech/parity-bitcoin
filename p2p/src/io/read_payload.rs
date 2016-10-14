@@ -5,11 +5,10 @@ use tokio_core::io::{read_exact, ReadExact};
 use bytes::Bytes;
 use hash::H32;
 use crypto::checksum;
-use message::{Error, MessageResult};
-use message::serialization::{PayloadType, deserialize_payload};
+use message::{Error, MessageResult, Payload, deserialize_payload};
 
 pub fn read_payload<M, A>(a: A, version: u32, len: usize, checksum: H32) -> ReadPayload<M, A>
-	where A: io::Read, M: PayloadType {
+	where A: io::Read, M: Payload {
 	ReadPayload {
 		reader: read_exact(a, Bytes::new_with_len(len)),
 		version: version,
@@ -25,7 +24,7 @@ pub struct ReadPayload<M, A> {
 	payload_type: PhantomData<M>,
 }
 
-impl<M, A> Future for ReadPayload<M, A> where A: io::Read, M: PayloadType {
+impl<M, A> Future for ReadPayload<M, A> where A: io::Read, M: Payload {
 	type Item = (A, MessageResult<M>);
 	type Error = io::Error;
 

@@ -1,12 +1,12 @@
 use ser::{Stream, Reader};
-use {MessageResult, PayloadType};
+use {MessageResult, Payload};
 
 #[derive(Debug, PartialEq)]
 pub struct Ping {
 	pub nonce: u64,
 }
 
-impl PayloadType for Ping {
+impl Payload for Ping {
 	fn version() -> u32 {
 		0
 	}

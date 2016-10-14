@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct FilterLoad {
@@ -11,7 +11,7 @@ pub struct FilterLoad {
 	flags: u8,
 }
 
-impl PayloadType for FilterLoad {
+impl Payload for FilterLoad {
 	fn version() -> u32 {
 		70001
 	}
