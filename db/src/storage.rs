@@ -232,7 +232,11 @@ impl Store for Storage {
 	}
 
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
-		
+		self.transaction_bytes(hash).and_then(|tx_bytes| {
+			serialization::deserialize(&tx_bytes).map_err(
+				|e| self.db_error(format!("Error deserializing transaction, possible db corruption ({:?})", e))
+			).ok()
+		})
 	}
 
 }
@@ -272,8 +276,8 @@ mod tests {
 		let tx1 = block.transactions()[0].hash();
 		store.insert_block(&block).unwrap();
 
-		let loaded_transaction = store.transaction_bytes(&tx1).unwrap();
-		assert_eq!(vec![0u8; 0], loaded_transaction);
+		let loaded_transaction = store.transaction(&tx1).unwrap();
+		assert_eq!(loaded_transaction.hash(), block.transactions()[0].hash());
 
 	}
 
