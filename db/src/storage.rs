@@ -8,7 +8,7 @@ use byteorder::{LittleEndian, ByteOrder};
 use std::{self, fs};
 use std::path::Path;
 use chain;
-use serialization::{self, Deserializable};
+use serialization;
 
 const COL_COUNT: u32 = 10;
 const COL_META: u32 = 0;
@@ -208,7 +208,7 @@ impl Store for Storage {
 			self.get(COL_BLOCK_HEADERS, &*block_hash)
 				.and_then(|header_bytes| {
 					let transactions = self.block_transactions_by_hash(&block_hash);;
-					let maybe_header = match serialization::deserialize::<chain::BlockHeader>(&header_bytes[..]) {
+					let maybe_header = match serialization::deserialize::<chain::BlockHeader>(&header_bytes) {
 						Ok(header) => Some(header),
 						Err(e) => {
 							self.db_error(format!("Error deserializing header, possible db corruption ({:?})", e));
