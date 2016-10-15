@@ -21,6 +21,11 @@ pub struct Stream {
 }
 
 impl Stream {
+	/// New stream
+	pub fn new() -> Self {
+		Stream { buffer: Vec::new() }
+	}
+
 	/// Serializes the struct and appends it to the end of stream.
 	pub fn append(&mut self, t: &Serializable) -> &mut Self {
 		t.serialize(self);

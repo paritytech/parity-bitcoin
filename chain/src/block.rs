@@ -53,6 +53,14 @@ impl Block {
 		let hashes = self.transactions.iter().map(Transaction::hash).collect::<Vec<H256>>();
 		merkle_root(&hashes)
 	}
+
+	pub fn transactions(&self) -> &[Transaction] {
+		&self.transactions[..]
+	}
+
+	pub fn header(&self) -> &BlockHeader {
+		&self.block_header
+	}
 }
 
 #[cfg(test)]
