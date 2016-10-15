@@ -1,5 +1,5 @@
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct SendCompact {
@@ -7,7 +7,7 @@ pub struct SendCompact {
 	second: u64,
 }
 
-impl PayloadType for SendCompact {
+impl Payload for SendCompact {
 	fn version() -> u32 {
 		70014
 	}

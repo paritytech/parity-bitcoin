@@ -5,13 +5,13 @@ use parking_lot::RwLock;
 use futures::{finished, Future};
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::Handle;
-use message::PayloadType;
-use net::Connection;
+use message::Payload;
+use net::{Connection, Channel};
 use PeerId;
 
 pub struct Connections {
 	peer_counter: AtomicUsize,
-	channels: RwLock<HashMap<PeerId, Arc<Connection>>>,
+	channels: RwLock<HashMap<PeerId, Arc<Channel>>>,
 }
 
 impl Connections {
@@ -24,7 +24,7 @@ impl Connections {
 
 	/// Broadcast messages to the network.
 	/// Returned future completes of first confirmed receive.
-	pub fn broadcast<T>(connections: &Arc<Connections>, handle: &Handle, pool: &CpuPool, payload: T) where T: PayloadType {
+	pub fn broadcast<T>(connections: &Arc<Connections>, handle: &Handle, pool: &CpuPool, payload: T) where T: Payload {
 		let channels = connections.channels();
 		for (id, channel) in channels.into_iter() {
 			let write = channel.write_message(&payload);
@@ -45,7 +45,7 @@ impl Connections {
 	}
 
 	/// Returns safe (nonblocking) copy of channels.
-	pub fn channels(&self) -> HashMap<PeerId, Arc<Connection>> {
+	pub fn channels(&self) -> HashMap<PeerId, Arc<Channel>> {
 		self.channels.read().clone()
 	}
 
@@ -56,9 +56,8 @@ impl Connections {
 
 	/// Stores new channel.
 	pub fn store(&self, connection: Connection) {
-		println!("new connection!");
 		let id = self.peer_counter.fetch_add(1, Ordering::AcqRel);
-		self.channels.write().insert(id, Arc::new(connection));
+		self.channels.write().insert(id, Arc::new(Channel::new(connection)));
 	}
 
 	/// Removes channel with given id.

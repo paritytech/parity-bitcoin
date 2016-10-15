@@ -1,13 +1,11 @@
 use std::io;
 use std::marker::PhantomData;
 use futures::{Poll, Future, Async};
-use message::{MessageResult, Error};
-use message::common::Magic;
-use message::serialization::PayloadType;
+use message::{MessageResult, Error, Magic, Payload};
 use io::{read_header, ReadHeader, read_payload, ReadPayload};
 
 pub fn read_message<M, A>(a: A, magic: Magic, version: u32) -> ReadMessage<M, A>
-	where A: io::Read, M: PayloadType {
+	where A: io::Read, M: Payload {
 	ReadMessage {
 		state: ReadMessageState::ReadHeader {
 			version: version,
@@ -33,7 +31,7 @@ pub struct ReadMessage<M, A> {
 	message_type: PhantomData<M>,
 }
 
-impl<M, A> Future for ReadMessage<M, A> where A: io::Read, M: PayloadType {
+impl<M, A> Future for ReadMessage<M, A> where A: io::Read, M: Payload {
 	type Item = (A, MessageResult<M>);
 	type Error = io::Error;
 
@@ -43,9 +41,7 @@ impl<M, A> Future for ReadMessage<M, A> where A: io::Read, M: PayloadType {
 				let (read, header) = try_ready!(future.poll());
 				let header = match header {
 					Ok(header) => header,
-					Err(err) => {
-						return Ok((read, Err(err)).into());
-					}
+					Err(err) => return Ok((read, Err(err)).into()),
 				};
 				if header.command != M::command().into() {
 					return Ok((read, Err(Error::InvalidCommand)).into());

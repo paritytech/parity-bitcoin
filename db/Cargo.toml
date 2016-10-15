@@ -7,8 +7,8 @@ authors = ["Nikolay Volf <nikvolf@gmail.com>"]
 elastic-array = "0.5"
 rocksdb = { git = "https://github.com/ethcore/rust-rocksdb" }
 ethcore-devtools = { path = "../devtools" }
-parking_lot = "0.2"
 primitives = { path = "../primitives" }
 byteorder = "0.5"
 chain = { path = "../chain"  }
 serialization = { path = "../serialization" }
+parking_lot = "0.3"

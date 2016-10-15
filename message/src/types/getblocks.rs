@@ -1,6 +1,6 @@
 use hash::H256;
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct GetBlocks {
@@ -9,7 +9,7 @@ pub struct GetBlocks {
 	hash_stop: H256,
 }
 
-impl PayloadType for GetBlocks {
+impl Payload for GetBlocks {
 	fn version() -> u32 {
 		0
 	}

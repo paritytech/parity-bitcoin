@@ -8,7 +8,8 @@ extern crate byteorder;
 extern crate chain;
 extern crate serialization;
 
-#[cfg(test)] extern crate ethcore_devtools as devtools;
+#[cfg(test)]
+extern crate ethcore_devtools as devtools;
 
 mod kvdb;
 mod storage;

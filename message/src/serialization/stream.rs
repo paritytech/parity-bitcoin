@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use ser::Stream;
-use {PayloadType, Error, MessageResult};
+use {Payload, Error, MessageResult};
 
-pub fn serialize_payload<T>(t: &T, version: u32) -> MessageResult<Bytes> where T: PayloadType {
+pub fn serialize_payload<T>(t: &T, version: u32) -> MessageResult<Bytes> where T: Payload {
 	let mut stream = PayloadStream::new(version);
 	try!(stream.append(t));
 	Ok(stream.out())
@@ -21,7 +21,7 @@ impl PayloadStream {
 		}
 	}
 
-	pub fn append<T>(&mut self, t: &T) -> MessageResult<()> where T: PayloadType {
+	pub fn append<T>(&mut self, t: &T) -> MessageResult<()> where T: Payload {
 		if T::version() > self.version {
 			return Err(Error::InvalidVersion);
 		}

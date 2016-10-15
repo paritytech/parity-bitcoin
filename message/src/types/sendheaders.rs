@@ -1,10 +1,10 @@
 use ser::{Stream, Reader};
-use {PayloadType, MessageResult};
+use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct SendHeaders;
 
-impl PayloadType for SendHeaders {
+impl Payload for SendHeaders {
 	fn version() -> u32 {
 		70012
 	}

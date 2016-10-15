@@ -1,5 +1,7 @@
 use ser::Error as ReaderError;
 
+pub type MessageResult<T> = Result<T, Error>;
+
 #[derive(Debug, PartialEq)]
 pub enum Error {
 	/// Deserialization failed.

@@ -3,8 +3,7 @@ use futures::{Future, Poll, Async};
 use futures::stream::Stream;
 use tokio_core::io::{read_exact, ReadExact};
 use crypto::checksum;
-use message::{Error, MessageHeader, MessageResult};
-use message::common::Magic;
+use message::{Error, MessageHeader, MessageResult, Magic, Command};
 use bytes::Bytes;
 use io::{read_header, ReadHeader};
 
@@ -29,7 +28,7 @@ pub struct ReadMessageStream<A> {
 }
 
 impl<A> Stream for ReadMessageStream<A> where A: io::Read {
-	type Item = MessageResult<Bytes>;
+	type Item = MessageResult<(Command, Bytes)>;
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -54,7 +53,7 @@ impl<A> Stream for ReadMessageStream<A> where A: io::Read {
 				}
 				let future = read_header(stream, self.magic);
 				let next = ReadMessageStreamState::ReadHeader(future);
-				(next, Some(Ok(bytes)).into())
+				(next, Some(Ok((header.command.clone(), bytes))).into())
 			},
 		};
 

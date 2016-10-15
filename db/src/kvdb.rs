@@ -1,12 +1,12 @@
 //! Key-Value store abstraction with `RocksDB` backend.
 
+use std::{self, fs, mem};
 use std::io::ErrorKind;
-use elastic_array::*;
-use std::default::Default;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use rocksdb::{DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
 	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column};
-use std::{self, fs, mem};
+use elastic_array::ElasticArray32;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::convert::From;

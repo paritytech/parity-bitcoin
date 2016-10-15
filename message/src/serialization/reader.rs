@@ -1,8 +1,7 @@
 use ser::Reader;
-use serialization::PayloadType;
-use Error;
+use {Payload, Error};
 
-pub fn deserialize_payload<T>(buffer: &[u8], version: u32) -> Result<T, Error> where T: PayloadType {
+pub fn deserialize_payload<T>(buffer: &[u8], version: u32) -> Result<T, Error> where T: Payload {
 	let mut reader = PayloadReader::new(buffer, version);
 	let result = try!(reader.read());
 	if !reader.is_finished() {
@@ -25,7 +24,7 @@ impl<'a> PayloadReader<'a> {
 		}
 	}
 
-	pub fn read<T>(&mut self) -> Result<T, Error> where T: PayloadType {
+	pub fn read<T>(&mut self) -> Result<T, Error> where T: Payload {
 		if T::version() > self.version {
 			return Err(Error::InvalidVersion);
 		}
