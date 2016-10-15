@@ -98,7 +98,7 @@ impl Storage {
 		let cfg = DatabaseConfig::with_columns(Some(COL_COUNT));
 		let db = try!(Database::open(&cfg, &*path.as_ref().to_string_lossy()));
 
-		match try!(db.get(Some(COL_META), b"version")) {
+		match try!(db.get(Some(COL_META), KEY_VERSION)) {
 			Some(val) => {
 				let ver = LittleEndian::read_u32(&val);
 				if ver == DB_VERSION {
