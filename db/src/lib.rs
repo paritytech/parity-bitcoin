@@ -20,3 +20,6 @@ pub enum BlockRef {
 	Number(u64),
 	Hash(primitives::hash::H256),
 }
+
+pub use storage::{Storage, Store};
+pub use kvdb::Database;

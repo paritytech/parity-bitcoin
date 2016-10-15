@@ -8,7 +8,6 @@ use rocksdb::{DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
 	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column};
 use elastic_array::ElasticArray32;
 use parking_lot::RwLock;
-use std::collections::HashMap;
 use std::convert::From;
 use super::Bytes;
 
