@@ -8,8 +8,8 @@ use rocksdb::{DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
 	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column};
 use elastic_array::ElasticArray32;
 use parking_lot::RwLock;
-use std::convert::From;
-use super::Bytes;
+
+pub type Bytes = Vec<u8>;
 
 /// Database error
 pub enum Error {

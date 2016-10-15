@@ -14,8 +14,6 @@ extern crate ethcore_devtools as devtools;
 mod kvdb;
 mod storage;
 
-pub type Bytes = Vec<u8>;
-
 pub enum BlockRef {
 	Number(u64),
 	Hash(primitives::hash::H256),

@@ -2,12 +2,13 @@
 
 use kvdb::{Database, DatabaseConfig};
 use primitives::hash::H256;
-use super::{BlockRef, Bytes};
+use primitives::bytes::Bytes;
+use super::BlockRef;
 use byteorder::{LittleEndian, ByteOrder};
 use std::{self, fs};
 use std::path::Path;
 use chain;
-use serialization::{self, Serializable, Deserializable};
+use serialization::{self, Deserializable};
 
 const COL_COUNT: u32 = 10;
 const COL_META: u32 = 0;
@@ -33,13 +34,16 @@ pub trait Store {
 	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes>;
 
 	/// resolves list of block transactions by block reference (number/hash)
-	fn block_transactions(&self, block_ref: BlockRef) -> Vec<H256>;
+	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256>;
 
 	/// resolves transaction body bytes by transaction hash
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes>;
 
 	/// resolves serialized transaction info by transaction hash
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction>;
+
+	/// returns all transactions in the block by block reference (number/hash)
+	fn block_transactions(&self, block_ref: BlockRef) -> Vec<chain::Transaction>;
 
 	/// resolves deserialized block body by block reference (number/hash)
 	fn block(&self, block_ref: BlockRef) -> Option<chain::Block>;
@@ -133,7 +137,7 @@ impl Storage {
 				self.db_error(msg);
 				None
 			},
-			Ok(val) => val,
+			Ok(val) => val.map(|v| v.into()),
 		}
 	}
 
@@ -147,11 +151,28 @@ impl Storage {
 	}
 
 	/// loads block transaction list by the provided block hash
-	fn block_transactions_by_hash(&self, h: &H256) -> Vec<H256> {
+	fn block_transaction_hashes_by_hash(&self, h: &H256) -> Vec<H256> {
 		self.get(COL_BLOCK_TRANSACTIONS, &**h)
-			.unwrap_or(Vec::new())
+			.unwrap_or(Vec::new().into())
 			.chunks(H256::size())
 			.map(H256::from)
+			.collect()
+	}
+
+	fn block_transactions_by_hash(&self, h: &H256) -> Vec<chain::Transaction> {
+		self.block_transaction_hashes_by_hash(h)
+			.into_iter()
+			.filter_map(|tx_hash| {
+				self.transaction_bytes(&tx_hash).and_then(|tx_bytes| {
+					match serialization::deserialize::<chain::Transaction>(&tx_bytes) {
+						Ok(tx) => Some(tx),
+						Err(e) => {
+							self.db_error(format!("Error deserializing transaction, possible db corruption ({:?})", e));
+							None
+						}
+					}
+				})
+			})
 			.collect()
 	}
 }
@@ -166,7 +187,13 @@ impl Store for Storage {
 		self.resolve_hash(block_ref).and_then(|h| self.get(COL_BLOCK_HEADERS, &*h))
 	}
 
-	fn block_transactions(&self, block_ref: BlockRef) -> Vec<H256> {
+	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256> {
+		self.resolve_hash(block_ref)
+			.map(|h| self.block_transaction_hashes_by_hash(&h))
+			.unwrap_or(Vec::new())
+	}
+
+	fn block_transactions(&self, block_ref: BlockRef) -> Vec<chain::Transaction> {
 		self.resolve_hash(block_ref)
 			.map(|h| self.block_transactions_by_hash(&h))
 			.unwrap_or(Vec::new())
@@ -180,24 +207,8 @@ impl Store for Storage {
 		self.resolve_hash(block_ref).and_then(|block_hash|
 			self.get(COL_BLOCK_HEADERS, &*block_hash)
 				.and_then(|header_bytes| {
-					let transactions = self.block_transactions_by_hash(&block_hash)
-						.into_iter()
-						.filter_map(|tx_hash| {
-							self.transaction_bytes(&tx_hash).and_then(|tx_bytes| {
-								let mut reader = serialization::Reader::new(&tx_bytes[..]);
-								match chain::Transaction::deserialize(&mut reader) {
-									Ok(tx) => Some(tx),
-									Err(e) => {
-										self.db_error(format!("Error deserializing transaction, possible db corruption ({:?})", e));
-										None
-									}
-								}
-							})
-						})
-						.collect();
-
-					let mut reader = serialization::Reader::new(&header_bytes[..]);
-					let maybe_header = match chain::BlockHeader::deserialize(&mut reader) {
+					let transactions = self.block_transactions_by_hash(&block_hash);;
+					let maybe_header = match serialization::deserialize::<chain::BlockHeader>(&header_bytes[..]) {
 						Ok(header) => Some(header),
 						Err(e) => {
 							self.db_error(format!("Error deserializing header, possible db corruption ({:?})", e));
@@ -218,15 +229,19 @@ impl Store for Storage {
 		for tx in block.transactions() {
 			let tx_hash = tx.hash();
 			tx_refs.extend(&*tx_hash);
-			let mut tx_stream = serialization::Stream::new();
-			tx.serialize(&mut tx_stream);
-			transaction.put(Some(COL_TRANSACTIONS), &*tx_hash, tx_stream.out().as_slice());
+			transaction.put(
+				Some(COL_TRANSACTIONS),
+				&*tx_hash,
+				&serialization::serialize(tx),
+			);
 		}
-		transaction.put(Some(COL_BLOCK_TRANSACTIONS), &*block_hash,  &tx_refs);
+		transaction.put(Some(COL_BLOCK_TRANSACTIONS), &*block_hash, &tx_refs);
 
-		let mut header_stream = serialization::Stream::new();
-		block.header().serialize(&mut header_stream);
-		transaction.put(Some(COL_BLOCK_HEADERS), &*block_hash, header_stream.out().as_slice());
+		transaction.put(
+			Some(COL_BLOCK_HEADERS),
+			&*block_hash,
+			&serialization::serialize(block.header())
+		);
 
 		try!(self.database.write(transaction));
 
