@@ -24,6 +24,7 @@ const _COL_RESERVED6: u32 = 10;
 
 const DB_VERSION: u32 = 1;
 
+/// Blockchain storage interface
 pub trait Store {
 	/// resolves hash by block number
 	fn block_hash(&self, number: u64) -> Option<H256>;
@@ -47,6 +48,7 @@ pub trait Store {
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error>;
 }
 
+/// Blockchain storage with rocksdb database
 pub struct Storage {
 	database: Database,
 }
