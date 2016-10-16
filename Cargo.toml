@@ -7,7 +7,6 @@ description = "Parity bitcoin client."
 
 [dependencies]
 clap = { version = "2", features = ["yaml"] }
-bitcrypto = { path = "crypto" }
 keys = { path = "keys" }
 message = { path = "message" }
 p2p = { path = "p2p" }

@@ -2,7 +2,6 @@
 name = "pbtc"
 version = "0.1.0"
 dependencies = [
- "bitcrypto 0.1.0",
  "clap 2.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "db 0.1.0",
  "keys 0.1.0",

@@ -3,7 +3,6 @@
 #[macro_use]
 extern crate clap;
 
-extern crate bitcrypto as crypto;
 extern crate keys;
 extern crate script;
 extern crate message;
