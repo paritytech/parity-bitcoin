@@ -1,14 +1,13 @@
 //! Bitcoin storage
 
+use std::{self, fs};
+use std::path::Path;
 use kvdb::{Database, DatabaseConfig};
+use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use super::BlockRef;
-use byteorder::{LittleEndian, ByteOrder};
-use std::{self, fs};
-use std::path::Path;
-use chain;
-use serialization;
+use {chain, serialization};
 
 const COL_COUNT: u32 = 10;
 const COL_META: u32 = 0;
@@ -87,7 +86,7 @@ impl From<std::io::Error> for Error {
 
 fn u64_key(num: u64) -> [u8; 8] {
 	let mut result = [0u8; 8];
-	LittleEndian::write_u64(&mut result[..], num);
+	LittleEndian::write_u64(&mut result, num);
 	result
 }
 
@@ -180,7 +179,7 @@ impl Storage {
 impl Store for Storage {
 	fn block_hash(&self, number: u64) -> Option<H256> {
 		self.get(COL_BLOCK_HASHES, &u64_key(number))
-			.map(|val| H256::from(&val[..]))
+			.map(|val| H256::from(&**val))
 	}
 
 	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes> {

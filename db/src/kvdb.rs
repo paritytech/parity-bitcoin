@@ -8,8 +8,7 @@ use rocksdb::{DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
 	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column};
 use elastic_array::ElasticArray32;
 use parking_lot::RwLock;
-
-pub type Bytes = Vec<u8>;
+use primitives::bytes::Bytes;
 
 /// Database error
 pub enum Error {
@@ -66,7 +65,7 @@ impl DBTransaction {
 		self.ops.push(DBOp::Insert {
 			col: col,
 			key: ekey,
-			value: value.to_vec(),
+			value: value.to_vec().into(),
 		});
 	}
 
@@ -390,8 +389,8 @@ impl Database {
 					Some(&KeyState::Delete) => Ok(None),
 					None => {
 						col.map_or_else(
-							|| db.get(key).map(|r| r.map(|v| v.to_vec())),
-							|c| db.get_cf(cfs[c as usize], key).map(|r| r.map(|v| v.to_vec())))
+							|| db.get(key).map(|r| r.map(|v| v.to_vec().into())),
+							|c| db.get_cf(cfs[c as usize], key).map(|r| r.map(|v| v.to_vec().into())))
 					},
 				}
 			},
