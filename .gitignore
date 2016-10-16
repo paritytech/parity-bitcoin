@@ -12,3 +12,6 @@
 
 # GitEye stuff
 /.project
+
+# idea ide
+.idea

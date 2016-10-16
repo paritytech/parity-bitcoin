@@ -40,6 +40,10 @@ impl From<&'static str> for Block {
 }
 
 impl Block {
+	pub fn new(header: BlockHeader, transactions: Vec<Transaction>) -> Self {
+		Block { block_header: header, transactions: transactions }
+	}
+
 	pub fn hash(&self) -> H256 {
 		dhash256(&serialize(&self.block_header))
 	}
@@ -48,6 +52,14 @@ impl Block {
 	pub fn merkle_root(&self) -> H256 {
 		let hashes = self.transactions.iter().map(Transaction::hash).collect::<Vec<H256>>();
 		merkle_root(&hashes)
+	}
+
+	pub fn transactions(&self) -> &[Transaction] {
+		&self.transactions
+	}
+
+	pub fn header(&self) -> &BlockHeader {
+		&self.block_header
 	}
 }
 

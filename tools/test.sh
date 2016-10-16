@@ -1,6 +1,8 @@
 #!/bin/bash
 
 cargo test\
+	-p db\
+	-p ethcore-devtools\
 	-p chain\
 	-p bitcrypto\
 	-p keys\
