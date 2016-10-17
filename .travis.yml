@@ -1,5 +1,7 @@
-sudo: false
+sudo: required
+dist: trusty
 language: rust
+
 branches:
   only:
   - master
