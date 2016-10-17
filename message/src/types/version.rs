@@ -3,7 +3,7 @@ use ser::{
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError,
 };
-use common::{NetAddress, ServiceFlags};
+use common::{NetAddress, Services};
 use {Payload, MessageResult};
 use serialization::deserialize_payload;
 
@@ -70,7 +70,7 @@ impl Version {
 		}
 	}
 
-	pub fn services(&self) -> ServiceFlags {
+	pub fn services(&self) -> Services {
 		match *self {
 			Version::V0(ref s) => s.services,
 			Version::V106(ref s, _) => s.services,
@@ -82,7 +82,7 @@ impl Version {
 #[derive(Debug, PartialEq)]
 pub struct V0 {
 	pub version: u32,
-	pub services: ServiceFlags,
+	pub services: Services,
 	pub timestamp: i64,
 	pub receiver: NetAddress,
 }

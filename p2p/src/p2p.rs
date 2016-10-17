@@ -23,7 +23,7 @@ pub struct P2P {
 
 impl P2P {
 	pub fn new(config: Config, handle: Handle) -> Self {
-		let pool = CpuPool::new(4);
+		let pool = CpuPool::new(config.threads);
 
 		P2P {
 			event_loop_handle: handle.clone(),
@@ -35,7 +35,7 @@ impl P2P {
 	}
 
 	pub fn run(&self) -> Result<(), io::Error> {
-		for seednode in self.config.seednodes.iter() {
+		for seednode in self.config.peers.iter() {
 			self.connect(*seednode)
 		}
 

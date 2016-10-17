@@ -20,4 +20,4 @@ pub use self::ip::IpAddress;
 pub use self::magic::Magic;
 pub use self::port::Port;
 pub use self::prefilled_transaction::PrefilledTransaction;
-pub use self::service::ServiceFlags;
+pub use self::service::Services;

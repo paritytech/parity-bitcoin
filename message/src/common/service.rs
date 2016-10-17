@@ -4,22 +4,22 @@ use ser::{
 };
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
-pub struct ServiceFlags(u64);
+pub struct Services(u64);
 
-impl From<ServiceFlags> for u64 {
-	fn from(s: ServiceFlags) -> Self {
+impl From<Services> for u64 {
+	fn from(s: Services) -> Self {
 		s.0
 	}
 }
 
-impl From<u64> for ServiceFlags {
+impl From<u64> for Services {
 	fn from(v: u64) -> Self {
-		ServiceFlags(v)
+		Services(v)
 	}
 }
 
 
-impl ServiceFlags {
+impl Services {
 	pub fn network(&self) -> bool {
 		self.bit_at(0)
 	}
@@ -78,14 +78,14 @@ impl ServiceFlags {
 	}
 }
 
-impl Serializable for ServiceFlags {
+impl Serializable for Services {
 	fn serialize(&self, stream: &mut Stream) {
 		stream.append(&self.0);
 	}
 }
 
-impl Deserializable for ServiceFlags {
+impl Deserializable for Services {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		reader.read().map(ServiceFlags)
+		reader.read().map(Services)
 	}
 }
