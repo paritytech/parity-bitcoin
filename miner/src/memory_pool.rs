@@ -3,8 +3,8 @@
 //! `MemoryPool` keeps track of all transactions seen by the node (received from other peers) and own transactions
 //! and orders them by given strategies. It works like multi-indexed priority queue, giving option to pop 'top'
 //! transactions.
-//! It also guarantees that ancestor-descendant relation won't break during removal (ancestors always removed
-//! before descendants).
+//! It also guarantees that ancestor-descendant relation won't break during ordered removal (ancestors always removed
+//! before descendants). Removal using remove_by_hash can break this rule.
 use std::rc::Rc; 
 use hash::H256;
 use chain::Transaction;
@@ -341,12 +341,14 @@ impl MemoryPool {
 		self.storage.insert(entry);
 	}
 
-	/// Removes transaction by its hash
+	/// Removes single transaction by its hash.
+	/// All descedants remain in the pool.
 	pub fn remove_by_hash(&mut self, h: &H256) -> Option<Transaction> {
 		self.storage.remove_by_hash(h).map(|entry| entry.transaction)
 	}
 
-	/// Removes up to n transactions the `MemoryPool`, using selected strategy
+	/// Removes up to n transactions the `MemoryPool`, using selected strategy.
+	/// Ancestors are always removed before descendant transactions.
 	pub fn remove_n_with_strategy(&mut self, n: usize, strategy: OrderingStrategy) -> Vec<Transaction> {
 		self.storage.remove_n_with_strategy(n, strategy)
 	}
@@ -503,38 +505,77 @@ mod tests {
 	fn test_memory_pool_transaction_dependent_transactions_parent_after_child() {
 		let parent_transaction: Transaction = "00000000000164000000000000000000000000".into();
 		let child_transaction: Transaction = "0000000001545ac9cffeaa3ee074f08a5306e703cb30883192ed9b10ee9ddb76824e4985070000000000000000000000000000".into();
+		let grandchild_transaction: Transaction = "0000000001cc1d8279403880bfdd7682c28ed8441a138f96ae1dc5fd90bc928b88d48107a90000000000000000000164000000000000000000000000".into();
 		let parent_transaction_hash = parent_transaction.hash();
 		let child_transaction_hash = child_transaction.hash();
+		let grandchild_transaction_hash = grandchild_transaction.hash();
 
 		// insert child, then parent
 		let mut pool = MemoryPool::new();
-		pool.insert_verified(child_transaction); // timestamp 0
-		pool.insert_verified(parent_transaction); // timestamp 1
+		pool.insert_verified(grandchild_transaction); // timestamp 0
+		pool.insert_verified(child_transaction); // timestamp 1
+		pool.insert_verified(parent_transaction); // timestamp 2
 
 		// check that parent transaction was removed before child trnasaction
 		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByTimestamp);
-		assert_eq!(transactions.len(), 2);
+		assert_eq!(transactions.len(), 3);
 		assert_eq!(transactions[0].hash(), parent_transaction_hash);
 		assert_eq!(transactions[1].hash(), child_transaction_hash);
+		assert_eq!(transactions[2].hash(), grandchild_transaction_hash);
 	}
 
 	#[test]
 	fn test_memory_pool_transaction_dependent_transactions_parent_before_child() {
 		let parent_transaction: Transaction = "00000000000164000000000000000000000000".into();
-		let child_transaction: Transaction = "0000000001545ac9cffeaa3ee074f08a5306e703cb30883192ed9b10ee9ddb76824e4985070000000000000000000000000000".into();
+		let child_transaction: Transaction = "0000000001545ac9cffeaa3ee074f08a5306e703cb30883192ed9b10ee9ddb76824e4985070000000000000000000164000000000000000000000000".into();
+		let grandchild_transaction: Transaction = "0000000001cc1d8279403880bfdd7682c28ed8441a138f96ae1dc5fd90bc928b88d48107a90000000000000000000164000000000000000000000000".into();
 		let parent_transaction_hash = parent_transaction.hash();
-		let child_transaction_hash = child_transaction.hash(); 
+		let child_transaction_hash = child_transaction.hash();
+		let grandchild_transaction_hash = grandchild_transaction.hash();
 
 		// insert child, then parent
 		let mut pool = MemoryPool::new();
 		pool.insert_verified(parent_transaction); // timestamp 0
 		pool.insert_verified(child_transaction); // timestamp 1
+		pool.insert_verified(grandchild_transaction); // timestamp 2
 
 		// check that parent transaction was removed before child trnasaction
 		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByTimestamp);
-		assert_eq!(transactions.len(), 2);
+		assert_eq!(transactions.len(), 3);
 		assert_eq!(transactions[0].hash(), parent_transaction_hash);
 		assert_eq!(transactions[1].hash(), child_transaction_hash);
+		assert_eq!(transactions[2].hash(), grandchild_transaction_hash);
+	}
+
+	#[test]
+	fn test_memory_pool_transaction_dependent_transactions_insert_after_remove_by_hash() {
+		let raw_parent_transaction = "00000000000164000000000000000000000000";
+		let raw_child_transaction = "0000000001545ac9cffeaa3ee074f08a5306e703cb30883192ed9b10ee9ddb76824e4985070000000000000000000164000000000000000000000000";
+		let raw_grandchild_transaction = "0000000001cc1d8279403880bfdd7682c28ed8441a138f96ae1dc5fd90bc928b88d48107a90000000000000000000164000000000000000000000000";
+		let parent_transaction: Transaction = raw_parent_transaction.into();
+		let child_transaction: Transaction = raw_child_transaction.into();
+		let grandchild_transaction: Transaction = raw_grandchild_transaction.into();
+		let parent_transaction_hash = parent_transaction.hash();
+		let child_transaction_hash = child_transaction.hash();
+		let grandchild_transaction_hash = grandchild_transaction.hash();
+
+		// insert child, then parent
+		let mut pool = MemoryPool::new();
+		pool.insert_verified(parent_transaction);
+		pool.insert_verified(child_transaction);
+		pool.insert_verified(grandchild_transaction);
+
+		// remove child transaction & make sure that other transactions are still there
+		pool.remove_by_hash(&child_transaction_hash);
+		assert_eq!(pool.get_transactions_ids().len(), 2);
+
+		// insert child transaction back to the pool & assert transactions are removed in correct order
+		pool.insert_verified(raw_child_transaction.into());
+		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByMinerScore);
+		assert_eq!(transactions.len(), 3);
+		assert_eq!(transactions[0].hash(), parent_transaction_hash);
+		assert_eq!(transactions[1].hash(), child_transaction_hash);
+		assert_eq!(transactions[2].hash(), grandchild_transaction_hash);
 	}
 
 	#[test]
