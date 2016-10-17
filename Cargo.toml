@@ -9,6 +9,7 @@ description = "Parity bitcoin client."
 clap = { version = "2", features = ["yaml"] }
 keys = { path = "keys" }
 message = { path = "message" }
+miner = { path = "miner" }
 p2p = { path = "p2p" }
 script = { path = "script" }
 db = { path = "db" }
