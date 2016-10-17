@@ -27,6 +27,7 @@ addons:
 script:
   - ./tools/test.sh
 after_success: |
+  [ false ] &&
   [ $TRAVIS_BRANCH = master ] &&
   [ $TRAVIS_PULL_REQUEST = false ] &&
   [ $TRAVIS_RUST_VERSION = stable ] &&
