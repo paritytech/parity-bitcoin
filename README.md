@@ -2,6 +2,7 @@
 The Parity Bitcoin client
 
 [![Build Status][travis-image]][travis-url]
+
 [Internal Documentation][doc-url]
 
 ![Graph][graph]
