@@ -9,12 +9,22 @@ impl Serializable for bool {
 	fn serialize(&self, s: &mut Stream) {
 		s.write_u8(*self as u8).unwrap();
 	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		1
+	}
 }
 
 impl Serializable for i32 {
 	#[inline]
 	fn serialize(&self, s: &mut Stream) {
 		s.write_i32::<LittleEndian>(*self).unwrap();
+	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		4
 	}
 }
 
@@ -23,12 +33,22 @@ impl Serializable for i64 {
 	fn serialize(&self, s: &mut Stream) {
 		s.write_i64::<LittleEndian>(*self).unwrap();
 	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		8
+	}
 }
 
 impl Serializable for u8 {
 	#[inline]
 	fn serialize(&self, s: &mut Stream) {
 		s.write_u8(*self).unwrap();
+	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		1
 	}
 }
 
@@ -37,6 +57,11 @@ impl Serializable for u16 {
 	fn serialize(&self, s: &mut Stream) {
 		s.write_u16::<LittleEndian>(*self).unwrap();
 	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		2
+	}
 }
 
 impl Serializable for u32 {
@@ -44,12 +69,22 @@ impl Serializable for u32 {
 	fn serialize(&self, s: &mut Stream) {
 		s.write_u32::<LittleEndian>(*self).unwrap();
 	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		4
+	}
 }
 
 impl Serializable for u64 {
 	#[inline]
 	fn serialize(&self, s: &mut Stream) {
 		s.write_u64::<LittleEndian>(*self).unwrap();
+	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		8
 	}
 }
 
@@ -114,6 +149,12 @@ impl Serializable for String {
 			.append(&CompactInteger::from(bytes.len()))
 			.append_slice(bytes);
 	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		let bytes: &[u8] = self.as_ref();
+		CompactInteger::from(bytes.len()).serialized_size() + bytes.len()
+	}
 }
 
 impl Deserializable for String {
@@ -128,6 +169,11 @@ macro_rules! impl_ser_for_hash {
 		impl Serializable for $name {
 			fn serialize(&self, stream: &mut Stream) {
 				stream.append_slice(&**self);
+			}
+
+			#[inline]
+			fn serialized_size(&self) -> usize {
+				$size
 			}
 		}
 
@@ -156,6 +202,11 @@ impl Serializable for Bytes {
 		stream
 			.append(&CompactInteger::from(self.len()))
 			.append_slice(&self);
+	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		CompactInteger::from(self.len()).serialized_size() + self.len()
 	}
 }
 

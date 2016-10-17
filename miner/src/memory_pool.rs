@@ -5,12 +5,12 @@
 //! transactions.
 //! It also guarantees that ancestor-descendant relation won't break during ordered removal (ancestors always removed
 //! before descendants). Removal using remove_by_hash can break this rule.
-use std::rc::Rc; 
+use std::rc::Rc;
 use hash::H256;
 use chain::Transaction;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use ser::stream::serialize;
+use ser::Serializable;
 
 /// Transactions ordering strategy
 #[derive(Debug)]
@@ -26,7 +26,7 @@ pub enum OrderingStrategy {
 pub struct Information {
 	/// The number of transactions currently in the `MemoryPool`
 	pub transactions_count: usize,
-	/// The total number of bytes in the transactions in the `MemoryPool` 
+	/// The total number of bytes in the transactions in the `MemoryPool`
 	pub transactions_size_in_bytes: usize,
 }
 
@@ -52,7 +52,7 @@ pub struct Entry {
 	timestamp: u64,
 	/// Transaction fee (stored for efficiency)
 	miner_fee: i64,
-	/// Virtual transaction fee (a way to prioritize/penalize transaction) 
+	/// Virtual transaction fee (a way to prioritize/penalize transaction)
 	miner_virtual_fee: i64,
 }
 
@@ -108,7 +108,7 @@ macro_rules! ordering_strategy {
 				fn partial_cmp(&self, other: &OrderedEntry) -> Option<Ordering> {
 					Some(self.cmp(other))
 				}
-			} 
+			}
 
 			impl Ord for OrderedEntry {
 				fn cmp(&self, other: &Self) -> Ordering {
@@ -414,8 +414,7 @@ impl MemoryPool {
 	}
 
 	fn get_transaction_size(&self, t: &Transaction) -> usize {
-		// TODO: the only correct way now?
-		serialize(t).len()
+		t.serialized_size()
 	}
 
 	fn get_transaction_miner_fee(&self, t: &Transaction) -> i64 {
@@ -487,7 +486,7 @@ mod tests {
 		assert_eq!(pool_transactions.len(), 4);
 
 		// check pool transactions
-		let ref hash_to_remove = pool_transactions[0]; 
+		let ref hash_to_remove = pool_transactions[0];
 		assert!(*hash_to_remove == RAW_TRANSACTION1_HASH.into()
 			|| *hash_to_remove == RAW_TRANSACTION2_HASH.into()
 			|| *hash_to_remove == RAW_TRANSACTION3_HASH.into()
@@ -593,7 +592,7 @@ mod tests {
 
 			if expected_pool_size != 0 {
 				pool.remove_by_hash(&removals[i].into());
-			} 
+			}
 		}
 	}
 
