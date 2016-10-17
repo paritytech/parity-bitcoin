@@ -21,6 +21,7 @@ addons:
     - libelf-dev
     - libdw-dev
     - gcc-4.8
+    - g++-4.8
 script:
   - ./tools/test.sh
 after_success: |
