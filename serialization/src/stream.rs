@@ -9,9 +9,20 @@ pub fn serialize(t: &Serializable) -> Bytes {
 	stream.out()
 }
 
+pub fn serialized_list_size<T>(t: &[T]) -> usize where T: Serializable {
+	CompactInteger::from(t.len()).serialized_size() +
+		t.iter().map(Serializable::serialized_size).sum::<usize>()
+}
+
 pub trait Serializable {
 	/// Serialize the struct and appends it to the end of stream.
 	fn serialize(&self, s: &mut Stream);
+
+	/// Hint about the size of serialized struct.
+	fn serialized_size(&self) -> usize where Self: Sized {
+		// fallback implementation
+		serialize(self).len()
+	}
 }
 
 /// Stream used for serialization.

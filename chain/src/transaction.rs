@@ -6,7 +6,7 @@ use hex::FromHex;
 use bytes::Bytes;
 use ser::{
 	Deserializable, Reader, Error as ReaderError, deserialize,
-	Serializable, Stream, serialize
+	Serializable, Stream, serialize, serialized_list_size
 };
 use crypto::dhash256;
 use hash::H256;
@@ -41,6 +41,11 @@ impl Serializable for OutPoint {
 		stream
 			.append(&self.hash)
 			.append(&self.index);
+	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		self.hash.serialized_size() + self.index.serialized_size()
 	}
 }
 
@@ -78,6 +83,13 @@ impl Serializable for TransactionInput {
 			.append(&self.previous_output)
 			.append(&self.script_sig)
 			.append(&self.sequence);
+	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		self.previous_output.serialized_size() +
+			self.script_sig.serialized_size() +
+			self.sequence.serialized_size()
 	}
 }
 
@@ -118,6 +130,12 @@ impl Serializable for TransactionOutput {
 		stream
 			.append(&self.value)
 			.append(&self.script_pubkey);
+	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		self.value.serialized_size() +
+			self.script_pubkey.serialized_size()
 	}
 }
 
@@ -167,6 +185,14 @@ impl Serializable for Transaction {
 			.append_list(&self.outputs)
 			.append(&self.lock_time);
 	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		self.version.serialized_size() +
+			serialized_list_size(&self.inputs) +
+			serialized_list_size(&self.outputs) +
+			self.lock_time.serialized_size()
+	}
 }
 
 impl Deserializable for Transaction {
@@ -205,6 +231,7 @@ impl Transaction {
 #[cfg(test)]
 mod tests {
 	use hash::H256;
+	use ser::Serializable;
 	use super::Transaction;
 
 	// real transaction from block 80000
@@ -230,5 +257,12 @@ mod tests {
 		let t: Transaction = "0100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000".into();
 		let hash = H256::from_reversed_str("5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2");
 		assert_eq!(t.hash(), hash);
+	}
+
+	#[test]
+	fn test_transaction_serialized_len() {
+		let raw_tx: &'static str = "0100000001a6b97044d03da79c005b20ea9c0e1a6d9dc12d9f7b91a5911c9030a439eed8f5000000004948304502206e21798a42fae0e854281abd38bacd1aeed3ee3738d9e1446618c4571d1090db022100e2ac980643b0b82c0e88ffdfec6b64e3e6ba35e7ba5fdd7d5d6cc8d25c6b241501ffffffff0100f2052a010000001976a914404371705fa9bd789a2fcd52d2c580b65d35549d88ac00000000";
+		let tx: Transaction = raw_tx.into();
+		assert_eq!(tx.serialized_size(), raw_tx.len() / 2);
 	}
 }
