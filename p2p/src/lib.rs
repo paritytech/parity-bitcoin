@@ -9,10 +9,11 @@ extern crate parking_lot;
 extern crate bitcrypto as crypto;
 extern crate message;
 extern crate primitives;
-extern crate serialization as ser;
 
 pub mod io;
 pub mod net;
+pub mod protocol;
+pub mod session;
 pub mod util;
 mod config;
 mod event_loop;

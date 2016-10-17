@@ -69,6 +69,14 @@ impl Version {
 			Version::V70001(ref s, _, _) => s.version,
 		}
 	}
+
+	pub fn services(&self) -> ServiceFlags {
+		match *self {
+			Version::V0(ref s) => s.services,
+			Version::V106(ref s, _) => s.services,
+			Version::V70001(ref s, _, _) => s.services,
+		}
+	}
 }
 
 #[derive(Debug, PartialEq)]
