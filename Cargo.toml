@@ -13,6 +13,7 @@ message = { path = "message" }
 p2p = { path = "p2p" }
 script = { path = "script" }
 db = { path = "db" }
+verification = { path = "verification" }
 
 [[bin]]
 path = "pbtc/main.rs"
