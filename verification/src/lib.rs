@@ -32,11 +32,11 @@ pub enum Error {
 /// Possible transactions verification errors
 pub enum TransactionError {
 	/// Not found corresponding output for transaction input
-	NoMatchedInput,
+	Input,
 	/// Referenced coinbase output for the transaction input is not mature enough
-	UnmaturedCoinbase,
+	Maturity,
 	/// Signature invalid
-	InvalidSignature,
+	Signature,
 }
 
 /// Block verification chain
