@@ -293,7 +293,7 @@ impl Storage {
 		}
 
 		// now modify all ancestor entries
-		if miner_virtual_fee_change != 0i64 {
+		if miner_virtual_fee_change != 0 {
 			ancestors.map(|ancestors| {
 				for ancestor_hash in ancestors {
 					if let Some(ref mut ancestor_entry) = self.by_hash.get_mut(&ancestor_hash) {
