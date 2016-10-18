@@ -33,11 +33,13 @@ impl Connections {
 	/// Stores new channel.
 	pub fn store(&self, connection: Connection) {
 		let id = self.peer_counter.fetch_add(1, Ordering::AcqRel);
-		self.channels.write().insert(id, Arc::new(Channel::new(connection)));
+		self.channels.write().insert(id, Arc::new(Channel::new(connection, id)));
 	}
 
 	/// Removes channel with given id.
 	pub fn remove(&self, id: PeerId) {
-		self.channels.write().remove(&id);
+		if let Some(channel) = self.channels.write().remove(&id) {
+			channel.shutdown();
+		}
 	}
 }

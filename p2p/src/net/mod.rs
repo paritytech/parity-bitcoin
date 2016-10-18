@@ -11,5 +11,5 @@ pub use self::config::Config;
 pub use self::connect::{Connect, connect};
 pub use self::connection::Connection;
 pub use self::connections::Connections;
-pub use self::messages::MessagePoller;
+pub use self::messages::{MessagePoller, MessagePoll};
 pub use self::listen::{Listen, listen};

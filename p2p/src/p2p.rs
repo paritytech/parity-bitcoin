@@ -6,9 +6,9 @@ use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::Handle;
 use message::Payload;
-use net::{connect, listen, Connections, MessagePoller};
+use net::{connect, listen, Connections, MessagePoller, MessagePoll, Channel};
 use util::NodeTable;
-use Config;
+use {Config, PeerId};
 
 pub struct P2P {
 	/// Global event loop handle.
@@ -67,8 +67,8 @@ impl P2P {
 		let listen = try!(listen(&self.event_loop_handle, self.config.connection.clone()));
 		let connections = self.connections.clone();
 		let node_table  = self.node_table.clone();
-		let server = listen.for_each(move |x| {
-			if let Ok(con) = x {
+		let server = listen.for_each(move |result| {
+			if let Ok(con) = result {
 				node_table.write().insert(con.address, con.services);
 				connections.store(con);
 			}
@@ -82,10 +82,30 @@ impl P2P {
 	}
 
 	fn attach_protocols(&self) {
+		// TODO: here all network protocols will be attached
+
 		let poller = MessagePoller::new(Arc::downgrade(&self.connections));
 		let connections = self.connections.clone();
+		let node_table  = self.node_table.clone();
 		let polling = poller.for_each(move |result| {
-			// TODO: handle incomming message
+			match result {
+				MessagePoll::Ready { errored_peers, .. } => {
+					// TODO: handle new messasges here!
+
+					let mut node_table = node_table.write();
+					for peer in errored_peers.into_iter() {
+						node_table.note_failure(&peer.address);
+						connections.remove(peer.id);
+					}
+				},
+				MessagePoll::OnlyErrors { errored_peers } => {
+					let mut node_table = node_table.write();
+					for peer in errored_peers.into_iter() {
+						node_table.note_failure(&peer.address);
+						connections.remove(peer.id);
+					}
+				}
+			}
 			Ok(())
 		}).then(|_| {
 			finished(())
@@ -96,25 +116,35 @@ impl P2P {
 
 	pub fn broadcast<T>(&self, payload: T) where T: Payload {
 		let channels = self.connections.channels();
-		for (id, channel) in channels.into_iter() {
-			let connections = self.connections.clone();
-			let node_table  = self.node_table.clone();
-			let address = channel.address();
-			let write = channel.write_message(&payload);
-			let pool_work = self.pool.spawn(write).then(move |result| {
-				match result {
-					Ok(_) => {
-						node_table.write().note_used(&address);
-					},
-					Err(_err) => {
-						node_table.write().note_failure(&address);
-						connections.remove(id);
-					}
-				}
-				// remove broken connections
-				finished(())
-			});
-			self.event_loop_handle.spawn(pool_work);
+		for (_id, channel) in channels.into_iter() {
+			self.send_to_channel(&payload, &channel);
 		}
+	}
+
+	pub fn send<T>(&self, payload: T, peer: PeerId) where T: Payload {
+		let channels = self.connections.channels();
+		if let Some(channel) = channels.get(&peer) {
+			self.send_to_channel(&payload, channel);
+		}
+	}
+
+	fn send_to_channel<T>(&self, payload: &T, channel: &Arc<Channel>) where T: Payload {
+		let connections = self.connections.clone();
+		let node_table  = self.node_table.clone();
+		let peer_info = channel.peer_info();
+		let write = channel.write_message(payload);
+		let pool_work = self.pool.spawn(write).then(move |result| {
+			match result {
+				Ok(_) => {
+					node_table.write().note_used(&peer_info.address);
+				},
+				Err(_err) => {
+					node_table.write().note_failure(&peer_info.address);
+					connections.remove(peer_info.id);
+				}
+			}
+			finished(())
+		});
+		self.event_loop_handle.spawn(pool_work);
 	}
 }

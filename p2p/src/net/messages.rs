@@ -5,18 +5,18 @@ use futures::{Poll, Async};
 use futures::stream::Stream;
 use message::common::Command;
 use net::Connections;
-use PeerId;
+use PeerInfo;
 
 pub enum MessagePoll {
 	Ready {
 		command: Command,
 		payload: Bytes,
 		version: u32,
-		peer_id: PeerId,
-		errored_peers: Vec<PeerId>,
+		peer_info: PeerInfo,
+		errored_peers: Vec<PeerInfo>,
 	},
 	OnlyErrors {
-		errored_peers: Vec<PeerId>,
+		errored_peers: Vec<PeerInfo>,
 	}
 }
 
@@ -66,12 +66,12 @@ impl Stream for MessagePoller {
 		let mut errored_peers = Vec::new();
 
 		while result.is_none() && to_poll != self.last_polled {
-			let (id, channel) = channels.iter().nth(to_poll).expect("to_poll < channels.len()");
+			let (_, channel) = channels.iter().nth(to_poll).expect("to_poll < channels.len()");
 			let status = channel.poll_message();
 
 			match status {
 				Ok(Async::Ready(Some(Ok((command, payload))))) => {
-					result = Some((command, payload, channel.version(), *id));
+					result = Some((command, payload, channel.version(), channel.peer_info()));
 				},
 				Ok(Async::NotReady) => {
 					// no messages yet, try next channel
@@ -79,7 +79,7 @@ impl Stream for MessagePoller {
 				},
 				_ => {
 					// channel has been closed or there was error
-					errored_peers.push(*id);
+					errored_peers.push(channel.peer_info());
 					to_poll = next_to_poll(channels.len(), to_poll);
 				},
 			}
@@ -87,12 +87,12 @@ impl Stream for MessagePoller {
 
 		self.last_polled = to_poll;
 		match result {
-			Some((command, payload, version, id)) => {
+			Some((command, payload, version, info)) => {
 				let message_poll = MessagePoll::Ready {
 					command: command,
 					payload: payload,
 					version: version,
-					peer_id: id,
+					peer_info: info,
 					errored_peers: errored_peers,
 				};
 

@@ -1,4 +1,4 @@
-use std::{io, net};
+use std::io;
 use futures::Poll;
 use futures::stream::Stream;
 use parking_lot::Mutex;
@@ -6,28 +6,33 @@ use bytes::Bytes;
 use message::{MessageResult, Payload, Command, Magic, Message};
 use net::Connection;
 use io::{read_message_stream, ReadMessageStream, SharedTcpStream, WriteMessage, write_message};
+use {PeerId, PeerInfo};
 
 pub struct Channel {
-	write_stream: SharedTcpStream,
 	version: u32,
 	magic: Magic,
-	address: net::SocketAddr,
+	peer_info: PeerInfo,
+	write_stream: SharedTcpStream,
 	read_stream: Mutex<ReadMessageStream<SharedTcpStream>>,
 }
 
 impl Channel {
-	pub fn new(connection: Connection) -> Self {
+	pub fn new(connection: Connection, peer_id: PeerId) -> Self {
 		let stream = read_message_stream(connection.stream.clone(), connection.magic);
 		Channel {
-			write_stream: connection.stream,
 			version: connection.version,
 			magic: connection.magic,
-			address: connection.address,
+			peer_info: PeerInfo {
+				address: connection.address,
+				id: peer_id,
+			},
+			write_stream: connection.stream,
 			read_stream: Mutex::new(stream),
 		}
 	}
 
 	pub fn write_message<T>(&self, payload: &T) -> WriteMessage<T, SharedTcpStream> where T: Payload {
+		// TODO: some tracing here
 		let message = Message::new(self.magic, self.version, payload).expect("failed to create outgoing message");
 		write_message(self.write_stream.clone(), message)
 	}
@@ -36,11 +41,15 @@ impl Channel {
 		self.read_stream.lock().poll()
 	}
 
+	pub fn shutdown(&self) {
+		self.write_stream.shutdown();
+	}
+
 	pub fn version(&self) -> u32 {
 		self.version
 	}
 
-	pub fn address(&self) -> net::SocketAddr {
-		self.address
+	pub fn peer_info(&self) -> PeerInfo {
+		self.peer_info
 	}
 }
