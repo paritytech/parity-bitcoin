@@ -1,5 +1,4 @@
 use std::{fmt, ops, cmp, str};
-use std::hash::{Hash, Hasher};
 use hex::{ToHex, FromHex, FromHexError};
 use std::hash::{Hash, Hasher};
 
@@ -97,8 +96,6 @@ macro_rules! impl_hash {
 				&mut self.0
 			}
 		}
-
-		impl Eq for $name {}
 
 		impl cmp::PartialEq for $name {
 			fn eq(&self, other: &Self) -> bool {
