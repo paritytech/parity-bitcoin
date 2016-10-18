@@ -101,6 +101,7 @@ dependencies = [
  "primitives 0.1.0",
  "rocksdb 0.4.5 (git+https://github.com/ethcore/rust-rocksdb)",
  "serialization 0.1.0",
+ "test-data 0.1.0",
 ]
 
 [[package]]
@@ -466,6 +467,13 @@ dependencies = [
  "kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "test-data"
+version = "0.1.0"
+dependencies = [
+ "chain 0.1.0",
 ]
 
 [[package]]
