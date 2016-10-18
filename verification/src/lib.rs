@@ -54,6 +54,14 @@ pub enum Chain {
 	Orphan,
 }
 
+/// block status within the queue
+pub enum BlockStatus {
+	Valid,
+	Invalid,
+	Pending,
+	Absent,
+}
+
 /// Verification result
 pub type VerificationResult = Result<Chain, Error>;
 
