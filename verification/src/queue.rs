@@ -27,6 +27,17 @@ pub struct Queue {
 }
 
 impl Queue {
+
+	/// New verification queue
+	pub fn new(verifier: Box<Verify>) -> Self {
+		Queue {
+			verifier: verifier,
+			items: RwLock::new(LinkedHashMap::new()),
+			verified: RwLock::new(LinkedHashMap::new()),
+			invalid: RwLock::new(HashSet::new()),
+		}
+	}
+
 	/// Process one block in the queue
 	pub fn process(&self) {
 		let (hash, block) = {
@@ -58,4 +69,24 @@ impl Queue {
 		else if self.items.read().contains_key(hash) { BlockStatus::Pending }
 		else { BlockStatus::Absent }
 	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::Queue;
+	use super::super::{BlockStatus, VerificationResult, Verify, Chain};
+	use chain::Block;
+	use primitives::hash::H256;
+
+	struct FacileVerifier;
+	impl Verify for FacileVerifier {
+		fn verify(&self, block: &Block) -> VerificationResult { Ok(Chain::Main) }
+	}
+
+	#[test]
+	fn new() {
+		let queue = Queue::new(Box::new(FacileVerifier));
+		assert_eq!(queue.block_status(&H256::from(0u8)), BlockStatus::Absent);
+	}
+
 }

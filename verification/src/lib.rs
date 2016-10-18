@@ -54,6 +54,7 @@ pub enum Chain {
 	Orphan,
 }
 
+#[derive(PartialEq, Debug)]
 /// block status within the queue
 pub enum BlockStatus {
 	Valid,
