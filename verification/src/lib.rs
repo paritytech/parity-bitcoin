@@ -23,9 +23,9 @@ pub enum Error {
 	Timestamp,
 	/// First transaction is not a coinbase transaction
 	Coinbase,
-	/// One of the transactions is invalid
-	Transaction(TransactionError, H256),
-	/// nBits does not match difficulty rules
+	/// One of the transactions is invalid (corresponding index and specific transaction error)
+	Transaction(usize, TransactionError),
+	/// nBits do not match difficulty rules
 	Difficulty
 }
 
