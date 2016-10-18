@@ -503,7 +503,6 @@ impl MemoryPool {
 		self.storage.remove_by_hash(h).map(|entry| entry.transaction)
 	}
 
-<<<<<<< HEAD
 	/// Reads hash of the 'top' transaction from the `MemoryPool` using selected strategy.
 	/// Ancestors are always returned before descendant transactions.
 	pub fn read_with_strategy(&mut self, strategy: OrderingStrategy) -> Option<H256> {
@@ -523,9 +522,6 @@ impl MemoryPool {
 	}
 
 	/// Removes up to n transactions from the `MemoryPool`, using selected strategy.
-=======
-	/// Removes up to n transactions the `MemoryPool`, using selected strategy.
->>>>>>> origin/master
 	/// Ancestors are always removed before descendant transactions.
 	pub fn remove_n_with_strategy(&mut self, n: usize, strategy: OrderingStrategy) -> Vec<Transaction> {
 		self.storage.remove_n_with_strategy(n, strategy)
@@ -785,11 +781,7 @@ mod tests {
 	}
 
 	#[test]
-<<<<<<< HEAD
 	fn test_memory_pool_insert_child_after_remove_by_hash() {
-=======
-	fn test_memory_pool_transaction_dependent_transactions_insert_after_remove_by_hash() {
->>>>>>> origin/master
 		let raw_parent_transaction = "00000000000164000000000000000000000000";
 		let raw_child_transaction = "0000000001545ac9cffeaa3ee074f08a5306e703cb30883192ed9b10ee9ddb76824e4985070000000000000000000164000000000000000000000000";
 		let raw_grandchild_transaction = "0000000001cc1d8279403880bfdd7682c28ed8441a138f96ae1dc5fd90bc928b88d48107a90000000000000000000164000000000000000000000000";
@@ -812,11 +804,7 @@ mod tests {
 
 		// insert child transaction back to the pool & assert transactions are removed in correct order
 		pool.insert_verified(raw_child_transaction.into());
-<<<<<<< HEAD
 		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByTransactionScore);
-=======
-		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByMinerScore);
->>>>>>> origin/master
 		assert_eq!(transactions.len(), 3);
 		assert_eq!(transactions[0].hash(), parent_transaction_hash);
 		assert_eq!(transactions[1].hash(), child_transaction_hash);
