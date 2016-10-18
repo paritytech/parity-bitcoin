@@ -12,7 +12,7 @@ extern crate ethcore_devtools as devtools;
 
 mod queue;
 
-use primitives::hash::H256;
+pub use queue::Queue;
 
 #[derive(Debug)]
 /// All possible verification errors

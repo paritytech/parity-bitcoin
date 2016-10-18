@@ -52,8 +52,8 @@ impl Queue {
 	}
 
 	/// Query block status
-	pub fn block_status(&self, hash: &H256) {
-		if self.invalid.read().contains_key(hash) { BlockStatus::Invalid }
+	pub fn block_status(&self, hash: &H256) -> BlockStatus {
+		if self.invalid.read().contains(hash) { BlockStatus::Invalid }
 		else if self.verified.read().contains_key(hash) { BlockStatus::Valid }
 		else if self.items.read().contains_key(hash) { BlockStatus::Pending }
 		else { BlockStatus::Absent }
