@@ -7,13 +7,26 @@ use message::common::Command;
 use net::Connections;
 use PeerId;
 
-pub struct MessagesHandler {
+pub enum MessagePoll {
+	Ready {
+		command: Command,
+		payload: Bytes,
+		version: u32,
+		peer_id: PeerId,
+		errored_peers: Vec<PeerId>,
+	},
+	OnlyErrors {
+		errored_peers: Vec<PeerId>,
+	}
+}
+
+pub struct MessagePoller {
 	last_polled: usize,
 	connections: Weak<Connections>,
 }
 
 fn next_to_poll(channels: usize, last_polled: usize) -> usize {
-	// it's irrelevant if we sometimes poll the same peer
+	// it's irrelevant if we sometimes poll the same peer twice in a row
 	if channels > last_polled + 1 {
 		// let's poll the next peer
 		last_polled + 1
@@ -23,17 +36,17 @@ fn next_to_poll(channels: usize, last_polled: usize) -> usize {
 	}
 }
 
-impl MessagesHandler {
+impl MessagePoller {
 	pub fn new(connections: Weak<Connections>) -> Self {
-		MessagesHandler {
+		MessagePoller {
 			last_polled: usize::max_value(),
 			connections: connections,
 		}
 	}
 }
 
-impl Stream for MessagesHandler {
-	type Item = (Command, Bytes, u32, PeerId);
+impl Stream for MessagePoller {
+	type Item = MessagePoll;
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -50,14 +63,15 @@ impl Stream for MessagesHandler {
 
 		let mut to_poll = next_to_poll(channels.len(), self.last_polled);
 		let mut result = None;
+		let mut errored_peers = Vec::new();
 
 		while result.is_none() && to_poll != self.last_polled {
 			let (id, channel) = channels.iter().nth(to_poll).expect("to_poll < channels.len()");
 			let status = channel.poll_message();
 
 			match status {
-				Ok(Async::Ready(Some(Ok((command, message))))) => {
-					result = Some((command, message, channel.version(), *id));
+				Ok(Async::Ready(Some(Ok((command, payload))))) => {
+					result = Some((command, payload, channel.version(), *id));
 				},
 				Ok(Async::NotReady) => {
 					// no messages yet, try next channel
@@ -65,16 +79,32 @@ impl Stream for MessagesHandler {
 				},
 				_ => {
 					// channel has been closed or there was error
-					connections.remove(*id);
+					errored_peers.push(*id);
 					to_poll = next_to_poll(channels.len(), to_poll);
 				},
 			}
 		}
 
 		self.last_polled = to_poll;
-		match result.is_some() {
-			true => Ok(Async::Ready(result)),
-			false => Ok(Async::NotReady),
+		match result {
+			Some((command, payload, version, id)) => {
+				let message_poll = MessagePoll::Ready {
+					command: command,
+					payload: payload,
+					version: version,
+					peer_id: id,
+					errored_peers: errored_peers,
+				};
+
+				Ok(Async::Ready(Some(message_poll)))
+			},
+			None if errored_peers.is_empty() => Ok(Async::NotReady),
+			_ => {
+				let message_poll = MessagePoll::OnlyErrors {
+					errored_peers: errored_peers,
+				};
+				Ok(Async::Ready(Some(message_poll)))
+			}
 		}
 	}
 }

@@ -52,6 +52,7 @@ impl Future for AcceptConnection {
 			stream: stream.into(),
 			version: result.negotiated_version,
 			magic: self.magic,
+			services: result.version.services(),
 			address: self.address,
 		};
 		Ok(Ok(connection).into())

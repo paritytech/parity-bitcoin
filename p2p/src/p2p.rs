@@ -1,11 +1,13 @@
 use std::{io, net};
 use std::sync::Arc;
+use parking_lot::RwLock;
 use futures::{Future, finished};
 use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::Handle;
 use message::Payload;
-use net::{connect, listen, Connections, Subscriber, MessagesHandler};
+use net::{connect, listen, Connections, MessagePoller};
+use util::NodeTable;
 use Config;
 
 pub struct P2P {
@@ -17,8 +19,8 @@ pub struct P2P {
 	config: Config,
 	/// Connections.
 	connections: Arc<Connections>,
-	/// Message subscriber.
-	subscriber: Arc<Subscriber>,
+	/// Node Table.
+	node_table: Arc<RwLock<NodeTable>>,
 }
 
 impl P2P {
@@ -30,7 +32,7 @@ impl P2P {
 			pool: pool.clone(),
 			config: config,
 			connections: Arc::new(Connections::new()),
-			subscriber: Arc::new(Subscriber::default()),
+			node_table: Arc::default(),
 		}
 	}
 
@@ -40,17 +42,21 @@ impl P2P {
 		}
 
 		try!(self.listen());
-		self.handle_messages();
+		self.attach_protocols();
 		Ok(())
 	}
 
 	pub fn connect(&self, ip: net::IpAddr) {
 		let socket = net::SocketAddr::new(ip, self.config.connection.magic.port());
 		let connections = self.connections.clone();
+		let node_table  = self.node_table.clone();
 		let connection = connect(&socket, &self.event_loop_handle, &self.config.connection);
-		let pool_work = self.pool.spawn(connection).then(move |x| {
-			if let Ok(Ok(con)) = x {
+		let pool_work = self.pool.spawn(connection).then(move |result| {
+			if let Ok(Ok(con)) = result {
+				node_table.write().insert(con.address, con.services);
 				connections.store(con);
+			} else {
+				node_table.write().note_failure(&socket);
 			}
 			finished(())
 		});
@@ -60,8 +66,10 @@ impl P2P {
 	fn listen(&self) -> Result<(), io::Error> {
 		let listen = try!(listen(&self.event_loop_handle, self.config.connection.clone()));
 		let connections = self.connections.clone();
+		let node_table  = self.node_table.clone();
 		let server = listen.for_each(move |x| {
 			if let Ok(con) = x {
+				node_table.write().insert(con.address, con.services);
 				connections.store(con);
 			}
 			Ok(())
@@ -73,24 +81,40 @@ impl P2P {
 		Ok(())
 	}
 
-	fn handle_messages(&self) {
-		let incoming = MessagesHandler::new(Arc::downgrade(&self.connections));
-		let subscriber = self.subscriber.clone();
+	fn attach_protocols(&self) {
+		let poller = MessagePoller::new(Arc::downgrade(&self.connections));
 		let connections = self.connections.clone();
-		let incoming_future = incoming.for_each(move |result| {
-			let (command, payload, version, peerid) = result;
-			if let Err(_err) = subscriber.try_handle(&payload, version, command, peerid) {
-				connections.remove(peerid);
-			}
+		let polling = poller.for_each(move |result| {
+			// TODO: handle incomming message
 			Ok(())
 		}).then(|_| {
 			finished(())
 		});
-		let pool_work = self.pool.spawn(incoming_future);
+		let pool_work = self.pool.spawn(polling);
 		self.event_loop_handle.spawn(pool_work);
 	}
 
 	pub fn broadcast<T>(&self, payload: T) where T: Payload {
-		Connections::broadcast(&self.connections, &self.event_loop_handle, &self.pool, payload)
+		let channels = self.connections.channels();
+		for (id, channel) in channels.into_iter() {
+			let connections = self.connections.clone();
+			let node_table  = self.node_table.clone();
+			let address = channel.address();
+			let write = channel.write_message(&payload);
+			let pool_work = self.pool.spawn(write).then(move |result| {
+				match result {
+					Ok(_) => {
+						node_table.write().note_used(&address);
+					},
+					Err(_err) => {
+						node_table.write().note_failure(&address);
+						connections.remove(id);
+					}
+				}
+				// remove broken connections
+				finished(())
+			});
+			self.event_loop_handle.spawn(pool_work);
+		}
 	}
 }

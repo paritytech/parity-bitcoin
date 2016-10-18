@@ -39,4 +39,8 @@ impl Channel {
 	pub fn version(&self) -> u32 {
 		self.version
 	}
+
+	pub fn address(&self) -> net::SocketAddr {
+		self.address
+	}
 }
