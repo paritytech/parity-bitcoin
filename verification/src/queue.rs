@@ -1,6 +1,6 @@
 //! Blocks verification queue
 
-use chain::{Block, BlockHeader};
+use chain::Block;
 use primitives::hash::H256;
 use super::{Chain, Verify, BlockStatus};
 use linked_hash_map::LinkedHashMap;
@@ -8,8 +8,8 @@ use parking_lot::RwLock;
 use std::collections::HashSet;
 
 pub struct VerifiedBlock {
-	chain: Chain,
-	block: Block,
+	pub chain: Chain,
+	pub block: Block,
 }
 
 impl VerifiedBlock {
@@ -80,7 +80,7 @@ mod tests {
 
 	struct FacileVerifier;
 	impl Verify for FacileVerifier {
-		fn verify(&self, block: &Block) -> VerificationResult { Ok(Chain::Main) }
+		fn verify(&self, _block: &Block) -> VerificationResult { Ok(Chain::Main) }
 	}
 
 	#[test]
