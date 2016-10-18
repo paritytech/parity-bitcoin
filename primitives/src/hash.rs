@@ -1,5 +1,6 @@
 use std::{fmt, ops, cmp, str};
 use hex::{ToHex, FromHex, FromHexError};
+use std::hash::{Hash, Hasher};
 
 macro_rules! impl_hash {
 	($name: ident, $size: expr) => {
@@ -103,6 +104,15 @@ macro_rules! impl_hash {
 				self_ref == other_ref
 			}
 		}
+
+		impl Hash for $name {
+			fn hash<H>(&self, state: &mut H) where H: Hasher {
+				state.write(&self.0);
+				state.finish();
+			}
+		}
+
+		impl Eq for $name { }
 
 		impl $name {
 			pub fn reversed(&self) -> Self {

@@ -5,12 +5,16 @@ extern crate primitives;
 extern crate chain;
 extern crate serialization;
 extern crate parking_lot;
+extern crate linked_hash_map;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
 
+mod queue;
+
 use primitives::hash::H256;
 
+#[derive(Debug)]
 /// All possible verification errors
 pub enum Error {
 	/// has an equal duplicate in the chain
@@ -29,6 +33,7 @@ pub enum Error {
 	Difficulty
 }
 
+#[derive(Debug)]
 /// Possible transactions verification errors
 pub enum TransactionError {
 	/// Not found corresponding output for transaction input
@@ -54,5 +59,5 @@ pub type VerificationResult = Result<Chain, Error>;
 
 /// Interface for block verification
 pub trait Verify {
-	fn verify(block: &chain::Block) -> Result<VerificationResult, Error>;
+	fn verify(&self, block: &chain::Block) -> VerificationResult;
 }
