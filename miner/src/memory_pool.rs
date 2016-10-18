@@ -4,13 +4,13 @@
 //! and orders them by given strategies. It works like multi-indexed priority queue, giving option to pop 'top'
 //! transactions.
 //! It also guarantees that ancestor-descendant relation won't break during ordered removal (ancestors always removed
-//! before descendants).
+//! before descendants). Removal using remove_by_hash can break this rule.
 use hash::H256;
 use chain::Transaction;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use ser::stream::serialize;
+use ser::Serializable;
 
 /// Transactions ordering strategy
 #[derive(Debug, Clone, Copy)]
@@ -28,7 +28,7 @@ pub enum OrderingStrategy {
 pub struct Information {
 	/// The number of transactions currently in the `MemoryPool`
 	pub transactions_count: usize,
-	/// The total number of bytes in the transactions in the `MemoryPool` 
+	/// The total number of bytes in the transactions in the `MemoryPool`
 	pub transactions_size_in_bytes: usize,
 }
 
@@ -54,7 +54,7 @@ pub struct Entry {
 	storage_index: u64,
 	/// Transaction fee (stored for efficiency)
 	miner_fee: i64,
-	/// Virtual transaction fee (a way to prioritize/penalize transaction) 
+	/// Virtual transaction fee (a way to prioritize/penalize transaction)
 	miner_virtual_fee: i64,
 	/// size + Sum(size) for all in-pool descendants
 	package_size: usize,
@@ -121,7 +121,7 @@ macro_rules! ordering_strategy {
 				fn partial_cmp(&self, other: &OrderedEntry) -> Option<Ordering> {
 					Some(self.cmp(other))
 				}
-			} 
+			}
 
 			impl Ord for OrderedEntry {
 				fn cmp(&self, other: &Self) -> Ordering {
@@ -503,6 +503,7 @@ impl MemoryPool {
 		self.storage.remove_by_hash(h).map(|entry| entry.transaction)
 	}
 
+<<<<<<< HEAD
 	/// Reads hash of the 'top' transaction from the `MemoryPool` using selected strategy.
 	/// Ancestors are always returned before descendant transactions.
 	pub fn read_with_strategy(&mut self, strategy: OrderingStrategy) -> Option<H256> {
@@ -522,6 +523,9 @@ impl MemoryPool {
 	}
 
 	/// Removes up to n transactions from the `MemoryPool`, using selected strategy.
+=======
+	/// Removes up to n transactions the `MemoryPool`, using selected strategy.
+>>>>>>> origin/master
 	/// Ancestors are always removed before descendant transactions.
 	pub fn remove_n_with_strategy(&mut self, n: usize, strategy: OrderingStrategy) -> Vec<Transaction> {
 		self.storage.remove_n_with_strategy(n, strategy)
@@ -592,8 +596,7 @@ impl MemoryPool {
 	}
 
 	fn get_transaction_size(&self, t: &Transaction) -> usize {
-		// TODO: the only correct way now?
-		serialize(t).len()
+		t.serialized_size()
 	}
 
 	fn get_transaction_miner_fee(&self, t: &Transaction) -> i64 {
@@ -716,7 +719,7 @@ mod tests {
 		assert_eq!(pool_transactions.len(), 4);
 
 		// check pool transactions
-		let ref hash_to_remove = pool_transactions[0]; 
+		let ref hash_to_remove = pool_transactions[0];
 		assert!(*hash_to_remove == RAW_TRANSACTION1_HASH.into()
 			|| *hash_to_remove == RAW_TRANSACTION2_HASH.into()
 			|| *hash_to_remove == RAW_TRANSACTION3_HASH.into()
@@ -782,7 +785,11 @@ mod tests {
 	}
 
 	#[test]
+<<<<<<< HEAD
 	fn test_memory_pool_insert_child_after_remove_by_hash() {
+=======
+	fn test_memory_pool_transaction_dependent_transactions_insert_after_remove_by_hash() {
+>>>>>>> origin/master
 		let raw_parent_transaction = "00000000000164000000000000000000000000";
 		let raw_child_transaction = "0000000001545ac9cffeaa3ee074f08a5306e703cb30883192ed9b10ee9ddb76824e4985070000000000000000000164000000000000000000000000";
 		let raw_grandchild_transaction = "0000000001cc1d8279403880bfdd7682c28ed8441a138f96ae1dc5fd90bc928b88d48107a90000000000000000000164000000000000000000000000";
@@ -805,7 +812,11 @@ mod tests {
 
 		// insert child transaction back to the pool & assert transactions are removed in correct order
 		pool.insert_verified(raw_child_transaction.into());
+<<<<<<< HEAD
 		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByTransactionScore);
+=======
+		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByMinerScore);
+>>>>>>> origin/master
 		assert_eq!(transactions.len(), 3);
 		assert_eq!(transactions[0].hash(), parent_transaction_hash);
 		assert_eq!(transactions[1].hash(), child_transaction_hash);
@@ -827,7 +838,7 @@ mod tests {
 
 			if expected_pool_size != 0 {
 				pool.remove_by_hash(&removals[i].into());
-			} 
+			}
 		}
 	}
 

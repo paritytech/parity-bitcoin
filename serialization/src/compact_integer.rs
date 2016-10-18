@@ -82,6 +82,15 @@ impl Serializable for CompactInteger {
 			}
 		}
 	}
+
+	fn serialized_size(&self) -> usize {
+		match self.0 {
+			0...0xfc => 1,
+			0xfd...0xffff => 3,
+			0x10000...0xffff_ffff => 5,
+			_ => 9,
+		}
+	}
 }
 
 impl Deserializable for CompactInteger {
