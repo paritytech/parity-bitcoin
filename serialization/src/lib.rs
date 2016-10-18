@@ -10,4 +10,4 @@ pub use primitives::{hash, bytes};
 
 pub use compact_integer::CompactInteger;
 pub use self::reader::{Reader, Deserializable, deserialize, Error};
-pub use self::stream::{Stream, Serializable, serialize};
+pub use self::stream::{Stream, Serializable, serialize, serialized_list_size};

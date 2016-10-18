@@ -2,11 +2,11 @@
 name = "pbtc"
 version = "0.1.0"
 dependencies = [
- "bitcrypto 0.1.0",
  "clap 2.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "db 0.1.0",
  "keys 0.1.0",
  "message 0.1.0",
+ "miner 0.1.0",
  "p2p 0.1.0",
  "script 0.1.0",
  "verification 0.1.0",
@@ -215,6 +215,15 @@ version = "0.1.0"
 dependencies = [
  "bitcrypto 0.1.0",
  "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "chain 0.1.0",
+ "primitives 0.1.0",
+ "serialization 0.1.0",
+]
+
+[[package]]
+name = "miner"
+version = "0.1.0"
+dependencies = [
  "chain 0.1.0",
  "primitives 0.1.0",
  "serialization 0.1.0",

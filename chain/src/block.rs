@@ -55,7 +55,7 @@ impl Block {
 	}
 
 	pub fn transactions(&self) -> &[Transaction] {
-		&self.transactions[..]
+		&self.transactions
 	}
 
 	pub fn header(&self) -> &BlockHeader {
