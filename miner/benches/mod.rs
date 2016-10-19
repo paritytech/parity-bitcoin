@@ -51,8 +51,8 @@ mod benchmarks {
 	}
 
 	#[bench]
-	// test benchmarks::bench_memory_pool_insert_independent_transaction ... bench:       1,520 ns/iter (+/- 341)
-	fn bench_memory_pool_insert_independent_transaction(b: &mut Bencher) {
+	// test benchmarks::memory_pool_insert_independent_transactions ... bench:       1,455 ns/iter (+/- 12)
+	fn memory_pool_insert_independent_transactions(b: &mut Bencher) {
 		let iterations = 100;
 		let mut pool = MemoryPool::new();
 		let mut transactions = prepare_independent_transactions(iterations);
@@ -62,8 +62,8 @@ mod benchmarks {
 	}
 
 	#[bench]
-	// test benchmarks::bench_memory_pool_insert_descendant_transaction  ... bench:       8,119 ns/iter (+/- 2,000)
-	fn bench_memory_pool_insert_descendant_transaction(b: &mut Bencher) {
+	// test benchmarks::memory_pool_insert_descendant_transaction   ... bench:       7,834 ns/iter (+/- 288)
+	fn memory_pool_insert_descendant_transaction(b: &mut Bencher) {
 		let iterations = 100usize;
 		let mut pool = MemoryPool::new();
 		let mut transactions = prepare_dependent_transactions(iterations);
@@ -75,12 +75,12 @@ mod benchmarks {
 	}
 
 	#[bench]
-	// test benchmarks::bench_memory_pool_insert_ancestor_transaction    ... bench:     398,755 ns/iter (+/- 81,533)
+	// test benchmarks::memory_pool_insert_ancestor_transaction     ... bench:     376,067 ns/iter (+/- 11,249)
 	// very slow due to weird usage scenario:
 	// (1) transactions inserted to memorypool are verified
 	// (2) verified => ancestors already verified
 	// (3) ancestors verified => they are already in memorypool (not this case) or in database (why inserting to memorypool then)
-	fn bench_memory_pool_insert_ancestor_transaction(b: &mut Bencher) {
+	fn memory_pool_insert_ancestor_transaction(b: &mut Bencher) {
 		let iterations = 100usize;
 		let mut pool = MemoryPool::new();
 		let mut transactions = prepare_dependent_transactions(iterations);
@@ -92,8 +92,8 @@ mod benchmarks {
 	}
 
 	#[bench]
-	// test benchmarks::bench_memory_pool_remove_dependent_in_order      ... bench:         757 ns/iter (+/- 211)
-	fn bench_memory_pool_remove_independent_in_order(b: &mut Bencher) {
+	// test benchmarks::memory_pool_remove_independent_in_order     ... bench:         460 ns/iter (+/- 47)
+	fn memory_pool_remove_independent_in_order(b: &mut Bencher) {
 		let iterations = 100;
 		let mut pool = MemoryPool::new();
 		for transaction in prepare_independent_transactions(iterations) {
@@ -105,8 +105,8 @@ mod benchmarks {
 	}
 
 	#[bench]
-	// test benchmarks::bench_memory_pool_remove_independent_in_order    ... bench:         455 ns/iter (+/- 139)
-	fn bench_memory_pool_remove_dependent_in_order(b: &mut Bencher) {
+	// test benchmarks::memory_pool_remove_dependent_in_order       ... bench:         754 ns/iter (+/- 111)
+	fn memory_pool_remove_dependent_in_order(b: &mut Bencher) {
 		let iterations = 100;
 		let mut pool = MemoryPool::new();
 		for transaction in prepare_dependent_transactions(iterations) {
