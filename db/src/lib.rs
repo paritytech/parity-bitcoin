@@ -10,6 +10,8 @@ extern crate serialization;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
+#[cfg(test)]
+extern crate test_data;
 
 mod kvdb;
 mod storage;
