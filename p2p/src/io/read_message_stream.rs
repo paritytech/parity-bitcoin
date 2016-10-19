@@ -58,6 +58,10 @@ impl<A> Stream for ReadMessageStream<A> where A: io::Read {
 		};
 
 		self.state = next;
-		Ok(result)
+		match result {
+			// by polling again, we register new future
+			Async::NotReady => self.poll(),
+			result => Ok(result)
+		}
 	}
 }

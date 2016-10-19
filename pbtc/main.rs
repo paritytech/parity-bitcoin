@@ -2,6 +2,7 @@
 
 #[macro_use]
 extern crate clap;
+extern crate env_logger;
 
 extern crate keys;
 extern crate script;
@@ -14,6 +15,7 @@ use std::net::SocketAddr;
 use p2p::{P2P, event_loop, forever, net};
 
 fn main() {
+	env_logger::init().unwrap();
 	match run() {
 		Err(err) => println!("{}", err),
 		Ok(_) => (),

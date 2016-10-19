@@ -5,6 +5,8 @@ extern crate rand;
 extern crate time;
 extern crate tokio_core;
 extern crate parking_lot;
+#[macro_use]
+extern crate log;
 
 extern crate bitcrypto as crypto;
 extern crate message;

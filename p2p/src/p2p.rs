@@ -37,8 +37,8 @@ impl P2P {
 	}
 
 	pub fn run(&self) -> Result<(), io::Error> {
-		for seednode in self.config.peers.iter() {
-			self.connect(*seednode)
+		for peer in self.config.peers.iter() {
+			self.connect(*peer)
 		}
 
 		try!(self.listen());
@@ -51,11 +51,14 @@ impl P2P {
 		let connections = self.connections.clone();
 		let node_table  = self.node_table.clone();
 		let connection = connect(&socket, &self.event_loop_handle, &self.config.connection);
+		trace!("Trying to connect to: {}", socket);
 		let pool_work = self.pool.spawn(connection).then(move |result| {
 			if let Ok(Ok(con)) = result {
+				trace!("Connected to {}", con.address);
 				node_table.write().insert(con.address, con.services);
 				connections.store(con);
 			} else {
+				trace!("Failed to connect to {}", socket);
 				node_table.write().note_failure(&socket);
 			}
 			finished(())
@@ -69,6 +72,7 @@ impl P2P {
 		let node_table  = self.node_table.clone();
 		let server = listen.for_each(move |result| {
 			if let Ok(con) = result {
+				trace!("Accepted connection from {}", con.address);
 				node_table.write().insert(con.address, con.services);
 				connections.store(con);
 			}
@@ -89,7 +93,8 @@ impl P2P {
 		let node_table  = self.node_table.clone();
 		let polling = poller.for_each(move |result| {
 			match result {
-				MessagePoll::Ready { errored_peers, .. } => {
+				MessagePoll::Ready { errored_peers, command, peer_info, .. } => {
+					trace!("Received message {} from {}", command, peer_info.address);
 					// TODO: handle new messasges here!
 
 					let mut node_table = node_table.write();
@@ -104,7 +109,10 @@ impl P2P {
 						node_table.note_failure(&peer.address);
 						connections.remove(peer.id);
 					}
-				}
+				},
+				MessagePoll::WaitingForPeers => {
+					// do nothing
+				},
 			}
 			Ok(())
 		}).then(|_| {
