@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::net::Shutdown;
 use std::io::{Read, Write, Error};
 use tokio_core::net::TcpStream;
 
@@ -11,6 +12,11 @@ impl SharedTcpStream {
 		SharedTcpStream {
 			io: a,
 		}
+	}
+
+	pub fn shutdown(&self) {
+		// error is irrelevant here, the connection is dropped anyway
+		let _ = self.io.shutdown(Shutdown::Both);
 	}
 }
 

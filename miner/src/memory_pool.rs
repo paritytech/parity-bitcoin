@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::BTreeSet;
 use ser::Serializable;
+use heapsize::HeapSizeOf;
 
 /// Transactions ordering strategy
 #[derive(Debug, Clone, Copy)]
@@ -27,9 +28,9 @@ pub enum OrderingStrategy {
 /// Information on current `MemoryPool` state
 #[derive(Debug)]
 pub struct Information {
-	/// The number of transactions currently in the `MemoryPool`
+	/// Number of transactions currently in the `MemoryPool`
 	pub transactions_count: usize,
-	/// The total number of bytes in the transactions in the `MemoryPool`
+	/// Total number of bytes occupied by transactions from the `MemoryPool`
 	pub transactions_size_in_bytes: usize,
 }
 
@@ -217,6 +218,12 @@ impl Ord for ByPackageScoreOrderedEntry {
 		}
 
 		self.hash.cmp(&other.hash)
+	}
+}
+
+impl HeapSizeOf for Entry {
+	fn heap_size_of_children(&self) -> usize {
+		self.transaction.heap_size_of_children() + self.ancestors.heap_size_of_children() 
 	}
 }
 
@@ -507,6 +514,31 @@ impl OrderedReferenceStorage {
 	}
 }
 
+impl HeapSizeOf for Storage {
+	fn heap_size_of_children(&self) -> usize {
+		self.by_hash.heap_size_of_children() + self.references.heap_size_of_children()
+	}
+}
+
+impl HeapSizeOf for ReferenceStorage {
+	fn heap_size_of_children(&self) -> usize {
+		self.by_input.heap_size_of_children()
+			+ self.pending.heap_size_of_children()
+			+ self.ordered.heap_size_of_children()
+	}
+}
+
+impl HeapSizeOf for OrderedReferenceStorage {
+	fn heap_size_of_children(&self) -> usize {
+		// HeapSizeOf is not implemented for BTreeSet => rough estimation here
+		use std::mem::size_of;
+		let len = self.by_storage_index.len();
+		len * (size_of::<ByTimestampOrderedEntry>()
+			+ size_of::<ByTransactionScoreOrderedEntry>()
+			+ size_of::<ByPackageScoreOrderedEntry>())
+	}
+}
+
 impl MemoryPool {
 	/// Creates new memory pool
 	pub fn new() -> Self {
@@ -542,6 +574,7 @@ impl MemoryPool {
 
 	/// Reads hashes of up to n transactions from the `MemoryPool`, using selected strategy.
 	/// Ancestors are always returned before descendant transactions.
+	/// Use this function with care, only if really needed (heavy memory usage)
 	pub fn read_n_with_strategy(&mut self, n: usize, strategy: OrderingStrategy) -> Vec<H256> {
 		self.storage.read_n_with_strategy(n, strategy)
 	}
@@ -578,7 +611,7 @@ impl MemoryPool {
 	pub fn information(&self) -> Information {
 		Information {
 			transactions_count: self.storage.by_hash.len(),
-			transactions_size_in_bytes: self.storage.transactions_size_in_bytes
+			transactions_size_in_bytes: self.storage.transactions_size_in_bytes,
 		}
 	}
 
@@ -644,11 +677,18 @@ impl MemoryPool {
 	}
 }
 
+impl HeapSizeOf for MemoryPool {
+	fn heap_size_of_children(&self) -> usize {
+		self.storage.heap_size_of_children()
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use std::cmp::Ordering;
 	use hash::H256;
 	use chain::Transaction;
+	use heapsize::HeapSizeOf;
 	use super::{MemoryPool, OrderingStrategy};
 
 	// output_value = 898126612, size = 225, miner_score ~ 3991673.83
@@ -686,6 +726,21 @@ mod tests {
 		pool.insert_verified(RAW_TRANSACTION4.into());
 
 		pool
+	}
+
+	#[test]
+	fn test_memory_pool_heap_size() {
+		let mut pool = MemoryPool::new();
+
+		let size1 = pool.heap_size_of_children();
+
+		pool.insert_verified(RAW_TRANSACTION1.into());
+		let size2 = pool.heap_size_of_children();
+		assert!(size2 > size1);
+
+		pool.insert_verified(RAW_TRANSACTION2.into());
+		let size3 = pool.heap_size_of_children();
+		assert!(size3 > size2);
 	}
 
 	#[test]

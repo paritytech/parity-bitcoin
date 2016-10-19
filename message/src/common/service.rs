@@ -3,23 +3,22 @@ use ser::{
 	Deserializable, Reader, Error as ReaderError
 };
 
-#[derive(Debug, Default, PartialEq, Clone, Copy)]
-pub struct ServiceFlags(u64);
+#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub struct Services(u64);
 
-impl From<ServiceFlags> for u64 {
-	fn from(s: ServiceFlags) -> Self {
+impl From<Services> for u64 {
+	fn from(s: Services) -> Self {
 		s.0
 	}
 }
 
-impl From<u64> for ServiceFlags {
+impl From<u64> for Services {
 	fn from(v: u64) -> Self {
-		ServiceFlags(v)
+		Services(v)
 	}
 }
 
-
-impl ServiceFlags {
+impl Services {
 	pub fn network(&self) -> bool {
 		self.bit_at(0)
 	}
@@ -63,7 +62,11 @@ impl ServiceFlags {
 	pub fn with_xthin(mut self, v: bool) -> Self {
 		self.set_bit(4, v);
 		self
-		}
+	}
+
+	pub fn includes(&self, other: &Self) -> bool {
+		self.0 & other.0 == other.0
+	}
 
 	fn set_bit(&mut self, bit: usize, bit_value: bool) {
 		if bit_value {
@@ -78,14 +81,35 @@ impl ServiceFlags {
 	}
 }
 
-impl Serializable for ServiceFlags {
+impl Serializable for Services {
 	fn serialize(&self, stream: &mut Stream) {
 		stream.append(&self.0);
 	}
 }
 
-impl Deserializable for ServiceFlags {
+impl Deserializable for Services {
 	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
-		reader.read().map(ServiceFlags)
+		reader.read().map(Services)
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use super::Services;
+
+	#[test]
+	fn test_serivces_includes() {
+		let s1 = Services::default()
+			.with_witness(true)
+			.with_xthin(true);
+		let s2 = Services::default()
+			.with_witness(true);
+
+		assert!(s1.witness());
+		assert!(s1.xthin());
+		assert!(s2.witness());
+		assert!(!s2.xthin());
+		assert!(s1.includes(&s2));
+		assert!(!s2.includes(&s1));
 	}
 }

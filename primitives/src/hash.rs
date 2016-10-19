@@ -137,6 +137,8 @@ impl_hash!(H264, 33);
 impl_hash!(H512, 64);
 impl_hash!(H520, 65);
 
+known_heap_size!(0, H32, H48, H96, H160, H256, H264, H512, H520);
+
 impl H256 {
 	#[inline]
 	pub fn from_reversed_str(s: &'static str) -> Self {
