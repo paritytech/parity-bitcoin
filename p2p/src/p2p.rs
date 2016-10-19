@@ -94,7 +94,7 @@ impl P2P {
 		let polling = poller.for_each(move |result| {
 			match result {
 				MessagePoll::Ready { errored_peers, command, peer_info, .. } => {
-					trace!("Received message {} from {}", command, peer_info.address);
+					trace!("Received {} message from {}", command, peer_info.address);
 					// TODO: handle new messasges here!
 
 					let mut node_table = node_table.write();

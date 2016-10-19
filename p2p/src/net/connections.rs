@@ -39,6 +39,7 @@ impl Connections {
 	/// Removes channel with given id.
 	pub fn remove(&self, id: PeerId) {
 		if let Some(channel) = self.channels.write().remove(&id) {
+			trace!("Disconnecting from {}", channel.peer_info().address);
 			channel.shutdown();
 		}
 	}
