@@ -9,10 +9,11 @@ extern crate parking_lot;
 extern crate bitcrypto as crypto;
 extern crate message;
 extern crate primitives;
-extern crate serialization as ser;
 
 pub mod io;
 pub mod net;
+pub mod protocol;
+pub mod session;
 pub mod util;
 mod config;
 mod event_loop;
@@ -26,6 +27,5 @@ pub use primitives::{hash, bytes};
 pub use config::Config;
 pub use event_loop::{event_loop, forever};
 pub use p2p::P2P;
-
-pub type PeerId = usize;
+pub use util::{PeerId, PeerInfo};
 

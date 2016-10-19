@@ -13,5 +13,4 @@ rand = "0.3"
 
 primitives = { path = "../primitives" }
 bitcrypto = { path = "../crypto" }
-serialization = { path = "../serialization" }
 message = { path = "../message" }
