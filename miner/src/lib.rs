@@ -6,4 +6,4 @@ pub mod memory_pool;
 
 pub use primitives::{hash};
 
-pub use self::memory_pool::{MemoryPool, Information as MemoryPoolInformation};
+pub use self::memory_pool::{MemoryPool, Information as MemoryPoolInformation, OrderingStrategy as MemoryPoolOrderingStrategy};
