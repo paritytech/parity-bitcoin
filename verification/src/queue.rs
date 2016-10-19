@@ -35,6 +35,7 @@ pub struct Queue {
 	items: RwLock<LinkedHashMap<H256, Block>>,
 	verified: RwLock<LinkedHashMap<H256, VerifiedBlock>>,
 	invalid: RwLock<HashSet<H256>>,
+	processing: RwLock<HashSet<H256>>,
 }
 
 impl Queue {
@@ -46,15 +47,20 @@ impl Queue {
 			items: RwLock::new(LinkedHashMap::new()),
 			verified: RwLock::new(LinkedHashMap::new()),
 			invalid: RwLock::new(HashSet::new()),
+			processing: RwLock::new(HashSet::new()),
 		}
 	}
 
 	/// Process one block in the queue
 	pub fn process(&self) {
 		let (hash, block) = {
+			let mut processing = self.processing.write();
 			let mut items = self.items.write();
 			match items.pop_front() {
-				Some((hash, block)) => (hash, block),
+				Some((hash, block)) => {
+					processing.insert(hash.clone());
+					(hash, block)
+				},
 				/// nothing to verify
 				None => { return; },
 			}
@@ -63,11 +69,16 @@ impl Queue {
 		match self.verifier.verify(&block) {
 			Ok(chain) => {
 				let mut verified = self.verified.write();
+				let mut processing = self.processing.write();
+				processing.remove(&hash);
 				verified.insert(hash, VerifiedBlock::new(chain, block));
 			},
 			Err(e) => {
 				println!("Verification failed: {:?}", e);
 				let mut invalid = self.invalid.write();
+				let mut processing = self.processing.write();
+
+				processing.remove(&hash);
 				invalid.insert(hash);
 			}
 		}
@@ -76,6 +87,7 @@ impl Queue {
 	/// Query block status
 	pub fn block_status(&self, hash: &H256) -> BlockStatus {
 		if self.invalid.read().contains(hash) { BlockStatus::Invalid }
+		else if self.processing.read().contains(hash) { BlockStatus::Verifying }
 		else if self.verified.read().contains_key(hash) { BlockStatus::Valid }
 		else if self.items.read().contains_key(hash) { BlockStatus::Pending }
 		else { BlockStatus::Absent }

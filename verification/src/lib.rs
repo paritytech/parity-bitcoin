@@ -63,6 +63,7 @@ pub enum BlockStatus {
 	Invalid,
 	Pending,
 	Absent,
+	Verifying,
 }
 
 /// Verification result
