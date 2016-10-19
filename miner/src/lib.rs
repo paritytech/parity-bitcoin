@@ -1,4 +1,5 @@
 extern crate chain;
+extern crate heapsize;
 extern crate primitives;
 extern crate serialization as ser;
 
