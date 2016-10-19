@@ -10,6 +10,7 @@ use chain::Transaction;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::BTreeSet;
 use ser::Serializable;
 
 /// Transactions ordering strategy
@@ -77,134 +78,146 @@ struct Storage {
 	references: ReferenceStorage,
 }
 
+/// Multi-index storage which holds references to entries from Storage::by_hash
 #[derive(Debug, Clone)]
 struct ReferenceStorage {
 	/// By-input storage
 	by_input: HashMap<H256, HashSet<H256>>,
 	/// Pending entries
 	pending: HashSet<H256>,
-	/// By-entry-time storage
-	by_storage_index: storage_index_strategy::Storage,
-	/// By-score storage
-	by_transaction_score: transaction_score_strategy::Storage,
-	/// By-package-score strategy
-	by_package_score: package_score_strategy::Storage,
+	/// Ordered storage
+	ordered: OrderedReferenceStorage,
 }
 
-macro_rules! ordering_strategy {
-	($strategy: ident; $($member: ident: $member_type: ty), *; $comparer: expr) => {
-		mod $strategy {
-			use std::cmp::Ordering;
-			use hash::H256;
-			use std::collections::BTreeSet;
-			use super::Entry;
+/// Multi-index orderings storage which holds ordered references to entries from Storage::by_hash
+#[derive(Debug, Clone)]
+struct OrderedReferenceStorage {
+	/// By-entry-time storage
+	by_storage_index: BTreeSet<ByTimestampOrderedEntry>,
+	/// By-score storage
+	by_transaction_score: BTreeSet<ByTransactionScoreOrderedEntry>,
+	/// By-package-score strategy
+	by_package_score: BTreeSet<ByPackageScoreOrderedEntry>,
+}
 
-			/// Lightweight struct maintain transactions ordering
-			#[derive(Debug, Eq, PartialEq, Clone)]
-			pub struct OrderedEntry {
-				/// Transaction hash
-				hash: H256,
-				/// Transaction data
-				$($member: $member_type), *
-			}
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ByTimestampOrderedEntry {
+	/// Transaction hash
+	hash: H256,
+	/// Throughout index of this transaction in memory pool (non persistent)
+	storage_index: u64,
+}
 
-			impl OrderedEntry {
-				pub fn for_entry(entry: &Entry) -> OrderedEntry {
-					OrderedEntry {
-						hash: entry.hash.clone(),
-						$($member: entry.$member.clone()), *
-					}
-				}
-			}
+#[derive(Debug, Eq, PartialEq, Clone)]
+struct ByTransactionScoreOrderedEntry {
+	/// Transaction hash
+	hash: H256,
+	/// Transaction size
+	size: usize,
+	/// Transaction fee
+	miner_fee: i64,
+	/// Virtual transaction fee
+	miner_virtual_fee: i64,
+}
 
-			impl PartialOrd for OrderedEntry {
-				fn partial_cmp(&self, other: &OrderedEntry) -> Option<Ordering> {
-					Some(self.cmp(other))
-				}
-			}
+#[derive(Debug, Eq, PartialEq, Clone)]
+struct ByPackageScoreOrderedEntry {
+	/// Transaction hash
+	hash: H256,
+	/// size + Sum(size) for all in-pool descendants
+	package_size: usize,
+	/// miner_fee + Sum(miner_fee) for all in-pool descendants
+	package_miner_fee: i64,
+	/// miner_virtual_fee + Sum(miner_virtual_fee) for all in-pool descendants
+	package_miner_virtual_fee: i64,
+}
 
-			impl Ord for OrderedEntry {
-				fn cmp(&self, other: &Self) -> Ordering {
-					let order = $comparer(&self, other);
-					if order != Ordering::Equal {
-						return order
-					}
-
-					self.hash.cmp(&other.hash)
-				}
-			}
-
-			/// Ordering storage
-			#[derive(Debug, Clone)]
-			pub struct Storage {
-				data: BTreeSet<OrderedEntry>,
-			}
-
-			impl Storage {
-				pub fn new() -> Self {
-					Storage {
-						data: BTreeSet::new()
-					}
-				}
-
-				/// Insert entry to storage
-				pub fn insert(&mut self, entry: &Entry) {
-					self.data.replace(OrderedEntry::for_entry(entry));
-				}
-
-				/// Remove entry from storage
-				pub fn remove(&mut self, entry: &Entry) -> bool {
-					self.data.remove(&OrderedEntry::for_entry(entry))
-				}
-
-				/// Returns hash of the top entry
-				pub fn top(&self) -> Option<H256> {
-					self.data.iter().map(|ref entry| entry.hash.clone()).nth(0)
-				}
-			}
+impl<'a> From<&'a Entry> for ByTimestampOrderedEntry {
+	fn from(entry: &'a Entry) -> Self {
+		ByTimestampOrderedEntry {
+			hash: entry.hash.clone(),
+			storage_index: entry.storage_index,
 		}
 	}
 }
 
-// Ordering strategies declaration
-
-ordering_strategy!(storage_index_strategy;
-	storage_index: u64;
-	|me: &Self, other: &Self|
-		me.storage_index.cmp(&other.storage_index));
-ordering_strategy!(transaction_score_strategy;
-	size: usize, miner_fee: i64, miner_virtual_fee: i64;
-	|me: &Self, other: &Self| {
-		// lesser miner score means later removal
-		let left = (me.miner_fee + me.miner_virtual_fee) * (other.size as i64);
-		let right = (other.miner_fee + other.miner_virtual_fee) * (me.size as i64);
-		right.cmp(&left)
-	});
-ordering_strategy!(package_score_strategy;
-	package_size: usize, package_miner_fee: i64, package_miner_virtual_fee: i64;
-	|me: &Self, other: &Self| {
-		// lesser miner score means later removal
-		let left = (me.package_miner_fee + me.package_miner_virtual_fee) * (other.package_size as i64);
-		let right = (other.package_miner_fee + other.package_miner_virtual_fee) * (me.package_size as i64);
-		right.cmp(&left)
-	});
-
-// Macro to use instead of member functions (to deal with double references)
-
-macro_rules! insert_to_orderings {
-	($me: expr, $entry: expr) => (
-		$me.by_storage_index.insert(&$entry);
-		$me.by_transaction_score.insert(&$entry);
-		$me.by_package_score.insert(&$entry);
-	)
+impl<'a> From<&'a Entry> for ByTransactionScoreOrderedEntry {
+	fn from(entry: &'a Entry) -> Self {
+		ByTransactionScoreOrderedEntry {
+			hash: entry.hash.clone(),
+			size: entry.size,
+			miner_fee: entry.miner_fee,
+			miner_virtual_fee: entry.miner_virtual_fee,
+		}
+	}
 }
 
-macro_rules! remove_from_orderings {
-	($me: expr, $entry: expr) => (
-		$me.by_storage_index.remove(&$entry);
-		$me.by_transaction_score.remove(&$entry);
-		$me.by_package_score.remove(&$entry);
-	)
+impl<'a> From<&'a Entry> for ByPackageScoreOrderedEntry {
+	fn from(entry: &'a Entry) -> Self {
+		ByPackageScoreOrderedEntry {
+			hash: entry.hash.clone(),
+			package_size: entry.package_size,
+			package_miner_fee: entry.package_miner_fee,
+			package_miner_virtual_fee: entry.package_miner_virtual_fee,
+		}
+	}
+}
+
+impl PartialOrd for ByTimestampOrderedEntry {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Ord for ByTimestampOrderedEntry {
+	fn cmp(&self, other: &Self) -> Ordering {
+		let order = self.storage_index.cmp(&other.storage_index);
+		if order != Ordering::Equal {
+			return order
+		}
+
+		self.hash.cmp(&other.hash)
+	}
+}
+
+impl PartialOrd for ByTransactionScoreOrderedEntry {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Ord for ByTransactionScoreOrderedEntry {
+	fn cmp(&self, other: &Self) -> Ordering {
+		// lesser miner score means later removal
+		let left = (self.miner_fee + self.miner_virtual_fee) * (other.size as i64);
+		let right = (other.miner_fee + other.miner_virtual_fee) * (self.size as i64);
+		let order = right.cmp(&left);
+		if order != Ordering::Equal {
+			return order
+		}
+
+		self.hash.cmp(&other.hash)
+	}
+}
+
+impl PartialOrd for ByPackageScoreOrderedEntry {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Ord for ByPackageScoreOrderedEntry {
+	fn cmp(&self, other: &Self) -> Ordering {
+		// lesser miner score means later removal
+		let left = (self.package_miner_fee + self.package_miner_virtual_fee) * (other.package_size as i64);
+		let right = (other.package_miner_fee + other.package_miner_virtual_fee) * (self.package_size as i64);
+		let order = right.cmp(&left);
+		if order != Ordering::Equal {
+			return order
+		}
+
+		self.hash.cmp(&other.hash)
+	}
 }
 
 impl Storage {
@@ -216,9 +229,11 @@ impl Storage {
 			references: ReferenceStorage {
 				by_input: HashMap::new(),
 				pending: HashSet::new(),
-				by_storage_index: storage_index_strategy::Storage::new(),
-				by_transaction_score: transaction_score_strategy::Storage::new(),
-				by_package_score: package_score_strategy::Storage::new(),
+				ordered: OrderedReferenceStorage {
+					by_storage_index: BTreeSet::new(),
+					by_transaction_score: BTreeSet::new(),
+					by_package_score: BTreeSet::new(),
+				},
 			},
 		}
 	}
@@ -234,25 +249,25 @@ impl Storage {
 
 		// update score of all packages this transaction is in
 		for ancestor_hash in entry.ancestors.iter() {
-			if let Some(ref mut ancestor_entry) = self.by_hash.get_mut(ancestor_hash) {
-				let removed = self.references.by_package_score.remove(ancestor_entry);
+			if let Some(mut ancestor_entry) = self.by_hash.get_mut(ancestor_hash) {
+				let removed = self.references.ordered.by_package_score.remove(&(ancestor_entry as &Entry).into());
 
 				ancestor_entry.package_size += entry.size;
 				ancestor_entry.package_miner_fee += entry.package_miner_fee;
 				ancestor_entry.package_miner_virtual_fee += entry.package_miner_virtual_fee;
 
 				if removed {
-					self.references.by_package_score.insert(ancestor_entry);
+					self.references.ordered.by_package_score.insert((ancestor_entry as &Entry).into());
 				}
 			}
 		}
 
 		// insert either to pending queue or to orderings
-		if Storage::has_in_pool_ancestors(None, &self.by_hash, &entry.transaction) {
+		if self.references.has_in_pool_ancestors(None, &self.by_hash, &entry.transaction) {
 			self.references.pending.insert(entry.hash.clone());
 		}
 		else {
-			insert_to_orderings!(self.references, entry);
+			self.references.ordered.insert_to_orderings(&entry);
 		}
 
 		// add to by_hash storage
@@ -273,9 +288,9 @@ impl Storage {
 		let mut ancestors: Option<Vec<H256>> = None;
 
 		// modify the entry itself
-		if let Some(ref mut entry) = self.by_hash.get_mut(h) {
-			let insert_to_package_score = self.references.by_package_score.remove(&entry);
-			let insert_to_transaction_score = self.references.by_transaction_score.remove(&entry);
+		if let Some(mut entry) = self.by_hash.get_mut(h) {
+			let insert_to_package_score = self.references.ordered.by_package_score.remove(&(entry as &Entry).into());
+			let insert_to_transaction_score = self.references.ordered.by_transaction_score.remove(&(entry as &Entry).into());
 
 			miner_virtual_fee_change = virtual_fee - entry.miner_virtual_fee;
 			if !entry.ancestors.is_empty() {
@@ -285,10 +300,10 @@ impl Storage {
 			entry.miner_virtual_fee = virtual_fee;
 
 			if insert_to_transaction_score {
-				self.references.by_transaction_score.insert(&entry);
+				self.references.ordered.by_transaction_score.insert((entry as &Entry).into());
 			}
 			if insert_to_package_score {
-				self.references.by_package_score.insert(&entry);
+				self.references.ordered.by_package_score.insert((entry as &Entry).into());
 			}
 		}
 
@@ -296,11 +311,11 @@ impl Storage {
 		if miner_virtual_fee_change != 0 {
 			ancestors.map(|ancestors| {
 				for ancestor_hash in ancestors {
-					if let Some(ref mut ancestor_entry) = self.by_hash.get_mut(&ancestor_hash) {
-						let insert_to_package_score = self.references.by_package_score.remove(ancestor_entry);
+					if let Some(mut ancestor_entry) = self.by_hash.get_mut(&ancestor_hash) {
+						let insert_to_package_score = self.references.ordered.by_package_score.remove(&(ancestor_entry as &Entry).into());
 						ancestor_entry.package_miner_virtual_fee += miner_virtual_fee_change;
 						if insert_to_package_score {
-							self.references.by_package_score.insert(ancestor_entry);
+							self.references.ordered.by_package_score.insert((ancestor_entry as &Entry).into());
 						}
 					}
 				}
@@ -310,9 +325,9 @@ impl Storage {
 
 	pub fn read_with_strategy(&self, strategy: OrderingStrategy) -> Option<H256> {
 		match strategy {
-			OrderingStrategy::ByTimestamp => self.references.by_storage_index.top(),
-			OrderingStrategy::ByTransactionScore => self.references.by_transaction_score.top(),
-			OrderingStrategy::ByPackageScore => self.references.by_package_score.top(),
+			OrderingStrategy::ByTimestamp => self.references.ordered.by_storage_index.iter().map(|entry| entry.hash.clone()).nth(0),
+			OrderingStrategy::ByTransactionScore => self.references.ordered.by_transaction_score.iter().map(|entry| entry.hash.clone()).nth(0),
+			OrderingStrategy::ByPackageScore => self.references.ordered.by_package_score.iter().map(|entry| entry.hash.clone()).nth(0),
 		}
 	}
 
@@ -336,9 +351,9 @@ impl Storage {
 			n -= 1;
 
 			let top_hash = match strategy {
-				OrderingStrategy::ByTimestamp => references.by_storage_index.top(),
-				OrderingStrategy::ByTransactionScore => references.by_transaction_score.top(),
-				OrderingStrategy::ByPackageScore => references.by_package_score.top(),
+				OrderingStrategy::ByTimestamp => references.ordered.by_storage_index.iter().map(|entry| entry.hash.clone()).nth(0),
+				OrderingStrategy::ByTransactionScore => references.ordered.by_transaction_score.iter().map(|entry| entry.hash.clone()).nth(0),
+				OrderingStrategy::ByPackageScore => references.ordered.by_package_score.iter().map(|entry| entry.hash.clone()).nth(0),
 			};
 			match top_hash {
 				None => break,
@@ -346,7 +361,7 @@ impl Storage {
 					self.by_hash.get(&top_hash).map(|entry| {
 						// simulate removal
 						removed.insert(top_hash.clone());
-						Storage::remove(Some(&removed), &self.by_hash, &mut references, &entry);
+						references.remove(Some(&removed), &self.by_hash, &entry);
 
 						// return this entry
 						result.push(top_hash);
@@ -364,7 +379,7 @@ impl Storage {
 				self.transactions_size_in_bytes -= entry.size;
 
 				// remove from storage
-				Storage::remove(None, &self.by_hash, &mut self.references, &entry);
+				self.references.remove(None, &self.by_hash, &entry);
 
 				entry
 			})
@@ -415,9 +430,9 @@ impl Storage {
 
 	pub fn remove_with_strategy(&mut self, strategy: OrderingStrategy) -> Option<Transaction> {
 		let top_hash = match strategy {
-			OrderingStrategy::ByTimestamp => self.references.by_storage_index.top(),
-			OrderingStrategy::ByTransactionScore => self.references.by_transaction_score.top(),
-			OrderingStrategy::ByPackageScore => self.references.by_package_score.top(),
+			OrderingStrategy::ByTimestamp => self.references.ordered.by_storage_index.iter().map(|entry| entry.hash.clone()).nth(0),
+			OrderingStrategy::ByTransactionScore => self.references.ordered.by_transaction_score.iter().map(|entry| entry.hash.clone()).nth(0),
+			OrderingStrategy::ByPackageScore => self.references.ordered.by_package_score.iter().map(|entry| entry.hash.clone()).nth(0),
 		};
 		top_hash.map(|hash| self.remove_by_hash(&hash)
 			.expect("`hash` is read from `references`; entries in `references` have corresponging entries in `by_hash`; `remove_by_hash` removes entry from `by_hash`; qed")
@@ -443,36 +458,52 @@ impl Storage {
 	pub fn get_transactions_ids(&self) -> Vec<H256> {
 		self.by_hash.keys().map(|h| h.clone()).collect()
 	}
+}
 
-	fn remove(removed: Option<&HashSet<H256>>, by_hash: &HashMap<H256, Entry>, references: &mut ReferenceStorage, entry: &Entry) {
+impl ReferenceStorage {
+	pub fn has_in_pool_ancestors(&self, removed: Option<&HashSet<H256>>, by_hash: &HashMap<H256, Entry>, transaction: &Transaction) -> bool {
+		transaction.inputs.iter()
+			.any(|input| by_hash.contains_key(&input.previous_output.hash)
+				&& !removed.map_or(false, |r| r.contains(&input.previous_output.hash)))
+	}
+
+	pub fn remove(&mut self, removed: Option<&HashSet<H256>>, by_hash: &HashMap<H256, Entry>, entry: &Entry) {
 		// for each pending descendant transaction
-		if let Some(descendants) = references.by_input.get(&entry.hash) {
+		if let Some(descendants) = self.by_input.get(&entry.hash) {
 			let descendants = descendants.iter().filter_map(|hash| by_hash.get(&hash));
 			for descendant in descendants {
 				// if there are no more ancestors of this transaction in the pool
 				// => can move from pending to orderings
-				if !Storage::has_in_pool_ancestors(removed, by_hash, &descendant.transaction) {
-					references.pending.remove(&descendant.hash);
+				if !self.has_in_pool_ancestors(removed, by_hash, &descendant.transaction) {
+					self.pending.remove(&descendant.hash);
 
 					if let Some(descendant_entry) = by_hash.get(&descendant.hash) {
-						insert_to_orderings!(references, &descendant_entry);
+						self.ordered.insert_to_orderings(&descendant_entry);
 					}
 				}
 			}
 		}
-		references.by_input.remove(&entry.hash);
+		self.by_input.remove(&entry.hash);
 
 		// remove from pending
-		references.pending.remove(&entry.hash);
+		self.pending.remove(&entry.hash);
 
 		// remove from orderings
-		remove_from_orderings!(references, entry);
+		self.ordered.remove_from_orderings(entry);
+	}
+}
+
+impl OrderedReferenceStorage {
+	pub fn insert_to_orderings(&mut self, entry: &Entry) {
+		self.by_storage_index.insert(entry.into());
+		self.by_transaction_score.insert(entry.into());
+		self.by_package_score.insert(entry.into());
 	}
 
-	fn has_in_pool_ancestors(removed: Option<&HashSet<H256>>, by_hash: &HashMap<H256, Entry>, transaction: &Transaction) -> bool {
-		transaction.inputs.iter()
-			.any(|input| by_hash.contains_key(&input.previous_output.hash)
-				&& !removed.map_or(false, |r| r.contains(&input.previous_output.hash)))
+	pub fn remove_from_orderings(&mut self, entry: &Entry) {
+		self.by_storage_index.remove(&entry.into());
+		self.by_transaction_score.remove(&entry.into());
+		self.by_package_score.remove(&entry.into());
 	}
 }
 
