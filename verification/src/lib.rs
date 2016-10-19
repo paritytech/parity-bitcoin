@@ -9,6 +9,8 @@ extern crate linked_hash_map;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
+#[cfg(test)]
+extern crate test_data;
 
 mod queue;
 
@@ -67,6 +69,6 @@ pub enum BlockStatus {
 pub type VerificationResult = Result<Chain, Error>;
 
 /// Interface for block verification
-pub trait Verify {
+pub trait Verify : Send + Sync {
 	fn verify(&self, block: &chain::Block) -> VerificationResult;
 }
