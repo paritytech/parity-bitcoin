@@ -97,6 +97,10 @@ impl Queue {
 
 		Ok(())
 	}
+
+	pub fn pop_valid(&self) -> Option<(H256, VerifiedBlock)> {
+		self.verified.write().pop_front()
+	}
 }
 
 #[cfg(test)]
@@ -196,5 +200,19 @@ mod tests {
 
 		assert_eq!(queue.block_status(&test_data::block_h1().hash()), BlockStatus::Valid);
 		assert_eq!(queue.block_status(&test_data::block_h2().hash()), BlockStatus::Valid);
+	}
+
+	#[test]
+	fn pop() {
+		let queue = Queue::new(Box::new(FacileVerifier));
+		let block = test_data::block1();
+		let hash = block.hash();
+
+		queue.push(block).unwrap();
+		queue.process();
+		let (h, _b) = queue.pop_valid().unwrap();
+
+		assert_eq!(queue.block_status(&hash), BlockStatus::Absent);
+		assert_eq!(h, hash);
 	}
 }
