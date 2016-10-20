@@ -1,0 +1,7 @@
+[package]
+name = "test-data"
+version = "0.1.0"
+authors = ["Nikolay Volf <nikvolf@gmail.com>"]
+
+[dependencies]
+chain = { path = "../chain"  }
