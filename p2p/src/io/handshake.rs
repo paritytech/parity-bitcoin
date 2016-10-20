@@ -1,6 +1,6 @@
 use std::{io, cmp};
 use futures::{Future, Poll, Async};
-use message::{Message, Error};
+use message::{Message, MessageResult};
 use message::types::{Version, Verack};
 use message::common::Magic;
 use io::{write_message, WriteMessage, ReadMessage, read_message};
@@ -81,7 +81,7 @@ pub struct AcceptHandshake<A> {
 }
 
 impl<A> Future for Handshake<A> where A: io::Read + io::Write {
-	type Item = (A, Result<HandshakeResult, Error>);
+	type Item = (A, MessageResult<HandshakeResult>);
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -128,7 +128,7 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 }
 
 impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
-	type Item = (A, Result<HandshakeResult, Error>);
+	type Item = (A, MessageResult<HandshakeResult>);
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {

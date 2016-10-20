@@ -6,6 +6,14 @@ pub struct Pong {
 	pub nonce: u64,
 }
 
+impl Pong {
+	pub fn new(nonce: u64) -> Self {
+		Pong {
+			nonce: nonce,
+		}
+	}
+}
+
 impl Payload for Pong {
 	fn version() -> u32 {
 		0
