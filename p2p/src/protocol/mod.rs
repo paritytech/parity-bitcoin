@@ -6,16 +6,23 @@ use message::common::Command;
 
 pub use self::ping::PingProtocol;
 
-pub enum ProtocolResult {
+pub enum Direction {
+	Inbound,
+	Outbound,
+}
+
+pub enum ProtocolAction {
 	Reply(Bytes),
-	Error(Error),
 	None,
 	Disconnect,
 }
 
-pub trait Protocol {
+pub trait Protocol: Send {
 	/// Initialize the protocol.
-	fn initialize(&self);
+	fn initialize(&mut self, _direction: Direction, _version: u32) -> Result<ProtocolAction, Error> {
+		Ok(ProtocolAction::None)
+	}
+
 	/// Handle the message.
-	fn on_message(&self, command: &Command, payload: &Bytes) -> ProtocolResult;
+	fn on_message(&self, command: &Command, payload: &Bytes, version: u32) -> Result<ProtocolAction, Error>;
 }

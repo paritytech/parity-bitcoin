@@ -4,8 +4,7 @@ use futures::stream::Stream;
 use tokio_core::reactor::Handle;
 use tokio_core::net::{TcpStream, TcpListener};
 use tokio_core::io::IoStream;
-use message::Error;
-use message::common::Magic;
+use message::{MessageResult, Magic};
 use io::{accept_handshake, AcceptHandshake};
 use net::{Config, Connection};
 
@@ -21,7 +20,7 @@ pub fn listen(handle: &Handle, config: Config) -> Result<Listen, io::Error> {
 
 
 pub struct Listen {
-	inner: IoStream<Result<Connection, Error>>,
+	inner: IoStream<MessageResult<Connection>>,
 }
 
 fn accept_connection(stream: TcpStream, config: &Config, address: net::SocketAddr) -> AcceptConnection {
@@ -39,7 +38,7 @@ struct AcceptConnection {
 }
 
 impl Future for AcceptConnection {
-	type Item = Result<Connection, Error>;
+	type Item = MessageResult<Connection>;
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -60,7 +59,7 @@ impl Future for AcceptConnection {
 }
 
 impl Stream for Listen {
-	type Item = Result<Connection, Error>;
+	type Item = MessageResult<Connection>;
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {

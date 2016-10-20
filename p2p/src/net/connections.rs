@@ -3,8 +3,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::HashMap;
 use parking_lot::RwLock;
 use net::{Connection, Channel};
+use session::Session;
 use PeerId;
 
+#[derive(Default)]
 pub struct Connections {
 	/// Incremental peer counter.
 	peer_counter: AtomicUsize,
@@ -14,10 +16,7 @@ pub struct Connections {
 
 impl Connections {
 	pub fn new() -> Self {
-		Connections {
-			peer_counter: AtomicUsize::default(),
-			channels: RwLock::default(),
-		}
+		Connections::default()
 	}
 
 	/// Returns safe (nonblocking) copy of channels.
@@ -31,9 +30,10 @@ impl Connections {
 	}
 
 	/// Stores new channel.
-	pub fn store(&self, connection: Connection) {
+	pub fn store(&self, connection: Connection, session: Session) {
 		let id = self.peer_counter.fetch_add(1, Ordering::AcqRel);
-		self.channels.write().insert(id, Arc::new(Channel::new(connection, id)));
+		let channel = Arc::new(Channel::new(connection, id, session));
+		self.channels.write().insert(id, channel);
 	}
 
 	/// Removes channel with given id.

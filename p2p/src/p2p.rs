@@ -1,14 +1,115 @@
 use std::{io, net};
 use std::sync::Arc;
 use parking_lot::RwLock;
-use futures::{Future, finished};
+use futures::{Future, finished, failed, BoxFuture};
 use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::Handle;
-use message::Payload;
-use net::{connect, listen, Connections, MessagePoller, MessagePoll, Channel};
+use session::Session;
+use io::{ReadAnyMessage, SharedTcpStream};
+use net::{connect, listen, Connections, Channel, Config as NetConfig};
 use util::NodeTable;
-use {Config, PeerId};
+use Config;
+
+pub type BoxedMessageFuture = BoxFuture<<ReadAnyMessage<SharedTcpStream> as Future>::Item, <ReadAnyMessage<SharedTcpStream> as Future>::Error>;
+
+/// Network context.
+#[derive(Default)]
+pub struct Context {
+	/// Connections.
+	connections: Connections,
+	/// Node Table.
+	node_table: RwLock<NodeTable>,
+}
+
+impl Context {
+	pub fn connect(context: &Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxFuture<(), ()> {
+		trace!("Trying to connect to: {}", socket);
+		let context = context.clone();
+		let connection = connect(&socket, handle, config);
+		connection.then(move |result| {
+			match result {
+				Ok(Ok(connection)) => {
+					// successfull hanshake
+					trace!("Connected to {}", connection.address);
+					let session = Session::new();
+					context.node_table.write().insert(connection.address, connection.services);
+					context.connections.store(connection, session);
+					Context::on_message(context.clone(), { unimplemented!() })
+				},
+				Ok(Err(err)) => {
+					// protocol error
+					finished(Err(err)).boxed()
+				},
+				Err(err) => {
+					// network error
+					failed(err).boxed()
+				}
+			}
+		}).then(|_| {
+			finished(())
+		}).boxed()
+	}
+
+	pub fn listen(context: &Arc<Context>, handle: &Handle, config: NetConfig) -> Result<BoxFuture<(), ()>, io::Error> {
+		trace!("Starting tcp server");
+		let context = context.clone();
+		let listen = try!(listen(&handle, config));
+		let server = listen.then(move |result| {
+			match result {
+				Ok(Ok(connection)) => {
+					// successfull hanshake
+					trace!("Accepted connection from {}", connection.address);
+					let session = Session::new();
+					context.node_table.write().insert(connection.address, connection.services);
+					context.connections.store(connection, session);
+					Context::on_message(context.clone(), { unimplemented!() })
+				},
+				Ok(Err(err)) => {
+					// protocol error
+					finished(Err(err)).boxed()
+				},
+				Err(err) => {
+					// network error
+					failed(err).boxed()
+				}
+			}
+		}).for_each(|_| {
+			Ok(())
+		}).then(|_| {
+			finished(())
+		}).boxed();
+		Ok(server)
+	}
+
+	pub fn on_message(context: Arc<Context>, channel: Arc<Channel>) -> BoxedMessageFuture {
+		channel.read_message().then(move |result| {
+			match result {
+				Ok(Ok((command, _bytes))) => {
+					// successful read
+					trace!("Received {} message from {}", command, channel.peer_info().address);
+					// read next messsage
+					Context::on_message(context, channel)
+				},
+				Ok(Err(err)) => {
+					// protocol error
+					context.connections.remove(channel.peer_info().id);
+					context.node_table.write().note_failure(&channel.peer_info().address);
+					finished(Err(err)).boxed()
+				},
+				Err(err) => {
+					// network error
+					context.connections.remove(channel.peer_info().id);
+					context.node_table.write().note_failure(&channel.peer_info().address);
+					failed(err).boxed()
+				}
+			}
+		}).boxed()
+	}
+
+	pub fn send(_context: &Arc<Context>) {
+	}
+}
 
 pub struct P2P {
 	/// Global event loop handle.
@@ -17,10 +118,8 @@ pub struct P2P {
 	pool: CpuPool,
 	/// P2P config.
 	config: Config,
-	/// Connections.
-	connections: Arc<Connections>,
-	/// Node Table.
-	node_table: Arc<RwLock<NodeTable>>,
+	/// Network context.
+	context: Arc<Context>,
 }
 
 impl P2P {
@@ -31,8 +130,7 @@ impl P2P {
 			event_loop_handle: handle.clone(),
 			pool: pool.clone(),
 			config: config,
-			connections: Arc::new(Connections::new()),
-			node_table: Arc::default(),
+			context: Arc::default(),
 		}
 	}
 
@@ -42,86 +140,24 @@ impl P2P {
 		}
 
 		try!(self.listen());
-		self.attach_protocols();
 		Ok(())
 	}
 
 	pub fn connect(&self, ip: net::IpAddr) {
 		let socket = net::SocketAddr::new(ip, self.config.connection.magic.port());
-		let connections = self.connections.clone();
-		let node_table  = self.node_table.clone();
-		let connection = connect(&socket, &self.event_loop_handle, &self.config.connection);
-		trace!("Trying to connect to: {}", socket);
-		let pool_work = self.pool.spawn(connection).then(move |result| {
-			if let Ok(Ok(con)) = result {
-				trace!("Connected to {}", con.address);
-				node_table.write().insert(con.address, con.services);
-				connections.store(con);
-			} else {
-				trace!("Failed to connect to {}", socket);
-				node_table.write().note_failure(&socket);
-			}
-			finished(())
-		});
+		let connection = Context::connect(&self.context, socket, &self.event_loop_handle, &self.config.connection);
+		let pool_work = self.pool.spawn(connection);
 		self.event_loop_handle.spawn(pool_work);
 	}
 
 	fn listen(&self) -> Result<(), io::Error> {
-		let listen = try!(listen(&self.event_loop_handle, self.config.connection.clone()));
-		let connections = self.connections.clone();
-		let node_table  = self.node_table.clone();
-		let server = listen.for_each(move |result| {
-			if let Ok(con) = result {
-				trace!("Accepted connection from {}", con.address);
-				node_table.write().insert(con.address, con.services);
-				connections.store(con);
-			}
-			Ok(())
-		}).then(|_| {
-			finished(())
-		});
+		let server = try!(Context::listen(&self.context, &self.event_loop_handle, self.config.connection.clone()));
 		let pool_work = self.pool.spawn(server);
 		self.event_loop_handle.spawn(pool_work);
 		Ok(())
 	}
 
-	fn attach_protocols(&self) {
-		// TODO: here all network protocols will be attached
-
-		let poller = MessagePoller::new(Arc::downgrade(&self.connections));
-		let connections = self.connections.clone();
-		let node_table  = self.node_table.clone();
-		let polling = poller.for_each(move |result| {
-			match result {
-				MessagePoll::Ready { errored_peers, command, peer_info, .. } => {
-					trace!("Received {} message from {}", command, peer_info.address);
-					// TODO: handle new messasges here!
-
-					let mut node_table = node_table.write();
-					for peer in errored_peers.into_iter() {
-						node_table.note_failure(&peer.address);
-						connections.remove(peer.id);
-					}
-				},
-				MessagePoll::OnlyErrors { errored_peers } => {
-					let mut node_table = node_table.write();
-					for peer in errored_peers.into_iter() {
-						node_table.note_failure(&peer.address);
-						connections.remove(peer.id);
-					}
-				},
-				MessagePoll::WaitingForPeers => {
-					// do nothing
-				},
-			}
-			Ok(())
-		}).then(|_| {
-			finished(())
-		});
-		let pool_work = self.pool.spawn(polling);
-		self.event_loop_handle.spawn(pool_work);
-	}
-
+	/*
 	pub fn broadcast<T>(&self, payload: T) where T: Payload {
 		let channels = self.connections.channels();
 		for (_id, channel) in channels.into_iter() {
@@ -155,4 +191,5 @@ impl P2P {
 		});
 		self.event_loop_handle.spawn(pool_work);
 	}
+	*/
 }
