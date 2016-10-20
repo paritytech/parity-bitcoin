@@ -779,8 +779,8 @@ mod tests {
 	fn test_memory_pool_insert_parent_after_child() {
 		let chain = &mut ChainBuilder::new();
 		TransactionBuilder::with_output(100).store(chain)
-			.as_input(0).add_output(100).store(chain)
-			.as_input(0).add_output(100).store(chain);
+			.to_input(0).add_output(100).store(chain)
+			.to_input(0).add_output(100).store(chain);
 
 		// insert child, then parent
 		let mut pool = MemoryPool::new();
@@ -800,8 +800,8 @@ mod tests {
 	fn test_memory_pool_insert_parent_before_child() {
 		let chain = &mut ChainBuilder::new();
 		TransactionBuilder::with_output(100).store(chain)
-			.as_input(0).add_output(100).store(chain)
-			.as_input(0).add_output(100).store(chain);
+			.to_input(0).add_output(100).store(chain)
+			.to_input(0).add_output(100).store(chain);
 
 		// insert parent, then child
 		let mut pool = to_memory_pool(chain);
@@ -818,8 +818,8 @@ mod tests {
 	fn test_memory_pool_insert_child_after_remove_by_hash() {
 		let chain = &mut ChainBuilder::new();
 		TransactionBuilder::with_output(100).store(chain)
-			.as_input(0).add_output(100).store(chain)
-			.as_input(0).add_output(100).store(chain);
+			.to_input(0).add_output(100).store(chain)
+			.to_input(0).add_output(100).store(chain);
 
 		// insert parent, then child
 		let mut pool = to_memory_pool(chain);
@@ -841,9 +841,9 @@ mod tests {
 	fn test_memory_pool_get_information() {
 		let chain = &mut ChainBuilder::new();
 		TransactionBuilder::with_output(10).store(chain)
-			.as_input(0).add_output(20).store(chain)
-			.as_input(0).add_output(30).store(chain)
-			.as_input(0).add_output(40).store(chain);
+			.to_input(0).add_output(20).store(chain)
+			.to_input(0).add_output(30).store(chain)
+			.to_input(0).add_output(40).store(chain);
 		let mut pool = MemoryPool::new();
 
 		let mut transactions_size = 0;
@@ -924,10 +924,10 @@ mod tests {
 		let chain = &mut ChainBuilder::new();
 		// all transactions of same size
 		TransactionBuilder::with_default_input(0).set_output(30).store(chain)	// transaction0
-			.as_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
+			.to_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
 			.set_default_input(0).set_output(35).store(chain)					// transaction2
-			.as_input(0).set_output(10).store(chain)							// transaction2 -> transaction3
-			.as_input(0).set_output(100).store(chain);							// transaction2 -> transaction3 -> transaction4
+			.to_input(0).set_output(10).store(chain)							// transaction2 -> transaction3
+			.to_input(0).set_output(100).store(chain);							// transaction2 -> transaction3 -> transaction4
 
 		let mut pool = MemoryPool::new();
 
@@ -979,8 +979,8 @@ mod tests {
 		let chain = &mut ChainBuilder::new();
 		// all transactions of same size
 		TransactionBuilder::with_default_input(0).set_output(17).store(chain)	// transaction0
-			.as_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
-			.as_input(0).set_output(7).store(chain)								// transaction0 -> transaction1 -> transaction2
+			.to_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
+			.to_input(0).set_output(7).store(chain)								// transaction0 -> transaction1 -> transaction2
 			.set_default_input(0).set_output(20).store(chain);					// transaction3
 
 		let mut pool = MemoryPool::new();
