@@ -5,6 +5,7 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 
 [dependencies]
 rustc-serialize = "0.3"
+heapsize = "0.3"
 bitcrypto = { path = "../crypto" }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }

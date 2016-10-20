@@ -6,6 +6,14 @@ pub struct Ping {
 	pub nonce: u64,
 }
 
+impl Ping {
+	pub fn new(nonce: u64) -> Self {
+		Ping {
+			nonce: nonce,
+		}
+	}
+}
+
 impl Payload for Ping {
 	fn version() -> u32 {
 		0

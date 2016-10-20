@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use message::common::{Magic, ServiceFlags, NetAddress};
+use message::common::{Magic, Services, NetAddress};
 use message::types::version::{Version, V0, V106, V70001};
 use util::time::{Time, RealTime};
 use util::nonce::{NonceGenerator, RandomNonce};
@@ -9,7 +9,7 @@ use VERSION;
 pub struct Config {
 	pub magic: Magic,
 	pub local_address: SocketAddr,
-	pub services: ServiceFlags,
+	pub services: Services,
 	pub user_agent: String,
 	pub start_height: i32,
 	pub relay: bool,

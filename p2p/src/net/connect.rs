@@ -57,6 +57,7 @@ impl Future for Connect {
 					stream: stream.into(),
 					version: result.negotiated_version,
 					magic: self.magic,
+					services: result.version.services(),
 					address: self.address,
 				};
 				(ConnectState::Connected, Async::Ready(Ok(connection)))

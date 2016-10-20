@@ -3,11 +3,11 @@ use ser::{
 	Stream, Serializable,
 	Reader, Deserializable, Error as ReaderError, deserialize,
 };
-use common::{Port, IpAddress, ServiceFlags};
+use common::{Port, IpAddress, Services};
 
 #[derive(Debug, PartialEq)]
 pub struct NetAddress {
-	pub services: ServiceFlags,
+	pub services: Services,
 	pub address: IpAddress,
 	pub port: Port,
 }
@@ -42,7 +42,7 @@ impl From<&'static str> for NetAddress {
 #[cfg(test)]
 mod tests {
 	use ser::{serialize, deserialize};
-	use common::ServiceFlags;
+	use common::Services;
 	use super::NetAddress;
 
 	#[test]
@@ -54,7 +54,7 @@ mod tests {
 		].into();
 
 		let address = NetAddress {
-			services: ServiceFlags::default().with_network(true),
+			services: Services::default().with_network(true),
 			address: "::ffff:a00:1".into(),
 			port: 8333.into(),
 		};
@@ -71,7 +71,7 @@ mod tests {
 		];
 
 		let expected = NetAddress {
-			services: ServiceFlags::default().with_network(true),
+			services: Services::default().with_network(true),
 			address: "::ffff:a00:1".into(),
 			port: 8333.into(),
 		};
@@ -82,7 +82,7 @@ mod tests {
 	#[test]
 	fn test_net_address_from_static_str() {
 		let expected = NetAddress {
-			services: ServiceFlags::default().with_network(true),
+			services: Services::default().with_network(true),
 			address: "::ffff:a00:1".into(),
 			port: 8333.into(),
 

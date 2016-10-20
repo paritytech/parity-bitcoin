@@ -1,35 +1,54 @@
-use std::io;
-use futures::Poll;
-use futures::stream::Stream;
-use parking_lot::Mutex;
-use bytes::Bytes;
-use message::{MessageResult, Payload, Command};
+use message::{Payload, Magic, Message};
 use net::Connection;
-use io::{read_message_stream, ReadMessageStream, SharedTcpStream, WriteMessage};
+use session::Session;
+use io::{SharedTcpStream, WriteMessage, write_message, read_any_message, ReadAnyMessage};
+use {PeerId, PeerInfo};
 
 pub struct Channel {
-	connection: Connection,
-	message_stream: Mutex<ReadMessageStream<SharedTcpStream>>,
+	version: u32,
+	magic: Magic,
+	peer_info: PeerInfo,
+	session: Session,
+	stream: SharedTcpStream,
 }
 
 impl Channel {
-	pub fn new(connection: Connection) -> Self {
-		let stream = read_message_stream(connection.stream.clone(), connection.magic);
+	pub fn new(connection: Connection, peer_id: PeerId, session: Session) -> Self {
 		Channel {
-			connection: connection,
-			message_stream: Mutex::new(stream),
+			version: connection.version,
+			magic: connection.magic,
+			peer_info: PeerInfo {
+				address: connection.address,
+				id: peer_id,
+			},
+			session: session,
+			stream: connection.stream,
 		}
 	}
 
 	pub fn write_message<T>(&self, payload: &T) -> WriteMessage<T, SharedTcpStream> where T: Payload {
-		self.connection.write_message(payload)
+		// TODO: some tracing here
+		let message = Message::new(self.magic, self.version, payload).expect("failed to create outgoing message");
+		write_message(self.stream.clone(), message)
 	}
 
-	pub fn poll_message(&self) -> Poll<Option<(MessageResult<(Command, Bytes)>)>, io::Error> {
-		self.message_stream.lock().poll()
+	pub fn read_message(&self) -> ReadAnyMessage<SharedTcpStream> {
+		read_any_message(self.stream.clone(), self.magic)
+	}
+
+	pub fn shutdown(&self) {
+		self.stream.shutdown();
 	}
 
 	pub fn version(&self) -> u32 {
-		self.connection.version
+		self.version
+	}
+
+	pub fn peer_info(&self) -> PeerInfo {
+		self.peer_info
+	}
+
+	pub fn session(&self) -> &Session {
+		&self.session
 	}
 }

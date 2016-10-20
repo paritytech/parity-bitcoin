@@ -29,10 +29,6 @@ impl PayloadStream {
 		t.serialize_payload(&mut self.stream, self.version)
 	}
 
-	pub fn raw_stream(&mut self) -> &mut Stream {
-		&mut self.stream
-	}
-
 	pub fn out(self) -> Bytes {
 		self.stream.out()
 	}
