@@ -1,6 +1,6 @@
 use std::{fmt, ops, cmp, str};
-use std::hash::{Hash, Hasher};
 use hex::{ToHex, FromHex, FromHexError};
+use std::hash::{Hash, Hasher};
 
 macro_rules! impl_hash {
 	($name: ident, $size: expr) => {
@@ -97,8 +97,6 @@ macro_rules! impl_hash {
 			}
 		}
 
-		impl Eq for $name {}
-
 		impl cmp::PartialEq for $name {
 			fn eq(&self, other: &Self) -> bool {
 				let self_ref: &[u8] = &self.0;
@@ -113,6 +111,8 @@ macro_rules! impl_hash {
 				state.finish();
 			}
 		}
+
+		impl Eq for $name { }
 
 		impl $name {
 			pub fn reversed(&self) -> Self {

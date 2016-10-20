@@ -12,4 +12,5 @@ cargo test\
 	-p primitives\
 	-p script\
 	-p serialization\
-	-p pbtc
+	-p pbtc\
+	-p verification
