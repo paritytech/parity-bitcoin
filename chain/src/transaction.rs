@@ -2,6 +2,7 @@
 //! Bitcoin trainsaction.
 //! https://en.bitcoin.it/wiki/Protocol_documentation#tx
 
+use heapsize::HeapSizeOf;
 use hex::FromHex;
 use bytes::Bytes;
 use ser::{
@@ -105,6 +106,12 @@ impl Deserializable for TransactionInput {
 	}
 }
 
+impl HeapSizeOf for TransactionInput {
+	fn heap_size_of_children(&self) -> usize {
+		self.script_sig.heap_size_of_children()
+	}
+}
+
 impl TransactionInput {
 	pub fn previous_output(&self) -> &OutPoint {
 		&self.previous_output
@@ -156,6 +163,12 @@ impl Default for TransactionOutput {
 			value: 0xffffffffffffffffu64,
 			script_pubkey: Bytes::default(),
 		}
+	}
+}
+
+impl HeapSizeOf for TransactionOutput {
+	fn heap_size_of_children(&self) -> usize {
+		self.script_pubkey.heap_size_of_children()
 	}
 }
 
@@ -211,6 +224,12 @@ impl Deserializable for Transaction {
 impl From<&'static str> for Transaction {
 	fn from(s: &'static str) -> Self {
 		deserialize(&s.from_hex().unwrap()).unwrap()
+	}
+}
+
+impl HeapSizeOf for Transaction {
+	fn heap_size_of_children(&self) -> usize {
+		self.inputs.heap_size_of_children() + self.outputs.heap_size_of_children()
 	}
 }
 

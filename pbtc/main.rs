@@ -2,6 +2,7 @@
 
 #[macro_use]
 extern crate clap;
+extern crate env_logger;
 
 extern crate keys;
 extern crate script;
@@ -14,6 +15,7 @@ use std::net::SocketAddr;
 use p2p::{P2P, event_loop, forever, net};
 
 fn main() {
+	env_logger::init().unwrap();
 	match run() {
 		Err(err) => println!("{}", err),
 		Ok(_) => (),
@@ -28,6 +30,11 @@ fn run() -> Result<(), String> {
 	let mut el = event_loop();
 
 	let p2p_cfg = p2p::Config {
+		threads: 4,
+		protocol_minimum: 70001,
+		protocol_maximum: 70017,
+		inbound_connections: 10,
+		outbound_connections: 10,
 		connection: net::Config {
 			magic: cfg.magic,
 			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
@@ -36,8 +43,8 @@ fn run() -> Result<(), String> {
 			start_height: 0,
 			relay: false,
 		},
-		seednodes: cfg.seednode.map_or_else(|| vec![], |x| vec![x]),
-		limited_connect: cfg.connect.map_or(None, |x| Some(vec![x])),
+		peers: cfg.connect.map_or_else(|| vec![], |x| vec![x]),
+		seeds: cfg.seednode.map_or_else(|| vec![], |x| vec![x]),
 	};
 
 	let p2p = P2P::new(p2p_cfg, el.handle());
