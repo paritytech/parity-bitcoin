@@ -47,4 +47,8 @@ impl Channel {
 	pub fn peer_info(&self) -> PeerInfo {
 		self.peer_info
 	}
+
+	pub fn session(&self) -> &Session {
+		&self.session
+	}
 }

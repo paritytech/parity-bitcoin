@@ -1,5 +1,10 @@
 use std::sync::Arc;
 use parking_lot::Mutex;
+use tokio_core::io::IoFuture;
+use bytes::Bytes;
+use message::Command;
+use p2p::Context;
+use net::Channel;
 use protocol::{Protocol, PingProtocol};
 
 pub struct Session {
@@ -23,9 +28,12 @@ impl Session {
 		}
 	}
 
-	pub fn protocols(&self) -> Vec<Arc<Mutex<Box<Protocol>>>> {
-		self.protocols.clone()
+	pub fn initialize(&self, _context: Arc<Context>, _channel: Arc<Channel>) -> IoFuture<()> {
+		unimplemented!();
 	}
 
+	pub fn on_message(&self, _context: Arc<Context>, _channel: Arc<Channel>, _command: Command, _payload: Bytes) -> IoFuture<()> {
+		unimplemented!();
+	}
 }
 

@@ -4,7 +4,9 @@ use parking_lot::RwLock;
 use futures::{Future, finished, failed, BoxFuture};
 use futures::stream::Stream;
 use futures_cpupool::CpuPool;
+use tokio_core::io::IoFuture;
 use tokio_core::reactor::Handle;
+use message::Payload;
 use session::Session;
 use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
@@ -35,7 +37,11 @@ impl Context {
 					context.node_table.write().insert(connection.address, connection.services);
 					let session = Session::new();
 					let channel = context.connections.store(connection, session);
-					Context::on_message(context.clone(), channel)
+
+					// initialize session and then start reading messages
+					channel.session().initialize(context.clone(), channel.clone())
+						.and_then(move |_| Context::on_message(context, channel))
+						.boxed()
 				},
 				Ok(Err(err)) => {
 					// protocol error
@@ -65,8 +71,12 @@ impl Context {
 					context.node_table.write().insert(connection.address, connection.services);
 					let session = Session::new();
 					let channel = context.connections.store(connection, session);
-					// read messages
-					Context::on_message(context.clone(), channel)
+
+					// initialize session and then start reading messages
+					let cloned_context = context.clone();
+					channel.session().initialize(context.clone(), channel.clone())
+						.and_then(|_| Context::on_message(cloned_context, channel))
+						.boxed()
 				},
 				Ok(Err(err)) => {
 					// protocol error
@@ -88,11 +98,13 @@ impl Context {
 	pub fn on_message(context: Arc<Context>, channel: Arc<Channel>) -> BoxedMessageFuture {
 		channel.read_message().then(move |result| {
 			match result {
-				Ok(Ok((command, _bytes))) => {
+				Ok(Ok((command, payload))) => {
 					// successful read
 					trace!("Received {} message from {}", command, channel.peer_info().address);
-					// read next messsage
-					Context::on_message(context, channel)
+					// handle message and read the next one
+					channel.session().on_message(context.clone(), channel.clone(), command, payload)
+						.and_then(move |_| Context::on_message(context, channel))
+						.boxed()
 				},
 				Ok(Err(err)) => {
 					// protocol error
@@ -108,10 +120,25 @@ impl Context {
 		}).boxed()
 	}
 
-	pub fn send(_context: &Arc<Context>) {
+	pub fn send<T>(context: Arc<Context>, channel: Arc<Channel>, payload: &T) -> IoFuture<()> where T: Payload {
+		trace!("Sending {} message to {}", T::command(), channel.peer_info().address);
+		channel.write_message(payload).then(move |result| {
+			match result {
+				Ok(_) => {
+					// successful send
+					trace!("Sent {} message to {}", T::command(), channel.peer_info().address);
+					finished(()).boxed()
+				},
+				Err(err) => {
+					// network error
+					context.close_connection(channel.peer_info());
+					failed(err).boxed()
+				},
+			}
+		}).boxed()
 	}
 
-	fn close_connection(&self, peer_info: PeerInfo) {
+	pub fn close_connection(&self, peer_info: PeerInfo) {
 		if let Some(channel) = self.connections.remove(peer_info.id) {
 			trace!("Disconnecting from {}", peer_info.address);
 			channel.shutdown();
