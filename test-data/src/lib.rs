@@ -8,7 +8,7 @@ use chain::Block;
 
 pub mod chain_builder;
 
-pub use primitives::{hash};
+
 
 pub use chain_builder::{ChainBuilder, TransactionBuilder};
 

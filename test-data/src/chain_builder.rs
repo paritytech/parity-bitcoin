@@ -1,4 +1,4 @@
-use hash::H256;
+use primitives::hash::H256;
 use ser::Serializable;
 use primitives::bytes::Bytes;
 use chain::{Transaction, TransactionInput, TransactionOutput, OutPoint};
