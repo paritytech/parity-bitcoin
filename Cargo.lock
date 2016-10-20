@@ -264,6 +264,7 @@ dependencies = [
  "heapsize 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
  "serialization 0.1.0",
+ "test-data 0.1.0",
 ]
 
 [[package]]
@@ -534,6 +535,8 @@ name = "test-data"
 version = "0.1.0"
 dependencies = [
  "chain 0.1.0",
+ "primitives 0.1.0",
+ "serialization 0.1.0",
 ]
 
 [[package]]
