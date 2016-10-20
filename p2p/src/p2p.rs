@@ -9,9 +9,10 @@ use session::Session;
 use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
 use util::NodeTable;
-use Config;
+use {Config, PeerInfo};
 
 pub type BoxedMessageFuture = BoxFuture<<ReadAnyMessage<SharedTcpStream> as Future>::Item, <ReadAnyMessage<SharedTcpStream> as Future>::Error>;
+pub type BoxedEmptyFuture = BoxFuture<(), ()>;
 
 /// Network context.
 #[derive(Default)]
@@ -23,50 +24,53 @@ pub struct Context {
 }
 
 impl Context {
-	pub fn connect(context: &Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxFuture<(), ()> {
+	pub fn connect(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture {
 		trace!("Trying to connect to: {}", socket);
-		let context = context.clone();
 		let connection = connect(&socket, handle, config);
 		connection.then(move |result| {
 			match result {
 				Ok(Ok(connection)) => {
 					// successfull hanshake
 					trace!("Connected to {}", connection.address);
-					let session = Session::new();
 					context.node_table.write().insert(connection.address, connection.services);
-					context.connections.store(connection, session);
-					Context::on_message(context.clone(), { unimplemented!() })
+					let session = Session::new();
+					let channel = context.connections.store(connection, session);
+					Context::on_message(context.clone(), channel)
 				},
 				Ok(Err(err)) => {
 					// protocol error
+					trace!("Handshake with {} failed", socket);
+					// TODO: close socket
 					finished(Err(err)).boxed()
 				},
 				Err(err) => {
 					// network error
+					trace!("Unable to connect to {}", socket);
 					failed(err).boxed()
 				}
 			}
-		}).then(|_| {
-			finished(())
-		}).boxed()
+		})
+		.then(|_| finished(()))
+		.boxed()
 	}
 
-	pub fn listen(context: &Arc<Context>, handle: &Handle, config: NetConfig) -> Result<BoxFuture<(), ()>, io::Error> {
+	pub fn listen(context: Arc<Context>, handle: &Handle, config: NetConfig) -> Result<BoxedEmptyFuture, io::Error> {
 		trace!("Starting tcp server");
-		let context = context.clone();
 		let listen = try!(listen(&handle, config));
 		let server = listen.then(move |result| {
 			match result {
 				Ok(Ok(connection)) => {
 					// successfull hanshake
 					trace!("Accepted connection from {}", connection.address);
-					let session = Session::new();
 					context.node_table.write().insert(connection.address, connection.services);
-					context.connections.store(connection, session);
-					Context::on_message(context.clone(), { unimplemented!() })
+					let session = Session::new();
+					let channel = context.connections.store(connection, session);
+					// read messages
+					Context::on_message(context.clone(), channel)
 				},
 				Ok(Err(err)) => {
 					// protocol error
+					// TODO: close socket
 					finished(Err(err)).boxed()
 				},
 				Err(err) => {
@@ -74,11 +78,10 @@ impl Context {
 					failed(err).boxed()
 				}
 			}
-		}).for_each(|_| {
-			Ok(())
-		}).then(|_| {
-			finished(())
-		}).boxed();
+		})
+		.for_each(|_| Ok(()))
+		.then(|_| finished(()))
+		.boxed();
 		Ok(server)
 	}
 
@@ -93,14 +96,12 @@ impl Context {
 				},
 				Ok(Err(err)) => {
 					// protocol error
-					context.connections.remove(channel.peer_info().id);
-					context.node_table.write().note_failure(&channel.peer_info().address);
+					context.close_connection(channel.peer_info());
 					finished(Err(err)).boxed()
 				},
 				Err(err) => {
 					// network error
-					context.connections.remove(channel.peer_info().id);
-					context.node_table.write().note_failure(&channel.peer_info().address);
+					context.close_connection(channel.peer_info());
 					failed(err).boxed()
 				}
 			}
@@ -108,6 +109,14 @@ impl Context {
 	}
 
 	pub fn send(_context: &Arc<Context>) {
+	}
+
+	fn close_connection(&self, peer_info: PeerInfo) {
+		if let Some(channel) = self.connections.remove(peer_info.id) {
+			trace!("Disconnecting from {}", peer_info.address);
+			channel.shutdown();
+			self.node_table.write().note_failure(&peer_info.address);
+		}
 	}
 }
 
@@ -145,13 +154,13 @@ impl P2P {
 
 	pub fn connect(&self, ip: net::IpAddr) {
 		let socket = net::SocketAddr::new(ip, self.config.connection.magic.port());
-		let connection = Context::connect(&self.context, socket, &self.event_loop_handle, &self.config.connection);
+		let connection = Context::connect(self.context.clone(), socket, &self.event_loop_handle, &self.config.connection);
 		let pool_work = self.pool.spawn(connection);
 		self.event_loop_handle.spawn(pool_work);
 	}
 
 	fn listen(&self) -> Result<(), io::Error> {
-		let server = try!(Context::listen(&self.context, &self.event_loop_handle, self.config.connection.clone()));
+		let server = try!(Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone()));
 		let pool_work = self.pool.spawn(server);
 		self.event_loop_handle.spawn(pool_work);
 		Ok(())

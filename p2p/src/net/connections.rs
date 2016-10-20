@@ -30,17 +30,16 @@ impl Connections {
 	}
 
 	/// Stores new channel.
-	pub fn store(&self, connection: Connection, session: Session) {
+	/// Returnes a shared pointer to it.
+	pub fn store(&self, connection: Connection, session: Session) -> Arc<Channel> {
 		let id = self.peer_counter.fetch_add(1, Ordering::AcqRel);
 		let channel = Arc::new(Channel::new(connection, id, session));
-		self.channels.write().insert(id, channel);
+		self.channels.write().insert(id, channel.clone());
+		channel
 	}
 
 	/// Removes channel with given id.
-	pub fn remove(&self, id: PeerId) {
-		if let Some(channel) = self.channels.write().remove(&id) {
-			trace!("Disconnecting from {}", channel.peer_info().address);
-			channel.shutdown();
-		}
+	pub fn remove(&self, id: PeerId) -> Option<Arc<Channel>> {
+		self.channels.write().remove(&id)
 	}
 }
