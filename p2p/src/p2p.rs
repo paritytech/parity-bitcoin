@@ -13,7 +13,7 @@ use protocol::Direction;
 use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
 use util::NodeTable;
-use {Config, PeerInfo};
+use {Config, PeerInfo, PeerId};
 
 pub type BoxedMessageFuture = BoxFuture<<ReadAnyMessage<SharedTcpStream> as Future>::Item, <ReadAnyMessage<SharedTcpStream> as Future>::Error>;
 pub type BoxedEmptyFuture = BoxFuture<(), ()>;
@@ -138,6 +138,17 @@ impl Context {
 				},
 			}
 		}).boxed()
+	}
+
+	pub fn send_raw_from_peer(context: Arc<Context>, peer: PeerId, command: Command, payload: &Bytes) -> IoFuture<()> {
+		match context.connections.channel(peer) {
+			Some(channel) => Context::send_raw(context, channel, command, payload),
+			None => {
+				// peer no longer exists.
+				// TODO: should we return error here?
+				finished(()).boxed()
+			}
+		}
 	}
 
 	pub fn send<T>(_context: Arc<Context>, channel: Arc<Channel>, payload: &T) -> IoFuture<()> where T: Payload {

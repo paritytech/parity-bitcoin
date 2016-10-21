@@ -2,12 +2,18 @@
 #![allow(unused_variables)]
 
 use std::sync::{Arc, Mutex};
+use futures::{Future, finished};
+use futures_cpupool::CpuPool;
+use tokio_core::io::IoFuture;
+use tokio_core::reactor::Remote;
 use chain::{Block, Transaction};
 use message::types;
 use message::Error;
 use bytes::Bytes;
-use message::common::Command;
+use message::{Command, Payload, serialize_payload};
 use protocol::{Protocol, ProtocolAction};
+use p2p::Context;
+use PeerId;
 
 pub type InboundSyncConnectionRef = Arc<Mutex<Box<InboundSyncConnection>>>;
 pub type OutboundSyncConnectionRef = Arc<Mutex<Box<OutboundSyncConnection>>>;
@@ -154,18 +160,48 @@ pub trait OutboundSyncConnection : Send + Sync {
 }
 
 struct OutboundSync {
+	context: Arc<Context>,
+	peer: PeerId,
+	version: u32,
+	pool: CpuPool,
+	remote: Remote,
 }
 
 impl OutboundSync {
-	pub fn new() -> OutboundSync {
+	pub fn new(context: Arc<Context>, peer: PeerId) -> OutboundSync {
 		OutboundSync {
+			context: context,
+			peer: peer,
+			// TODO: use real version, pool and remote!
+			version: 0,
+			pool: { unimplemented!(); },
+			remote: { unimplemented!(); }
 		}
 	}
+
+	pub fn schedule(&self, future: IoFuture<()>) {
+		let pool_work = self.pool.spawn(future);
+		// TODO: this looks horrible! try to improve it
+		self.remote.spawn(move |handle| {
+			handle.spawn(pool_work.then(|_| finished(())));
+			Ok(())
+		});
+	}
+
+	pub fn boxed(self) -> Box<OutboundSyncConnection> {
+		Box::new(self)
+	}
+}
+
+fn command<T>(_: &T) -> Command where T: Payload {
+	T::command().into()
 }
 
 impl OutboundSyncConnection for OutboundSync {
 	fn send_iventory(&mut self, message: &types::Inv) {
-		unimplemented!()
+		let serialized = serialize_payload(message, self.version).expect("serialization error");
+		let send = Context::send_raw_from_peer(self.context.clone(), self.peer, command(message), &serialized);
+		self.schedule(send);
 	}
 
 	fn send_getdata(&mut self, message: &types::GetData) {
@@ -239,17 +275,16 @@ impl OutboundSyncConnection for OutboundSync {
 
 pub struct SyncProtocol {
 	//inbound_connection: InboundSyncConnectionRef,
-	//outbound_connection: OutboundSyncConnectionRef,
+	outbound_connection: OutboundSyncConnectionRef,
 }
 
 impl SyncProtocol {
-	// TODO: pass session/channel to allow sending messages at any time
-	pub fn new() -> Self {
-		// let outbound_connection = ... // TODO: create outbound connection for given session/channel
+	pub fn new(context: Arc<Context>, peer: PeerId) -> Self {
+		let outbound_connection = Arc::new(Mutex::new(OutboundSync::new(context, peer).boxed()));
 		// let inbound_connection = local_sync_node.start_sync_session(outbound_connection); // TODO: create inbound connection using LocalSyncNode::start_sync_session
 		SyncProtocol {
 		//	inbound_connection: inbound_connection,
-		//	outbound_connection: OutboundSync::new(),
+			outbound_connection: outbound_connection,
 		}
 	}
 }

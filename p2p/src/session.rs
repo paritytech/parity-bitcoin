@@ -33,7 +33,6 @@ impl Session {
 		let futures = self.protocols.lock()
 			.iter_mut()
 			.map(|protocol| {
-				// TODO: use real direction and version
 				match protocol.initialize(direction, channel.version()) {
 					Ok(ProtocolAction::None) => {
 						finished(()).boxed()
@@ -62,7 +61,6 @@ impl Session {
 		let futures = self.protocols.lock()
 			.iter()
 			.map(|protocol| {
-				// TODO: use real version
 				match protocol.on_message(&command, &payload, channel.version()) {
 					Ok(ProtocolAction::None) => {
 						finished(()).boxed()

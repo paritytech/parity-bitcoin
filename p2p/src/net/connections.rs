@@ -19,6 +19,11 @@ impl Connections {
 		Connections::default()
 	}
 
+	/// Returns channel with given peer id.
+	pub fn channel(&self, id: PeerId) -> Option<Arc<Channel>> {
+		self.channels.read().get(&id).cloned()
+	}
+
 	/// Returns safe (nonblocking) copy of channels.
 	pub fn channels(&self) -> HashMap<PeerId, Arc<Channel>> {
 		self.channels.read().clone()
