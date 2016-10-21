@@ -8,8 +8,6 @@ use chain::Block;
 
 pub mod chain_builder;
 
-
-
 pub use chain_builder::{ChainBuilder, TransactionBuilder};
 
 pub fn block1() -> Block {
