@@ -259,6 +259,17 @@ impl SyncProtocol {
 impl Protocol for SyncProtocol {
 	fn on_message(&self, command: &Command, payload: &Bytes, version: u32) -> Result<ProtocolAction, Error> {
 		// TODO: pass message to inbound_connection + convert response to ProtocolAction/Error
+		/*
+		if command == &Inv::command().into() {
+			let inventory: Inv = try!(deserialize_payload(payload, version));
+			match self.inbound_connection(&inventory) {
+				Reject(reject) => Ok(ProtocolAction::Reply(try!(serialize_payload(&reject, version)))),
+				GetData(getdata) => Ok(ProtocolAction::Reply(try!(serialize_payload(&getdata, version)))),
+			}
+		} else {
+			Ok(ProtocolAction::None)
+		}
+		*/
 		unimplemented!()
 	}
 }
