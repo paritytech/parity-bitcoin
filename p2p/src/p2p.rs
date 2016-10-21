@@ -5,7 +5,7 @@ use futures::{Future, finished, failed, BoxFuture};
 use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::io::IoFuture;
-use tokio_core::reactor::Handle;
+use tokio_core::reactor::{Handle, Remote};
 use bytes::Bytes;
 use message::{Payload, Command};
 use session::Session;
@@ -19,15 +19,35 @@ pub type BoxedMessageFuture = BoxFuture<<ReadAnyMessage<SharedTcpStream> as Futu
 pub type BoxedEmptyFuture = BoxFuture<(), ()>;
 
 /// Network context.
-#[derive(Default)]
 pub struct Context {
 	/// Connections.
 	connections: Connections,
 	/// Node Table.
 	node_table: RwLock<NodeTable>,
+	/// Thread pool handle.
+	pool: CpuPool,
+	/// Remote event loop handle.
+	remote: Remote,
 }
 
 impl Context {
+	pub fn new(pool_handle: CpuPool, remote: Remote) -> Self {
+		Context {
+			connections: Default::default(),
+			node_table: Default::default(),
+			pool: pool_handle,
+			remote: remote,
+		}
+	}
+
+	pub fn spawn<F>(&self, f: F) where F: Future + Send + 'static, F::Item: Send + 'static, F::Error: Send + 'static {
+		let pool_work = self.pool.spawn(f);
+		self.remote.spawn(move |handle| {
+			handle.spawn(pool_work.then(|_| finished(())));
+			Ok(())
+		})
+	}
+
 	pub fn connect(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture {
 		trace!("Trying to connect to: {}", socket);
 		let connection = connect(&socket, handle, config);
@@ -197,7 +217,7 @@ impl P2P {
 			event_loop_handle: handle.clone(),
 			pool: pool.clone(),
 			config: config,
-			context: Arc::default(),
+			context: Arc::new(Context::new(pool, handle.remote().clone())),
 		}
 	}
 

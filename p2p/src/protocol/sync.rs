@@ -2,10 +2,6 @@
 #![allow(unused_variables)]
 
 use std::sync::{Arc, Mutex};
-use futures::{Future, finished};
-use futures_cpupool::CpuPool;
-use tokio_core::io::IoFuture;
-use tokio_core::reactor::Remote;
 use chain::{Block, Transaction};
 use message::types;
 use message::Error;
@@ -162,9 +158,6 @@ pub trait OutboundSyncConnection : Send + Sync {
 struct OutboundSync {
 	context: Arc<Context>,
 	peer: PeerId,
-	version: u32,
-	pool: CpuPool,
-	remote: Remote,
 }
 
 impl OutboundSync {
@@ -172,20 +165,7 @@ impl OutboundSync {
 		OutboundSync {
 			context: context,
 			peer: peer,
-			// TODO: use real version, pool and remote!
-			version: 0,
-			pool: { unimplemented!(); },
-			remote: { unimplemented!(); }
 		}
-	}
-
-	pub fn schedule(&self, future: IoFuture<()>) {
-		let pool_work = self.pool.spawn(future);
-		// TODO: this looks horrible! try to improve it
-		self.remote.spawn(move |handle| {
-			handle.spawn(pool_work.then(|_| finished(())));
-			Ok(())
-		});
 	}
 
 	pub fn boxed(self) -> Box<OutboundSyncConnection> {
@@ -196,7 +176,7 @@ impl OutboundSync {
 impl OutboundSyncConnection for OutboundSync {
 	fn send_iventory(&mut self, message: &types::Inv) {
 		let send = Context::send_to_peer(self.context.clone(), self.peer, message);
-		self.schedule(send);
+		self.context.spawn(send);
 	}
 
 	fn send_getdata(&mut self, message: &types::GetData) {
