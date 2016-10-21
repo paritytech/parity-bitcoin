@@ -31,7 +31,7 @@ pub const SEQUENCE_LOCKTIME_TYPE_FLAG: u32 = (1 << 22);
 pub const SEQUENCE_LOCKTIME_MASK: u32 = 0x0000ffff;
 
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct OutPoint {
 	pub hash: H256,
 	pub index: u32,
@@ -71,7 +71,7 @@ impl OutPoint {
 	}
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default, Clone)]
 pub struct TransactionInput {
 	pub previous_output: OutPoint,
 	pub script_sig: Bytes,
@@ -182,7 +182,7 @@ impl TransactionOutput {
 	}
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default, Clone)]
 pub struct Transaction {
 	pub version: i32,
 	pub inputs: Vec<TransactionInput>,

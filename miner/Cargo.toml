@@ -8,3 +8,4 @@ heapsize = "0.3"
 chain = { path = "../chain" }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
+test-data = { path = "../test-data" }

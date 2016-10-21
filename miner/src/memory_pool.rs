@@ -685,46 +685,16 @@ impl HeapSizeOf for MemoryPool {
 
 #[cfg(test)]
 mod tests {
-	use std::cmp::Ordering;
-	use hash::H256;
 	use chain::Transaction;
 	use heapsize::HeapSizeOf;
 	use super::{MemoryPool, OrderingStrategy};
+	use test_data::{ChainBuilder, TransactionBuilder};
 
-	// output_value = 898126612, size = 225, miner_score ~ 3991673.83
-	const RAW_TRANSACTION1: &'static str = "01000000017e4e1bfa4cc16a46593390b9f627db9a3b7c3b1802daa826fc0c477c067ea4f1000000006a47304402203cca1b01b307d3dba3d4f819ef4e9ccf839fa7ef901fc39d2b1d6e33c159a0b0022009d135bd47b8465a69f4db7145af34e0f063e926d95d9c21fb4e8cbc2052838c0121039c01d413f0e296cb766b408c528d3526e75a0f63cfc44c1147160613a12e6cb7feffffff02c8f27535000000001976a914e54788b730b91eb9b29917fa10ddbc97996a987988ac4c601200000000001976a91421e8ed0ddc9a365c10fa3130c91c36237a45848888aca7a00600";
-	// output_value = 423675406, size = 225, miner_score ~ 1883001.80
-	const RAW_TRANSACTION2: &'static str = "0100000001efaf295b354d8063336a03652664e31b63666f6fbe51b377ad3bdd7b65678a43000000006a47304402206100084828cfc2b71881f1a99447658d5844043f69c1f9bd6c95cb0e11197d4002207c8e23b6233e7317fe0db3e12c8a4291efe671e02c4bbeeb3534e208bb9a3a75012103e091c9c970427a709646990ca16d4d418efc9e5c46ae794c3d09023a7e0e1c57feffffff0226662e19000000001976a914ffad82403bc2a1dd3789b7e653d352515ae86b7288ace85f1200000000001976a914c2f8a6513ebcf6f61edca10199442e33108d540988aca7a00600";
-	// output_value = 668388826, size = 225, miner_score ~ 2970617.00
-	const RAW_TRANSACTION3: &'static str = "01000000012eee0922c7385e6a11d4f92da65e16b205b2cdfe294c3140c3bc0427f6c11794000000006a47304402207aab34b1c9bb5464c3c1ddf9fee042d8755b81ed1e8c35b895ee2d7da17a23ac02205dfd9c8d14f44951c9e8c3a70f8820a6b113046db1ca25d52a31a4b68d62e07901210306a47c3c0ce5ad78616ad0695113ee4d7a848155fd9f4a1eb7aeed756e174211feffffff024c601200000000001976a914ae829d4d1a8945dc165a57f1149b4656e48c161988ac8e6dc427000000001976a9146c4f1f52adec5211f456acc12917fe902949b08088aca7a00600";
-	// output_value = 256505044, size = 226, miner_score ~ 1134978.07
-	const RAW_TRANSACTION4: &'static str = "01000000012969032b2a920c03fa71eeea5250d0f6259b130a15ed695f79d957e47b9b2d8b000000006b483045022100b34c8a714b295b84686211b37daaa65ef79cf0ce1dc7d7a4e133a5b08a308f6f02201abca9e08bddb56e205bd1c5e689419926031ec955d8c89671a16a7076dce0ec0121020db95d68c760d1e0a5090dbf0ed2cbfd1225c3bc46d4e31e272bcc14b42a9643feffffff021896370f000000001976a914552b2549642c22462dc0e82ea25500dea6bb5e2188acbc5e1200000000001976a914dca40d275f5eb00cefab813925a1b07b9b77159188aca7a00600";
-	const RAW_TRANSACTION1_HASH: &'static str = "af9d5d566b6c914fc0de758a5f18731f5570ac59d1f0c5d1516f0f2dda2c3f79";
-	const RAW_TRANSACTION2_HASH: &'static str = "e97719095d91821f691dcbebdf5fb82c4eff8dd33d0c3cc6690aae37ed82a01e";
-	const RAW_TRANSACTION3_HASH: &'static str = "2d3833b35efc8f2b9d1c2140505b207fd71155178ad604e03364448f7007fc04";
-	const RAW_TRANSACTION4_HASH: &'static str = "4a15e0b41b1a47381f2f2baa16087688d1cd9078416960deed1faae852a469ce";
-
-	fn construct_memory_pool() -> MemoryPool {
-		let transaction1: Transaction = RAW_TRANSACTION1.into();
-		let transaction2: Transaction = RAW_TRANSACTION2.into();
-		let transaction3: Transaction = RAW_TRANSACTION3.into();
-		let transaction4: Transaction = RAW_TRANSACTION4.into();
-		let transaction1_hash =  RAW_TRANSACTION1_HASH.into();
-		let transaction4_hash =  RAW_TRANSACTION4_HASH.into();
-		assert_eq!(transaction1.hash(), transaction1_hash);
-		assert_eq!(transaction2.hash(), RAW_TRANSACTION2_HASH.into());
-		assert_eq!(transaction3.hash(), RAW_TRANSACTION3_HASH.into());
-		assert_eq!(transaction4.hash(), transaction4_hash);
-
-		// hash of t4 must be lesser than hash of t4
-		assert_eq!(transaction4_hash.cmp(&transaction1_hash), Ordering::Less);
-
+	fn to_memory_pool(chain: &mut ChainBuilder) -> MemoryPool {
 		let mut pool = MemoryPool::new();
-		pool.insert_verified(RAW_TRANSACTION1.into());
-		pool.insert_verified(RAW_TRANSACTION2.into());
-		pool.insert_verified(RAW_TRANSACTION3.into());
-		pool.insert_verified(RAW_TRANSACTION4.into());
-
+		for transaction in chain.transactions.iter().cloned() {
+			pool.insert_verified(transaction);
+		}
 		pool
 	}
 
@@ -734,11 +704,11 @@ mod tests {
 
 		let size1 = pool.heap_size_of_children();
 
-		pool.insert_verified(RAW_TRANSACTION1.into());
+		pool.insert_verified(Transaction::default());
 		let size2 = pool.heap_size_of_children();
 		assert!(size2 > size1);
 
-		pool.insert_verified(RAW_TRANSACTION2.into());
+		pool.insert_verified(Transaction::default());
 		let size3 = pool.heap_size_of_children();
 		assert!(size3 > size2);
 	}
@@ -746,11 +716,11 @@ mod tests {
 	#[test]
 	fn test_memory_pool_insert_same_transaction() {
 		let mut pool = MemoryPool::new();
-		pool.insert_verified(RAW_TRANSACTION1.into());
+		pool.insert_verified(Transaction::default());
 		assert_eq!(pool.get_transactions_ids().len(), 1);
 
 		// insert the same transaction again
-		pool.insert_verified(RAW_TRANSACTION1.into());
+		pool.insert_verified(Transaction::default());
 		assert_eq!(pool.get_transactions_ids().len(), 1);
 	}
 
@@ -760,13 +730,11 @@ mod tests {
 		assert_eq!(pool.read_with_strategy(OrderingStrategy::ByTimestamp), None);
 		assert_eq!(pool.read_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![]);
 
-		let t: Transaction = "00000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000011e000000000000000000000000".into();
-		let thash = t.hash();
-		pool.insert_verified(t);
-		assert_eq!(pool.read_with_strategy(OrderingStrategy::ByTimestamp), Some(thash.clone()));
-		assert_eq!(pool.read_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![thash.clone()]);
-		assert_eq!(pool.read_with_strategy(OrderingStrategy::ByTimestamp), Some(thash.clone()));
-		assert_eq!(pool.read_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![thash.clone()]);
+		pool.insert_verified(Transaction::default());
+		assert_eq!(pool.read_with_strategy(OrderingStrategy::ByTimestamp), Some(Transaction::default().hash()));
+		assert_eq!(pool.read_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![Transaction::default().hash()]);
+		assert_eq!(pool.read_with_strategy(OrderingStrategy::ByTimestamp), Some(Transaction::default().hash()));
+		assert_eq!(pool.read_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![Transaction::default().hash()]);
 	}
 
 	#[test]
@@ -775,19 +743,15 @@ mod tests {
 		assert_eq!(pool.remove_with_strategy(OrderingStrategy::ByTimestamp), None);
 		assert_eq!(pool.remove_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![]);
 
-		let raw_transaction = "00000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000011e000000000000000000000000";
-		let transaction: Transaction = raw_transaction.into();
-		let hash = transaction.hash();
-
-		pool.insert_verified(transaction);
+		pool.insert_verified(Transaction::default());
 		let removed = pool.remove_with_strategy(OrderingStrategy::ByTimestamp);
 		assert!(removed.is_some());
-		assert_eq!(removed.unwrap().hash(), hash);
+		assert_eq!(removed.unwrap(), Transaction::default());
 
-		pool.insert_verified(raw_transaction.into());
+		pool.insert_verified(Transaction::default());
 		let removed = pool.remove_n_with_strategy(100, OrderingStrategy::ByTimestamp);
 		assert_eq!(removed.len(), 1);
-		assert_eq!(removed[0].hash(), hash);
+		assert_eq!(removed[0], Transaction::default());
 
 		assert_eq!(pool.remove_with_strategy(OrderingStrategy::ByTimestamp), None);
 		assert_eq!(pool.remove_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![]);
@@ -795,350 +759,300 @@ mod tests {
 
 	#[test]
 	fn test_memory_pool_remove_by_hash() {
-		let mut pool = construct_memory_pool();
+		let mut pool = MemoryPool::new();
 
-		let pool_transactions = pool.get_transactions_ids();
-		assert_eq!(pool_transactions.len(), 4);
-
-		// check pool transactions
-		let ref hash_to_remove = pool_transactions[0];
-		assert!(*hash_to_remove == RAW_TRANSACTION1_HASH.into()
-			|| *hash_to_remove == RAW_TRANSACTION2_HASH.into()
-			|| *hash_to_remove == RAW_TRANSACTION3_HASH.into()
-			|| *hash_to_remove == RAW_TRANSACTION4_HASH.into());
-		assert_eq!(pool.get_transactions_ids().len(), 4);
+		pool.insert_verified(Transaction::default());
+		assert_eq!(pool.get_transactions_ids().len(), 1);
 
 		// remove and check remaining transactions
-		let removed = pool.remove_by_hash(&hash_to_remove);
+		let removed = pool.remove_by_hash(&Transaction::default().hash());
 		assert!(removed.is_some());
-		assert_eq!(removed.unwrap().hash(), *hash_to_remove);
-		assert_eq!(pool.get_transactions_ids().len(), 3);
+		assert_eq!(removed.unwrap(), Transaction::default());
+		assert_eq!(pool.get_transactions_ids().len(), 0);
 
 		// remove non-existant transaction
-		let nonexistant_hash: H256 = "0000000000000000000000000000000000000000000000000000000000000000".into();
-		assert_eq!(pool.remove_by_hash(&nonexistant_hash), None);
-		assert_eq!(pool.get_transactions_ids().len(), 3);
+		assert_eq!(pool.remove_by_hash(&TransactionBuilder::with_version(1).hash()), None);
+		assert_eq!(pool.get_transactions_ids().len(), 0);
 	}
 
 	#[test]
 	fn test_memory_pool_insert_parent_after_child() {
-		let parent_transaction: Transaction = "00000000000164000000000000000000000000".into();
-		let child_transaction: Transaction = "0000000001545ac9cffeaa3ee074f08a5306e703cb30883192ed9b10ee9ddb76824e4985070000000000000000000000000000".into();
-		let grandchild_transaction: Transaction = "0000000001cc1d8279403880bfdd7682c28ed8441a138f96ae1dc5fd90bc928b88d48107a90000000000000000000164000000000000000000000000".into();
-		let parent_transaction_hash = parent_transaction.hash();
-		let child_transaction_hash = child_transaction.hash();
-		let grandchild_transaction_hash = grandchild_transaction.hash();
+		let chain = &mut ChainBuilder::new();
+		TransactionBuilder::with_output(100).store(chain)
+			.to_input(0).add_output(100).store(chain)
+			.to_input(0).add_output(100).store(chain);
 
 		// insert child, then parent
 		let mut pool = MemoryPool::new();
-		pool.insert_verified(grandchild_transaction); // timestamp 0
-		pool.insert_verified(child_transaction); // timestamp 1
-		pool.insert_verified(parent_transaction); // timestamp 2
+		pool.insert_verified(chain.at(2)); // timestamp 0
+		pool.insert_verified(chain.at(1)); // timestamp 1
+		pool.insert_verified(chain.at(0)); // timestamp 2
 
 		// check that parent transaction was removed before child trnasaction
 		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByTimestamp);
 		assert_eq!(transactions.len(), 3);
-		assert_eq!(transactions[0].hash(), parent_transaction_hash);
-		assert_eq!(transactions[1].hash(), child_transaction_hash);
-		assert_eq!(transactions[2].hash(), grandchild_transaction_hash);
+		assert_eq!(transactions[0], chain.at(0));
+		assert_eq!(transactions[1], chain.at(1));
+		assert_eq!(transactions[2], chain.at(2));
 	}
 
 	#[test]
 	fn test_memory_pool_insert_parent_before_child() {
-		let parent_transaction: Transaction = "00000000000164000000000000000000000000".into();
-		let child_transaction: Transaction = "0000000001545ac9cffeaa3ee074f08a5306e703cb30883192ed9b10ee9ddb76824e4985070000000000000000000164000000000000000000000000".into();
-		let grandchild_transaction: Transaction = "0000000001cc1d8279403880bfdd7682c28ed8441a138f96ae1dc5fd90bc928b88d48107a90000000000000000000164000000000000000000000000".into();
-		let parent_transaction_hash = parent_transaction.hash();
-		let child_transaction_hash = child_transaction.hash();
-		let grandchild_transaction_hash = grandchild_transaction.hash();
+		let chain = &mut ChainBuilder::new();
+		TransactionBuilder::with_output(100).store(chain)
+			.to_input(0).add_output(100).store(chain)
+			.to_input(0).add_output(100).store(chain);
 
-		// insert child, then parent
-		let mut pool = MemoryPool::new();
-		pool.insert_verified(parent_transaction); // timestamp 0
-		pool.insert_verified(child_transaction); // timestamp 1
-		pool.insert_verified(grandchild_transaction); // timestamp 2
+		// insert parent, then child
+		let mut pool = to_memory_pool(chain);
 
 		// check that parent transaction was removed before child trnasaction
 		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByTimestamp);
 		assert_eq!(transactions.len(), 3);
-		assert_eq!(transactions[0].hash(), parent_transaction_hash);
-		assert_eq!(transactions[1].hash(), child_transaction_hash);
-		assert_eq!(transactions[2].hash(), grandchild_transaction_hash);
+		assert_eq!(transactions[0], chain.at(0));
+		assert_eq!(transactions[1], chain.at(1));
+		assert_eq!(transactions[2], chain.at(2));
 	}
 
 	#[test]
 	fn test_memory_pool_insert_child_after_remove_by_hash() {
-		let raw_parent_transaction = "00000000000164000000000000000000000000";
-		let raw_child_transaction = "0000000001545ac9cffeaa3ee074f08a5306e703cb30883192ed9b10ee9ddb76824e4985070000000000000000000164000000000000000000000000";
-		let raw_grandchild_transaction = "0000000001cc1d8279403880bfdd7682c28ed8441a138f96ae1dc5fd90bc928b88d48107a90000000000000000000164000000000000000000000000";
-		let parent_transaction: Transaction = raw_parent_transaction.into();
-		let child_transaction: Transaction = raw_child_transaction.into();
-		let grandchild_transaction: Transaction = raw_grandchild_transaction.into();
-		let parent_transaction_hash = parent_transaction.hash();
-		let child_transaction_hash = child_transaction.hash();
-		let grandchild_transaction_hash = grandchild_transaction.hash();
+		let chain = &mut ChainBuilder::new();
+		TransactionBuilder::with_output(100).store(chain)
+			.to_input(0).add_output(100).store(chain)
+			.to_input(0).add_output(100).store(chain);
 
-		// insert child, then parent
-		let mut pool = MemoryPool::new();
-		pool.insert_verified(parent_transaction);
-		pool.insert_verified(child_transaction);
-		pool.insert_verified(grandchild_transaction);
+		// insert parent, then child
+		let mut pool = to_memory_pool(chain);
 
 		// remove child transaction & make sure that other transactions are still there
-		pool.remove_by_hash(&child_transaction_hash);
+		pool.remove_by_hash(&chain.hash(1));
 		assert_eq!(pool.get_transactions_ids().len(), 2);
 
 		// insert child transaction back to the pool & assert transactions are removed in correct order
-		pool.insert_verified(raw_child_transaction.into());
+		pool.insert_verified(chain.at(1));
 		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByTransactionScore);
 		assert_eq!(transactions.len(), 3);
-		assert_eq!(transactions[0].hash(), parent_transaction_hash);
-		assert_eq!(transactions[1].hash(), child_transaction_hash);
-		assert_eq!(transactions[2].hash(), grandchild_transaction_hash);
+		assert_eq!(transactions[0], chain.at(0));
+		assert_eq!(transactions[1], chain.at(1));
+		assert_eq!(transactions[2], chain.at(2));
 	}
 
 	#[test]
 	fn test_memory_pool_get_information() {
-		let mut pool = construct_memory_pool();
-		let pool_sizes = [901, 676, 451, 226, 0];
-		let removals = [RAW_TRANSACTION1_HASH, RAW_TRANSACTION2_HASH, RAW_TRANSACTION3_HASH, RAW_TRANSACTION4_HASH];
-		// check pool information after removing each transaction
-		for i in 0..pool_sizes.len() {
-			let expected_pool_count = 5 - i - 1;
-			let expected_pool_size = pool_sizes[i];
-			let info = pool.information();
-			assert_eq!(info.transactions_count, expected_pool_count);
-			assert_eq!(info.transactions_size_in_bytes, expected_pool_size);
+		let chain = &mut ChainBuilder::new();
+		TransactionBuilder::with_output(10).store(chain)
+			.to_input(0).add_output(20).store(chain)
+			.to_input(0).add_output(30).store(chain)
+			.to_input(0).add_output(40).store(chain);
+		let mut pool = MemoryPool::new();
 
-			if expected_pool_size != 0 {
-				pool.remove_by_hash(&removals[i].into());
-			}
+		let mut transactions_size = 0;
+		for transaction_index in 0..4 {
+			pool.insert_verified(chain.at(transaction_index));
+			transactions_size += chain.size(transaction_index);
+
+			let info = pool.information();
+			assert_eq!(info.transactions_count, transaction_index + 1);
+			assert_eq!(info.transactions_size_in_bytes, transactions_size);
 		}
 	}
 
 	#[test]
 	fn test_memory_pool_timestamp_ordering_strategy() {
-		let mut pool = construct_memory_pool();
+		let chain = &mut ChainBuilder::new();
+		TransactionBuilder::with_output(10).store(chain)
+			.set_output(20).store(chain)
+			.set_output(30).store(chain)
+			.set_output(40).store(chain);
+		let mut pool = to_memory_pool(chain);
 
-		// remove transactions [4, 1, 2] (timestamps: [0, 0, 1])
+		// remove transactions [0, 3, 1] (timestamps: [0, 0, 1]) {conflict resolved by hash}
 		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByTimestamp);
 		assert_eq!(transactions.len(), 3);
-		assert_eq!(transactions[0].hash(), RAW_TRANSACTION4_HASH.into());
-		assert_eq!(transactions[1].hash(), RAW_TRANSACTION1_HASH.into());
-		assert_eq!(transactions[2].hash(), RAW_TRANSACTION2_HASH.into());
+		assert_eq!(transactions[0], chain.at(0));
+		assert_eq!(transactions[1], chain.at(3));
+		assert_eq!(transactions[2], chain.at(1));
 		assert_eq!(pool.get_transactions_ids().len(), 1);
 
-		// remove transactions [3] (timestamps: [2])
+		// remove transactions [2] (timestamps: [2])
 		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByTimestamp);
 		assert_eq!(transactions.len(), 1);
-		assert_eq!(transactions[0].hash(), RAW_TRANSACTION3_HASH.into());
+		assert_eq!(transactions[0], chain.at(2));
 	}
 
 	#[test]
 	fn test_memory_pool_transaction_score_ordering_strategy() {
-		let mut pool = construct_memory_pool();
+		let chain = &mut ChainBuilder::new();
+		TransactionBuilder::with_output(10).store(chain)
+			.set_output(40).store(chain)
+			.set_output(30).store(chain)
+			.set_output(20).store(chain);
+		let mut pool = to_memory_pool(chain);
 
 		let transactions = pool.remove_n_with_strategy(4, OrderingStrategy::ByTransactionScore);
 		assert_eq!(transactions.len(), 4);
-		assert_eq!(transactions[0].hash(), RAW_TRANSACTION1_HASH.into());
-		assert_eq!(transactions[1].hash(), RAW_TRANSACTION3_HASH.into());
-		assert_eq!(transactions[2].hash(), RAW_TRANSACTION2_HASH.into());
-		assert_eq!(transactions[3].hash(), RAW_TRANSACTION4_HASH.into());
-		assert_eq!(pool.get_transactions_ids().len(), 0);
+		assert_eq!(transactions[0], chain.at(1));
+		assert_eq!(transactions[1], chain.at(2));
+		assert_eq!(transactions[2], chain.at(3));
+		assert_eq!(transactions[3], chain.at(0));
 	}
 
 	#[test]
 	fn test_memory_pool_transaction_score_ordering_strategy_with_virtual_fee() {
-		let mut pool = construct_memory_pool();
+		let chain = &mut ChainBuilder::new();
+		TransactionBuilder::with_output(10).store(chain)
+			.set_output(40).store(chain)
+			.set_output(30).store(chain)
+			.set_output(20).store(chain);
+		let mut pool = to_memory_pool(chain);
 
-		// increase miner score of transaction 4 to move it to position #1
-		pool.set_virtual_fee(&RAW_TRANSACTION4_HASH.into(), 1000000000);
-		// decrease miner score of transaction 3 to move it to position #4
-		pool.set_virtual_fee(&RAW_TRANSACTION3_HASH.into(), -500000000);
+		// increase miner score of transaction 3 to move it to position #1
+		pool.set_virtual_fee(&chain.hash(3), 100);
+		// decrease miner score of transaction 1 to move it to position #4
+		pool.set_virtual_fee(&chain.hash(1), -30);
 
 		let transactions = pool.remove_n_with_strategy(4, OrderingStrategy::ByTransactionScore);
 		assert_eq!(transactions.len(), 4);
-		assert_eq!(transactions[0].hash(), RAW_TRANSACTION4_HASH.into());
-		assert_eq!(transactions[1].hash(), RAW_TRANSACTION1_HASH.into());
-		assert_eq!(transactions[2].hash(), RAW_TRANSACTION2_HASH.into());
-		assert_eq!(transactions[3].hash(), RAW_TRANSACTION3_HASH.into());
-		assert_eq!(pool.remove_n_with_strategy(1, OrderingStrategy::ByTransactionScore).len(), 0);
+		assert_eq!(transactions[0], chain.at(3));
+		assert_eq!(transactions[1], chain.at(2));
+		assert_eq!(transactions[2], chain.at(0));
+		assert_eq!(transactions[3], chain.at(1));
 	}
 
 	#[test]
 	fn test_memory_pool_package_score_ordering_strategy() {
-		// sizes of all transactions are equal to 60
-		// chain1:
-		//   parent: fee = 30
-		//   child: fee = 50
-		// chain2:
-		//   parent: fee = 35
-		//   child: fee = 10
-		//   grandchild: fee: 100
-		let chain1_parent: Transaction = "00000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000011e000000000000000000000000".into();
-		let chain1_child: Transaction = "0000000001160f027c10384f1c6ebfe5d4c554cebe944d3c66f4ea1c07fab2de09eb42bfb10000000000000000000132000000000000000000000000".into();
-		let chain2_parent: Transaction = "000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000123000000000000000000000000".into();
-		let chain2_child: Transaction = "00000000018dc8362908a6286b3fb74399346cfefe56aec955fa3438f00c7c3ce4dea963ab000000000000000000010a000000000000000000000000".into();
-		let chain2_grandchild: Transaction = "00000000010448122df969ee00da3f4070915bdae9d900e32a57ba2ecfe99146e1eaf347900000000000000000000164000000000000000000000000".into();
-		let chain1_parent_hash = chain1_parent.hash();
-		let chain1_child_hash = chain1_child.hash();
-		let chain2_parent_hash = chain2_parent.hash();
-		let chain2_child_hash = chain2_child.hash();
-		let chain2_grandchild_hash = chain2_grandchild.hash();
+		let chain = &mut ChainBuilder::new();
+		// all transactions of same size
+		TransactionBuilder::with_default_input(0).set_output(30).store(chain)	// transaction0
+			.to_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
+			.set_default_input(0).set_output(35).store(chain)					// transaction2
+			.to_input(0).set_output(10).store(chain)							// transaction2 -> transaction3
+			.to_input(0).set_output(100).store(chain);							// transaction2 -> transaction3 -> transaction4
 
 		let mut pool = MemoryPool::new();
 
-		// compared by simple miner score:
-		// score({ chain1_parent }) = 30/60
+		// compared by simple transaction score:
+		// score({ transaction0 }) = 30/60
 		// <
-		// score({ chain2_parent }) = 35/60
-		let expected = vec![chain2_parent_hash.clone(), chain1_parent_hash.clone()];
-		pool.insert_verified(chain1_parent);
-		pool.insert_verified(chain2_parent);
+		// score({ transaction2 }) = 35/60
+		let expected = vec![chain.hash(2), chain.hash(0)];
+		pool.insert_verified(chain.at(0));
+		pool.insert_verified(chain.at(2));
 		assert_eq!(pool.read_n_with_strategy(2, OrderingStrategy::ByPackageScore), expected);
 
-		// { chain1_parent, chain1_child } now have bigger score than { chain2_parent }:
-		// score({ chain1_parent, chain1_child }) = (30 + 50) / 120 ~ 0.667
+		// { transaction0, transaction1 } now have bigger score than { transaction2 }:
+		// score({ transaction0, transaction1 }) = (30 + 50) / 120 ~ 0.667
 		// >
-		// score({ chain2_parent }) = 35/60 ~ 0.583
+		// score({ transaction2 }) = 35/60 ~ 0.583
 		// => chain1 is boosted
 		// => so transaction with lesser individual score (but with bigger package score) is mined first
-		pool.insert_verified(chain1_child);
-		let expected = vec![chain1_parent_hash.clone(), chain1_child_hash.clone(), chain2_parent_hash.clone()];
+		pool.insert_verified(chain.at(1));
+		let expected = vec![chain.hash(0), chain.hash(1), chain.hash(2)];
 		assert_eq!(pool.read_n_with_strategy(3, OrderingStrategy::ByPackageScore), expected);
 
-		// { chain1_parent, chain1_child } still have bigger score than { chain2_parent, chain2_child }
-		// score({ chain1_parent, chain1_child }) = (30 + 35) / 120 ~ 0.625
+		// { transaction0, transaction1 } still have bigger score than { transaction2, transaction3 }
+		// score({ transaction0, transaction1 }) = (30 + 35) / 120 ~ 0.625
 		// >
-		// score({ chain2_parent, chain2_child }) = (35 + 10) / 120 ~ 0.375
+		// score({ transaction2, transaction3 }) = (35 + 10) / 120 ~ 0.375
 		// => chain2 is not boosted
-		pool.insert_verified(chain2_child);
-		let expected = vec![chain1_parent_hash.clone(), chain1_child_hash.clone(),
-			chain2_parent_hash.clone(), chain2_child_hash.clone()];
+		pool.insert_verified(chain.at(3));
+		let expected = vec![chain.hash(0), chain.hash(1), chain.hash(2), chain.hash(3)];
 		assert_eq!(pool.read_n_with_strategy(4, OrderingStrategy::ByPackageScore), expected);
 
-		// { chain1_parent, chain1_child } now have lesser score than { chain2_parent, chain2_child, chain2_grandchild }
-		// score({ chain1_parent, chain1_child }) = (30 + 35) / 120 ~ 0.625
+		// { transaction0, transaction1 } now have lesser score than { transaction2, transaction3, transaction4 }
+		// score({ transaction0, transaction1 }) = (30 + 35) / 120 ~ 0.625
 		// <
-		// score({ chain2_parent, chain2_child, chain2_grandchild }) = (35 + 10 + 100) / 180 ~ 0.806
+		// score({ transaction2, transaction3, transaction4 }) = (35 + 10 + 100) / 180 ~ 0.806
 		// => chain2 is boosted
-		pool.insert_verified(chain2_grandchild);
-		let expected = vec![chain2_parent_hash.clone(), chain2_child_hash.clone(), chain2_grandchild_hash.clone(),
-			chain1_parent_hash.clone(), chain1_child_hash.clone()];
+		pool.insert_verified(chain.at(4));
+		let expected = vec![chain.hash(2), chain.hash(3), chain.hash(4), chain.hash(0), chain.hash(1)];
 		assert_eq!(pool.read_n_with_strategy(5, OrderingStrategy::ByPackageScore), expected);
 
-		// add virtual fee to the chain1_child so that chain1 is back to the position #1
-		pool.set_virtual_fee(&chain1_child_hash, 500i64);
-		let expected = vec![chain1_parent_hash.clone(), chain1_child_hash.clone(), chain2_parent_hash.clone(),
-			chain2_child_hash.clone(), chain2_grandchild_hash.clone()];
+		// add virtual fee to the transaction1 so that chain1 is back to the position #1
+		pool.set_virtual_fee(&chain.hash(1), 500i64);
+		let expected = vec![chain.hash(0), chain.hash(1), chain.hash(2), chain.hash(3), chain.hash(4)];
 		assert_eq!(pool.read_n_with_strategy(5, OrderingStrategy::ByPackageScore), expected);
 	}
 
 	#[test]
 	fn test_memory_pool_package_score_ordering_strategy_opposite_insert_order() {
-		// sizes of all transactions are equal to 60
-		// chain1:
-		//   parent: fee = 17
-		//   child: fee = 50
-		//   grandchild: fee = 7
-		// chain2:
-		//   parent: fee = 20
-		let chain1_parent: Transaction = "000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000111000000000000000000000000".into();
-		let chain1_child: Transaction = "0000000001213fb22ef427d846506b3b4a1474db4c520fce1036d7150e10fb244d6809c1a10000000000000000000132000000000000000000000000".into();
-		let chain1_grandchild: Transaction = "0000000001fb7c7a67c8b2e915b4dd562b151fa63098184dc310c37c36a8ea56f81c6e645a0000000000000000000107000000000000000000000000".into();
-		let chain2_parent: Transaction = "000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000114000000000000000000000000".into();
-		let chain1_parent_hash = chain1_parent.hash();
-		let chain1_child_hash = chain1_child.hash();
-		let chain1_grandchild_hash = chain1_grandchild.hash();
-		let chain2_parent_hash = chain2_parent.hash();
+		let chain = &mut ChainBuilder::new();
+		// all transactions of same size
+		TransactionBuilder::with_default_input(0).set_output(17).store(chain)	// transaction0
+			.to_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
+			.to_input(0).set_output(7).store(chain)								// transaction0 -> transaction1 -> transaction2
+			.set_default_input(0).set_output(20).store(chain);					// transaction3
 
 		let mut pool = MemoryPool::new();
 
 		// chain1_parent is not linked to the chain1_grandchild
 		// => they are in separate chains now
 		// => chain2 has greater score than both of these chains
-		pool.insert_verified(chain2_parent);
-		pool.insert_verified(chain1_parent);
-		pool.insert_verified(chain1_grandchild);
-		let expected = vec![chain2_parent_hash.clone(), chain1_parent_hash.clone(), chain1_grandchild_hash.clone()];
+		pool.insert_verified(chain.at(3));
+		pool.insert_verified(chain.at(0));
+		pool.insert_verified(chain.at(2));
+		let expected = vec![chain.hash(3), chain.hash(0), chain.hash(2)];
 		assert_eq!(pool.read_n_with_strategy(3, OrderingStrategy::ByPackageScore), expected);
 
 		// insert the missing transaction to link together chain1
 		// => it now will have better score than chain2
-		pool.insert_verified(chain1_child);
-		let expected = vec![chain1_parent_hash.clone(), chain1_child_hash.clone(), chain2_parent_hash.clone(),
-			chain1_grandchild_hash.clone()];
+		pool.insert_verified(chain.at(1));
+		let expected = vec![chain.hash(0), chain.hash(1), chain.hash(3), chain.hash(2)];
 		assert_eq!(pool.read_n_with_strategy(4, OrderingStrategy::ByPackageScore), expected);
 	}
 
 	#[test]
 	fn test_memory_pool_complex_transactions_tree_opposite_insert_order() {
-		// all transaction have equal size
-		// level0 transactions:
-		//   level00: fee = 10
-		//   level01: fee = 20
-		//   level02: fee = 30
-		// level1 transactions:
-		//   level00 -> level10: fee = 40
-		//   level00 + level01 -> level11: fee = 50
-		// level2 transactions:
-		//   level02 + level10 + level11 -> level20: fee = 60
-		let level00: Transaction = "0000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010a000000000000000000000000".into();
-		let level01: Transaction = "00000000030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000114000000000000000000000000".into();
-		let level02: Transaction = "0000000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011e000000000000000000000000".into();
-		let level10: Transaction = "0000000003f0c6441fcf6ec5feff2ec1d4791f3378f0ee3ca763f037465ecbde2defb7dbbe000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000128000000000000000000000000".into();
-		let level11: Transaction = "0000000003f0c6441fcf6ec5feff2ec1d4791f3378f0ee3ca763f037465ecbde2defb7dbbe0000000000000000004e4ae7a98cc93a19f42df8dd0439578c4984650782160058c120d797f457a49b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000132000000000000000000000000".into();
-		let level20: Transaction = "0000000003f7028778f8f0eb8b3b7f082c07842d9c58231286626f891d1b2b1aec562f186e0000000000000000001bcdef7650948fe1203aa1995ff61dd2610ac76a6f5b26399907319d40e6ba0500000000000000000059137aa9303e3b33e82e401a529c28dece1bc6785a001c82f9a062ce69a65fee000000000000000000013c000000000000000000000000".into();
-		let level00_hash = level00.hash();
-		let level01_hash = level01.hash();
-		let level02_hash = level02.hash();
-		let level10_hash = level10.hash();
-		let level11_hash = level11.hash();
-		let level20_hash = level20.hash();
+		let chain = &mut ChainBuilder::new();
+		// all transactions of same size (=> 3 inputs)
+		// construct level0
+		TransactionBuilder::with_default_input(0).add_default_input(0).add_default_input(0).set_output(10).store(chain)	// transaction0
+			.set_default_input(0).add_default_input(0).add_default_input(0).set_output(20).store(chain)					// transaction1
+			.set_default_input(0).add_default_input(0).add_default_input(0).set_output(30).store(chain)					// transaction2
+			// construct level1
+			.set_default_input(0).add_default_input(0).add_input(&chain.at(0), 0).set_output(40).store(chain)				// transaction0 -> transaction3
+			.set_default_input(0).add_input(&chain.at(0), 0).add_input(&chain.at(1), 0).set_output(50).store(chain)			// transaction0 + transaction1 -> transaction4
+			// construct level3
+			.set_input(&chain.at(2), 0).add_input(&chain.at(3), 0).add_input(&chain.at(4), 0).set_output(60).store(chain);		// transaction2 + transaction3 + transaction4 -> transaction5
 
 		let mut pool = MemoryPool::new();
 
 		// insert level1 + level2. There are two chains:
-		// score({ level10, level20 }) = 40 + 60
-		// score({ level11, level20 }) = 50 + 60
-		// And three transactions:
-		// score(level10) = 40
-		// score(level11) = 50
-		// score(level20) = 60
-		pool.insert_verified(level20);
-		pool.insert_verified(level10);
-		pool.insert_verified(level11);
-		let expected = vec![level11_hash.clone(), level10_hash.clone(), level20_hash.clone()];
+		// score({ transaction3, transaction5 }) = 40 + 60
+		// score({ transaction4, transaction5 }) = 50 + 60
+		pool.insert_verified(chain.at(5));
+		pool.insert_verified(chain.at(3));
+		pool.insert_verified(chain.at(4));
+		let expected = vec![chain.hash(4), chain.hash(3), chain.hash(5)];
 		assert_eq!(pool.read_n_with_strategy(3, OrderingStrategy::ByTransactionScore), expected);
 		assert_eq!(pool.read_n_with_strategy(3, OrderingStrategy::ByPackageScore), expected);
 
 		// insert another one transaction from the chain. Three chains:
-		// score({ level10, level20 }) = 40 + 60
-		// score({ level11, level20 }) = 50 + 60
-		// score({ level02, level20 }) = 30 + 60
-		pool.insert_verified(level02);
-		let expected = vec![level11_hash.clone(), level10_hash.clone(), level02_hash.clone(), level20_hash.clone()];
+		// score({ transaction3, transaction5 }) = 40 + 60
+		// score({ transaction4, transaction5 }) = 50 + 60
+		// score({ transaction2, transaction5 }) = 30 + 60
+		pool.insert_verified(chain.at(2));
+		let expected = vec![chain.hash(4), chain.hash(3), chain.hash(2), chain.hash(5)];
 		assert_eq!(pool.read_n_with_strategy(4, OrderingStrategy::ByTransactionScore), expected);
 		assert_eq!(pool.read_n_with_strategy(4, OrderingStrategy::ByPackageScore), expected);
 
 		// insert another one transaction from the chain. Three chains:
-		// score({ level10, level20 }) = 40 + 60 / 2 = 0.5
-		// score({ level01, level11, level20 }) = 20 + 50 + 60 / 3 ~ 0.333
-		// score({ level02, level20 }) = 30 + 60 / 2 = 0.45
-		// but second chain will be removed first anyway because previous #1 ({ level11, level20}) noew depends on level 01
-		pool.insert_verified(level01);
-		let expected = vec![level10_hash.clone(), level02_hash.clone(), level01_hash.clone(), level11_hash.clone(), level20_hash.clone()];
+		// score({ transaction3, transaction5 }) = 40 + 60 / 2 = 0.5
+		// score({ transaction1, transaction4, transaction5 }) = 20 + 50 + 60 / 3 ~ 0.333
+		// score({ transaction2, transaction5 }) = 30 + 60 / 2 = 0.45
+		// but second chain will be removed first anyway because previous #1 ({ transaction4, transaction5}) now depends on level 01
+		pool.insert_verified(chain.at(1));
+		let expected = vec![chain.hash(3), chain.hash(2), chain.hash(1), chain.hash(4), chain.hash(5)];
 		assert_eq!(pool.read_n_with_strategy(5, OrderingStrategy::ByTransactionScore), expected);
 		assert_eq!(pool.read_n_with_strategy(5, OrderingStrategy::ByPackageScore), expected);
 
 		// insert another one transaction from the chain. Four chains:
-		// score({ level00, level10, level20 }) = (10 + 40 + 60) / (60 + 60 + 142) ~ 0.420
-		// score({ level00, level11, level20 }) = (10 + 50 + 60) / (60 + 60 + 142) ~ 0.458
-		// score({ level10, level11, level20 }) = (20 + 50 + 60) / (60 + 60 + 142) ~ 0.496
-		// score({ level02, level20 }) = (30 + 60) / (60 + 142) ~ 0.445
-		pool.insert_verified(level00);
-		let expected = vec![level02_hash.clone(), level01_hash.clone(), level00_hash.clone(),
-			level11_hash.clone(), level10_hash.clone(), level20_hash.clone()];
+		// score({ transaction0, transaction3, transaction5 }) = (10 + 40 + 60) / (60 + 60 + 142) ~ 0.420
+		// score({ transaction0, transaction4, transaction5 }) = (10 + 50 + 60) / (60 + 60 + 142) ~ 0.458
+		// score({ transaction1, transaction3, transaction5 }) = (20 + 50 + 60) / (60 + 60 + 142) ~ 0.496
+		// score({ transaction2, transaction5 }) = (30 + 60) / (60 + 142) ~ 0.445
+		pool.insert_verified(chain.at(0));
+		let expected = vec![chain.hash(2), chain.hash(1), chain.hash(0), chain.hash(4), chain.hash(3), chain.hash(5)];
 		assert_eq!(pool.read_n_with_strategy(6, OrderingStrategy::ByTransactionScore), expected);
 		assert_eq!(pool.read_n_with_strategy(6, OrderingStrategy::ByPackageScore), expected);
 	}

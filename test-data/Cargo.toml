@@ -5,3 +5,5 @@ authors = ["Nikolay Volf <nikvolf@gmail.com>"]
 
 [dependencies]
 chain = { path = "../chain"  }
+primitives = { path = "../primitives" }
+serialization = { path = "../serialization" }
