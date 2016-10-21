@@ -47,6 +47,7 @@ pub enum TransactionError {
 	Signature,
 }
 
+#[derive(PartialEq, Debug)]
 /// Block verification chain
 pub enum Chain {
 	/// Main chain

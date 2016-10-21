@@ -2,16 +2,27 @@
 
 use std::sync::Arc;
 
-use db;
+use db::{self, BlockRef};
 use chain;
 use super::{Verify, VerificationResult, Chain};
 
-struct ChainVerifier {
+pub struct ChainVerifier {
 	store: Arc<db::Store>,
+}
+
+impl ChainVerifier {
+	pub fn new(store: Arc<db::Store>) -> Self {
+		ChainVerifier { store: store }
+	}
 }
 
 impl Verify for ChainVerifier {
 	fn verify(&self, block: &chain::Block) -> VerificationResult {
+		let parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
+			Some(b) => b,
+			None => { return Ok(Chain::Orphan); }
+		};
+
 		Ok(Chain::Main)
 	}
 }
@@ -19,13 +30,18 @@ impl Verify for ChainVerifier {
 #[cfg(test)]
 mod tests {
 
+	use super::ChainVerifier;
+	use super::super::{Verify, Chain};
 	use primitives::hash::H256;
 	use chain;
 	use std::collections::HashMap;
 	use db::{self, BlockRef, Store};
 	use serialization;
 	use serialization::bytes::Bytes;
+	use test_data;
+	use std::sync::Arc;
 
+	#[derive(Default)]
 	struct TestStorage {
 		blocks: HashMap<H256, chain::Block>,
 		heights: HashMap<usize, H256>,
@@ -37,6 +53,17 @@ mod tests {
 				BlockRef::Number(n) => self.block_hash(n),
 				BlockRef::Hash(h) => Some(h),
 			}
+		}
+
+		fn with_blocks(blocks: &[chain::Block]) -> Self {
+			let mut storage = TestStorage::default();
+			let mut height = 0;
+			for (idx, block) in blocks.iter().enumerate() {
+				let hash = block.hash();
+				storage.blocks.insert(hash.clone(), block.clone());
+				storage.heights.insert(height, hash);
+			}
+			storage
 		}
 	}
 
@@ -69,7 +96,9 @@ mod tests {
 		}
 
 		fn block_transactions(&self, block_ref: BlockRef) -> Vec<chain::Transaction> {
-			self.blocks.iter().flat_map(|(_, b)| b.transactions()).cloned().collect()
+			self.block(block_ref)
+				.map(|b| b.transactions().iter().cloned().collect())
+				.unwrap_or(Vec::new())
 		}
 
 		fn block(&self, block_ref: BlockRef) -> Option<chain::Block> {
@@ -83,5 +112,22 @@ mod tests {
 		}
 	}
 
+	#[test]
+	fn verify_orphan() {
+		let storage = TestStorage::with_blocks(&vec![test_data::genesis()]);
+		let b2 = test_data::block_h2();
+		let verifier = ChainVerifier::new(Arc::new(storage));
+
+		assert_eq!(Chain::Orphan, verifier.verify(&b2).unwrap());
+	}
+
+	#[test]
+	fn verify_smoky() {
+		let storage = TestStorage::with_blocks(&vec![test_data::genesis()]);
+		let b1 = test_data::block_h1();
+		let verifier = ChainVerifier::new(Arc::new(storage));
+		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
+
+	}
 
 }
