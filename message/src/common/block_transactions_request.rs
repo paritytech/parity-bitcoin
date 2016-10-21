@@ -6,8 +6,8 @@ use ser::{
 
 #[derive(Debug, PartialEq)]
 pub struct BlockTransactionsRequest {
-	blockhash: H256,
-	indexes: Vec<usize>,
+	pub blockhash: H256,
+	pub indexes: Vec<usize>,
 }
 
 impl Serializable for BlockTransactionsRequest {

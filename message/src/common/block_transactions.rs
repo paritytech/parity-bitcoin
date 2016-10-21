@@ -4,8 +4,8 @@ use chain::Transaction;
 
 #[derive(Debug, PartialEq)]
 pub struct BlockTransactions {
-	blockhash: H256,
-	transactions: Vec<Transaction>,
+	pub blockhash: H256,
+	pub transactions: Vec<Transaction>,
 }
 
 impl Serializable for BlockTransactions {

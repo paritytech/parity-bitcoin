@@ -3,8 +3,8 @@ use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct SendCompact {
-	first: bool,
-	second: u64,
+	pub first: bool,
+	pub second: u64,
 }
 
 impl Payload for SendCompact {

@@ -3,7 +3,7 @@ use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct FeeFilter {
-	fee_rate: u64,
+	pub fee_rate: u64,
 }
 
 impl Payload for FeeFilter {

@@ -3,7 +3,7 @@ use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
-enum RejectCode {
+pub enum RejectCode {
 	Malformed = 0x01,
 	Invalid = 0x10,
 	Obsolate = 0x11,
@@ -53,9 +53,9 @@ impl Deserializable for RejectCode {
 
 #[derive(Debug, PartialEq)]
 pub struct Reject {
-	message: String,
-	code: RejectCode,
-	reason: String,
+	pub message: String,
+	pub code: RejectCode,
+	pub reason: String,
 	// TODO: data
 }
 
