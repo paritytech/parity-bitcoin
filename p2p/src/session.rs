@@ -1,12 +1,11 @@
 use std::sync::Arc;
 use parking_lot::Mutex;
-use futures::{collect, finished, failed, Future};
-use tokio_core::io::IoFuture;
+use futures::collect;
 use bytes::Bytes;
-use message::Command;
+use message::{Command, Error};
 use p2p::Context;
 use net::Channel;
-use protocol::{Protocol, ProtocolAction, PingProtocol, SyncProtocol, Direction};
+use protocol::{Protocol, PingProtocol, SyncProtocol, Direction};
 use PeerId;
 
 pub struct Session {
@@ -31,59 +30,24 @@ impl Session {
 		}
 	}
 
-	pub fn initialize(&self, context: Arc<Context>, channel: Arc<Channel>, direction: Direction) -> IoFuture<()> {
-		let futures = self.protocols.lock()
+	pub fn initialize(&self, channel: Arc<Channel>, direction: Direction) -> Result<(), Error> {
+		self.protocols.lock()
 			.iter_mut()
 			.map(|protocol| {
-				match protocol.initialize(direction, channel.version()) {
-					Ok(ProtocolAction::None) => {
-						finished(()).boxed()
-					},
-					Ok(ProtocolAction::Disconnect) => {
-						// no other protocols can use the channel after that
-						context.close_connection(channel.peer_info());
-						finished(()).boxed()
-					},
-					Ok(ProtocolAction::Reply((command, payload))) => {
-						Context::send_raw(context.clone(), channel.clone(), command, &payload)
-					},
-					Err(err) => {
-						// protocol error
-						unimplemented!();
-					}
-				}
+				protocol.initialize(direction, channel.version())
 			})
-			.collect::<Vec<_>>();
-		collect(futures)
-			.and_then(|_| finished(()))
-			.boxed()
+			.collect::<Result<Vec<_>, Error>>()
+			.map(|_| ())
 	}
 
-	pub fn on_message(&self, context: Arc<Context>, channel: Arc<Channel>, command: Command, payload: Bytes) -> IoFuture<()> {
-		let futures = self.protocols.lock()
+	pub fn on_message(&self, channel: Arc<Channel>, command: Command, payload: Bytes) -> Result<(), Error> {
+		self.protocols.lock()
 			.iter()
 			.map(|protocol| {
-				match protocol.on_message(&command, &payload, channel.version()) {
-					Ok(ProtocolAction::None) => {
-						finished(()).boxed()
-					},
-					Ok(ProtocolAction::Disconnect) => {
-						context.close_connection(channel.peer_info());
-						finished(()).boxed()
-					},
-					Ok(ProtocolAction::Reply((command, payload))) => {
-						Context::send_raw(context.clone(), channel.clone(), command, &payload)
-					},
-					Err(err) => {
-						// protocol error
-						unimplemented!();
-					},
-				}
+				protocol.on_message(&command, &payload, channel.version())
 			})
-		.collect::<Vec<_>>();
-		collect(futures)
-			.and_then(|_| finished(()))
-			.boxed()
+			.collect::<Result<Vec<_>, Error>>()
+			.map(|_| ())
 	}
 }
 

@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use chain::{Block, Transaction};
 use bytes::Bytes;
 use message::{Command, Error, Payload, types};
-use protocol::{Protocol, ProtocolAction};
+use protocol::Protocol;
 use p2p::Context;
 use PeerId;
 
@@ -176,7 +176,7 @@ impl SyncProtocol {
 }
 
 impl Protocol for SyncProtocol {
-	fn on_message(&self, command: &Command, payload: &Bytes, version: u32) -> Result<ProtocolAction, Error> {
+	fn on_message(&self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
 		// TODO: pass message to inbound_connection + convert response to ProtocolAction/Error
 		/*
 		if command == &Inv::command().into() {

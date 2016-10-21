@@ -8,7 +8,6 @@ use tokio_core::io::IoFuture;
 use tokio_core::reactor::{Handle, Remote};
 use bytes::Bytes;
 use message::{Payload, Command};
-use session::Session;
 use protocol::Direction;
 use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
@@ -60,9 +59,10 @@ impl Context {
 					let channel = context.connections.store(context.clone(), connection);
 
 					// initialize session and then start reading messages
-					channel.session().initialize(context.clone(), channel.clone(), Direction::Outbound)
-						.and_then(move |_| Context::on_message(context, channel))
-						.boxed()
+					match channel.session().initialize(channel.clone(), Direction::Outbound) {
+						Ok(_) => Context::on_message(context, channel),
+						Err(err) => finished(Err(err)).boxed()
+					}
 				},
 				Ok(Err(err)) => {
 					// protocol error
@@ -93,10 +93,10 @@ impl Context {
 					let channel = context.connections.store(context.clone(), connection);
 
 					// initialize session and then start reading messages
-					let cloned_context = context.clone();
-					channel.session().initialize(context.clone(), channel.clone(), Direction::Inbound)
-						.and_then(|_| Context::on_message(cloned_context, channel))
-						.boxed()
+					match channel.session().initialize(channel.clone(), Direction::Inbound) {
+						Ok(_) => Context::on_message(context.clone(), channel),
+						Err(err) => finished(Err(err)).boxed()
+					}
 				},
 				Ok(Err(err)) => {
 					// protocol error
@@ -122,9 +122,10 @@ impl Context {
 					// successful read
 					trace!("Received {} message from {}", command, channel.peer_info().address);
 					// handle message and read the next one
-					channel.session().on_message(context.clone(), channel.clone(), command, payload)
-						.and_then(move |_| Context::on_message(context, channel))
-						.boxed()
+					match channel.session().on_message(channel.clone(), command, payload) {
+						Ok(_) => Context::on_message(context, channel),
+						Err(err) => finished(Err(err)).boxed()
+					}
 				},
 				Ok(Err(err)) => {
 					// protocol error
