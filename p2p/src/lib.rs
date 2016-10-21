@@ -8,6 +8,7 @@ extern crate parking_lot;
 #[macro_use]
 extern crate log;
 
+extern crate chain;
 extern crate bitcrypto as crypto;
 extern crate message;
 extern crate primitives;

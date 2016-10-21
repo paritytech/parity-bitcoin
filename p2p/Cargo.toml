@@ -15,3 +15,4 @@ log = "0.3"
 primitives = { path = "../primitives" }
 bitcrypto = { path = "../crypto" }
 message = { path = "../message" }
+chain = { path = "../chain" }
