@@ -1,4 +1,5 @@
 mod ping;
+mod sync;
 
 use bytes::Bytes;
 use message::Error;
