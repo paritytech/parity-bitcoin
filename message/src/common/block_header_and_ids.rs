@@ -4,10 +4,10 @@ use common::PrefilledTransaction;
 
 #[derive(Debug, PartialEq)]
 pub struct BlockHeaderAndIDs {
-	header: BlockHeader,
-	nonce: u64,
-	short_ids: Vec<ShortTransactionID>,
-	prefilled_transactions: Vec<PrefilledTransaction>,
+	pub header: BlockHeader,
+	pub nonce: u64,
+	pub short_ids: Vec<ShortTransactionID>,
+	pub prefilled_transactions: Vec<PrefilledTransaction>,
 }
 
 impl Serializable for BlockHeaderAndIDs {

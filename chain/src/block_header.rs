@@ -7,12 +7,12 @@ use hash::H256;
 
 #[derive(PartialEq)]
 pub struct BlockHeader {
-	version: u32,
-	previous_header_hash: H256,
-	merkle_root_hash: H256,
-	time: u32,
-	nbits: u32,
-	nonce: u32,
+	pub version: u32,
+	pub previous_header_hash: H256,
+	pub merkle_root_hash: H256,
+	pub time: u32,
+	pub nbits: u32,
+	pub nonce: u32,
 }
 
 impl fmt::Debug for BlockHeader {

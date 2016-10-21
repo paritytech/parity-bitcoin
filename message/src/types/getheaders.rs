@@ -4,9 +4,9 @@ use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct GetHeaders {
-	version: u32,
-	block_locator_hashes: Vec<H256>,
-	hash_stop: H256,
+	pub version: u32,
+	pub block_locator_hashes: Vec<H256>,
+	pub hash_stop: H256,
 }
 
 impl Payload for GetHeaders {

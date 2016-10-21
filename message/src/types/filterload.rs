@@ -5,10 +5,10 @@ use {Payload, MessageResult};
 #[derive(Debug, PartialEq)]
 pub struct FilterLoad {
 	// TODO: check how this should be serialized
-	filter: Bytes,
-	hash_functions: u32,
-	tweak: u32,
-	flags: u8,
+	pub filter: Bytes,
+	pub hash_functions: u32,
+	pub tweak: u32,
+	pub flags: u8,
 }
 
 impl Payload for FilterLoad {

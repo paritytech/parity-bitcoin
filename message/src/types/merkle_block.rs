@@ -6,10 +6,10 @@ use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct MerkleBlock {
-	block_header: BlockHeader,
-	total_transactions: u32,
-	hashes: Vec<H256>,
-	flags: Bytes,
+	pub block_header: BlockHeader,
+	pub total_transactions: u32,
+	pub hashes: Vec<H256>,
+	pub flags: Bytes,
 }
 
 impl Payload for MerkleBlock {

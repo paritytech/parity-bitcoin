@@ -4,7 +4,7 @@ use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct CompactBlock {
-	header: BlockHeaderAndIDs,
+	pub header: BlockHeaderAndIDs,
 }
 
 impl Payload for CompactBlock {
