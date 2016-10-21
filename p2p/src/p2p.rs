@@ -140,9 +140,9 @@ impl Context {
 		}).boxed()
 	}
 
-	pub fn send_raw_from_peer(context: Arc<Context>, peer: PeerId, command: Command, payload: &Bytes) -> IoFuture<()> {
+	pub fn send_to_peer<T>(context: Arc<Context>, peer: PeerId, payload: &T) -> IoFuture<()> where T: Payload {
 		match context.connections.channel(peer) {
-			Some(channel) => Context::send_raw(context, channel, command, payload),
+			Some(channel) => Context::send(context, channel, payload),
 			None => {
 				// peer no longer exists.
 				// TODO: should we return error here?
@@ -223,40 +223,4 @@ impl P2P {
 		self.event_loop_handle.spawn(pool_work);
 		Ok(())
 	}
-
-	/*
-	pub fn broadcast<T>(&self, payload: T) where T: Payload {
-		let channels = self.connections.channels();
-		for (_id, channel) in channels.into_iter() {
-			self.send_to_channel(&payload, &channel);
-		}
-	}
-
-	pub fn send<T>(&self, payload: T, peer: PeerId) where T: Payload {
-		let channels = self.connections.channels();
-		if let Some(channel) = channels.get(&peer) {
-			self.send_to_channel(&payload, channel);
-		}
-	}
-
-	fn send_to_channel<T>(&self, payload: &T, channel: &Arc<Channel>) where T: Payload {
-		let connections = self.connections.clone();
-		let node_table  = self.node_table.clone();
-		let peer_info = channel.peer_info();
-		let write = channel.write_message(payload);
-		let pool_work = self.pool.spawn(write).then(move |result| {
-			match result {
-				Ok(_) => {
-					node_table.write().note_used(&peer_info.address);
-				},
-				Err(_err) => {
-					node_table.write().note_failure(&peer_info.address);
-					connections.remove(peer_info.id);
-				}
-			}
-			finished(())
-		});
-		self.event_loop_handle.spawn(pool_work);
-	}
-	*/
 }

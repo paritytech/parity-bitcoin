@@ -10,7 +10,7 @@ use chain::{Block, Transaction};
 use message::types;
 use message::Error;
 use bytes::Bytes;
-use message::{Command, Payload, serialize_payload};
+use message::Command;
 use protocol::{Protocol, ProtocolAction};
 use p2p::Context;
 use PeerId;
@@ -193,14 +193,9 @@ impl OutboundSync {
 	}
 }
 
-fn command<T>(_: &T) -> Command where T: Payload {
-	T::command().into()
-}
-
 impl OutboundSyncConnection for OutboundSync {
 	fn send_iventory(&mut self, message: &types::Inv) {
-		let serialized = serialize_payload(message, self.version).expect("serialization error");
-		let send = Context::send_raw_from_peer(self.context.clone(), self.peer, command(message), &serialized);
+		let send = Context::send_to_peer(self.context.clone(), self.peer, message);
 		self.schedule(send);
 	}
 
