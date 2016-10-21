@@ -1,8 +1,16 @@
 use ser::Stream;
-use bytes::TaggedBytes;
-use common::Magic;
+use bytes::{TaggedBytes, Bytes};
+use common::{Magic, Command};
 use serialization::serialize_payload;
 use {Payload, MessageResult, MessageHeader};
+
+pub fn to_raw_message(magic: Magic, command: Command, payload: &Bytes) -> Bytes {
+	let header = MessageHeader::for_data(magic, command, payload);
+	let mut stream = Stream::default();
+	stream.append(&header);
+	stream.append_slice(payload);
+	stream.out()
+}
 
 pub struct Message<T> {
 	bytes: TaggedBytes<T>,
@@ -11,13 +19,9 @@ pub struct Message<T> {
 impl<T> Message<T> where T: Payload {
 	pub fn new(magic: Magic, version: u32, payload: &T) -> MessageResult<Self> {
 		let serialized = try!(serialize_payload(payload, version));
-		let header = MessageHeader::for_data(magic, T::command().into(), &serialized);
-		let mut stream = Stream::default();
-		stream.append(&header);
-		stream.append_slice(&serialized);
 
 		let message = Message {
-			bytes: TaggedBytes::new(stream.out()),
+			bytes: TaggedBytes::new(to_raw_message(magic, T::command().into(), &serialized)),
 		};
 
 		Ok(message)

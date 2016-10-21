@@ -6,8 +6,10 @@ use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::io::IoFuture;
 use tokio_core::reactor::Handle;
-use message::Payload;
+use bytes::Bytes;
+use message::{Payload, Command};
 use session::Session;
+use protocol::Direction;
 use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
 use util::NodeTable;
@@ -39,7 +41,7 @@ impl Context {
 					let channel = context.connections.store(connection, session);
 
 					// initialize session and then start reading messages
-					channel.session().initialize(context.clone(), channel.clone())
+					channel.session().initialize(context.clone(), channel.clone(), Direction::Outbound)
 						.and_then(move |_| Context::on_message(context, channel))
 						.boxed()
 				},
@@ -74,7 +76,7 @@ impl Context {
 
 					// initialize session and then start reading messages
 					let cloned_context = context.clone();
-					channel.session().initialize(context.clone(), channel.clone())
+					channel.session().initialize(context.clone(), channel.clone(), Direction::Inbound)
 						.and_then(|_| Context::on_message(cloned_context, channel))
 						.boxed()
 				},
@@ -120,7 +122,25 @@ impl Context {
 		}).boxed()
 	}
 
-	pub fn send<T>(context: Arc<Context>, channel: Arc<Channel>, payload: &T) -> IoFuture<()> where T: Payload {
+	pub fn send_raw(_context: Arc<Context>, channel: Arc<Channel>, command: Command, payload: &Bytes) -> IoFuture<()> {
+		trace!("Sending {} message to {}", command, channel.peer_info().address);
+		channel.write_raw_message(command.clone(), payload).then(move |result| {
+			match result {
+				Ok(_) => {
+					// successful send
+					trace!("Sent {} message to {}", command, channel.peer_info().address);
+					finished(()).boxed()
+				},
+				Err(err) => {
+					// network error
+					// closing connection is handled in on_message`
+					failed(err).boxed()
+				},
+			}
+		}).boxed()
+	}
+
+	pub fn send<T>(_context: Arc<Context>, channel: Arc<Channel>, payload: &T) -> IoFuture<()> where T: Payload {
 		trace!("Sending {} message to {}", T::command(), channel.peer_info().address);
 		channel.write_message(payload).then(move |result| {
 			match result {
@@ -131,7 +151,7 @@ impl Context {
 				},
 				Err(err) => {
 					// network error
-					context.close_connection(channel.peer_info());
+					// closing connection is handled in on_message`
 					failed(err).boxed()
 				},
 			}

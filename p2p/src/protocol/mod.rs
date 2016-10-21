@@ -6,13 +6,14 @@ use message::common::Command;
 
 pub use self::ping::PingProtocol;
 
+#[derive(PartialEq, Clone, Copy)]
 pub enum Direction {
 	Inbound,
 	Outbound,
 }
 
 pub enum ProtocolAction {
-	Reply(Bytes),
+	Reply((Command, Bytes)),
 	None,
 	Disconnect,
 }

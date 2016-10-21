@@ -1,4 +1,6 @@
-use message::{Payload, Magic, Message};
+use tokio_core::io::{write_all, WriteAll};
+use bytes::Bytes;
+use message::{Payload, Magic, Message, to_raw_message, Command};
 use net::Connection;
 use session::Session;
 use io::{SharedTcpStream, WriteMessage, write_message, read_any_message, ReadAnyMessage};
@@ -30,6 +32,11 @@ impl Channel {
 		// TODO: some tracing here
 		let message = Message::new(self.magic, self.version, payload).expect("failed to create outgoing message");
 		write_message(self.stream.clone(), message)
+	}
+
+	pub fn write_raw_message(&self, command: Command, payload: &Bytes) -> WriteAll<SharedTcpStream, Bytes> {
+		let message = to_raw_message(self.magic, command, payload);
+		write_all(self.stream.clone(), message)
 	}
 
 	pub fn read_message(&self) -> ReadAnyMessage<SharedTcpStream> {

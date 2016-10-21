@@ -29,12 +29,12 @@ impl Session {
 		}
 	}
 
-	pub fn initialize(&self, context: Arc<Context>, channel: Arc<Channel>) -> IoFuture<()> {
+	pub fn initialize(&self, context: Arc<Context>, channel: Arc<Channel>, direction: Direction) -> IoFuture<()> {
 		let futures = self.protocols.lock()
 			.iter_mut()
 			.map(|protocol| {
 				// TODO: use real direction and version
-				match protocol.initialize(Direction::Inbound, 0) {
+				match protocol.initialize(direction, channel.version()) {
 					Ok(ProtocolAction::None) => {
 						finished(()).boxed()
 					},
@@ -43,8 +43,8 @@ impl Session {
 						context.close_connection(channel.peer_info());
 						finished(()).boxed()
 					},
-					Ok(ProtocolAction::Reply(message)) => {
-						unimplemented!();
+					Ok(ProtocolAction::Reply((command, payload))) => {
+						Context::send_raw(context.clone(), channel.clone(), command, &payload)
 					},
 					Err(err) => {
 						// protocol error
@@ -63,7 +63,7 @@ impl Session {
 			.iter()
 			.map(|protocol| {
 				// TODO: use real version
-				match protocol.on_message(&command, &payload, 0) {
+				match protocol.on_message(&command, &payload, channel.version()) {
 					Ok(ProtocolAction::None) => {
 						finished(()).boxed()
 					},
@@ -71,8 +71,8 @@ impl Session {
 						context.close_connection(channel.peer_info());
 						finished(()).boxed()
 					},
-					Ok(ProtocolAction::Reply(message)) => {
-						unimplemented!();
+					Ok(ProtocolAction::Reply((command, payload))) => {
+						Context::send_raw(context.clone(), channel.clone(), command, &payload)
 					},
 					Err(err) => {
 						// protocol error
