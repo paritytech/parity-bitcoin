@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use chain::{Block, Transaction};
 use message::types;
 use message::Error;
@@ -10,100 +11,8 @@ use message::common::Command;
 use protocol::{Protocol, ProtocolAction};
 
 pub type InboundSyncConnectionRef = Arc<Mutex<Box<InboundSyncConnection>>>;
+
 pub type OutboundSyncConnectionRef = Arc<Mutex<Box<OutboundSyncConnection>>>;
-
-pub enum InventoryResponse {
-	Reject(types::Reject),
-	GetData(types::GetData),
-}
-
-pub enum GetBlocksResponse {
-	Reject(types::Reject),
-	Blocks(types::Inv),
-}
-
-pub enum GetHeadersResponse {
-	Reject(types::Reject),
-	Headers(types::Headers),
-}
-
-pub enum TransactionResponse {
-	Reject(types::Reject),
-	None,
-}
-
-pub enum BlockResponse {
-	Reject(types::Reject),
-	None,
-}
-
-pub enum HeadersResponse {
-	Reject(types::Reject),
-	None,
-}
-
-pub enum GetDataResponse {
-	Reject(types::Reject),
-	NotFound(types::NotFound),
-	Transaction(Transaction),
-	Block(Block),
-}
-
-pub enum MemPoolResponse {
-	Reject(types::Reject),
-	MemPool(types::MemPool),
-}
-
-pub enum FilterLoadResponse {
-	Reject(types::Reject),
-	None,
-}
-
-pub enum FilterAddResponse {
-	Reject(types::Reject),
-	None,
-}
-
-pub enum FilterClearResponse {
-	Reject(types::Reject),
-	None,
-}
-
-pub enum MerkleBlockResponse {
-	Reject(types::Reject),
-	None,
-}
-
-pub enum SendHeadersResponse {
-	Reject(types::Reject),
-	None,
-}
-
-pub enum FeeFilterResponse {
-	Reject(types::Reject),
-	None,
-}
-
-pub enum SendCompactResponse {
-	Reject(types::Reject),
-	None,
-}
-
-pub enum CompactBlockResponse {
-	Reject(types::Reject),
-	None,
-}
-
-pub enum GetBlockTxnResponse {
-	Reject(types::Reject),
-	BlockTxn(types::BlockTxn),
-}
-
-pub enum BlockTxnResponse {
-	Reject(types::Reject),
-	None,
-}
-
 // TODO: use this to respond to construct Version message (start_height field)
 // TODO: use this to create new inbound sessions
 pub trait LocalSyncNode : Send + Sync {
@@ -112,24 +21,24 @@ pub trait LocalSyncNode : Send + Sync {
 }
 
 pub trait InboundSyncConnection : Send + Sync {
-	fn on_iventory(&mut self, message: &types::Inv) -> InventoryResponse;
-	fn on_getdata(&mut self, message: &types::GetData) -> GetDataResponse;
-	fn on_getblocks(&mut self, message: &types::GetBlocks) -> GetBlocksResponse;
-	fn on_getheaders(&mut self, message: &types::GetHeaders) -> GetHeadersResponse;
-	fn on_transaction(&mut self, message: &Transaction) -> TransactionResponse;
-	fn on_block(&mut self, message: &Block) -> BlockResponse;
-	fn on_headers(&mut self, message: &types::Headers) -> HeadersResponse;
-	fn on_mempool(&mut self, message: &types::MemPool) -> MemPoolResponse;
-	fn on_filterload(&mut self, message: &types::FilterLoad) -> FilterLoadResponse;
-	fn on_filteradd(&mut self, message: &types::FilterAdd) -> FilterAddResponse;
-	fn on_filterclear(&mut self, message: &types::FilterClear) -> FilterClearResponse;
-	fn on_merkleblock(&mut self, message: &types::MerkleBlock) -> MerkleBlockResponse;
-	fn on_sendheaders(&mut self, message: &types::SendHeaders) -> SendHeadersResponse;
-	fn on_feefilter(&mut self, message: &types::FeeFilter) -> FeeFilterResponse;
-	fn on_send_compact(&mut self, message: &types::SendCompact) -> SendCompactResponse;
-	fn on_compact_block(&mut self, message: &types::CompactBlock) -> CompactBlockResponse;
-	fn on_get_block_txn(&mut self, message: &types::GetBlockTxn) -> GetBlockTxnResponse;
-	fn on_block_txn(&mut self, message: &types::BlockTxn) -> BlockTxnResponse;
+	fn on_iventory(&mut self, message: &types::Inv);
+	fn on_getdata(&mut self, message: &types::GetData);
+	fn on_getblocks(&mut self, message: &types::GetBlocks);
+	fn on_getheaders(&mut self, message: &types::GetHeaders);
+	fn on_transaction(&mut self, message: &Transaction);
+	fn on_block(&mut self, message: &Block);
+	fn on_headers(&mut self, message: &types::Headers);
+	fn on_mempool(&mut self, message: &types::MemPool);
+	fn on_filterload(&mut self, message: &types::FilterLoad);
+	fn on_filteradd(&mut self, message: &types::FilterAdd);
+	fn on_filterclear(&mut self, message: &types::FilterClear);
+	fn on_merkleblock(&mut self, message: &types::MerkleBlock);
+	fn on_sendheaders(&mut self, message: &types::SendHeaders);
+	fn on_feefilter(&mut self, message: &types::FeeFilter);
+	fn on_send_compact(&mut self, message: &types::SendCompact);
+	fn on_compact_block(&mut self, message: &types::CompactBlock);
+	fn on_get_block_txn(&mut self, message: &types::GetBlockTxn);
+	fn on_block_txn(&mut self, message: &types::BlockTxn);
 }
 
 pub trait OutboundSyncConnection : Send + Sync {
@@ -260,10 +169,7 @@ impl Protocol for SyncProtocol {
 		/*
 		if command == &Inv::command().into() {
 			let inventory: Inv = try!(deserialize_payload(payload, version));
-			match self.inbound_connection(&inventory) {
-				Reject(reject) => Ok(ProtocolAction::Reply(try!(serialize_payload(&reject, version)))),
-				GetData(getdata) => Ok(ProtocolAction::Reply(try!(serialize_payload(&getdata, version)))),
-			}
+			self.inbound_connection.on_iventory(&inventory);
 		} else {
 			Ok(ProtocolAction::None)
 		}
