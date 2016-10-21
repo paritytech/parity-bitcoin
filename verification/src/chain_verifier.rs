@@ -42,31 +42,40 @@ mod tests {
 
 	impl Store for TestStorage {
 		fn block_hash(&self, number: u64) -> Option<H256> {
-			self.heights.get(&(number as usize)).map(|h| h.clone())
+			self.heights.get(&(number as usize)).cloned()
 		}
 
 		fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes> {
-			None
+			self.resolve_hash(block_ref)
+				.and_then(|ref h| self.blocks.get(h))
+				.map(|ref block| serialization::serialize(block.header()))
 		}
 
 		fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256> {
-			Vec::new()
+			self.resolve_hash(block_ref)
+				.and_then(|ref h| self.blocks.get(h))
+				.map(|ref block| block.transactions().iter().map(|tx| tx.hash()).collect())
+				.unwrap_or(Vec::new())
 		}
 
 		fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
-			None
+			self.transaction(hash).map(|tx| serialization::serialize(&tx))
 		}
 
 		fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
-			None
+			self.blocks.iter().flat_map(|(_, b)| b.transactions())
+				.find(|ref tx| tx.hash() == *hash)
+				.cloned()
 		}
 
 		fn block_transactions(&self, block_ref: BlockRef) -> Vec<chain::Transaction> {
-			Vec::new()
+			self.blocks.iter().flat_map(|(_, b)| b.transactions()).cloned().collect()
 		}
 
 		fn block(&self, block_ref: BlockRef) -> Option<chain::Block> {
-			None
+			self.resolve_hash(block_ref)
+				.and_then(|ref h| self.blocks.get(h))
+				.cloned()
 		}
 
 		fn insert_block(&self, block: &chain::Block) -> Result<(), db::Error> {
