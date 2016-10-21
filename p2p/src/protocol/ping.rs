@@ -30,7 +30,7 @@ impl<T> Protocol for PingProtocol<T> where T: NonceGenerator + Send {
 				self.last_ping_nonce = nonce;
 				let ping = Ping::new(nonce);
 				let serialized = try!(serialize_payload(&ping, version));
-				Ok(ProtocolAction::Reply(serialized))
+				Ok(ProtocolAction::Reply((Ping::command().into(), serialized)))
 			},
 		}
 	}
@@ -40,7 +40,7 @@ impl<T> Protocol for PingProtocol<T> where T: NonceGenerator + Send {
 			let ping: Ping = try!(deserialize_payload(payload, version));
 			let pong = Pong::new(ping.nonce);
 			let serialized = try!(serialize_payload(&pong, version));
-			Ok(ProtocolAction::Reply(serialized))
+			Ok(ProtocolAction::Reply((Pong::command().into(), serialized)))
 		} else if command == &Pong::command().into() {
 			let pong: Pong = try!(deserialize_payload(payload, version));
 			if pong.nonce != self.last_ping_nonce {
