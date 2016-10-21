@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::io;
 use std::sync::{Arc, Mutex};
 use chain::{Block, Transaction};
 use message::types;
@@ -12,7 +11,6 @@ use protocol::{Protocol, ProtocolAction};
 
 pub type InboundSyncConnectionRef = Arc<Mutex<Box<InboundSyncConnection>>>;
 pub type OutboundSyncConnectionRef = Arc<Mutex<Box<OutboundSyncConnection>>>;
-pub type SendError = Result<(), io::Error>;
 
 pub enum InventoryResponse {
 	Reject(types::Reject),
@@ -135,24 +133,24 @@ pub trait InboundSyncConnection : Send + Sync {
 }
 
 pub trait OutboundSyncConnection : Send + Sync {
-	fn send_iventory(&mut self, message: &types::Inv) -> SendError;
-	fn send_getdata(&mut self, message: &types::GetData) -> SendError;
-	fn send_getblocks(&mut self, message: &types::GetBlocks) -> SendError;
-	fn send_getheaders(&mut self, message: &types::GetHeaders) -> SendError;
-	fn send_transaction(&mut self, message: &Transaction) -> SendError;
-	fn send_block(&mut self, message: &Block) -> SendError;
-	fn send_headers(&mut self, message: &types::Headers) -> SendError;
-	fn send_mempool(&mut self, message: &types::MemPool) -> SendError;
-	fn send_filterload(&mut self, message: &types::FilterLoad) -> SendError;
-	fn send_filteradd(&mut self, message: &types::FilterAdd) -> SendError;
-	fn send_filterclear(&mut self, message: &types::FilterClear) -> SendError;
-	fn send_merkleblock(&mut self, message: &types::MerkleBlock) -> SendError;
-	fn send_sendheaders(&mut self, message: &types::SendHeaders) -> SendError;
-	fn send_feefilter(&mut self, message: &types::FeeFilter) -> SendError;
-	fn send_send_compact(&mut self, message: &types::SendCompact) -> SendError;
-	fn send_compact_block(&mut self, message: &types::CompactBlock) -> SendError;
-	fn send_get_block_txn(&mut self, message: &types::GetBlockTxn) -> SendError;
-	fn send_block_txn(&mut self, message: &types::BlockTxn) -> SendError;
+	fn send_iventory(&mut self, message: &types::Inv);
+	fn send_getdata(&mut self, message: &types::GetData);
+	fn send_getblocks(&mut self, message: &types::GetBlocks);
+	fn send_getheaders(&mut self, message: &types::GetHeaders);
+	fn send_transaction(&mut self, message: &Transaction);
+	fn send_block(&mut self, message: &Block);
+	fn send_headers(&mut self, message: &types::Headers);
+	fn send_mempool(&mut self, message: &types::MemPool);
+	fn send_filterload(&mut self, message: &types::FilterLoad);
+	fn send_filteradd(&mut self, message: &types::FilterAdd);
+	fn send_filterclear(&mut self, message: &types::FilterClear);
+	fn send_merkleblock(&mut self, message: &types::MerkleBlock);
+	fn send_sendheaders(&mut self, message: &types::SendHeaders);
+	fn send_feefilter(&mut self, message: &types::FeeFilter);
+	fn send_send_compact(&mut self, message: &types::SendCompact);
+	fn send_compact_block(&mut self, message: &types::CompactBlock);
+	fn send_get_block_txn(&mut self, message: &types::GetBlockTxn);
+	fn send_block_txn(&mut self, message: &types::BlockTxn);
 }
 
 struct OutboundSync {
@@ -166,75 +164,75 @@ impl OutboundSync {
 }
 
 impl OutboundSyncConnection for OutboundSync {
-	fn send_iventory(&mut self, message: &types::Inv) -> SendError {
+	fn send_iventory(&mut self, message: &types::Inv) {
 		unimplemented!()
 	}
 
-	fn send_getdata(&mut self, message: &types::GetData) -> SendError {
+	fn send_getdata(&mut self, message: &types::GetData) {
 		unimplemented!()
 	}
 
-	fn send_getblocks(&mut self, message: &types::GetBlocks) -> SendError {
+	fn send_getblocks(&mut self, message: &types::GetBlocks) {
 		unimplemented!()
 	}
 
-	fn send_getheaders(&mut self, message: &types::GetHeaders) -> SendError {
+	fn send_getheaders(&mut self, message: &types::GetHeaders) {
 		unimplemented!()
 	}
 
-	fn send_transaction(&mut self, message: &Transaction) -> SendError {
+	fn send_transaction(&mut self, message: &Transaction) {
 		unimplemented!()
 	}
 
-	fn send_block(&mut self, message: &Block) -> SendError {
+	fn send_block(&mut self, message: &Block) {
 		unimplemented!()
 	}
 
-	fn send_headers(&mut self, message: &types::Headers) -> SendError {
+	fn send_headers(&mut self, message: &types::Headers) {
 		unimplemented!()
 	}
 
-	fn send_mempool(&mut self, message: &types::MemPool) -> SendError {
+	fn send_mempool(&mut self, message: &types::MemPool) {
 		unimplemented!()
 	}
 
-	fn send_filterload(&mut self, message: &types::FilterLoad) -> SendError {
+	fn send_filterload(&mut self, message: &types::FilterLoad) {
 		unimplemented!()
 	}
 
-	fn send_filteradd(&mut self, message: &types::FilterAdd) -> SendError {
+	fn send_filteradd(&mut self, message: &types::FilterAdd) {
 		unimplemented!()
 	}
 
-	fn send_filterclear(&mut self, message: &types::FilterClear) -> SendError {
+	fn send_filterclear(&mut self, message: &types::FilterClear) {
 		unimplemented!()
 	}
 
-	fn send_merkleblock(&mut self, message: &types::MerkleBlock) -> SendError {
+	fn send_merkleblock(&mut self, message: &types::MerkleBlock) {
 		unimplemented!()
 	}
 
-	fn send_sendheaders(&mut self, message: &types::SendHeaders) -> SendError {
+	fn send_sendheaders(&mut self, message: &types::SendHeaders) {
 		unimplemented!()
 	}
 
-	fn send_feefilter(&mut self, message: &types::FeeFilter) -> SendError {
+	fn send_feefilter(&mut self, message: &types::FeeFilter) {
 		unimplemented!()
 	}
 
-	fn send_send_compact(&mut self, message: &types::SendCompact) -> SendError {
+	fn send_send_compact(&mut self, message: &types::SendCompact) {
 		unimplemented!()
 	}
 
-	fn send_compact_block(&mut self, message: &types::CompactBlock) -> SendError {
+	fn send_compact_block(&mut self, message: &types::CompactBlock) {
 		unimplemented!()
 	}
 
-	fn send_get_block_txn(&mut self, message: &types::GetBlockTxn) -> SendError {
+	fn send_get_block_txn(&mut self, message: &types::GetBlockTxn) {
 		unimplemented!()
 	}
 
-	fn send_block_txn(&mut self, message: &types::BlockTxn) -> SendError {
+	fn send_block_txn(&mut self, message: &types::BlockTxn) {
 		unimplemented!()
 	}
 }
