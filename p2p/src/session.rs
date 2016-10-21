@@ -6,21 +6,23 @@ use bytes::Bytes;
 use message::Command;
 use p2p::Context;
 use net::Channel;
-use protocol::{Protocol, ProtocolAction, PingProtocol, Direction};
+use protocol::{Protocol, ProtocolAction, PingProtocol, SyncProtocol, Direction};
+use PeerId;
 
 pub struct Session {
 	protocols: Mutex<Vec<Box<Protocol>>>,
 }
 
 impl Session {
-	pub fn new() -> Self {
-		let ping = PingProtocol::new();
-		Session::new_with_protocols(vec![Box::new(ping)])
+	pub fn new(context: Arc<Context>, peer: PeerId) -> Self {
+		let ping = PingProtocol::new().boxed();
+		let sync = SyncProtocol::new(context, peer).boxed();
+		Session::new_with_protocols(vec![ping, sync])
 	}
 
 	pub fn new_seednode() -> Self {
-		let ping = PingProtocol::new();
-		Session::new_with_protocols(vec![Box::new(ping)])
+		let ping = PingProtocol::new().boxed();
+		Session::new_with_protocols(vec![ping])
 	}
 
 	pub fn new_with_protocols(protocols: Vec<Box<Protocol>>) -> Self {

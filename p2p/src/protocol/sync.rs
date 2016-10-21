@@ -3,10 +3,8 @@
 
 use std::sync::{Arc, Mutex};
 use chain::{Block, Transaction};
-use message::types;
-use message::Error;
 use bytes::Bytes;
-use message::Command;
+use message::{Command, Error, Payload, types};
 use protocol::{Protocol, ProtocolAction};
 use p2p::Context;
 use PeerId;
@@ -168,6 +166,11 @@ impl OutboundSync {
 		}
 	}
 
+	pub fn send_message<T>(&self, message: &T) where T: Payload {
+		let send = Context::send_to_peer(self.context.clone(), self.peer, message);
+		self.context.spawn(send);
+	}
+
 	pub fn boxed(self) -> Box<OutboundSyncConnection> {
 		Box::new(self)
 	}
@@ -175,76 +178,75 @@ impl OutboundSync {
 
 impl OutboundSyncConnection for OutboundSync {
 	fn send_iventory(&mut self, message: &types::Inv) {
-		let send = Context::send_to_peer(self.context.clone(), self.peer, message);
-		self.context.spawn(send);
+		self.send_message(message);
 	}
 
 	fn send_getdata(&mut self, message: &types::GetData) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_getblocks(&mut self, message: &types::GetBlocks) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_getheaders(&mut self, message: &types::GetHeaders) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_transaction(&mut self, message: &Transaction) {
-		unimplemented!()
+		unimplemented!();
 	}
 
 	fn send_block(&mut self, message: &Block) {
-		unimplemented!()
+		unimplemented!();
 	}
 
 	fn send_headers(&mut self, message: &types::Headers) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_mempool(&mut self, message: &types::MemPool) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_filterload(&mut self, message: &types::FilterLoad) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_filteradd(&mut self, message: &types::FilterAdd) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_filterclear(&mut self, message: &types::FilterClear) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_merkleblock(&mut self, message: &types::MerkleBlock) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_sendheaders(&mut self, message: &types::SendHeaders) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_feefilter(&mut self, message: &types::FeeFilter) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_send_compact(&mut self, message: &types::SendCompact) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_compact_block(&mut self, message: &types::CompactBlock) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_get_block_txn(&mut self, message: &types::GetBlockTxn) {
-		unimplemented!()
+		self.send_message(message);
 	}
 
 	fn send_block_txn(&mut self, message: &types::BlockTxn) {
-		unimplemented!()
+		self.send_message(message);
 	}
 }
 

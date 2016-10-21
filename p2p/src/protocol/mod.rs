@@ -6,6 +6,7 @@ use message::Error;
 use message::common::Command;
 
 pub use self::ping::PingProtocol;
+pub use self::sync::SyncProtocol;
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum Direction {
@@ -27,4 +28,9 @@ pub trait Protocol: Send {
 
 	/// Handle the message.
 	fn on_message(&self, command: &Command, payload: &Bytes, version: u32) -> Result<ProtocolAction, Error>;
+
+	/// Boxes the protocol.
+	fn boxed(self) -> Box<Protocol> where Self: Sized + 'static {
+		Box::new(self)
+	}
 }

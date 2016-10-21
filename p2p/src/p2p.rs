@@ -57,8 +57,7 @@ impl Context {
 					// successfull hanshake
 					trace!("Connected to {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
-					let session = Session::new();
-					let channel = context.connections.store(connection, session);
+					let channel = context.connections.store(context.clone(), connection);
 
 					// initialize session and then start reading messages
 					channel.session().initialize(context.clone(), channel.clone(), Direction::Outbound)
@@ -91,8 +90,7 @@ impl Context {
 					// successfull hanshake
 					trace!("Accepted connection from {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
-					let session = Session::new();
-					let channel = context.connections.store(connection, session);
+					let channel = context.connections.store(context.clone(), connection);
 
 					// initialize session and then start reading messages
 					let cloned_context = context.clone();
@@ -207,6 +205,19 @@ pub struct P2P {
 	config: Config,
 	/// Network context.
 	context: Arc<Context>,
+}
+
+impl Drop for P2P {
+	fn drop(&mut self) {
+		// there are retain cycles
+		// context->connections->channel->session->protocol->context
+		// context->connections->channel->on_message closure->context
+		// first let's get rid of session retain cycle
+		for channel in &self.context.connections.remove_all() {
+			// done, now let's finish on_message
+			channel.shutdown();
+		}
+	}
 }
 
 impl P2P {
