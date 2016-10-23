@@ -15,6 +15,7 @@ extern crate ethcore_devtools as devtools;
 extern crate test_data;
 
 mod queue;
+mod utils;
 mod chain_verifier;
 
 pub use queue::Queue;
