@@ -42,7 +42,7 @@ impl Session {
 
 	pub fn on_message(&self, channel: Arc<Channel>, command: Command, payload: Bytes) -> Result<(), Error> {
 		self.protocols.lock()
-			.iter()
+			.iter_mut()
 			.map(|protocol| {
 				protocol.on_message(&command, &payload, channel.version())
 			})

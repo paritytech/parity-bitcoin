@@ -11,7 +11,7 @@ use message::{Payload, Command};
 use protocol::Direction;
 use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
-use util::NodeTable;
+use util::{NodeTable, Node};
 use {Config, PeerInfo, PeerId};
 
 pub type BoxedMessageFuture = BoxFuture<<ReadAnyMessage<SharedTcpStream> as Future>::Item, <ReadAnyMessage<SharedTcpStream> as Future>::Error>;
@@ -45,6 +45,15 @@ impl Context {
 			handle.spawn(pool_work.then(|_| finished(())));
 			Ok(())
 		})
+	}
+
+	pub fn node_table_entries(&self) -> Vec<Node> {
+		self.node_table.read().recently_active_nodes()
+	}
+
+	pub fn update_node_table(&self, nodes: Vec<Node>) {
+		trace!("Updating node table with {} entries", nodes.len());
+		self.node_table.write().insert_many(nodes);
 	}
 
 	pub fn connect(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture {
@@ -124,7 +133,11 @@ impl Context {
 					// handle message and read the next one
 					match channel.session().on_message(channel.clone(), command, payload) {
 						Ok(_) => Context::on_message(context, channel),
-						Err(err) => finished(Err(err)).boxed()
+						Err(err) => {
+							// protocol error
+							context.close_connection(channel.peer_info());
+							finished(Err(err)).boxed()
+						}
 					}
 				},
 				Ok(Err(err)) => {

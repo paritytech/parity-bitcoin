@@ -13,10 +13,10 @@ pub struct PingProtocol<T = RandomNonce> {
 	context: Arc<Context>,
 	/// Connected peer id.
 	peer: PeerId,
-	/// Nonce generator
+	/// Nonce generator.
 	nonce_generator: T,
-	/// Last nonce sent in a ping message.
-	last_ping_nonce: u64,
+	/// Last nonce sent in the ping message.
+	last_ping_nonce: Option<u64>,
 }
 
 impl PingProtocol {
@@ -25,7 +25,7 @@ impl PingProtocol {
 			context: context,
 			peer: peer,
 			nonce_generator: RandomNonce::default(),
-			last_ping_nonce: 0,
+			last_ping_nonce: None,
 		}
 	}
 }
@@ -34,14 +34,14 @@ impl<T> Protocol for PingProtocol<T> where T: NonceGenerator + Send {
 	fn initialize(&mut self, _direction: Direction, _version: u32) -> Result<(), Error> {
 		// bitcoind always sends ping, let's do the same
 		let nonce = self.nonce_generator.get();
-		self.last_ping_nonce = nonce;
+		self.last_ping_nonce = Some(nonce);
 		let ping = Ping::new(nonce);
 		let send = Context::send_to_peer(self.context.clone(), self.peer, &ping);
 		self.context.spawn(send);
 		Ok(())
 	}
 
-	fn on_message(&self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
+	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
 		if command == &Ping::command().into() {
 			let ping: Ping = try!(deserialize_payload(payload, version));
 			let pong = Pong::new(ping.nonce);
@@ -49,7 +49,7 @@ impl<T> Protocol for PingProtocol<T> where T: NonceGenerator + Send {
 			self.context.spawn(send);
 		} else if command == &Pong::command().into() {
 			let pong: Pong = try!(deserialize_payload(payload, version));
-			if pong.nonce != self.last_ping_nonce {
+			if Some(pong.nonce) != self.last_ping_nonce.take() {
 				return Err(Error::InvalidCommand)
 			}
 		}

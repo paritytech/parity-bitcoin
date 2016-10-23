@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use bytes::Bytes;
-use message::{Error, Command, types};
+use message::{Error, Command, deserialize_payload, Payload};
+use message::types::{GetAddr, Addr};
 use protocol::{Protocol, Direction};
 use p2p::Context;
 use PeerId;
@@ -10,6 +11,8 @@ pub struct AddrProtocol {
 	context: Arc<Context>,
 	/// Connected peer id.
 	peer: PeerId,
+	/// True if expect addr message.
+	expects_addr: bool,
 }
 
 impl AddrProtocol {
@@ -17,21 +20,40 @@ impl AddrProtocol {
 		AddrProtocol {
 			context: context,
 			peer: peer,
+			expects_addr: false,
 		}
 	}
 }
 
 impl Protocol for AddrProtocol {
 	fn initialize(&mut self, direction: Direction, _version: u32) -> Result<(), Error> {
-		// TODO: if need new peers
 		if let Direction::Outbound = direction {
-			let send = Context::send_to_peer(self.context.clone(), self.peer, &types::GetAddr);
+			self.expects_addr = true;
+			let send = Context::send_to_peer(self.context.clone(), self.peer, &GetAddr);
 			self.context.spawn(send);
 		}
 		Ok(())
 	}
 
-	fn on_message(&self, _command: &Command, _payload: &Bytes, _version: u32) -> Result<(), Error> {
+	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
+		if command == &GetAddr::command().into() {
+			let _: GetAddr = try!(deserialize_payload(payload, version));
+			let entries = self.context.node_table_entries().into_iter().map(Into::into).collect();
+			let addr = Addr::new(entries);
+			let send = Context::send_to_peer(self.context.clone(), self.peer, &addr);
+			self.context.spawn(send);
+		} else if command == &Addr::command().into() {
+			let addr: Addr = try!(deserialize_payload(payload, version));
+			match addr {
+				Addr::V0(_) => {
+					unreachable!("This version of protocol is not supported!");
+				},
+				Addr::V31402(addr) => {
+					let nodes = addr.addresses.into_iter().map(Into::into).collect();
+					self.context.update_node_table(nodes);
+				},
+			}
+		}
 		Ok(())
 	}
 }

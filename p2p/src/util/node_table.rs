@@ -2,7 +2,7 @@ use std::collections::{HashMap, BTreeSet};
 use std::collections::hash_map::Entry;
 use std::net::SocketAddr;
 use std::cmp::{PartialOrd, Ord, Ordering};
-use message::common::Services;
+use message::common::{Services, NetAddress};
 use message::types::addr::AddressEntry;
 use util::time::{Time, RealTime};
 
@@ -25,6 +25,19 @@ impl From<AddressEntry> for Node {
 			time: entry.timestamp as i64,
 			services: entry.address.services,
 			failures: 0,
+		}
+	}
+}
+
+impl From<Node> for AddressEntry {
+	fn from(node: Node) -> Self {
+		AddressEntry {
+			timestamp: node.time as u32,
+			address: NetAddress {
+				services: node.services,
+				address: node.addr.ip().into(),
+				port: node.addr.port().into(),
+			}
 		}
 	}
 }
