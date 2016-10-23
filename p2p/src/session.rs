@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use parking_lot::Mutex;
-use futures::collect;
 use bytes::Bytes;
 use message::{Command, Error};
 use p2p::Context;
@@ -14,13 +13,13 @@ pub struct Session {
 
 impl Session {
 	pub fn new(context: Arc<Context>, peer: PeerId) -> Self {
-		let ping = PingProtocol::new().boxed();
+		let ping = PingProtocol::new(context.clone(), peer).boxed();
 		let sync = SyncProtocol::new(context, peer).boxed();
 		Session::new_with_protocols(vec![ping, sync])
 	}
 
-	pub fn new_seednode() -> Self {
-		let ping = PingProtocol::new().boxed();
+	pub fn new_seednode(context: Arc<Context>, peer: PeerId) -> Self {
+		let ping = PingProtocol::new(context.clone(), peer).boxed();
 		Session::new_with_protocols(vec![ping])
 	}
 
