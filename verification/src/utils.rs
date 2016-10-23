@@ -1,6 +1,6 @@
 //! Verification utilities
 use primitives::hash::H256;
-use byteorder::{LittleEndian, BigEndian, ByteOrder};
+use byteorder::{BigEndian, ByteOrder};
 
 pub fn check_nbits(hash: &H256, n_bits: u32) -> bool {
 	let hash_bytes: &[u8] = &**hash;

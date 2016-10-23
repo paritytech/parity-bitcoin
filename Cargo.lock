@@ -609,6 +609,7 @@ dependencies = [
  "linked-hash-map 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
+ "script 0.1.0",
  "serialization 0.1.0",
  "test-data 0.1.0",
  "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",

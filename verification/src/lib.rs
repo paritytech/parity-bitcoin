@@ -8,6 +8,7 @@ extern crate parking_lot;
 extern crate linked_hash_map;
 extern crate byteorder;
 extern crate time;
+extern crate script;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
@@ -19,6 +20,7 @@ mod utils;
 mod chain_verifier;
 
 pub use queue::Queue;
+pub use chain_verifier::ChainVerifier;
 
 #[derive(Debug)]
 /// All possible verification errors
@@ -43,11 +45,11 @@ pub enum Error {
 /// Possible transactions verification errors
 pub enum TransactionError {
 	/// Not found corresponding output for transaction input
-	Input,
+	Input(usize),
 	/// Referenced coinbase output for the transaction input is not mature enough
 	Maturity,
-	/// Signature invalid
-	Signature,
+	/// Signature invalid for given input
+	Signature(usize),
 }
 
 #[derive(PartialEq, Debug)]

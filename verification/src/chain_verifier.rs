@@ -4,8 +4,7 @@ use std::sync::Arc;
 
 use db::{self, BlockRef};
 use chain;
-use super::{Verify, VerificationResult, Chain, Error};
-use primitives::hash::H256;
+use super::{Verify, VerificationResult, Chain, Error, TransactionError};
 use utils;
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
@@ -17,6 +16,44 @@ pub struct ChainVerifier {
 impl ChainVerifier {
 	pub fn new(store: Arc<db::Store>) -> Self {
 		ChainVerifier { store: store }
+	}
+
+	fn verify_transaction(&self, transaction: &chain::Transaction) -> Result<(), TransactionError> {
+		//use script::{TransactionInputSigner, TransactionSignatureChecker, VerificationFlags, verify_script};
+
+		for (input_index, input) in transaction.inputs().iter().enumerate() {
+			let parent_transaction = match self.store.transaction(&input.previous_output.hash) {
+				Some(tx) => tx,
+				None => { return Err(TransactionError::Input(input_index)); }
+			};
+			if parent_transaction.outputs.len() <= input.previous_output.index as usize {
+				return Err(TransactionError::Input(input_index));
+			}
+
+
+			// signature verification
+
+//			let signer: TransactionInputSigner = transaction.clone().into();
+//			let paired_output = parent_transaction.outputs[input.previous_output.index as usize];
+//			let checker = TransactionSignatureChecker {
+//				signer: signer,
+//				input_index: input_index,
+//			};
+//			let input: Script = input.script_sig().into();
+//			let output: Script = paired_output.script_pubkey.into();
+//			let flags = VerificationFlags::default().verify_p2sh(true);
+//
+//			if !verify_script(&input, &output, &flags, &checker).unwrap_or(|e| {
+//					// todo: log error here
+//					println!("transaction signature verification failure: {:?}", e);
+//					false
+//				})
+//			{
+//				return Err(TransactionError::Signature(input_index))
+//			}
+		}
+
+		Ok(())
 	}
 }
 
@@ -44,7 +81,12 @@ impl Verify for ChainVerifier {
 			return Err(Error::Coinbase)
 		}
 
-		let parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
+		// verify transactions
+		for (idx, transaction) in block.transactions().iter().skip(1).enumerate() {
+			try!(self.verify_transaction(transaction).map_err(|e| Error::Transaction(idx, e)));
+		}
+
+		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
 			Some(b) => b,
 			None => { return Ok(Chain::Orphan); }
 		};
@@ -83,11 +125,10 @@ mod tests {
 
 		fn with_blocks(blocks: &[chain::Block]) -> Self {
 			let mut storage = TestStorage::default();
-			let mut height = 0;
 			for (idx, block) in blocks.iter().enumerate() {
 				let hash = block.hash();
 				storage.blocks.insert(hash.clone(), block.clone());
-				storage.heights.insert(height, hash);
+				storage.heights.insert(idx, hash);
 			}
 			storage
 		}
@@ -133,7 +174,7 @@ mod tests {
 				.cloned()
 		}
 
-		fn insert_block(&self, block: &chain::Block) -> Result<(), db::Error> {
+		fn insert_block(&self, _block: &chain::Block) -> Result<(), db::Error> {
 			Ok(())
 		}
 	}
