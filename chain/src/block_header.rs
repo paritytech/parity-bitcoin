@@ -6,7 +6,7 @@ use ser::{
 use crypto::dhash256;
 use hash::H256;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub struct BlockHeader {
 	pub version: u32,
 	pub previous_header_hash: H256,

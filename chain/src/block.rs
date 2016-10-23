@@ -9,8 +9,8 @@ use {BlockHeader, Transaction};
 
 #[derive(Debug, PartialEq)]
 pub struct Block {
-	block_header: BlockHeader,
-	transactions: Vec<Transaction>,
+	pub block_header: BlockHeader,
+	pub transactions: Vec<Transaction>,
 }
 
 impl Serializable for Block {

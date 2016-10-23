@@ -90,8 +90,40 @@ impl LocalNode {
 
 	pub fn on_peer_headers(&mut self, peer_index: usize, message: &types::Headers) {
 		trace!(target: "sync", "Got `headers` message from peer#{}", peer_index);
-		for block_header in message.headers.iter() {
+		let headers_len = message.headers.len();
+		if headers_len == 0 {
+			return;
+		}
+
+		if headers_len == 1 {
+			if self.chain.insert_block_header(message.headers[0].clone()).is_err() {
+				// TODO: drop connection?
+			}
+			return;
+		}
+
+		// TODO: cannot sort by timestamp (https://en.bitcoin.it/wiki/Block_timestamp)
+		// TODO: sort by previous_header_hash instead
+		// (almost 100% it's already ordered or reverse ordered => insertion sort)
+		let headers_sorted: Vec<_> = if message.headers[1].previous_header_hash == message.headers[0].hash()
+			&& self.chain.is_known_block_header(&message.headers[0].previous_header_hash) {
+			message.headers.iter().cloned().collect()
+		}
+		else if message.headers[0].previous_header_hash == message.headers[1].hash()
+			&& self.chain.is_known_block_header(&message.headers[headers_len - 1].previous_header_hash) {
+			message.headers.iter().rev().cloned().collect()
+		}
+		else {
+			// TODO: use sorted headers
+			return;
+		};
+
+		for block_header in headers_sorted {
 			trace!(target: "sync", "Peer#{} have block {}", peer_index, block_header.hash());
+			if self.chain.insert_block_header(block_header).is_err() {
+				// TODO: drop connection?
+				return;
+			}
 		}
 	}
 

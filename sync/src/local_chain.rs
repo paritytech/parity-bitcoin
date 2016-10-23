@@ -1,22 +1,33 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
+use chain::{Block, BlockHeader};
 use primitives::hash::H256;
 use best_block::BestBlock;
 
+pub enum Error {
+	Other,
+	Orphan,
+}
+
+// TODO: this is temp storage (to use during test stage)
+//     it must be replaced with db + verification queue + mempools (transaction, block, ...)
 pub struct LocalChain {
 	blocks_order: Vec<H256>,
-	blocks_map: HashSet<H256>,
+	blocks_map: HashMap<H256, BlockHeader>,
 }
 
 impl LocalChain {
 	pub fn new() -> LocalChain {
 		let mut chain = LocalChain {
 			blocks_order: Vec::new(),
-			blocks_map: HashSet::new(),
+			blocks_map: HashMap::new(),
 		};
 
-		let genesis_hash: H256 = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into();
-		chain.blocks_order.push(genesis_hash.clone());
-		chain.blocks_map.insert(genesis_hash);
+		// TODO: move this to config
+		let genesis_block: Block = "0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a29ab5f49ffff001d1dac2b7c0101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff001d0104455468652054696d65732030332f4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f6e64206261696c6f757420666f722062616e6b73ffffffff0100f2052a01000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000".into();
+		let genesis_block_hash = genesis_block.hash();
+
+		chain.blocks_order.push(genesis_block_hash.clone());
+		chain.blocks_map.insert(genesis_block_hash, genesis_block.block_header);
 		chain
 	}
 
@@ -46,5 +57,26 @@ impl LocalChain {
 			index -= step;
 		}
 		hashes
+	}
+
+	pub fn is_known_block_header(&self, hash: &H256) -> bool {
+		self.blocks_map.contains_key(hash)
+	}
+
+	pub fn insert_block_header(&mut self, block_header: BlockHeader) -> Result<(), Error> {
+		if !self.blocks_map.contains_key(&block_header.previous_header_hash) {
+			return Err(Error::Orphan)
+		}
+
+		let block_header_hash = block_header.hash();
+		for i in 0..self.blocks_order.len() {
+			if self.blocks_order[i] == block_header.previous_header_hash {
+				self.blocks_order.insert(i + 1, block_header_hash.clone());
+				self.blocks_map.insert(block_header_hash, block_header);
+				return Ok(());
+			}
+		}
+
+		unreachable!()
 	}
 }
