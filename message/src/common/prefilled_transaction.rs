@@ -6,8 +6,8 @@ use chain::Transaction;
 
 #[derive(Debug, PartialEq)]
 pub struct PrefilledTransaction {
-	index: usize,
-	transaction: Transaction,
+	pub index: usize,
+	pub transaction: Transaction,
 }
 
 impl Serializable for PrefilledTransaction {

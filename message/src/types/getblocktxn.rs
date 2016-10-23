@@ -4,7 +4,7 @@ use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct GetBlockTxn {
-	request: BlockTransactionsRequest,
+	pub request: BlockTransactionsRequest,
 }
 
 impl Payload for GetBlockTxn {

@@ -5,7 +5,7 @@ use {Payload, MessageResult};
 #[derive(Debug, PartialEq)]
 pub struct FilterAdd {
 	// TODO: check how this should be serialized
-	data: Bytes,
+	pub data: Bytes,
 }
 
 impl Payload for FilterAdd {
