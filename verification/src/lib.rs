@@ -7,6 +7,7 @@ extern crate serialization;
 extern crate parking_lot;
 extern crate linked_hash_map;
 extern crate byteorder;
+extern crate time;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;

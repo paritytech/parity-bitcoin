@@ -8,6 +8,8 @@ use super::{Verify, VerificationResult, Chain, Error};
 use primitives::hash::H256;
 use byteorder::{LittleEndian, BigEndian, ByteOrder};
 
+const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
+
 pub struct ChainVerifier {
 	store: Arc<db::Store>,
 }
@@ -55,6 +57,10 @@ fn check_nbits(hash: &H256, n_bits: u32) -> bool {
 	return true;
 }
 
+fn age(protocol_time: u32) -> i64 {
+	::time::get_time().sec - protocol_time as i64
+}
+
 impl Verify for ChainVerifier {
 	fn verify(&self, block: &chain::Block) -> VerificationResult {
 		let hash = block.hash();
@@ -67,6 +73,16 @@ impl Verify for ChainVerifier {
 		// target difficulty threshold
 		if !check_nbits(&hash, block.header().nbits) {
 			return Err(Error::Pow);
+		}
+
+		// check if block timestamp is not far in the future
+		if age(block.header().time) < -BLOCK_MAX_FUTURE {
+			return Err(Error::Timestamp);
+		}
+
+		// check first transaction is a coinbase transaction
+		if !block.transactions()[0].is_coinbase() {
+			return Err(Error::Coinbase)
 		}
 
 		let parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {

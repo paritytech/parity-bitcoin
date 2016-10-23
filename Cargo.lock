@@ -611,6 +611,7 @@ dependencies = [
  "primitives 0.1.0",
  "serialization 0.1.0",
  "test-data 0.1.0",
+ "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

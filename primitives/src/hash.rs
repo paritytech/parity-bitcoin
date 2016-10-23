@@ -124,6 +124,11 @@ macro_rules! impl_hash {
 			pub fn size() -> usize {
 				$size
 			}
+
+			pub fn is_zero(&self) -> bool {
+				for b in self.0.iter() { if *b != 0 { return false; } }
+				return true;
+			}
 		}
 	}
 }
