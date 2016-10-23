@@ -19,7 +19,13 @@ impl ChainVerifier {
 	}
 
 	fn verify_transaction(&self, transaction: &chain::Transaction) -> Result<(), TransactionError> {
-		//use script::{TransactionInputSigner, TransactionSignatureChecker, VerificationFlags, verify_script};
+		use script::{
+			TransactionInputSigner,
+			TransactionSignatureChecker,
+			VerificationFlags,
+			Script,
+			verify_script,
+		};
 
 		for (input_index, input) in transaction.inputs().iter().enumerate() {
 			let parent_transaction = match self.store.transaction(&input.previous_output.hash) {
@@ -30,27 +36,22 @@ impl ChainVerifier {
 				return Err(TransactionError::Input(input_index));
 			}
 
-
 			// signature verification
+			let signer: TransactionInputSigner = transaction.clone().into();
+			let ref paired_output = parent_transaction.outputs[input.previous_output.index as usize];
+			let checker = TransactionSignatureChecker {
+				signer: signer,
+				input_index: input_index,
+			};
+			let input: Script = input.script_sig().to_vec().into();
+			let output: Script = paired_output.script_pubkey.to_vec().into();
+			let flags = VerificationFlags::default().verify_p2sh(true);
 
-//			let signer: TransactionInputSigner = transaction.clone().into();
-//			let paired_output = parent_transaction.outputs[input.previous_output.index as usize];
-//			let checker = TransactionSignatureChecker {
-//				signer: signer,
-//				input_index: input_index,
-//			};
-//			let input: Script = input.script_sig().into();
-//			let output: Script = paired_output.script_pubkey.into();
-//			let flags = VerificationFlags::default().verify_p2sh(true);
-//
-//			if !verify_script(&input, &output, &flags, &checker).unwrap_or(|e| {
-//					// todo: log error here
-//					println!("transaction signature verification failure: {:?}", e);
-//					false
-//				})
-//			{
-//				return Err(TransactionError::Signature(input_index))
-//			}
+			if let Err(e) =  verify_script(&input, &output, &flags, &checker) {
+				println!("transaction signature verification failure: {:?}", e);
+				// todo: log error here
+				return Err(TransactionError::Signature(input_index))
+			}
 		}
 
 		Ok(())
