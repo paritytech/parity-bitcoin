@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use db::{self, BlockRef};
 use chain;
-use super::{Verify, VerificationResult, Chain};
+use super::{Verify, VerificationResult, Chain, Error};
 
 pub struct ChainVerifier {
 	store: Arc<db::Store>,
@@ -18,6 +18,15 @@ impl ChainVerifier {
 
 impl Verify for ChainVerifier {
 	fn verify(&self, block: &chain::Block) -> VerificationResult {
+
+		// There should be at least 1 transaction
+		if block.transactions().is_empty() {
+			return Err(Error::Empty);
+		}
+
+		//
+
+
 		let parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
 			Some(b) => b,
 			None => { return Ok(Chain::Orphan); }
@@ -127,7 +136,6 @@ mod tests {
 		let b1 = test_data::block_h1();
 		let verifier = ChainVerifier::new(Arc::new(storage));
 		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
-
 	}
 
 }
