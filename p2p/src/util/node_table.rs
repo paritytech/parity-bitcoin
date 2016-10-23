@@ -1,7 +1,9 @@
 use std::collections::{HashMap, BTreeSet};
+use std::collections::hash_map::Entry;
 use std::net::SocketAddr;
 use std::cmp::{PartialOrd, Ord, Ordering};
 use message::common::Services;
+use message::types::addr::AddressEntry;
 use util::time::{Time, RealTime};
 
 #[derive(PartialEq, Eq, Clone)]
@@ -14,6 +16,17 @@ pub struct Node {
 	services: Services,
 	/// Node failures counter.
 	failures: u32,
+}
+
+impl From<AddressEntry> for Node {
+	fn from(entry: AddressEntry) -> Self {
+		Node {
+			addr: SocketAddr::new(entry.address.address.into(), entry.address.port.into()),
+			time: entry.timestamp as i64,
+			services: entry.address.services,
+			failures: 0,
+		}
+	}
 }
 
 #[derive(PartialEq, Eq, Clone)]
@@ -81,18 +94,64 @@ pub struct NodeTable<T = RealTime> where T: Time {
 impl<T> NodeTable<T> where T: Time {
 	/// Inserts new address and services pair into NodeTable.
 	pub fn insert(&mut self, addr: SocketAddr, services: Services) {
-		let failures = self.by_addr.get(&addr).map_or(0, |ref node| node.failures);
+		let now = self.time.get().sec;
+		match self.by_addr.entry(addr) {
+			Entry::Occupied(mut entry) => {
+				let old = entry.get_mut();
+				assert!(self.by_score.remove(&old.clone().into()));
+				assert!(self.by_time.remove(&old.clone().into()));
+				old.time = now;
+				old.services = services;
+				self.by_score.insert(old.clone().into());
+				self.by_time.insert(old.clone().into());
+			},
+			Entry::Vacant(entry) => {
+				let node = Node {
+					addr: addr,
+					time: now,
+					services: services,
+					failures: 0,
+				};
+				self.by_score.insert(node.clone().into());
+				self.by_time.insert(node.clone().into());
+				entry.insert(node);
+			}
+		}
+	}
 
-		let node = Node {
-			addr: addr,
-			time: self.time.get().sec,
-			services: services,
-			failures: failures,
-		};
+	/// Inserts many new addresses into node table.
+	/// Used in `addr` request handler.
+	/// Discards all nodes with timestamp newer than current time.
+	pub fn insert_many(&mut self, nodes: Vec<Node>) {
+		// discard all nodes with timestamp newer than current time.
+		let now = self.time.get().sec;
+		let iter = nodes.into_iter()
+			.filter(|node| node.time <= now);
 
-		self.by_addr.insert(addr, node.clone());
-		self.by_score.insert(node.clone().into());
-		self.by_time.insert(node.into());
+		// iterate over the rest
+		for node in iter {
+			match self.by_addr.entry(node.addr) {
+				Entry::Occupied(mut entry) => {
+					let old = entry.get_mut();
+					// we've already seen this node
+					if old.time < node.time {
+						assert!(self.by_score.remove(&old.clone().into()));
+						assert!(self.by_time.remove(&old.clone().into()));
+						// update node info
+						old.time = node.time;
+						old.services = node.services;
+						self.by_score.insert(old.clone().into());
+						self.by_time.insert(old.clone().into());
+					}
+				},
+				Entry::Vacant(entry)=> {
+					// it's first time we see this node
+					self.by_score.insert(node.clone().into());
+					self.by_time.insert(node.clone().into());
+					entry.insert(node);
+				}
+			}
+		}
 	}
 
 	/// Returnes most reliable nodes with desired services.
@@ -104,12 +163,16 @@ impl<T> NodeTable<T> where T: Time {
 			.collect()
 	}
 
-	/// Returns nodes active in last 3 hours (no more than 1000).
+	/// Returns most recently active nodes.
+	///
+	/// The documenation says:
+	/// "Non-advertised nodes should be forgotten after typically 3 hours"
+	/// but bitcoin client still advertises them even after a month.
+	/// Let's do the same.
+	///
+	/// https://en.bitcoin.it/wiki/Protocol_documentation#addr
 	pub fn recently_active_nodes(&self) -> Vec<Node> {
-		let now = self.time.get().sec;
-		let duration = 60 * 60 * 3;
 		self.by_time.iter()
-			.take_while(|node| node.0.time + duration > now)
 			.map(|node| node.0.clone())
 			.take(1000)
 			.collect()

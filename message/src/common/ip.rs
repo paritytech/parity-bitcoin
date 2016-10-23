@@ -11,6 +11,12 @@ impl From<net::IpAddr> for IpAddress {
 	}
 }
 
+impl From<IpAddress> for net::IpAddr {
+	fn from(ip: IpAddress) -> Self {
+		ip.0
+	}
+}
+
 impl From<&'static str> for IpAddress {
 	fn from(s: &'static str) -> Self {
 		s.parse().unwrap()
