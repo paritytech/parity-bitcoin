@@ -1,3 +1,4 @@
+mod addr;
 mod ping;
 mod sync;
 
@@ -5,6 +6,7 @@ use bytes::Bytes;
 use message::Error;
 use message::common::Command;
 
+pub use self::addr::AddrProtocol;
 pub use self::ping::PingProtocol;
 pub use self::sync::SyncProtocol;
 

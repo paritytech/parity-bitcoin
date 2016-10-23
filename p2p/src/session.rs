@@ -4,7 +4,7 @@ use bytes::Bytes;
 use message::{Command, Error};
 use p2p::Context;
 use net::Channel;
-use protocol::{Protocol, PingProtocol, SyncProtocol, Direction};
+use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, Direction};
 use PeerId;
 
 pub struct Session {
@@ -14,8 +14,9 @@ pub struct Session {
 impl Session {
 	pub fn new(context: Arc<Context>, peer: PeerId) -> Self {
 		let ping = PingProtocol::new(context.clone(), peer).boxed();
+		let addr = AddrProtocol::new(context.clone(), peer).boxed();
 		let sync = SyncProtocol::new(context, peer).boxed();
-		Session::new_with_protocols(vec![ping, sync])
+		Session::new_with_protocols(vec![ping, addr, sync])
 	}
 
 	pub fn new_seednode(context: Arc<Context>, peer: PeerId) -> Self {
