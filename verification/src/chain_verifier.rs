@@ -5,6 +5,8 @@ use std::sync::Arc;
 use db::{self, BlockRef};
 use chain;
 use super::{Verify, VerificationResult, Chain, Error};
+use primitives::hash::H256;
+use byteorder::{LittleEndian, BigEndian, ByteOrder};
 
 pub struct ChainVerifier {
 	store: Arc<db::Store>,
@@ -16,16 +18,56 @@ impl ChainVerifier {
 	}
 }
 
+fn check_nbits(hash: &H256, n_bits: u32) -> bool {
+	let hash_bytes: &[u8] = &**hash;
+
+	let mut nb = [0u8; 4];
+	BigEndian::write_u32(&mut nb, n_bits);
+	let shift = (nb[0] - 3) as usize; // total shift for mantissa
+
+	if shift >= 30 { return false; } // invalid shift
+
+	let should_be_zero = shift + 3..32;
+	let should_be_le = shift..shift + 3;
+
+	for z_check in should_be_zero {
+		if hash_bytes[z_check as usize] != 0 { return false; }
+	}
+
+	// making u32 from 3 bytes
+	let mut order = 0;
+	let hash_val: u32 = hash_bytes[should_be_le].iter().fold(0u32, |s, a| { let r = s + ((*a as u32) << order); order = order + 8; r });
+
+	// using 3 bytes leftover of nbits
+	nb[0] = 0;
+	let threshold = BigEndian::read_u32(&nb);
+	if hash_val < threshold {
+		return true;
+	}
+	else if hash_val > threshold {
+		return false;
+	}
+
+	// the case when hash effective bits are equal to nbits
+	// then the rest of the hash must be zero
+	for byte in hash_bytes[0..shift].iter() { if *byte != 0 { return false; } }
+
+	return true;
+}
+
 impl Verify for ChainVerifier {
 	fn verify(&self, block: &chain::Block) -> VerificationResult {
+		let hash = block.hash();
 
 		// There should be at least 1 transaction
 		if block.transactions().is_empty() {
 			return Err(Error::Empty);
 		}
 
-		//
-
+		// target difficulty threshold
+		if !check_nbits(&hash, block.header().nbits) {
+			return Err(Error::Pow);
+		}
 
 		let parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
 			Some(b) => b,
@@ -39,7 +81,7 @@ impl Verify for ChainVerifier {
 #[cfg(test)]
 mod tests {
 
-	use super::ChainVerifier;
+	use super::{check_nbits, ChainVerifier};
 	use super::super::{Verify, Chain};
 	use primitives::hash::H256;
 	use chain;
@@ -138,4 +180,32 @@ mod tests {
 		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
 	}
 
+	#[test]
+	fn nbits() {
+		// strictly equal
+		let hash = H256::from_reversed_str("00000000000000001bc330000000000000000000000000000000000000000000");
+		let nbits = 0x181bc330u32;
+		assert!(check_nbits(&hash, nbits));
+
+		// nbits match but not equal (greater)
+		let hash = H256::from_reversed_str("00000000000000001bc330000000000000000000000000000000000000000001");
+		let nbits = 0x181bc330u32;
+		assert!(!check_nbits(&hash, nbits));
+
+		// greater
+		let hash = H256::from_reversed_str("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+		let nbits = 0x181bc330u32;
+		assert!(!check_nbits(&hash, nbits));
+
+
+		// some real examples
+		let hash = H256::from_reversed_str("000000000000000001f942eb4bfa0aeccb6a14c268f4c72d5fff17270da771b9");
+		let nbits = 404129525;
+		assert!(check_nbits(&hash, nbits));
+
+		// some real examples
+		let hash = H256::from_reversed_str("00000000000000000e753ef636075711efd2cbf5a8473c7c5b67755a3701e0c2");
+		let nbits = 404129525;
+		assert!(check_nbits(&hash, nbits));
+	}
 }

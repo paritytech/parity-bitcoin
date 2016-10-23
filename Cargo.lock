@@ -602,6 +602,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "verification"
 version = "0.1.0"
 dependencies = [
+ "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "chain 0.1.0",
  "db 0.1.0",
  "ethcore-devtools 1.3.0",
