@@ -1,9 +1,8 @@
 use hex::FromHex;
-use crypto::dhash256;
 use hash::H256;
 use ser::{
 	Deserializable, Reader, Error as ReaderError, deserialize,
-	Serializable, Stream, serialize
+	Serializable, Stream
 };
 use merkle_root::merkle_root;
 use {BlockHeader, Transaction};
@@ -45,7 +44,7 @@ impl Block {
 	}
 
 	pub fn hash(&self) -> H256 {
-		dhash256(&serialize(&self.block_header))
+		self.block_header.hash()
 	}
 
 	/// Returns block's merkle root.

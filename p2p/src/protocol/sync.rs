@@ -17,7 +17,7 @@ pub type OutboundSyncConnectionRef = Arc<Mutex<Box<OutboundSyncConnection>>>;
 // TODO: use this to create new inbound sessions
 pub trait LocalSyncNode : Send + Sync {
 	fn start_height(&self) -> i32;
-	fn start_sync_session(&mut self, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;
+	fn start_sync_session(&mut self, height: i32, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;
 }
 
 pub trait InboundSyncConnection : Send + Sync {
