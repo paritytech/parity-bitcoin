@@ -16,23 +16,53 @@ pub struct Node {
 	failures: u32,
 }
 
-impl PartialOrd for Node {
+#[derive(PartialEq, Eq, Clone)]
+struct NodeByScore(Node);
+
+impl From<Node> for NodeByScore {
+	fn from(node: Node) -> Self {
+		NodeByScore(node)
+	}
+}
+
+impl PartialOrd for NodeByScore {
 	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-		if self.failures == other.failures {
-			self.time.partial_cmp(&other.time)
+		if self.0.failures == other.0.failures {
+			other.0.time.partial_cmp(&self.0.time)
 		} else {
-			other.failures.partial_cmp(&self.failures)
+			self.0.failures.partial_cmp(&other.0.failures)
 		}
 	}
 }
 
-impl Ord for Node {
+impl Ord for NodeByScore {
 	fn cmp(&self, other: &Self) -> Ordering {
-		if self.failures == other.failures {
-			self.time.cmp(&other.time)
+		if self.0.failures == other.0.failures {
+			other.0.time.cmp(&self.0.time)
 		} else {
-			other.failures.cmp(&self.failures)
+			self.0.failures.cmp(&other.0.failures)
 		}
+	}
+}
+
+#[derive(PartialEq, Eq, Clone)]
+struct NodeByTime(Node);
+
+impl From<Node> for NodeByTime {
+	fn from(node: Node) -> Self {
+		NodeByTime(node)
+	}
+}
+
+impl PartialOrd for NodeByTime {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		other.0.time.partial_cmp(&self.0.time)
+	}
+}
+
+impl Ord for NodeByTime {
+	fn cmp(&self, other: &Self) -> Ordering {
+		other.0.time.cmp(&self.0.time)
 	}
 }
 
@@ -43,7 +73,9 @@ pub struct NodeTable<T = RealTime> where T: Time {
 	/// Nodes by socket address.
 	by_addr: HashMap<SocketAddr, Node>,
 	/// Nodes sorted by score.
-	by_score: BTreeSet<Node>,
+	by_score: BTreeSet<NodeByScore>,
+	/// Nodes sorted by time.
+	by_time: BTreeSet<NodeByTime>,
 }
 
 impl<T> NodeTable<T> where T: Time {
@@ -59,34 +91,49 @@ impl<T> NodeTable<T> where T: Time {
 		};
 
 		self.by_addr.insert(addr, node.clone());
-		self.by_score.insert(node);
+		self.by_score.insert(node.clone().into());
+		self.by_time.insert(node.into());
 	}
 
 	/// Returnes most reliable nodes with desired services.
 	pub fn nodes_with_services(&self, services: &Services, limit: usize) -> Vec<Node> {
 		self.by_score.iter()
-			.rev()
-			.filter(|s| s.services.includes(services))
-			.map(Clone::clone)
+			.filter(|node| node.0.services.includes(services))
+			.map(|node| node.0.clone())
 			.take(limit)
+			.collect()
+	}
+
+	/// Returns nodes active in last 3 hours (no more than 1000).
+	pub fn recently_active_nodes(&self) -> Vec<Node> {
+		let now = self.time.get().sec;
+		let duration = 60 * 60 * 3;
+		self.by_time.iter()
+			.take_while(|node| node.0.time + duration > now)
+			.map(|node| node.0.clone())
+			.take(1000)
 			.collect()
 	}
 
 	/// Marks address as recently used.
 	pub fn note_used(&mut self, addr: &SocketAddr) {
 		if let Some(ref mut node) = self.by_addr.get_mut(addr) {
-			assert!(self.by_score.remove(node));
+			assert!(self.by_score.remove(&node.clone().into()));
+			assert!(self.by_time.remove(&node.clone().into()));
 			node.time = self.time.get().sec;
-			self.by_score.insert(node.clone());
+			self.by_score.insert(node.clone().into());
+			self.by_time.insert(node.clone().into());
 		}
 	}
 
 	/// Notes failure.
 	pub fn note_failure(&mut self, addr: &SocketAddr) {
 		if let Some(ref mut node) = self.by_addr.get_mut(addr) {
-			assert!(self.by_score.remove(node));
+			assert!(self.by_score.remove(&node.clone().into()));
+			assert!(self.by_time.remove(&node.clone().into()));
 			node.failures += 1;
-			self.by_score.insert(node.clone());
+			self.by_score.insert(node.clone().into());
+			self.by_time.insert(node.clone().into());
 		}
 	}
 }
@@ -157,5 +204,29 @@ mod tests {
 		assert_eq!(nodes[4].addr, s3);
 		assert_eq!(nodes[4].time, 3);
 		assert_eq!(nodes[4].failures, 1);
+
+		let nodes = table.recently_active_nodes();
+		assert_eq!(nodes.len(), 5);
+
+		assert_eq!(nodes[0].addr, s1);
+		assert_eq!(nodes[0].time, 7);
+		assert_eq!(nodes[0].failures, 0);
+
+		assert_eq!(nodes[1].addr, s4);
+		assert_eq!(nodes[1].time, 6);
+		assert_eq!(nodes[1].failures, 0);
+
+		assert_eq!(nodes[2].addr, s2);
+		assert_eq!(nodes[2].time, 5);
+		assert_eq!(nodes[2].failures, 1);
+
+		assert_eq!(nodes[3].addr, s3);
+		assert_eq!(nodes[3].time, 3);
+		assert_eq!(nodes[3].failures, 1);
+
+		assert_eq!(nodes[4].addr, s0);
+		assert_eq!(nodes[4].time, 0);
+		assert_eq!(nodes[4].failures, 0);
 	}
+
 }

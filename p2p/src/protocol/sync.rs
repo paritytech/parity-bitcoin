@@ -186,6 +186,6 @@ impl Protocol for SyncProtocol {
 			Ok(ProtocolAction::None)
 		}
 		*/
-		unimplemented!()
+		Ok(())
 	}
 }
