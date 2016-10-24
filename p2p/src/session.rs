@@ -30,14 +30,10 @@ impl Session {
 		}
 	}
 
-	pub fn initialize(&self, channel: Arc<Channel>, direction: Direction) -> Result<(), Error> {
-		self.protocols.lock()
-			.iter_mut()
-			.map(|protocol| {
-				protocol.initialize(direction, channel.version())
-			})
-			.collect::<Result<Vec<_>, Error>>()
-			.map(|_| ())
+	pub fn initialize(&self, channel: Arc<Channel>, direction: Direction) {
+		for protocol in self.protocols.lock().iter_mut() {
+			protocol.initialize(direction, channel.version());
+		}
 	}
 
 	pub fn on_message(&self, channel: Arc<Channel>, command: Command, payload: Bytes) -> Result<(), Error> {

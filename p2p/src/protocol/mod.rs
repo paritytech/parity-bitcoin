@@ -18,9 +18,7 @@ pub enum Direction {
 
 pub trait Protocol: Send {
 	/// Initialize the protocol.
-	fn initialize(&mut self, _direction: Direction, _version: u32) -> Result<(), Error> {
-		Ok(())
-	}
+	fn initialize(&mut self, _direction: Direction, _version: u32) {}
 
 	/// Handle the message.
 	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error>;

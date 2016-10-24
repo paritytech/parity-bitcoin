@@ -67,10 +67,8 @@ impl Context {
 					let channel = context.connections.store(context.clone(), connection);
 
 					// initialize session and then start reading messages
-					match channel.session().initialize(channel.clone(), Direction::Outbound) {
-						Ok(_) => Context::on_message(context, channel),
-						Err(err) => finished(Err(err)).boxed()
-					}
+					channel.session().initialize(channel.clone(), Direction::Outbound);
+					Context::on_message(context, channel)
 				},
 				Ok(Err(err)) => {
 					// protocol error
@@ -101,10 +99,8 @@ impl Context {
 					let channel = context.connections.store(context.clone(), connection);
 
 					// initialize session and then start reading messages
-					match channel.session().initialize(channel.clone(), Direction::Inbound) {
-						Ok(_) => Context::on_message(context.clone(), channel),
-						Err(err) => finished(Err(err)).boxed()
-					}
+					channel.session().initialize(channel.clone(), Direction::Inbound);
+					Context::on_message(context.clone(), channel)
 				},
 				Ok(Err(err)) => {
 					// protocol error
