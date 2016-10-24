@@ -13,15 +13,15 @@ impl NonceGenerator for RandomNonce {
 	}
 }
 
-pub struct StaticNonce(u64);
+pub struct _StaticNonce(u64);
 
-impl StaticNonce {
-	pub fn new(nonce: u64) -> Self {
-		StaticNonce(nonce)
+impl _StaticNonce {
+	pub fn _new(nonce: u64) -> Self {
+		_StaticNonce(nonce)
 	}
 }
 
-impl NonceGenerator for StaticNonce {
+impl NonceGenerator for _StaticNonce {
 	fn get(&self) -> u64 {
 		self.0
 	}

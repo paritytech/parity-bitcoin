@@ -13,11 +13,11 @@ extern crate bitcrypto as crypto;
 extern crate message;
 extern crate primitives;
 
-pub mod io;
-pub mod net;
-pub mod protocol;
-pub mod session;
-pub mod util;
+mod io;
+mod net;
+mod protocol;
+mod session;
+mod util;
 mod config;
 mod event_loop;
 mod p2p;
