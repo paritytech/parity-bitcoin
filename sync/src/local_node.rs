@@ -37,14 +37,17 @@ impl LocalNode {
 		self.connections.insert(self.peer_counter, outbound_connection.clone());
 		trace!(target: "sync", "Starting new sync session with peer#{}", self.peer_counter);
 
+		// TODO: can't send messages here because session is not yet registered in p2p
 		// start headers sync
 		{
 			let mut outbound_connection = outbound_connection.lock();
 			let outbound_connection = outbound_connection.deref_mut();
 			// send `sendheaders` message to receive `headers` message instead of `inv` message
+			trace!(target: "sync", "Sending `sendheaders` to peer#{}", self.peer_counter);
 			let sendheaders = types::SendHeaders {};
 			outbound_connection.send_sendheaders(&sendheaders);
 			// send `getheaders` message
+			trace!(target: "sync", "Sending `getheaders` to peer#{}", self.peer_counter);
 			let getheaders = types::GetHeaders {
 				version: 0,
 				block_locator_hashes: self.chain.block_locator_hashes(),
@@ -118,6 +121,7 @@ impl LocalNode {
 			return;
 		};
 
+		let best_block_header = headers_sorted[headers_len - 1].clone();
 		for block_header in headers_sorted {
 			trace!(target: "sync", "Peer#{} have block {}", peer_index, block_header.hash());
 			if self.chain.insert_block_header(block_header).is_err() {
@@ -127,13 +131,13 @@ impl LocalNode {
 		}
 
 		// query next blocks headers chunk
-		let last_block_header = headers_sorted[headers_len - 1];
 		let getheaders = types::GetHeaders {
 			version: 0,
-			block_locator_hashes: vec![last_block_header.hash()],
+			block_locator_hashes: vec![best_block_header.hash()],
 			hash_stop: H256::default(),
 		};
-		outbound_connection.send_getheaders(&getheaders);
+		let ref connection = self.connections[&peer_index];
+		connection.lock().send_getheaders(&getheaders);
 	}
 
 	pub fn on_peer_mempool(&mut self, peer_index: usize, _message: &types::MemPool) {

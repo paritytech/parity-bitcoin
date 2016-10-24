@@ -19,7 +19,7 @@ impl InboundConnection {
 }
 
 impl InboundSyncConnection for InboundConnection {
-	fn on_iventory(&mut self, message: &types::Inv) {
+	fn on_inventory(&mut self, message: &types::Inv) {
 		self.local_node.lock().on_peer_inventory(self.peer_index, message);
 	}
 
