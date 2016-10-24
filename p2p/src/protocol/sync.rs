@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use chain::{Block, Transaction};
 use bytes::Bytes;
 use message::{Command, Error, Payload, types, deserialize_payload};
-use protocol::Protocol;
+use protocol::{Protocol, Direction};
 use p2p::Context;
 use PeerId;
 
@@ -18,10 +18,11 @@ pub type LocalSyncNodeRef = Arc<Mutex<Box<LocalSyncNode>>>;
 // TODO: use this to create new inbound sessions
 pub trait LocalSyncNode : Send + Sync {
 	fn start_height(&self) -> i32;
-	fn start_sync_session(&mut self, height: i32, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;
+	fn create_sync_session(&mut self, height: i32, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;
 }
 
 pub trait InboundSyncConnection : Send + Sync {
+	fn start_sync_session(&mut self, version: u32);
 	fn on_inventory(&mut self, message: &types::Inv);
 	fn on_getdata(&mut self, message: &types::GetData);
 	fn on_getblocks(&mut self, message: &types::GetBlocks);
@@ -43,7 +44,7 @@ pub trait InboundSyncConnection : Send + Sync {
 }
 
 pub trait OutboundSyncConnection : Send + Sync {
-	fn send_iventory(&mut self, message: &types::Inv);
+	fn send_inventory(&mut self, message: &types::Inv);
 	fn send_getdata(&mut self, message: &types::GetData);
 	fn send_getblocks(&mut self, message: &types::GetBlocks);
 	fn send_getheaders(&mut self, message: &types::GetHeaders);
@@ -87,7 +88,7 @@ impl OutboundSync {
 }
 
 impl OutboundSyncConnection for OutboundSync {
-	fn send_iventory(&mut self, message: &types::Inv) {
+	fn send_inventory(&mut self, message: &types::Inv) {
 		self.send_message(message);
 	}
 
@@ -168,7 +169,7 @@ pub struct SyncProtocol {
 impl SyncProtocol {
 	pub fn new(context: Arc<Context>, peer: PeerId) -> Self {
 		let outbound_connection = Arc::new(Mutex::new(OutboundSync::new(context.clone(), peer).boxed()));
-		let inbound_connection = context.local_sync_node.lock().start_sync_session(0, outbound_connection.clone());
+		let inbound_connection = context.local_sync_node.lock().create_sync_session(0, outbound_connection.clone());
 		SyncProtocol {
 			inbound_connection: inbound_connection,
 			outbound_connection: outbound_connection,
@@ -177,6 +178,11 @@ impl SyncProtocol {
 }
 
 impl Protocol for SyncProtocol {
+	fn initialize(&mut self, _direction: Direction, version: u32) -> Result<(), Error> {
+		self.inbound_connection.lock().start_sync_session(version);
+		Ok(())
+	}
+
 	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
 		if command == &types::Inv::command().into() {
 			let message: types::Inv = try!(deserialize_payload(payload, version));

@@ -19,6 +19,10 @@ impl InboundConnection {
 }
 
 impl InboundSyncConnection for InboundConnection {
+	fn start_sync_session(&mut self, version: u32) {
+		self.local_node.lock().start_sync_session(self.peer_index, version);
+	}
+
 	fn on_inventory(&mut self, message: &types::Inv) {
 		self.local_node.lock().on_peer_inventory(self.peer_index, message);
 	}

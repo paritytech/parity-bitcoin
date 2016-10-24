@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use parking_lot::Mutex;
 use p2p::protocol::sync::OutboundSyncConnectionRef;
 use primitives::hash::H256;
+use message::Payload;
 use message::common::InventoryType;
 use message::types;
 use chain::{Block, Transaction};
@@ -15,7 +16,12 @@ pub type LocalNodeRef = Arc<Mutex<LocalNode>>;
 pub struct LocalNode {
 	peer_counter: usize,
 	chain: LocalChain,
-	connections: HashMap<usize, OutboundSyncConnectionRef>,
+	peers: HashMap<usize, RemoteNode>,
+}
+
+struct RemoteNode {
+	version: u32,
+	connection: OutboundSyncConnectionRef,
 }
 
 impl LocalNode {
@@ -23,7 +29,7 @@ impl LocalNode {
 		Arc::new(Mutex::new(LocalNode {
 			peer_counter: 0,
 			chain: LocalChain::new(),
-			connections: HashMap::new(),
+			peers: HashMap::new(),
 		}))
 	}
 
@@ -31,32 +37,42 @@ impl LocalNode {
 		self.chain.best_block()
 	}
 
-	pub fn start_sync_session(&mut self, _best_block_height: i32, outbound_connection: OutboundSyncConnectionRef) -> usize {
+	pub fn create_sync_session(&mut self, _best_block_height: i32, outbound_connection: OutboundSyncConnectionRef) -> usize {
+		trace!(target: "sync", "Creating new sync session with peer#{}", self.peer_counter);
+
 		// save connection for future
 		self.peer_counter += 1;
-		self.connections.insert(self.peer_counter, outbound_connection.clone());
+		self.peers.insert(self.peer_counter, RemoteNode {
+			version: 0,
+			connection: outbound_connection.clone(),
+		});
+		self.peer_counter
+	}
+
+	pub fn start_sync_session(&mut self, peer_index: usize, version: u32) {
 		trace!(target: "sync", "Starting new sync session with peer#{}", self.peer_counter);
 
-		// TODO: can't send messages here because session is not yet registered in p2p
+		let peer = self.peers.get_mut(&peer_index).unwrap();
+		let mut connection = peer.connection.lock();
+		let connection = connection.deref_mut();
+		peer.version = version;
+
 		// start headers sync
-		{
-			let mut outbound_connection = outbound_connection.lock();
-			let outbound_connection = outbound_connection.deref_mut();
+		if peer.version >= types::SendHeaders::version() {
 			// send `sendheaders` message to receive `headers` message instead of `inv` message
 			trace!(target: "sync", "Sending `sendheaders` to peer#{}", self.peer_counter);
 			let sendheaders = types::SendHeaders {};
-			outbound_connection.send_sendheaders(&sendheaders);
-			// send `getheaders` message
-			trace!(target: "sync", "Sending `getheaders` to peer#{}", self.peer_counter);
-			let getheaders = types::GetHeaders {
-				version: 0,
-				block_locator_hashes: self.chain.block_locator_hashes(),
-				hash_stop: H256::default(),
-			};
-			outbound_connection.send_getheaders(&getheaders);
+			connection.send_sendheaders(&sendheaders);
 		}
 
-		self.peer_counter
+		// send `getheaders` message
+		trace!(target: "sync", "Sending `getheaders` to peer#{}", self.peer_counter);
+		let getheaders = types::GetHeaders {
+			version: 0,
+			block_locator_hashes: self.chain.block_locator_hashes(),
+			hash_stop: H256::default(),
+		};
+		connection.send_getheaders(&getheaders);
 	} 
 
 	pub fn on_peer_inventory(&mut self, peer_index: usize, message: &types::Inv) {
@@ -136,8 +152,8 @@ impl LocalNode {
 			block_locator_hashes: vec![best_block_header.hash()],
 			hash_stop: H256::default(),
 		};
-		let ref connection = self.connections[&peer_index];
-		connection.lock().send_getheaders(&getheaders);
+		let ref peer = self.peers[&peer_index];
+		peer.connection.lock().send_getheaders(&getheaders);
 	}
 
 	pub fn on_peer_mempool(&mut self, peer_index: usize, _message: &types::MemPool) {
