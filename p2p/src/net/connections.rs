@@ -17,22 +17,18 @@ pub struct Connections {
 }
 
 impl Connections {
-	pub fn new() -> Self {
-		Connections::default()
-	}
-
 	/// Returns channel with given peer id.
 	pub fn channel(&self, id: PeerId) -> Option<Arc<Channel>> {
 		self.channels.read().get(&id).cloned()
 	}
 
 	/// Returns safe (nonblocking) copy of channels.
-	pub fn channels(&self) -> HashMap<PeerId, Arc<Channel>> {
+	pub fn _channels(&self) -> HashMap<PeerId, Arc<Channel>> {
 		self.channels.read().clone()
 	}
 
 	/// Returns number of connections.
-	pub fn count(&self) -> usize {
+	pub fn _count(&self) -> usize {
 		self.channels.read().len()
 	}
 

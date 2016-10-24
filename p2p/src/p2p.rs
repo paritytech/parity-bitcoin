@@ -6,8 +6,7 @@ use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::io::IoFuture;
 use tokio_core::reactor::{Handle, Remote};
-use bytes::Bytes;
-use message::{Payload, Command};
+use message::Payload;
 use protocol::Direction;
 use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
@@ -132,7 +131,10 @@ impl Context {
 					trace!("Received {} message from {}", command, channel.peer_info().address);
 					// handle message and read the next one
 					match channel.session().on_message(channel.clone(), command, payload) {
-						Ok(_) => Context::on_message(context, channel),
+						Ok(_) => {
+							context.node_table.write().note_used(&channel.peer_info().address);
+							Context::on_message(context, channel)
+						},
 						Err(err) => {
 							// protocol error
 							context.close_connection(channel.peer_info());
@@ -150,24 +152,6 @@ impl Context {
 					context.close_connection(channel.peer_info());
 					failed(err).boxed()
 				}
-			}
-		}).boxed()
-	}
-
-	pub fn send_raw(_context: Arc<Context>, channel: Arc<Channel>, command: Command, payload: &Bytes) -> IoFuture<()> {
-		trace!("Sending {} message to {}", command, channel.peer_info().address);
-		channel.write_raw_message(command.clone(), payload).then(move |result| {
-			match result {
-				Ok(_) => {
-					// successful send
-					trace!("Sent {} message to {}", command, channel.peer_info().address);
-					finished(()).boxed()
-				},
-				Err(err) => {
-					// network error
-					// closing connection is handled in on_message`
-					failed(err).boxed()
-				},
 			}
 		}).boxed()
 	}
