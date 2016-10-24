@@ -1,11 +1,10 @@
 use std::sync::Arc;
 use parking_lot::Mutex;
-use futures::collect;
 use bytes::Bytes;
 use message::{Command, Error};
 use p2p::Context;
 use net::Channel;
-use protocol::{Protocol, PingProtocol, SyncProtocol, Direction};
+use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, Direction};
 use PeerId;
 
 pub struct Session {
@@ -14,13 +13,14 @@ pub struct Session {
 
 impl Session {
 	pub fn new(context: Arc<Context>, peer: PeerId) -> Self {
-		let ping = PingProtocol::new().boxed();
+		let ping = PingProtocol::new(context.clone(), peer).boxed();
+		let addr = AddrProtocol::new(context.clone(), peer).boxed();
 		let sync = SyncProtocol::new(context, peer).boxed();
-		Session::new_with_protocols(vec![ping, sync])
+		Session::new_with_protocols(vec![ping, addr, sync])
 	}
 
-	pub fn new_seednode() -> Self {
-		let ping = PingProtocol::new().boxed();
+	pub fn new_seednode(context: Arc<Context>, peer: PeerId) -> Self {
+		let ping = PingProtocol::new(context.clone(), peer).boxed();
 		Session::new_with_protocols(vec![ping])
 	}
 
@@ -42,7 +42,7 @@ impl Session {
 
 	pub fn on_message(&self, channel: Arc<Channel>, command: Command, payload: Bytes) -> Result<(), Error> {
 		self.protocols.lock()
-			.iter()
+			.iter_mut()
 			.map(|protocol| {
 				protocol.on_message(&command, &payload, channel.version())
 			})

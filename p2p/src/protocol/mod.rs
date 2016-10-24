@@ -1,3 +1,4 @@
+mod addr;
 mod ping;
 pub mod sync;
 
@@ -5,6 +6,7 @@ use bytes::Bytes;
 use message::Error;
 use message::common::Command;
 
+pub use self::addr::AddrProtocol;
 pub use self::ping::PingProtocol;
 pub use self::sync::SyncProtocol;
 
@@ -21,7 +23,7 @@ pub trait Protocol: Send {
 	}
 
 	/// Handle the message.
-	fn on_message(&self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error>;
+	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error>;
 
 	/// Boxes the protocol.
 	fn boxed(self) -> Box<Protocol> where Self: Sized + 'static {

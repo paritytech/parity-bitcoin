@@ -177,7 +177,7 @@ impl SyncProtocol {
 }
 
 impl Protocol for SyncProtocol {
-	fn on_message(&self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
+	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
 		// TODO: pass message to inbound_connection + convert response to ProtocolAction/Error
 		/*
 		if command == &Inv::command().into() {
@@ -187,6 +187,6 @@ impl Protocol for SyncProtocol {
 			Ok(ProtocolAction::None)
 		}
 		*/
-		unimplemented!()
+		Ok(())
 	}
 }

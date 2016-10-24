@@ -11,6 +11,14 @@ pub enum Addr {
 	V31402(V31402),
 }
 
+impl Addr {
+	pub fn new(addresses: Vec<AddressEntry>) -> Self {
+		Addr::V31402(V31402 {
+			addresses: addresses,
+		})
+	}
+}
+
 impl Payload for Addr {
 	fn version() -> u32 {
 		0
