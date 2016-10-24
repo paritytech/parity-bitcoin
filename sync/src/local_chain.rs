@@ -1,11 +1,11 @@
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use chain::Block;
 use primitives::hash::H256;
 use best_block::BestBlock;
 
 pub enum Error {
 	Other,
-	Orphan,
 }
 
 // TODO: this is temp storage (to use during test stage)
@@ -13,6 +13,7 @@ pub enum Error {
 pub struct LocalChain {
 	blocks_order: Vec<H256>,
 	blocks_map: HashMap<H256, Block>,
+	orphan_blocks: HashMap<H256, Block>,
 }
 
 impl LocalChain {
@@ -20,6 +21,7 @@ impl LocalChain {
 		let mut chain = LocalChain {
 			blocks_order: Vec::new(),
 			blocks_map: HashMap::new(),
+			orphan_blocks: HashMap::new(),
 		};
 
 		// TODO: move this to config
@@ -64,15 +66,35 @@ impl LocalChain {
 	}
 
 	pub fn insert_block(&mut self, block: &Block) -> Result<(), Error> {
+		// check if parent block is in the storage
+		// if there is no parent block for this block, remember as orphan
 		if !self.blocks_map.contains_key(&block.block_header.previous_header_hash) {
-			return Err(Error::Orphan)
+			self.orphan_blocks.insert(block.block_header.previous_header_hash.clone(), block.clone());
+			return Ok(());
 		}
 
-		let block_header_hash = block.block_header.hash();
+		// insert block
+		let mut block_header_hash = block.block_header.hash();
 		for i in 0..self.blocks_order.len() {
 			if self.blocks_order[i] == block.block_header.previous_header_hash {
 				self.blocks_order.insert(i + 1, block_header_hash.clone());
-				self.blocks_map.insert(block_header_hash, block.clone());
+				self.blocks_map.insert(block_header_hash.clone(), block.clone());
+
+				// check if any orphan blocks now can be moved to the blockchain
+				// TODO: forks
+				let mut position = i + 1;
+				while let Entry::Occupied(orphan_block_entry) = self.orphan_blocks.entry(block_header_hash.clone()) {
+					// remove from orphans
+					let (_, orphan_block) = orphan_block_entry.remove_entry();
+
+					// insert to blockchain
+					self.blocks_map.insert(block_header_hash.clone(), orphan_block.clone());
+					block_header_hash = orphan_block.hash();
+
+					// insert to ordering
+					self.blocks_order.insert(position + 1, block_header_hash.clone());
+					position += 1;
+				}
 				return Ok(());
 			}
 		}
