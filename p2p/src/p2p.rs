@@ -260,17 +260,25 @@ impl P2P {
 
 	pub fn connect_to_seednode(&self, resolver: &Resolver, seednode: &str) {
 		let owned_seednode = seednode.to_owned();
+		let context = self.context.clone();
+		let remote = self.event_loop_handle.remote().clone();
+		let connection_config = self.config.connection.clone();
 		let dns_lookup = resolver.resolve(seednode).then(move |result| {
 			match result {
 				Ok(address) => match address.pick_one() {
 					Some(socket) => {
 						trace!("Dns lookup of seednode {} finished. Connecting to {}", owned_seednode, socket);
+						remote.spawn(move |handle| {
+							let connection = Context::connect::<SeednodeSessionFactory>(context.clone(), socket, handle, &connection_config);
+							context.spawn(connection);
+							Ok(())
+						});
 					},
 					None => {
 						trace!("Dns lookup of seednode {} resolved with no results", owned_seednode);
 					}
 				},
-				Err(err) => {
+				Err(_err) => {
 					trace!("Dns lookup of seednode {} failed", owned_seednode);
 				}
 			}
