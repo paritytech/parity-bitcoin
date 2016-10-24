@@ -28,10 +28,13 @@ impl From<&'static str> for Command {
 }
 
 impl Command {
-	fn as_string(&self) -> String {
+	pub fn len(&self) -> usize {
 		let trailing_zeros = self.0.iter().rev().take_while(|&x| x == &0).count();
-		let limit = self.0.len() - trailing_zeros;
-		String::from_utf8_lossy(&self.0[..limit]).to_ascii_lowercase()
+		self.0.len() - trailing_zeros
+	}
+
+	fn as_string(&self) -> String {
+		String::from_utf8_lossy(&self.0[..self.len()]).to_ascii_lowercase()
 	}
 }
 
@@ -61,6 +64,7 @@ impl Deserializable for Command {
 
 impl<'a> PartialEq<&'a str> for Command {
 	fn eq(&self, other: &&'a str) -> bool {
+		self.len() == other.len() &&
 		&self.0[..other.len()] == other.as_ref() as &[u8]
 	}
 }
@@ -104,6 +108,7 @@ mod tests {
 	fn partial_eq_command_str() {
 		let command: Command = "version".into();
 		assert_eq!(command, "version");
+		assert!(command != "ver");
 		assert!(command != "versionx");
 	}
 
