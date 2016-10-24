@@ -5,29 +5,57 @@ use futures::{Future, finished, failed, BoxFuture};
 use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::io::IoFuture;
-use tokio_core::reactor::Handle;
+use tokio_core::reactor::{Handle, Remote};
 use bytes::Bytes;
 use message::{Payload, Command};
-use session::Session;
 use protocol::Direction;
 use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
-use util::NodeTable;
-use {Config, PeerInfo};
+use util::{NodeTable, Node};
+use {Config, PeerInfo, PeerId};
 
 pub type BoxedMessageFuture = BoxFuture<<ReadAnyMessage<SharedTcpStream> as Future>::Item, <ReadAnyMessage<SharedTcpStream> as Future>::Error>;
 pub type BoxedEmptyFuture = BoxFuture<(), ()>;
 
 /// Network context.
-#[derive(Default)]
 pub struct Context {
 	/// Connections.
 	connections: Connections,
 	/// Node Table.
 	node_table: RwLock<NodeTable>,
+	/// Thread pool handle.
+	pool: CpuPool,
+	/// Remote event loop handle.
+	remote: Remote,
 }
 
 impl Context {
+	pub fn new(pool_handle: CpuPool, remote: Remote) -> Self {
+		Context {
+			connections: Default::default(),
+			node_table: Default::default(),
+			pool: pool_handle,
+			remote: remote,
+		}
+	}
+
+	pub fn spawn<F>(&self, f: F) where F: Future + Send + 'static, F::Item: Send + 'static, F::Error: Send + 'static {
+		let pool_work = self.pool.spawn(f);
+		self.remote.spawn(move |handle| {
+			handle.spawn(pool_work.then(|_| finished(())));
+			Ok(())
+		})
+	}
+
+	pub fn node_table_entries(&self) -> Vec<Node> {
+		self.node_table.read().recently_active_nodes()
+	}
+
+	pub fn update_node_table(&self, nodes: Vec<Node>) {
+		trace!("Updating node table with {} entries", nodes.len());
+		self.node_table.write().insert_many(nodes);
+	}
+
 	pub fn connect(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture {
 		trace!("Trying to connect to: {}", socket);
 		let connection = connect(&socket, handle, config);
@@ -37,13 +65,13 @@ impl Context {
 					// successfull hanshake
 					trace!("Connected to {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
-					let session = Session::new();
-					let channel = context.connections.store(connection, session);
+					let channel = context.connections.store(context.clone(), connection);
 
 					// initialize session and then start reading messages
-					channel.session().initialize(context.clone(), channel.clone(), Direction::Outbound)
-						.and_then(move |_| Context::on_message(context, channel))
-						.boxed()
+					match channel.session().initialize(channel.clone(), Direction::Outbound) {
+						Ok(_) => Context::on_message(context, channel),
+						Err(err) => finished(Err(err)).boxed()
+					}
 				},
 				Ok(Err(err)) => {
 					// protocol error
@@ -71,14 +99,13 @@ impl Context {
 					// successfull hanshake
 					trace!("Accepted connection from {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
-					let session = Session::new();
-					let channel = context.connections.store(connection, session);
+					let channel = context.connections.store(context.clone(), connection);
 
 					// initialize session and then start reading messages
-					let cloned_context = context.clone();
-					channel.session().initialize(context.clone(), channel.clone(), Direction::Inbound)
-						.and_then(|_| Context::on_message(cloned_context, channel))
-						.boxed()
+					match channel.session().initialize(channel.clone(), Direction::Inbound) {
+						Ok(_) => Context::on_message(context.clone(), channel),
+						Err(err) => finished(Err(err)).boxed()
+					}
 				},
 				Ok(Err(err)) => {
 					// protocol error
@@ -104,9 +131,14 @@ impl Context {
 					// successful read
 					trace!("Received {} message from {}", command, channel.peer_info().address);
 					// handle message and read the next one
-					channel.session().on_message(context.clone(), channel.clone(), command, payload)
-						.and_then(move |_| Context::on_message(context, channel))
-						.boxed()
+					match channel.session().on_message(channel.clone(), command, payload) {
+						Ok(_) => Context::on_message(context, channel),
+						Err(err) => {
+							// protocol error
+							context.close_connection(channel.peer_info());
+							finished(Err(err)).boxed()
+						}
+					}
 				},
 				Ok(Err(err)) => {
 					// protocol error
@@ -138,6 +170,17 @@ impl Context {
 				},
 			}
 		}).boxed()
+	}
+
+	pub fn send_to_peer<T>(context: Arc<Context>, peer: PeerId, payload: &T) -> IoFuture<()> where T: Payload {
+		match context.connections.channel(peer) {
+			Some(channel) => Context::send(context, channel, payload),
+			None => {
+				// peer no longer exists.
+				// TODO: should we return error here?
+				finished(()).boxed()
+			}
+		}
 	}
 
 	pub fn send<T>(_context: Arc<Context>, channel: Arc<Channel>, payload: &T) -> IoFuture<()> where T: Payload {
@@ -178,6 +221,19 @@ pub struct P2P {
 	context: Arc<Context>,
 }
 
+impl Drop for P2P {
+	fn drop(&mut self) {
+		// there are retain cycles
+		// context->connections->channel->session->protocol->context
+		// context->connections->channel->on_message closure->context
+		// first let's get rid of session retain cycle
+		for channel in &self.context.connections.remove_all() {
+			// done, now let's finish on_message
+			channel.shutdown();
+		}
+	}
+}
+
 impl P2P {
 	pub fn new(config: Config, handle: Handle) -> Self {
 		let pool = CpuPool::new(config.threads);
@@ -186,7 +242,7 @@ impl P2P {
 			event_loop_handle: handle.clone(),
 			pool: pool.clone(),
 			config: config,
-			context: Arc::default(),
+			context: Arc::new(Context::new(pool, handle.remote().clone())),
 		}
 	}
 
@@ -212,40 +268,4 @@ impl P2P {
 		self.event_loop_handle.spawn(pool_work);
 		Ok(())
 	}
-
-	/*
-	pub fn broadcast<T>(&self, payload: T) where T: Payload {
-		let channels = self.connections.channels();
-		for (_id, channel) in channels.into_iter() {
-			self.send_to_channel(&payload, &channel);
-		}
-	}
-
-	pub fn send<T>(&self, payload: T, peer: PeerId) where T: Payload {
-		let channels = self.connections.channels();
-		if let Some(channel) = channels.get(&peer) {
-			self.send_to_channel(&payload, channel);
-		}
-	}
-
-	fn send_to_channel<T>(&self, payload: &T, channel: &Arc<Channel>) where T: Payload {
-		let connections = self.connections.clone();
-		let node_table  = self.node_table.clone();
-		let peer_info = channel.peer_info();
-		let write = channel.write_message(payload);
-		let pool_work = self.pool.spawn(write).then(move |result| {
-			match result {
-				Ok(_) => {
-					node_table.write().note_used(&peer_info.address);
-				},
-				Err(_err) => {
-					node_table.write().note_failure(&peer_info.address);
-					connections.remove(peer_info.id);
-				}
-			}
-			finished(())
-		});
-		self.event_loop_handle.spawn(pool_work);
-	}
-	*/
 }
