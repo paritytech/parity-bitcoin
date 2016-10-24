@@ -43,7 +43,7 @@ impl<M, A> Future for ReadMessage<M, A> where A: io::Read, M: Payload {
 					Ok(header) => header,
 					Err(err) => return Ok((read, Err(err)).into()),
 				};
-				if header.command != M::command().into() {
+				if header.command != M::command() {
 					return Ok((read, Err(Error::InvalidCommand)).into());
 				}
 				let future = read_payload(

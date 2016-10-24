@@ -59,6 +59,12 @@ impl Deserializable for Command {
 	}
 }
 
+impl<'a> PartialEq<&'a str> for Command {
+	fn eq(&self, other: &&'a str) -> bool {
+		&self.0[..other.len()] == other.as_ref() as &[u8]
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use bytes::Bytes;
@@ -67,7 +73,8 @@ mod tests {
 
 	#[test]
 	fn test_command_parse() {
-		assert_eq!(Command("76657273696f6e0000000000".into()), "version".into());
+		let command: Command = "version".into();
+		assert_eq!(Command("76657273696f6e0000000000".into()), command);
 	}
 
 	#[test]
@@ -90,7 +97,13 @@ mod tests {
 		let raw: Bytes = "76657273696f6e0000000000".into();
 		let expected: Command = "version".into();
 
-		assert_eq!(expected, deserialize(&raw).unwrap());
+		assert_eq!(expected, deserialize::<Command>(&raw).unwrap());
+	}
+
+	#[test]
+	fn partial_eq_command_str() {
+		let command: Command = "version".into();
+		assert_eq!(command, "version");
 	}
 
 }

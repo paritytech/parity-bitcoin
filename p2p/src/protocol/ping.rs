@@ -42,12 +42,12 @@ impl<T> Protocol for PingProtocol<T> where T: NonceGenerator + Send {
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
-		if command == &Ping::command().into() {
+		if command == &Ping::command() {
 			let ping: Ping = try!(deserialize_payload(payload, version));
 			let pong = Pong::new(ping.nonce);
 			let send = Context::send_to_peer(self.context.clone(), self.peer, &pong);
 			self.context.spawn(send);
-		} else if command == &Pong::command().into() {
+		} else if command == &Pong::command() {
 			let pong: Pong = try!(deserialize_payload(payload, version));
 			if Some(pong.nonce) != self.last_ping_nonce.take() {
 				return Err(Error::InvalidCommand)
