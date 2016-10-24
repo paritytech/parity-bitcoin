@@ -8,11 +8,14 @@ extern crate keys;
 extern crate script;
 extern crate message;
 extern crate p2p;
+extern crate sync;
 
 mod config;
 
 use std::net::SocketAddr;
 use p2p::{P2P, event_loop, forever, NetConfig};
+use sync::local_node::LocalNode;
+use sync::inbound_connection_factory::InboundConnectionFactory;
 
 fn main() {
 	env_logger::init().unwrap();
@@ -47,7 +50,10 @@ fn run() -> Result<(), String> {
 		seeds: cfg.seednode.map_or_else(|| vec![], |x| vec![x]),
 	};
 
-	let p2p = P2P::new(p2p_cfg, el.handle());
+	let local_sync_node = LocalNode::new();
+	let local_sync_factory = InboundConnectionFactory::with_local_node(local_sync_node.clone());
+
+	let p2p = P2P::new(p2p_cfg, local_sync_factory, el.handle());
 	try!(p2p.run().map_err(|_| "Failed to start p2p module"));
 	el.run(forever()).unwrap();
 	Ok(())

@@ -11,6 +11,7 @@ use protocol::Direction;
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
 use util::{NodeTable, Node};
 use {Config, PeerInfo, PeerId};
+use protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef};
 
 pub type BoxedEmptyFuture = BoxFuture<(), ()>;
 
@@ -24,15 +25,18 @@ pub struct Context {
 	pool: CpuPool,
 	/// Remote event loop handle.
 	remote: Remote,
+	/// Local synchronization node.
+	local_sync_node: LocalSyncNodeRef,
 }
 
 impl Context {
-	pub fn new(pool_handle: CpuPool, remote: Remote) -> Self {
+	pub fn new(local_sync_node: LocalSyncNodeRef, pool_handle: CpuPool, remote: Remote) -> Self {
 		Context {
 			connections: Default::default(),
 			node_table: Default::default(),
 			pool: pool_handle,
 			remote: remote,
+			local_sync_node: local_sync_node,
 		}
 	}
 
@@ -192,6 +196,10 @@ impl Context {
 			self.node_table.write().note_failure(&peer_info.address);
 		}
 	}
+
+	pub fn create_sync_session(&self, start_height: i32, outbound_connection: OutboundSyncConnectionRef) -> InboundSyncConnectionRef {
+		self.local_sync_node.lock().create_sync_session(start_height, outbound_connection)
+	}
 }
 
 pub struct P2P {
@@ -219,14 +227,14 @@ impl Drop for P2P {
 }
 
 impl P2P {
-	pub fn new(config: Config, handle: Handle) -> Self {
+	pub fn new(config: Config, local_sync_node: LocalSyncNodeRef, handle: Handle) -> Self {
 		let pool = CpuPool::new(config.threads);
 
 		P2P {
 			event_loop_handle: handle.clone(),
 			pool: pool.clone(),
 			config: config,
-			context: Arc::new(Context::new(pool, handle.remote().clone())),
+			context: Arc::new(Context::new(local_sync_node, pool, handle.remote().clone())),
 		}
 	}
 
