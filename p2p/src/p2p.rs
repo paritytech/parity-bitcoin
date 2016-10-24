@@ -6,14 +6,12 @@ use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::io::IoFuture;
 use tokio_core::reactor::{Handle, Remote};
-use message::Payload;
+use message::{Payload, MessageResult};
 use protocol::Direction;
-use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
 use util::{NodeTable, Node};
 use {Config, PeerInfo, PeerId};
 
-pub type BoxedMessageFuture = BoxFuture<<ReadAnyMessage<SharedTcpStream> as Future>::Item, <ReadAnyMessage<SharedTcpStream> as Future>::Error>;
 pub type BoxedEmptyFuture = BoxFuture<(), ()>;
 
 /// Network context.
@@ -123,7 +121,7 @@ impl Context {
 		Ok(server)
 	}
 
-	pub fn on_message(context: Arc<Context>, channel: Arc<Channel>) -> BoxedMessageFuture {
+	pub fn on_message(context: Arc<Context>, channel: Arc<Channel>) -> IoFuture<MessageResult<()>> {
 		channel.read_message().then(move |result| {
 			match result {
 				Ok(Ok((command, payload))) => {
@@ -133,7 +131,9 @@ impl Context {
 					match channel.session().on_message(channel.clone(), command, payload) {
 						Ok(_) => {
 							context.node_table.write().note_used(&channel.peer_info().address);
-							Context::on_message(context, channel)
+							let on_message = Context::on_message(context.clone(), channel);
+							context.spawn(on_message);
+							finished(Ok(())).boxed()
 						},
 						Err(err) => {
 							// protocol error
