@@ -7,7 +7,6 @@ use primitives::hash::H256;
 use message::Payload;
 use message::common::InventoryType;
 use message::types;
-use chain::{Block, Transaction};
 use local_chain::LocalChain;
 use best_block::BestBlock;
 
@@ -65,17 +64,12 @@ impl LocalNode {
 			trace!(target: "sync", "Sending `sendheaders` to peer#{}", peer_index);
 			let sendheaders = types::SendHeaders {};
 			connection.send_sendheaders(&sendheaders);
+			// TODO: why we do not support `sendheaders`?
+			// TODO: why latest bitcoind doesn't responds to the `getheaders` message?
+			// TODO: `getheaders` can be used only after `sendheaders`?
 		}
 
-		// send `getheaders` message
-		/* TODO: why is it not working with latest bitcoind? (NODE_NETWORK bit is set)
-		trace!(target: "sync", "Sending `getheaders` to peer#{}", peer_index);
-		let getheaders = types::GetHeaders {
-			version: 0,
-			block_locator_hashes: self.chain.block_locator_hashes(),
-			hash_stop: H256::default(),
-		};
-		connection.send_getheaders(&getheaders);*/
+		// get peer' inventory with newest blocks
 		trace!(target: "sync", "Sending `getblocks` to peer#{}", peer_index);
 		let getblocks = types::GetBlocks {
 			version: 0,
@@ -86,7 +80,12 @@ impl LocalNode {
 	} 
 
 	pub fn on_peer_inventory(&mut self, peer_index: usize, message: &types::Inv) {
-		trace!(target: "sync", "Got `inventory` message from peer#{}", peer_index);
+		trace!(target: "sync", "Got `inventory` message from peer#{}. Inventory len: {}", peer_index, message.inventory.len());
+
+		// TODO: after each `getblocks` message bitcoind responds with two `inventory` messages:
+		// (1) with single entry
+		// (2) with 500 entries
+		// what if (1)?
 
 		let mut getdata = types::GetData {
 			inventory: Vec::new(),
@@ -94,7 +93,6 @@ impl LocalNode {
 		for item in message.inventory.iter() {
 			match InventoryType::from_u32(item.inv_type) {
 				Some(InventoryType::MessageBlock) => {
-					//trace!(target: "sync", "Peer#{} have block {}", peer_index, item.hash);
 					if !self.chain.is_known_block(&item.hash) {
 						getdata.inventory.push(item.clone());
 					}
@@ -105,7 +103,7 @@ impl LocalNode {
 
 		// request unknown inventory data
 		if !getdata.inventory.is_empty() {
-			trace!(target: "sync", "Sending `getdata` message to peer#{}", peer_index);
+			trace!(target: "sync", "Sending `getdata` message to peer#{}. Querying #{} unknown blocks", peer_index, getdata.inventory.len());
 			let peer = self.peers.get_mut(&peer_index).unwrap();
 			peer.getdata_requests += getdata.inventory.len();
 
@@ -132,13 +130,17 @@ impl LocalNode {
 	}
 
 	pub fn on_peer_block(&mut self, peer_index: usize, message: &types::Block) {
-		trace!(target: "sync", "Got `block` message from peer#{}", peer_index);
+		// insert block to the chain
 		self.chain.insert_block(&message.block);
 
+		// decrease pending requests count
 		let peer = self.peers.get_mut(&peer_index).unwrap();
 		peer.getdata_requests -= 1;
+		trace!(target: "sync", "Got `block` message from peer#{}. Pending #{} requests", peer_index, peer.getdata_requests);
+
+		// if there are no pending requests, continue with next blocks chunk
 		if peer.getdata_requests == 0 {
-			trace!(target: "sync", "Sending `getblocks` to peer#{}", peer_index);
+			trace!(target: "sync", "Sending `getblocks` to peer#{}. Local chain state: {:?}", peer_index, self.chain.info());
 			let getblocks = types::GetBlocks {
 				version: 0,
 				block_locator_hashes: self.chain.block_locator_hashes(),
@@ -151,53 +153,8 @@ impl LocalNode {
 		}
 	}
 
-	pub fn on_peer_headers(&mut self, peer_index: usize, message: &types::Headers) {
+	pub fn on_peer_headers(&mut self, peer_index: usize, _message: &types::Headers) {
 		trace!(target: "sync", "Got `headers` message from peer#{}", peer_index);
-		/*let headers_len = message.headers.len();
-		if headers_len == 0 {
-			return;
-		}
-
-		if headers_len == 1 {
-			if self.chain.insert_block_header(message.headers[0].clone()).is_err() {
-				// TODO: drop connection?
-			}
-			return;
-		}
-
-		// TODO: cannot sort by timestamp (https://en.bitcoin.it/wiki/Block_timestamp)
-		// TODO: sort by previous_header_hash instead
-		// (almost 100% it's already ordered or reverse ordered => insertion sort)
-		let headers_sorted: Vec<_> = if message.headers[1].previous_header_hash == message.headers[0].hash()
-			&& self.chain.is_known_block(&message.headers[0].previous_header_hash) {
-			message.headers.iter().cloned().collect()
-		}
-		else if message.headers[0].previous_header_hash == message.headers[1].hash()
-			&& self.chain.is_known_block(&message.headers[headers_len - 1].previous_header_hash) {
-			message.headers.iter().rev().cloned().collect()
-		}
-		else {
-			// TODO: use sorted headers
-			return;
-		};
-
-		let best_block_header = headers_sorted[headers_len - 1].clone();
-		for block_header in headers_sorted {
-			trace!(target: "sync", "Peer#{} have block {}", peer_index, block_header.hash());
-			if self.chain.insert_block_header(block_header).is_err() {
-				// TODO: drop connection?
-				return;
-			}
-		}
-
-		// query next blocks headers chunk
-		let getheaders = types::GetHeaders {
-			version: 0,
-			block_locator_hashes: vec![best_block_header.hash()],
-			hash_stop: H256::default(),
-		};
-		let ref peer = self.peers[&peer_index];
-		peer.connection.lock().send_getheaders(&getheaders);*/
 	}
 
 	pub fn on_peer_mempool(&mut self, peer_index: usize, _message: &types::MemPool) {

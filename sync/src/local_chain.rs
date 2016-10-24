@@ -4,8 +4,10 @@ use chain::Block;
 use primitives::hash::H256;
 use best_block::BestBlock;
 
-pub enum Error {
-	Other,
+#[derive(Debug)]
+pub struct Info {
+	pub chain_length: usize,
+	pub orphan_count: usize,
 }
 
 // TODO: this is temp storage (to use during test stage)
@@ -33,6 +35,13 @@ impl LocalChain {
 		chain
 	}
 
+	pub fn info(&self) -> Info {
+		Info {
+			chain_length: self.blocks_order.len(),
+			orphan_count: self.orphan_blocks.len(),
+		}
+	}
+
 	pub fn best_block(&self) -> BestBlock {
 		let height = self.blocks_order.len() - 1;
 		let ref block = self.blocks_order[height];
@@ -58,6 +67,7 @@ impl LocalChain {
 			}
 			index -= step;
 		}
+
 		hashes
 	}
 
@@ -65,24 +75,30 @@ impl LocalChain {
 		self.blocks_map.contains_key(hash)
 	}
 
-	pub fn insert_block(&mut self, block: &Block) -> Result<(), Error> {
+	pub fn insert_block(&mut self, block: &Block) {
+		// check if already known block
+		let block_header_hash = block.block_header.hash();
+		if self.blocks_map.contains_key(&block_header_hash) {
+			return;
+		}
+
 		// check if parent block is in the storage
-		// if there is no parent block for this block, remember as orphan
+		// if there is no parent block for this block, remember as orphaned
 		if !self.blocks_map.contains_key(&block.block_header.previous_header_hash) {
 			self.orphan_blocks.insert(block.block_header.previous_header_hash.clone(), block.clone());
-			return Ok(());
+			return;
 		}
 
 		// insert block
-		let mut block_header_hash = block.block_header.hash();
 		for i in 0..self.blocks_order.len() {
 			if self.blocks_order[i] == block.block_header.previous_header_hash {
 				self.blocks_order.insert(i + 1, block_header_hash.clone());
 				self.blocks_map.insert(block_header_hash.clone(), block.clone());
 
-				// check if any orphan blocks now can be moved to the blockchain
 				// TODO: forks
+				// check if any orphan blocks now can be moved to the blockchain
 				let mut position = i + 1;
+				let mut block_header_hash = block_header_hash;
 				while let Entry::Occupied(orphan_block_entry) = self.orphan_blocks.entry(block_header_hash.clone()) {
 					// remove from orphans
 					let (_, orphan_block) = orphan_block_entry.remove_entry();
@@ -95,7 +111,7 @@ impl LocalChain {
 					self.blocks_order.insert(position + 1, block_header_hash.clone());
 					position += 1;
 				}
-				return Ok(());
+				return;
 			}
 		}
 

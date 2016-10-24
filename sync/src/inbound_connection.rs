@@ -1,5 +1,4 @@
 use parking_lot::Mutex;
-use chain::{Block, Transaction};
 use message::types;
 use p2p::{InboundSyncConnection, InboundSyncConnectionRef};
 use local_node::LocalNodeRef;
