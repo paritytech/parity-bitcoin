@@ -202,6 +202,17 @@ mod tests {
 		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
 	}
 
-
+	#[test]
+	fn firtst_tx() {
+		let storage = TestStorage::with_blocks(
+			&vec![
+				test_data::block_h9(),
+				test_data::block_h169(),
+			]
+		);
+		let b1 = test_data::block_h170();
+		let verifier = ChainVerifier::new(Arc::new(storage));
+		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
+	}
 
 }
