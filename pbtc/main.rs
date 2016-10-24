@@ -52,9 +52,9 @@ fn run() -> Result<(), String> {
 
 	// TODO: pass local_sync_factory to p2p
 	let local_sync_node = LocalNode::new();
-	let _local_sync_factory = InboundConnectionFactory::with_local_node(local_sync_node.clone());
+	let local_sync_factory = InboundConnectionFactory::with_local_node(local_sync_node.clone());
 
-	let p2p = P2P::new(p2p_cfg, el.handle());
+	let p2p = P2P::new(p2p_cfg, local_sync_factory, el.handle());
 	try!(p2p.run().map_err(|_| "Failed to start p2p module"));
 	el.run(forever()).unwrap();
 	Ok(())

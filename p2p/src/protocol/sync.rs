@@ -11,8 +11,9 @@ use p2p::Context;
 use PeerId;
 
 pub type InboundSyncConnectionRef = Arc<Mutex<Box<InboundSyncConnection>>>;
-
 pub type OutboundSyncConnectionRef = Arc<Mutex<Box<OutboundSyncConnection>>>;
+pub type LocalSyncNodeRef = Arc<Mutex<Box<LocalSyncNode>>>;
+
 // TODO: use this to respond to construct Version message (start_height field)
 // TODO: use this to create new inbound sessions
 pub trait LocalSyncNode : Send + Sync {
@@ -160,16 +161,16 @@ impl OutboundSyncConnection for OutboundSync {
 }
 
 pub struct SyncProtocol {
-	//inbound_connection: InboundSyncConnectionRef,
+	inbound_connection: InboundSyncConnectionRef,
 	outbound_connection: OutboundSyncConnectionRef,
 }
 
 impl SyncProtocol {
 	pub fn new(context: Arc<Context>, peer: PeerId) -> Self {
-		let outbound_connection = Arc::new(Mutex::new(OutboundSync::new(context, peer).boxed()));
-		// let inbound_connection = local_sync_node.start_sync_session(outbound_connection); // TODO: create inbound connection using LocalSyncNode::start_sync_session
+		let outbound_connection = Arc::new(Mutex::new(OutboundSync::new(context.clone(), peer).boxed()));
+		let inbound_connection = context.local_sync_node.lock().start_sync_session(0, outbound_connection.clone());
 		SyncProtocol {
-		//	inbound_connection: inbound_connection,
+			inbound_connection: inbound_connection,
 			outbound_connection: outbound_connection,
 		}
 	}

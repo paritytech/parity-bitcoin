@@ -125,6 +125,15 @@ impl LocalNode {
 				return;
 			}
 		}
+
+		// query next blocks headers chunk
+		let last_block_header = headers_sorted[headers_len - 1];
+		let getheaders = types::GetHeaders {
+			version: 0,
+			block_locator_hashes: vec![last_block_header.hash()],
+			hash_stop: H256::default(),
+		};
+		outbound_connection.send_getheaders(&getheaders);
 	}
 
 	pub fn on_peer_mempool(&mut self, peer_index: usize, _message: &types::MemPool) {
