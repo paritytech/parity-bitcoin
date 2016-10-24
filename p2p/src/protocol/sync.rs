@@ -171,9 +171,8 @@ impl SyncProtocol {
 }
 
 impl Protocol for SyncProtocol {
-	fn initialize(&mut self, _direction: Direction, version: u32) -> Result<(), Error> {
+	fn initialize(&mut self, _direction: Direction, version: u32) {
 		self.inbound_connection.lock().start_sync_session(version);
-		Ok(())
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
