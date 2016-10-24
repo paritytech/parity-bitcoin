@@ -18,5 +18,5 @@ pub struct Config {
 	/// Connect only ot these nodes.
 	pub peers: Vec<IpAddr>,
 	/// Connect to these nodes to retrieve peer addresses, and disconnect.
-	pub seeds: Vec<IpAddr>,
+	pub seeds: Vec<String>,
 }
