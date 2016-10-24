@@ -1,17 +1,16 @@
 use hex::FromHex;
-use crypto::dhash256;
 use hash::H256;
 use ser::{
 	Deserializable, Reader, Error as ReaderError, deserialize,
-	Serializable, Stream, serialize
+	Serializable, Stream
 };
 use merkle_root::merkle_root;
 use {BlockHeader, Transaction};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Block {
-	block_header: BlockHeader,
-	transactions: Vec<Transaction>,
+	pub block_header: BlockHeader,
+	pub transactions: Vec<Transaction>,
 }
 
 impl Serializable for Block {
@@ -45,7 +44,7 @@ impl Block {
 	}
 
 	pub fn hash(&self) -> H256 {
-		dhash256(&serialize(&self.block_header))
+		self.block_header.hash()
 	}
 
 	/// Returns block's merkle root.

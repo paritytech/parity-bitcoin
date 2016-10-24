@@ -15,6 +15,7 @@ p2p = { path = "p2p" }
 script = { path = "script" }
 db = { path = "db" }
 verification = { path = "verification" }
+sync = { path = "sync" }
 
 [[bin]]
 path = "pbtc/main.rs"

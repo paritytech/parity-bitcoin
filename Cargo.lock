@@ -10,6 +10,7 @@ dependencies = [
  "miner 0.1.0",
  "p2p 0.1.0",
  "script 0.1.0",
+ "sync 0.1.0",
  "verification 0.1.0",
 ]
 
@@ -358,6 +359,7 @@ name = "p2p"
 version = "0.1.0"
 dependencies = [
  "bitcrypto 0.1.0",
+ "chain 0.1.0",
  "futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-cpupool 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -519,6 +521,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "strsim"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "sync"
+version = "0.1.0"
+dependencies = [
+ "chain 0.1.0",
+ "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "message 0.1.0",
+ "p2p 0.1.0",
+ "parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "primitives 0.1.0",
+]
 
 [[package]]
 name = "term_size"

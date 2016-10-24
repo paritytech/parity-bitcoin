@@ -1,11 +1,12 @@
 use std::fmt;
 use ser::{
 	Deserializable, Reader, Error as ReaderError,
-	Serializable, Stream
+	Serializable, Stream, serialize
 };
+use crypto::dhash256;
 use hash::H256;
 
-#[derive(Clone, PartialEq)]
+#[derive(PartialEq, Clone)]
 pub struct BlockHeader {
 	pub version: u32,
 	pub previous_header_hash: H256,
@@ -13,6 +14,12 @@ pub struct BlockHeader {
 	pub time: u32,
 	pub nbits: u32,
 	pub nonce: u32,
+}
+
+impl BlockHeader {
+	pub fn hash(&self) -> H256 {
+		dhash256(&serialize(self))
+	}
 }
 
 impl fmt::Debug for BlockHeader {
