@@ -9,6 +9,10 @@ mod block_header;
 mod merkle_root;
 mod transaction;
 
+pub trait ToH256 {
+	fn hash(&self) -> primitives::hash::H256;
+}
+
 pub use rustc_serialize::hex;
 pub use primitives::{hash, bytes};
 

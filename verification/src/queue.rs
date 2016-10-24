@@ -1,6 +1,6 @@
 //! Blocks verification queue
 
-use chain::Block;
+use chain::{Block, ToH256};
 use primitives::hash::H256;
 use super::{Chain, Verify, BlockStatus};
 use linked_hash_map::LinkedHashMap;
@@ -119,7 +119,7 @@ impl Queue {
 mod tests {
 	use super::Queue;
 	use super::super::{BlockStatus, VerificationResult, Verify, Chain, Error as VerificationError};
-	use chain::Block;
+	use chain::{Block, ToH256};
 	use primitives::hash::H256;
 	use test_data;
 

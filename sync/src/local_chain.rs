@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use chain::Block;
+use chain::{Block, ToH256};
 use primitives::hash::H256;
 use best_block::BestBlock;
 

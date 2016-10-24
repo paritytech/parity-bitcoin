@@ -6,6 +6,7 @@ use ser::{
 };
 use merkle_root::merkle_root;
 use {BlockHeader, Transaction};
+use super::ToH256;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Block {
@@ -38,13 +39,15 @@ impl From<&'static str> for Block {
 	}
 }
 
+impl ToH256 for Block {
+	fn hash(&self) -> H256 {
+		self.block_header.hash()
+	}
+}
+
 impl Block {
 	pub fn new(header: BlockHeader, transactions: Vec<Transaction>) -> Self {
 		Block { block_header: header, transactions: transactions }
-	}
-
-	pub fn hash(&self) -> H256 {
-		self.block_header.hash()
 	}
 
 	/// Returns block's merkle root.
@@ -66,6 +69,7 @@ impl Block {
 mod tests {
 	use hash::H256;
 	use super::Block;
+	use super::super::ToH256;
 
 	// Block 80000
 	// https://blockchain.info/rawblock/000000000043a8c0fd1d6f726790caa2a406010d19efd2780db27bdbbd93baf6

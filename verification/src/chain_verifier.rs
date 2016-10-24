@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use db::{self, BlockRef};
-use chain;
+use chain::{self, ToH256};
 use super::{Verify, VerificationResult, Chain, Error, TransactionError};
 use utils;
 
