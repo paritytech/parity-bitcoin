@@ -104,6 +104,7 @@ mod tests {
 	fn partial_eq_command_str() {
 		let command: Command = "version".into();
 		assert_eq!(command, "version");
+		assert!(command != "versionx");
 	}
 
 }
