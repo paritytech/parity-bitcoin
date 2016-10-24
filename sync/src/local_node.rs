@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::ops::DerefMut;
 use std::collections::HashMap;
 use parking_lot::Mutex;
-use p2p::protocol::sync::OutboundSyncConnectionRef;
+use p2p::OutboundSyncConnectionRef;
 use primitives::hash::H256;
 use message::Payload;
 use message::common::InventoryType;
@@ -127,12 +127,13 @@ impl LocalNode {
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_transaction(&mut self, peer_index: usize, _message: &Transaction) {
+	pub fn on_peer_transaction(&mut self, peer_index: usize, _message: &types::Tx) {
 		trace!(target: "sync", "Got `tx` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_block(&mut self, peer_index: usize, _message: &Block) {
+	pub fn on_peer_block(&mut self, peer_index: usize, message: &types::Block) {
 		trace!(target: "sync", "Got `block` message from peer#{}", peer_index);
+		self.chain.insert_block(&message.block);
 
 		let peer = self.peers.get_mut(&peer_index).unwrap();
 		peer.getdata_requests -= 1;

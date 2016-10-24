@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use parking_lot::Mutex;
-use p2p::protocol::sync::{LocalSyncNode, OutboundSyncConnectionRef, InboundSyncConnectionRef};
+use p2p::{LocalSyncNode, OutboundSyncConnectionRef, InboundSyncConnectionRef};
 use local_node::LocalNodeRef;
 use inbound_connection::InboundConnection;
 

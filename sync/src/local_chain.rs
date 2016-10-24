@@ -63,7 +63,7 @@ impl LocalChain {
 		self.blocks_map.contains_key(hash)
 	}
 
-	pub fn insert_block(&mut self, block: Block) -> Result<(), Error> {
+	pub fn insert_block(&mut self, block: &Block) -> Result<(), Error> {
 		if !self.blocks_map.contains_key(&block.block_header.previous_header_hash) {
 			return Err(Error::Orphan)
 		}
@@ -72,7 +72,7 @@ impl LocalChain {
 		for i in 0..self.blocks_order.len() {
 			if self.blocks_order[i] == block.block_header.previous_header_hash {
 				self.blocks_order.insert(i + 1, block_header_hash.clone());
-				self.blocks_map.insert(block_header_hash, block);
+				self.blocks_map.insert(block_header_hash, block.clone());
 				return Ok(());
 			}
 		}

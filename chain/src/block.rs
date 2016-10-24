@@ -7,7 +7,7 @@ use ser::{
 use merkle_root::merkle_root;
 use {BlockHeader, Transaction};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Block {
 	pub block_header: BlockHeader,
 	pub transactions: Vec<Transaction>,

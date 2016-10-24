@@ -4,7 +4,6 @@
 
 use std::sync::Arc;
 use parking_lot::Mutex;
-use chain::{Block, Transaction};
 use bytes::Bytes;
 use message::{Command, Error, Payload, types, deserialize_payload};
 use protocol::{Protocol, Direction};
@@ -28,8 +27,8 @@ pub trait InboundSyncConnection : Send + Sync {
 	fn on_getdata(&mut self, message: &types::GetData);
 	fn on_getblocks(&mut self, message: &types::GetBlocks);
 	fn on_getheaders(&mut self, message: &types::GetHeaders);
-	fn on_transaction(&mut self, message: &Transaction);
-	fn on_block(&mut self, message: &Block);
+	fn on_transaction(&mut self, message: &types::Tx);
+	fn on_block(&mut self, message: &types::Block);
 	fn on_headers(&mut self, message: &types::Headers);
 	fn on_mempool(&mut self, message: &types::MemPool);
 	fn on_filterload(&mut self, message: &types::FilterLoad);
@@ -49,8 +48,8 @@ pub trait OutboundSyncConnection : Send + Sync {
 	fn send_getdata(&mut self, message: &types::GetData);
 	fn send_getblocks(&mut self, message: &types::GetBlocks);
 	fn send_getheaders(&mut self, message: &types::GetHeaders);
-	fn send_transaction(&mut self, message: &Transaction);
-	fn send_block(&mut self, message: &Block);
+	fn send_transaction(&mut self, message: &types::Tx);
+	fn send_block(&mut self, message: &types::Block);
 	fn send_headers(&mut self, message: &types::Headers);
 	fn send_mempool(&mut self, message: &types::MemPool);
 	fn send_filterload(&mut self, message: &types::FilterLoad);
@@ -105,12 +104,12 @@ impl OutboundSyncConnection for OutboundSync {
 		self.send_message(message);
 	}
 
-	fn send_transaction(&mut self, message: &Transaction) {
-		unimplemented!();
+	fn send_transaction(&mut self, message: &types::Tx) {
+		self.send_message(message);
 	}
 
-	fn send_block(&mut self, message: &Block) {
-		unimplemented!();
+	fn send_block(&mut self, message: &types::Block) {
+		self.send_message(message);
 	}
 
 	fn send_headers(&mut self, message: &types::Headers) {
@@ -185,69 +184,75 @@ impl Protocol for SyncProtocol {
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
-		if command == &types::Inv::command().into() {
+		if command == &types::Inv::command() {
 			let message: types::Inv = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_inventory(&message);
 		}
-		else if command == &types::GetData::command().into() {
+		else if command == &types::GetData::command() {
 			let message: types::GetData = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_getdata(&message);
 		}
-		else if command == &types::GetBlocks::command().into() {
+		else if command == &types::GetBlocks::command() {
 			let message: types::GetBlocks = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_getblocks(&message);
 		}
-		else if command == &types::GetHeaders::command().into() {
+		else if command == &types::GetHeaders::command() {
 			let message: types::GetHeaders = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_getheaders(&message);
 		}
-		// TODO: transaction
-		// TODO: block
-		else if command == &types::MemPool::command().into() {
+		else if command == &types::Tx::command() {
+			let message: types::Tx = try!(deserialize_payload(payload, version));
+			self.inbound_connection.lock().on_transaction(&message);
+		}
+		else if command == &types::Block::command() {
+			let message: types::Block = try!(deserialize_payload(payload, version));
+			self.inbound_connection.lock().on_block(&message);
+		}
+		else if command == &types::MemPool::command() {
 			let message: types::MemPool = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_mempool(&message);
 		}
-		else if command == &types::Headers::command().into() {
+		else if command == &types::Headers::command() {
 			let message: types::Headers = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_headers(&message);
 		}
-		else if command == &types::FilterLoad::command().into() {
+		else if command == &types::FilterLoad::command() {
 			let message: types::FilterLoad = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_filterload(&message);
 		}
-		else if command == &types::FilterAdd::command().into() {
+		else if command == &types::FilterAdd::command() {
 			let message: types::FilterAdd = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_filteradd(&message);
 		}
-		else if command == &types::FilterClear::command().into() {
+		else if command == &types::FilterClear::command() {
 			let message: types::FilterClear = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_filterclear(&message);
 		}
-		else if command == &types::MerkleBlock::command().into() {
+		else if command == &types::MerkleBlock::command() {
 			let message: types::MerkleBlock = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_merkleblock(&message);
 		}
-		else if command == &types::SendHeaders::command().into() {
+		else if command == &types::SendHeaders::command() {
 			let message: types::SendHeaders = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_sendheaders(&message);
 		}
-		else if command == &types::FeeFilter::command().into() {
+		else if command == &types::FeeFilter::command() {
 			let message: types::FeeFilter = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_feefilter(&message);
 		}
-		else if command == &types::SendCompact::command().into() {
+		else if command == &types::SendCompact::command() {
 			let message: types::SendCompact = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_send_compact(&message);
 		}
-		else if command == &types::CompactBlock::command().into() {
+		else if command == &types::CompactBlock::command() {
 			let message: types::CompactBlock = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_compact_block(&message);
 		}
-		else if command == &types::GetBlockTxn::command().into() {
+		else if command == &types::GetBlockTxn::command() {
 			let message: types::GetBlockTxn = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_get_block_txn(&message);
 		}
-		else if command == &types::BlockTxn::command().into() {
+		else if command == &types::BlockTxn::command() {
 			let message: types::BlockTxn = try!(deserialize_payload(payload, version));
 			self.inbound_connection.lock().on_block_txn(&message);
 		}

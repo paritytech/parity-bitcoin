@@ -1,7 +1,7 @@
 use parking_lot::Mutex;
 use chain::{Block, Transaction};
 use message::types;
-use p2p::protocol::sync::*;
+use p2p::{InboundSyncConnection, InboundSyncConnectionRef};
 use local_node::LocalNodeRef;
 
 pub struct InboundConnection {
@@ -39,11 +39,11 @@ impl InboundSyncConnection for InboundConnection {
 		self.local_node.lock().on_peer_getheaders(self.peer_index, message);
 	}
 
-	fn on_transaction(&mut self, message: &Transaction) {
+	fn on_transaction(&mut self, message: &types::Tx) {
 		self.local_node.lock().on_peer_transaction(self.peer_index, message);
 	}
 
-	fn on_block(&mut self, message: &Block) {
+	fn on_block(&mut self, message: &types::Block) {
 		self.local_node.lock().on_peer_block(self.peer_index, message);
 	}
 
