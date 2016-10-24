@@ -13,7 +13,7 @@ extern crate sync;
 mod config;
 
 use std::net::SocketAddr;
-use p2p::{P2P, event_loop, forever, net};
+use p2p::{P2P, event_loop, forever, NetConfig};
 use sync::local_node::LocalNode;
 use sync::inbound_connection_factory::InboundConnectionFactory;
 
@@ -38,7 +38,7 @@ fn run() -> Result<(), String> {
 		protocol_maximum: 70017,
 		inbound_connections: 10,
 		outbound_connections: 10,
-		connection: net::Config {
+		connection: NetConfig {
 			magic: cfg.magic,
 			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
 			services: Default::default(),

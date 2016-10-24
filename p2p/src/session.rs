@@ -19,7 +19,7 @@ impl Session {
 		Session::new_with_protocols(vec![ping, addr, sync])
 	}
 
-	pub fn new_seednode(context: Arc<Context>, peer: PeerId) -> Self {
+	pub fn _new_seednode(context: Arc<Context>, peer: PeerId) -> Self {
 		let ping = PingProtocol::new(context.clone(), peer).boxed();
 		Session::new_with_protocols(vec![ping])
 	}

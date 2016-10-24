@@ -36,13 +36,13 @@ impl Protocol for AddrProtocol {
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
-		if command == &GetAddr::command().into() {
+		if command == &GetAddr::command() {
 			let _: GetAddr = try!(deserialize_payload(payload, version));
 			let entries = self.context.node_table_entries().into_iter().map(Into::into).collect();
 			let addr = Addr::new(entries);
 			let send = Context::send_to_peer(self.context.clone(), self.peer, &addr);
 			self.context.spawn(send);
-		} else if command == &Addr::command().into() {
+		} else if command == &Addr::command() {
 			let addr: Addr = try!(deserialize_payload(payload, version));
 			match addr {
 				Addr::V0(_) => {

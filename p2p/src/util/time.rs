@@ -14,20 +14,6 @@ impl Time for RealTime {
 	}
 }
 
-pub struct StaticTime(time::Timespec);
-
-impl StaticTime {
-	pub fn new(time: time::Timespec) -> Self {
-		StaticTime(time)
-	}
-}
-
-impl Time for StaticTime {
-	fn get(&self) -> time::Timespec {
-		self.0
-	}
-}
-
 #[derive(Default)]
 pub struct IncrementalTime {
 	counter: Cell<i64>,
