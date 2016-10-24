@@ -11,6 +11,7 @@ use protocol::Direction;
 use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
 use util::{NodeTable, Node};
+use session::{SessionFactory, SeednodeSessionFactory, NormalSessionFactory};
 use {Config, PeerInfo, PeerId};
 
 pub type BoxedMessageFuture = BoxFuture<<ReadAnyMessage<SharedTcpStream> as Future>::Item, <ReadAnyMessage<SharedTcpStream> as Future>::Error>;
@@ -55,7 +56,7 @@ impl Context {
 		self.node_table.write().insert_many(nodes);
 	}
 
-	pub fn connect(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture {
+	pub fn connect<T>(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture where T: SessionFactory {
 		trace!("Trying to connect to: {}", socket);
 		let connection = connect(&socket, handle, config);
 		connection.then(move |result| {
@@ -64,7 +65,7 @@ impl Context {
 					// successfull hanshake
 					trace!("Connected to {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
-					let channel = context.connections.store(context.clone(), connection);
+					let channel = context.connections.store::<T>(context.clone(), connection);
 
 					// initialize session and then start reading messages
 					channel.session().initialize(channel.clone(), Direction::Outbound);
@@ -96,7 +97,7 @@ impl Context {
 					// successfull hanshake
 					trace!("Accepted connection from {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
-					let channel = context.connections.store(context.clone(), connection);
+					let channel = context.connections.store::<NormalSessionFactory>(context.clone(), connection);
 
 					// initialize session and then start reading messages
 					channel.session().initialize(channel.clone(), Direction::Inbound);
@@ -228,16 +229,20 @@ impl P2P {
 
 	pub fn run(&self) -> Result<(), io::Error> {
 		for peer in self.config.peers.iter() {
-			self.connect(*peer)
+			self.connect::<NormalSessionFactory>(*peer);
+		}
+
+		for seed in self.config.seeds.iter() {
+			self.connect::<SeednodeSessionFactory>(*seed);
 		}
 
 		try!(self.listen());
 		Ok(())
 	}
 
-	pub fn connect(&self, ip: net::IpAddr) {
+	pub fn connect<T>(&self, ip: net::IpAddr) where T: SessionFactory {
 		let socket = net::SocketAddr::new(ip, self.config.connection.magic.port());
-		let connection = Context::connect(self.context.clone(), socket, &self.event_loop_handle, &self.config.connection);
+		let connection = Context::connect::<T>(self.context.clone(), socket, &self.event_loop_handle, &self.config.connection);
 		let pool_work = self.pool.spawn(connection);
 		self.event_loop_handle.spawn(pool_work);
 	}

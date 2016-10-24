@@ -7,24 +7,37 @@ use net::Channel;
 use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, Direction};
 use PeerId;
 
+pub trait SessionFactory {
+	fn new_session(context: Arc<Context>, peer: PeerId) -> Session;
+}
+
+pub struct SeednodeSessionFactory;
+
+impl SessionFactory for SeednodeSessionFactory {
+	fn new_session(context: Arc<Context>, peer: PeerId) -> Session {
+		let ping = PingProtocol::new(context.clone(), peer).boxed();
+		let addr = AddrProtocol::new(context.clone(), peer).boxed();
+		Session::new(vec![ping, addr])
+	}
+}
+
+pub struct NormalSessionFactory;
+
+impl SessionFactory for NormalSessionFactory {
+	fn new_session(context: Arc<Context>, peer: PeerId) -> Session {
+		let ping = PingProtocol::new(context.clone(), peer).boxed();
+		let addr = AddrProtocol::new(context.clone(), peer).boxed();
+		let sync = SyncProtocol::new(context, peer).boxed();
+		Session::new(vec![ping, addr, sync])
+	}
+}
+
 pub struct Session {
 	protocols: Mutex<Vec<Box<Protocol>>>,
 }
 
 impl Session {
-	pub fn new(context: Arc<Context>, peer: PeerId) -> Self {
-		let ping = PingProtocol::new(context.clone(), peer).boxed();
-		let addr = AddrProtocol::new(context.clone(), peer).boxed();
-		let sync = SyncProtocol::new(context, peer).boxed();
-		Session::new_with_protocols(vec![ping, addr, sync])
-	}
-
-	pub fn _new_seednode(context: Arc<Context>, peer: PeerId) -> Self {
-		let ping = PingProtocol::new(context.clone(), peer).boxed();
-		Session::new_with_protocols(vec![ping])
-	}
-
-	pub fn new_with_protocols(protocols: Vec<Box<Protocol>>) -> Self {
+	pub fn new(protocols: Vec<Box<Protocol>>) -> Self {
 		Session {
 			protocols: Mutex::new(protocols),
 		}
