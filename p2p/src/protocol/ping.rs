@@ -31,14 +31,13 @@ impl PingProtocol {
 }
 
 impl<T> Protocol for PingProtocol<T> where T: NonceGenerator + Send {
-	fn initialize(&mut self, _direction: Direction, _version: u32) -> Result<(), Error> {
+	fn initialize(&mut self, _direction: Direction, _version: u32) {
 		// bitcoind always sends ping, let's do the same
 		let nonce = self.nonce_generator.get();
 		self.last_ping_nonce = Some(nonce);
 		let ping = Ping::new(nonce);
 		let send = Context::send_to_peer(self.context.clone(), self.peer, &ping);
 		self.context.spawn(send);
-		Ok(())
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {

@@ -26,13 +26,12 @@ impl AddrProtocol {
 }
 
 impl Protocol for AddrProtocol {
-	fn initialize(&mut self, direction: Direction, _version: u32) -> Result<(), Error> {
+	fn initialize(&mut self, direction: Direction, _version: u32) {
 		if let Direction::Outbound = direction {
 			self.expects_addr = true;
 			let send = Context::send_to_peer(self.context.clone(), self.peer, &GetAddr);
 			self.context.spawn(send);
 		}
-		Ok(())
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {

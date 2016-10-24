@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use parking_lot::RwLock;
 use net::{Connection, Channel};
 use p2p::Context;
-use session::Session;
+use session::{SessionFactory};
 use PeerId;
 
 #[derive(Default)]
@@ -34,9 +34,9 @@ impl Connections {
 
 	/// Stores new channel.
 	/// Returnes a shared pointer to it.
-	pub fn store(&self, context: Arc<Context>, connection: Connection) -> Arc<Channel> {
+	pub fn store<T>(&self, context: Arc<Context>, connection: Connection) -> Arc<Channel> where T: SessionFactory {
 		let id = self.peer_counter.fetch_add(1, Ordering::AcqRel);
-		let session = Session::new(context, id);
+		let session = T::new_session(context, id);
 		let channel = Arc::new(Channel::new(connection, id, session));
 		self.channels.write().insert(id, channel.clone());
 		channel

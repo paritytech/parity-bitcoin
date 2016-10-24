@@ -10,6 +10,7 @@ use message::{Payload, MessageResult};
 use protocol::Direction;
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
 use util::{NodeTable, Node};
+use session::{SessionFactory, SeednodeSessionFactory, NormalSessionFactory};
 use {Config, PeerInfo, PeerId};
 use protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef};
 
@@ -57,7 +58,7 @@ impl Context {
 		self.node_table.write().insert_many(nodes);
 	}
 
-	pub fn connect(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture {
+	pub fn connect<T>(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture where T: SessionFactory {
 		trace!("Trying to connect to: {}", socket);
 		let connection = connect(&socket, handle, config);
 		connection.then(move |result| {
@@ -66,13 +67,11 @@ impl Context {
 					// successfull hanshake
 					trace!("Connected to {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
-					let channel = context.connections.store(context.clone(), connection);
+					let channel = context.connections.store::<T>(context.clone(), connection);
 
 					// initialize session and then start reading messages
-					match channel.session().initialize(channel.clone(), Direction::Outbound) {
-						Ok(_) => Context::on_message(context, channel),
-						Err(err) => finished(Err(err)).boxed()
-					}
+					channel.session().initialize(channel.clone(), Direction::Outbound);
+					Context::on_message(context, channel)
 				},
 				Ok(Err(err)) => {
 					// protocol error
@@ -100,13 +99,11 @@ impl Context {
 					// successfull hanshake
 					trace!("Accepted connection from {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
-					let channel = context.connections.store(context.clone(), connection);
+					let channel = context.connections.store::<NormalSessionFactory>(context.clone(), connection);
 
 					// initialize session and then start reading messages
-					match channel.session().initialize(channel.clone(), Direction::Inbound) {
-						Ok(_) => Context::on_message(context.clone(), channel),
-						Err(err) => finished(Err(err)).boxed()
-					}
+					channel.session().initialize(channel.clone(), Direction::Inbound);
+					Context::on_message(context.clone(), channel)
 				},
 				Ok(Err(err)) => {
 					// protocol error
@@ -240,16 +237,20 @@ impl P2P {
 
 	pub fn run(&self) -> Result<(), io::Error> {
 		for peer in self.config.peers.iter() {
-			self.connect(*peer)
+			self.connect::<NormalSessionFactory>(*peer);
+		}
+
+		for seed in self.config.seeds.iter() {
+			self.connect::<SeednodeSessionFactory>(*seed);
 		}
 
 		try!(self.listen());
 		Ok(())
 	}
 
-	pub fn connect(&self, ip: net::IpAddr) {
+	pub fn connect<T>(&self, ip: net::IpAddr) where T: SessionFactory {
 		let socket = net::SocketAddr::new(ip, self.config.connection.magic.port());
-		let connection = Context::connect(self.context.clone(), socket, &self.event_loop_handle, &self.config.connection);
+		let connection = Context::connect::<T>(self.context.clone(), socket, &self.event_loop_handle, &self.config.connection);
 		let pool_work = self.pool.spawn(connection);
 		self.event_loop_handle.spawn(pool_work);
 	}
