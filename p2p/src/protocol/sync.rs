@@ -1,7 +1,3 @@
-//TODO: remove!
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::sync::Arc;
 use parking_lot::Mutex;
 use bytes::Bytes;
@@ -15,7 +11,6 @@ pub type OutboundSyncConnectionRef = Arc<Mutex<Box<OutboundSyncConnection>>>;
 pub type LocalSyncNodeRef = Arc<Mutex<Box<LocalSyncNode>>>;
 
 // TODO: use this to respond to construct Version message (start_height field)
-// TODO: use this to create new inbound sessions
 pub trait LocalSyncNode : Send + Sync {
 	fn start_height(&self) -> i32;
 	fn create_sync_session(&mut self, height: i32, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;
@@ -163,7 +158,6 @@ impl OutboundSyncConnection for OutboundSync {
 
 pub struct SyncProtocol {
 	inbound_connection: InboundSyncConnectionRef,
-	outbound_connection: OutboundSyncConnectionRef,
 }
 
 impl SyncProtocol {
@@ -172,7 +166,6 @@ impl SyncProtocol {
 		let inbound_connection = context.local_sync_node.lock().create_sync_session(0, outbound_connection.clone());
 		SyncProtocol {
 			inbound_connection: inbound_connection,
-			outbound_connection: outbound_connection,
 		}
 	}
 }
