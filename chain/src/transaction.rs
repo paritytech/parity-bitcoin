@@ -245,6 +245,11 @@ impl Transaction {
 	pub fn outputs(&self) -> &[TransactionOutput] {
 		&self.outputs
 	}
+
+	pub fn is_coinbase(&self) -> bool {
+		if self.inputs.len() != 1 { return false; }
+		self.inputs[0].previous_output.hash.is_zero() && self.inputs[0].previous_output.index == 0xffffffff
+	}
 }
 
 #[cfg(test)]

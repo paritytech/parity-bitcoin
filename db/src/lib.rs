@@ -15,11 +15,16 @@ extern crate test_data;
 
 mod kvdb;
 mod storage;
+#[cfg(feature="dev")]
+mod test_storage;
 
 pub enum BlockRef {
 	Number(u64),
 	Hash(primitives::hash::H256),
 }
 
-pub use storage::{Storage, Store};
+pub use storage::{Storage, Store, Error};
 pub use kvdb::Database;
+
+#[cfg(feature="dev")]
+pub use test_storage::TestStorage;

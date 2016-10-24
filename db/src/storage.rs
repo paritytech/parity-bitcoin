@@ -25,7 +25,7 @@ const _COL_RESERVED6: u32 = 10;
 const DB_VERSION: u32 = 1;
 
 /// Blockchain storage interface
-pub trait Store {
+pub trait Store : Send + Sync {
 	/// resolves hash by block number
 	fn block_hash(&self, number: u64) -> Option<H256>;
 

@@ -13,3 +13,6 @@ chain = { path = "../chain"  }
 serialization = { path = "../serialization" }
 parking_lot = "0.3"
 test-data = { path = "../test-data" }
+
+[features]
+dev = []

@@ -124,6 +124,10 @@ macro_rules! impl_hash {
 			pub fn size() -> usize {
 				$size
 			}
+
+			pub fn is_zero(&self) -> bool {
+				self.0.iter().all(|b| *b == 0)
+			}
 		}
 	}
 }
