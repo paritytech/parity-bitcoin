@@ -12,7 +12,7 @@ use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
 use util::{NodeTable, Node};
 use {Config, PeerInfo, PeerId};
-use protocol::sync::LocalSyncNodeRef;
+use protocol::LocalSyncNodeRef;
 
 pub type BoxedMessageFuture = BoxFuture<<ReadAnyMessage<SharedTcpStream> as Future>::Item, <ReadAnyMessage<SharedTcpStream> as Future>::Error>;
 pub type BoxedEmptyFuture = BoxFuture<(), ()>;
