@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use chain::{Block, BlockHeader};
+use chain::Block;
 use primitives::hash::H256;
 use best_block::BestBlock;
 
@@ -12,7 +12,7 @@ pub enum Error {
 //     it must be replaced with db + verification queue + mempools (transaction, block, ...)
 pub struct LocalChain {
 	blocks_order: Vec<H256>,
-	blocks_map: HashMap<H256, BlockHeader>,
+	blocks_map: HashMap<H256, Block>,
 }
 
 impl LocalChain {
@@ -27,7 +27,7 @@ impl LocalChain {
 		let genesis_block_hash = genesis_block.hash();
 
 		chain.blocks_order.push(genesis_block_hash.clone());
-		chain.blocks_map.insert(genesis_block_hash, genesis_block.block_header);
+		chain.blocks_map.insert(genesis_block_hash, genesis_block);
 		chain
 	}
 
@@ -59,20 +59,20 @@ impl LocalChain {
 		hashes
 	}
 
-	pub fn is_known_block_header(&self, hash: &H256) -> bool {
+	pub fn is_known_block(&self, hash: &H256) -> bool {
 		self.blocks_map.contains_key(hash)
 	}
 
-	pub fn insert_block_header(&mut self, block_header: BlockHeader) -> Result<(), Error> {
-		if !self.blocks_map.contains_key(&block_header.previous_header_hash) {
+	pub fn insert_block(&mut self, block: Block) -> Result<(), Error> {
+		if !self.blocks_map.contains_key(&block.block_header.previous_header_hash) {
 			return Err(Error::Orphan)
 		}
 
-		let block_header_hash = block_header.hash();
+		let block_header_hash = block.block_header.hash();
 		for i in 0..self.blocks_order.len() {
-			if self.blocks_order[i] == block_header.previous_header_hash {
+			if self.blocks_order[i] == block.block_header.previous_header_hash {
 				self.blocks_order.insert(i + 1, block_header_hash.clone());
-				self.blocks_map.insert(block_header_hash, block_header);
+				self.blocks_map.insert(block_header_hash, block);
 				return Ok(());
 			}
 		}
