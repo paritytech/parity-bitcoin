@@ -38,7 +38,9 @@ pub enum Error {
 	/// One of the transactions is invalid (corresponding index and specific transaction error)
 	Transaction(usize, TransactionError),
 	/// nBits do not match difficulty rules
-	Difficulty
+	Difficulty,
+	/// Invalid merkle root
+	MerkleRoot,
 }
 
 #[derive(Debug)]

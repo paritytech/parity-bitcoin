@@ -77,12 +77,17 @@ impl Verify for ChainVerifier {
 			return Err(Error::Timestamp);
 		}
 
+		// verify merkle root
+		if block.merkle_root() != block.header().merkle_root_hash {
+			return Err(Error::MerkleRoot);
+		}
+
 		// check first transaction is a coinbase transaction
 		if !block.transactions()[0].is_coinbase() {
 			return Err(Error::Coinbase)
 		}
 
-		// verify transactions
+		// verify transactions (except coinbase)
 		for (idx, transaction) in block.transactions().iter().skip(1).enumerate() {
 			try!(self.verify_transaction(transaction).map_err(|e| Error::Transaction(idx, e)));
 		}
@@ -196,5 +201,7 @@ mod tests {
 		let verifier = ChainVerifier::new(Arc::new(storage));
 		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
 	}
+
+
 
 }
