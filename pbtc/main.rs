@@ -50,7 +50,6 @@ fn run() -> Result<(), String> {
 		seeds: cfg.seednode.map_or_else(|| vec![], |x| vec![x]),
 	};
 
-	// TODO: pass local_sync_factory to p2p
 	let local_sync_node = LocalNode::new();
 	let local_sync_factory = InboundConnectionFactory::with_local_node(local_sync_node.clone());
 
