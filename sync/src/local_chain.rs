@@ -102,10 +102,11 @@ impl LocalChain {
 				while let Entry::Occupied(orphan_block_entry) = self.orphan_blocks.entry(block_header_hash.clone()) {
 					// remove from orphans
 					let (_, orphan_block) = orphan_block_entry.remove_entry();
+					let orphan_block_hash = orphan_block.hash();
 
 					// insert to blockchain
-					self.blocks_map.insert(block_header_hash.clone(), orphan_block.clone());
-					block_header_hash = orphan_block.hash();
+					self.blocks_map.insert(block_header_hash.clone(), orphan_block);
+					block_header_hash = orphan_block_hash;
 
 					// insert to ordering
 					self.blocks_order.insert(position + 1, block_header_hash.clone());
@@ -114,7 +115,5 @@ impl LocalChain {
 				return;
 			}
 		}
-
-		unreachable!()
 	}
 }

@@ -12,7 +12,7 @@ use io::{ReadAnyMessage, SharedTcpStream};
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
 use util::{NodeTable, Node};
 use {Config, PeerInfo, PeerId};
-use protocol::LocalSyncNodeRef;
+use protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef};
 
 pub type BoxedMessageFuture = BoxFuture<<ReadAnyMessage<SharedTcpStream> as Future>::Item, <ReadAnyMessage<SharedTcpStream> as Future>::Error>;
 pub type BoxedEmptyFuture = BoxFuture<(), ()>;
@@ -28,7 +28,7 @@ pub struct Context {
 	/// Remote event loop handle.
 	remote: Remote,
 	/// Local synchronization node.
-	pub local_sync_node: LocalSyncNodeRef,
+	local_sync_node: LocalSyncNodeRef,
 }
 
 impl Context {
@@ -195,6 +195,10 @@ impl Context {
 			channel.shutdown();
 			self.node_table.write().note_failure(&peer_info.address);
 		}
+	}
+
+	pub fn create_sync_session(&self, start_height: i32, outbound_connection: OutboundSyncConnectionRef) -> InboundSyncConnectionRef {
+		self.local_sync_node.lock().create_sync_session(start_height, outbound_connection)
 	}
 }
 

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::ops::DerefMut;
 use std::collections::HashMap;
 use parking_lot::Mutex;
 use p2p::OutboundSyncConnectionRef;
@@ -55,7 +54,7 @@ impl LocalNode {
 
 		let peer = self.peers.get_mut(&peer_index).unwrap();
 		let mut connection = peer.connection.lock();
-		let connection = connection.deref_mut();
+		let connection = &mut *connection;
 		peer.version = version;
 
 		// start headers sync
@@ -79,7 +78,7 @@ impl LocalNode {
 		connection.send_getblocks(&getblocks);
 	} 
 
-	pub fn on_peer_inventory(&mut self, peer_index: usize, message: &types::Inv) {
+	pub fn on_peer_inventory(&mut self, peer_index: usize, message: types::Inv) {
 		trace!(target: "sync", "Got `inventory` message from peer#{}. Inventory len: {}", peer_index, message.inventory.len());
 
 		// TODO: after each `getblocks` message bitcoind responds with two `inventory` messages:
@@ -108,28 +107,28 @@ impl LocalNode {
 			peer.getdata_requests += getdata.inventory.len();
 
 			let mut connection = peer.connection.lock();
-			let connection = connection.deref_mut();
+			let connection = &mut *connection;
 			connection.send_getdata(&getdata);
 		}
 	}
 
-	pub fn on_peer_getdata(&mut self, peer_index: usize, _message: &types::GetData) {
+	pub fn on_peer_getdata(&mut self, peer_index: usize, _message: types::GetData) {
 		trace!(target: "sync", "Got `getdata` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_getblocks(&mut self, peer_index: usize, _message: &types::GetBlocks) {
+	pub fn on_peer_getblocks(&mut self, peer_index: usize, _message: types::GetBlocks) {
 		trace!(target: "sync", "Got `getblocks` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_getheaders(&mut self, peer_index: usize, _message: &types::GetHeaders) {
+	pub fn on_peer_getheaders(&mut self, peer_index: usize, _message: types::GetHeaders) {
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_transaction(&mut self, peer_index: usize, _message: &types::Tx) {
+	pub fn on_peer_transaction(&mut self, peer_index: usize, _message: types::Tx) {
 		trace!(target: "sync", "Got `tx` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_block(&mut self, peer_index: usize, message: &types::Block) {
+	pub fn on_peer_block(&mut self, peer_index: usize, message: types::Block) {
 		// insert block to the chain
 		self.chain.insert_block(&message.block);
 
@@ -148,56 +147,56 @@ impl LocalNode {
 			};
 
 			let mut connection = peer.connection.lock();
-			let connection = connection.deref_mut();
+			let connection = &mut *connection;
 			connection.send_getblocks(&getblocks);
 		}
 	}
 
-	pub fn on_peer_headers(&mut self, peer_index: usize, _message: &types::Headers) {
+	pub fn on_peer_headers(&mut self, peer_index: usize, _message: types::Headers) {
 		trace!(target: "sync", "Got `headers` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_mempool(&mut self, peer_index: usize, _message: &types::MemPool) {
+	pub fn on_peer_mempool(&mut self, peer_index: usize, _message: types::MemPool) {
 		trace!(target: "sync", "Got `mempool` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_filterload(&mut self, peer_index: usize, _message: &types::FilterLoad) {
+	pub fn on_peer_filterload(&mut self, peer_index: usize, _message: types::FilterLoad) {
 		trace!(target: "sync", "Got `filterload` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_filteradd(&mut self, peer_index: usize, _message: &types::FilterAdd) {
+	pub fn on_peer_filteradd(&mut self, peer_index: usize, _message: types::FilterAdd) {
 		trace!(target: "sync", "Got `filteradd` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_filterclear(&mut self, peer_index: usize, _message: &types::FilterClear) {
+	pub fn on_peer_filterclear(&mut self, peer_index: usize, _message: types::FilterClear) {
 		trace!(target: "sync", "Got `filterclear` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_merkleblock(&mut self, peer_index: usize, _message: &types::MerkleBlock) {
+	pub fn on_peer_merkleblock(&mut self, peer_index: usize, _message: types::MerkleBlock) {
 		trace!(target: "sync", "Got `merkleblock` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_sendheaders(&mut self, peer_index: usize, _message: &types::SendHeaders) {
+	pub fn on_peer_sendheaders(&mut self, peer_index: usize, _message: types::SendHeaders) {
 		trace!(target: "sync", "Got `sendheaders` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_feefilter(&mut self, peer_index: usize, _message: &types::FeeFilter) {
+	pub fn on_peer_feefilter(&mut self, peer_index: usize, _message: types::FeeFilter) {
 		trace!(target: "sync", "Got `feefilter` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_send_compact(&mut self, peer_index: usize, _message: &types::SendCompact) {
+	pub fn on_peer_send_compact(&mut self, peer_index: usize, _message: types::SendCompact) {
 		trace!(target: "sync", "Got `sendcmpct` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_compact_block(&mut self, peer_index: usize, _message: &types::CompactBlock) {
+	pub fn on_peer_compact_block(&mut self, peer_index: usize, _message: types::CompactBlock) {
 		trace!(target: "sync", "Got `cmpctblock` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_get_block_txn(&mut self, peer_index: usize, _message: &types::GetBlockTxn) {
+	pub fn on_peer_get_block_txn(&mut self, peer_index: usize, _message: types::GetBlockTxn) {
 		trace!(target: "sync", "Got `getblocktxn` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_block_txn(&mut self, peer_index: usize, _message: &types::BlockTxn) {
+	pub fn on_peer_block_txn(&mut self, peer_index: usize, _message: types::BlockTxn) {
 		trace!(target: "sync", "Got `blocktxn` message from peer#{}", peer_index);
 	}
 }
