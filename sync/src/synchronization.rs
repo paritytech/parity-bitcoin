@@ -1,7 +1,7 @@
 use std::cmp::{min, max};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
-use chain::{Block, RepresetH256};
+use chain::{Block, RepresentH256};
 use primitives::hash::H256;
 use local_chain::LocalChain;
 use synchronization_peers::Peers;
