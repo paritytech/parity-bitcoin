@@ -1,13 +1,11 @@
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use chain::Block;
 use primitives::hash::H256;
 use best_block::BestBlock;
 
 #[derive(Debug)]
-pub struct Info {
-	pub chain_length: usize,
-	pub orphan_count: usize,
+pub struct Information {
+	pub length: usize,
 }
 
 // TODO: this is temp storage (to use during test stage)
@@ -15,7 +13,6 @@ pub struct Info {
 pub struct LocalChain {
 	blocks_order: Vec<H256>,
 	blocks_map: HashMap<H256, Block>,
-	orphan_blocks: HashMap<H256, Block>,
 }
 
 impl LocalChain {
@@ -23,7 +20,6 @@ impl LocalChain {
 		let mut chain = LocalChain {
 			blocks_order: Vec::new(),
 			blocks_map: HashMap::new(),
-			orphan_blocks: HashMap::new(),
 		};
 
 		// TODO: move this to config
@@ -35,10 +31,9 @@ impl LocalChain {
 		chain
 	}
 
-	pub fn info(&self) -> Info {
-		Info {
-			chain_length: self.blocks_order.len(),
-			orphan_count: self.orphan_blocks.len(),
+	pub fn information(&self) -> Information {
+		Information {
+			length: self.blocks_order.len(),
 		}
 	}
 
@@ -51,10 +46,7 @@ impl LocalChain {
 		}
 	}
 
-	pub fn block_locator_hashes(&self) -> Vec<H256> {
-		let mut index = self.blocks_order.len() - 1;
-		let mut hashes: Vec<H256> = Vec::new();
-		let mut step = 1;
+	pub fn block_locator_hashes(&self, mut index: usize, mut step: usize, hashes: &mut Vec<H256>) {
 		loop {
 			let block_hash = self.blocks_order[index].clone();
 			hashes.push(block_hash);
@@ -63,19 +55,22 @@ impl LocalChain {
 				step <<= 1;
 			}
 			if index < step {
+				// always include genesis hash
+				if index != 0 {
+					hashes.push(self.blocks_order[0].clone())
+				}
+
 				break;
 			}
 			index -= step;
 		}
-
-		hashes
 	}
 
 	pub fn is_known_block(&self, hash: &H256) -> bool {
 		self.blocks_map.contains_key(hash)
 	}
 
-	pub fn insert_block(&mut self, block: &Block) {
+	pub fn insert_block(&mut self, block: Block) {
 		// check if already known block
 		let block_header_hash = block.block_header.hash();
 		if self.blocks_map.contains_key(&block_header_hash) {
@@ -83,35 +78,13 @@ impl LocalChain {
 		}
 
 		// check if parent block is in the storage
-		// if there is no parent block for this block, remember as orphaned
-		if !self.blocks_map.contains_key(&block.block_header.previous_header_hash) {
-			self.orphan_blocks.insert(block.block_header.previous_header_hash.clone(), block.clone());
-			return;
-		}
+		assert!(self.blocks_map.contains_key(&block.block_header.previous_header_hash));
 
 		// insert block
 		for i in 0..self.blocks_order.len() {
 			if self.blocks_order[i] == block.block_header.previous_header_hash {
 				self.blocks_order.insert(i + 1, block_header_hash.clone());
-				self.blocks_map.insert(block_header_hash.clone(), block.clone());
-
-				// TODO: forks
-				// check if any orphan blocks now can be moved to the blockchain
-				let mut position = i + 1;
-				let mut block_header_hash = block_header_hash;
-				while let Entry::Occupied(orphan_block_entry) = self.orphan_blocks.entry(block_header_hash.clone()) {
-					// remove from orphans
-					let (_, orphan_block) = orphan_block_entry.remove_entry();
-					let orphan_block_hash = orphan_block.hash();
-
-					// insert to blockchain
-					self.blocks_map.insert(block_header_hash.clone(), orphan_block);
-					block_header_hash = orphan_block_hash;
-
-					// insert to ordering
-					self.blocks_order.insert(position + 1, block_header_hash.clone());
-					position += 1;
-				}
+				self.blocks_map.insert(block_header_hash.clone(), block);
 				return;
 			}
 		}

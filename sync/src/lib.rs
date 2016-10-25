@@ -11,3 +11,5 @@ mod inbound_connection;
 pub mod inbound_connection_factory;
 mod local_chain;
 pub mod local_node;
+mod synchronization;
+mod synchronization_peers;
