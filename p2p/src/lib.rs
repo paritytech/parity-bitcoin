@@ -10,7 +10,6 @@ extern crate log;
 extern crate abstract_ns;
 extern crate ns_dns_tokio;
 
-extern crate chain;
 extern crate bitcrypto as crypto;
 extern crate message;
 extern crate primitives;
