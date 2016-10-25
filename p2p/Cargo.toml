@@ -17,4 +17,3 @@ ns-dns-tokio = "0.1.0"
 primitives = { path = "../primitives" }
 bitcrypto = { path = "../crypto" }
 message = { path = "../message" }
-chain = { path = "../chain" }
