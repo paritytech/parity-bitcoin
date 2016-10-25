@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use chain::{Block, RepresetH256};
+use chain::{Block, RepresentH256};
 use primitives::hash::H256;
 use best_block::BestBlock;
 
