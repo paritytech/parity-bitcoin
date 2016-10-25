@@ -1,4 +1,4 @@
-use std::{io, net};
+use std::{io, net, error};
 use std::sync::Arc;
 use parking_lot::RwLock;
 use futures::{Future, finished, failed, BoxFuture};
@@ -6,6 +6,8 @@ use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::io::IoFuture;
 use tokio_core::reactor::{Handle, Remote};
+use abstract_ns::Resolver;
+use ns_dns_tokio::DnsResolver;
 use message::{Payload, MessageResult};
 use protocol::Direction;
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
@@ -31,6 +33,7 @@ pub struct Context {
 }
 
 impl Context {
+	/// Creates new context with reference to local sync node, thread pool and event loop.
 	pub fn new(local_sync_node: LocalSyncNodeRef, pool_handle: CpuPool, remote: Remote) -> Self {
 		Context {
 			connections: Default::default(),
@@ -41,24 +44,27 @@ impl Context {
 		}
 	}
 
+	/// Spawns a future using thread pool and schedules execution of it with event loop handle.
 	pub fn spawn<F>(&self, f: F) where F: Future + Send + 'static, F::Item: Send + 'static, F::Error: Send + 'static {
 		let pool_work = self.pool.spawn(f);
-		self.remote.spawn(move |handle| {
-			handle.spawn(pool_work.then(|_| finished(())));
-			Ok(())
+		self.remote.spawn(move |_handle| {
+			pool_work.then(|_| finished(()))
 		})
 	}
 
+	/// Returns addresses of recently active nodes. Sorted and limited to 1000.
 	pub fn node_table_entries(&self) -> Vec<Node> {
 		self.node_table.read().recently_active_nodes()
 	}
 
+	/// Updates node table.
 	pub fn update_node_table(&self, nodes: Vec<Node>) {
 		trace!("Updating node table with {} entries", nodes.len());
 		self.node_table.write().insert_many(nodes);
 	}
 
-	pub fn connect<T>(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture where T: SessionFactory {
+	/// Connect to socket using given context and handle.
+	fn connect_future<T>(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture where T: SessionFactory {
 		trace!("Trying to connect to: {}", socket);
 		let connection = connect(&socket, handle, config);
 		connection.then(move |result| {
@@ -90,6 +96,14 @@ impl Context {
 		.boxed()
 	}
 
+	/// Connect to socket using given context.
+	pub fn connect<T>(context: Arc<Context>, socket: net::SocketAddr, config: NetConfig) where T: SessionFactory {
+		context.remote.clone().spawn(move |handle| {
+			context.pool.clone().spawn(Context::connect_future::<T>(context, socket, handle, &config))
+		})
+	}
+
+	/// Starts tcp server and listens for incomming connections.
 	pub fn listen(context: Arc<Context>, handle: &Handle, config: NetConfig) -> Result<BoxedEmptyFuture, io::Error> {
 		trace!("Starting tcp server");
 		let listen = try!(listen(&handle, config));
@@ -122,6 +136,7 @@ impl Context {
 		Ok(server)
 	}
 
+	/// Called on incomming mesage.
 	pub fn on_message(context: Arc<Context>, channel: Arc<Channel>) -> IoFuture<MessageResult<()>> {
 		channel.read_message().then(move |result| {
 			match result {
@@ -157,6 +172,7 @@ impl Context {
 		}).boxed()
 	}
 
+	/// Send message to a channel with given peer id.
 	pub fn send_to_peer<T>(context: Arc<Context>, peer: PeerId, payload: &T) -> IoFuture<()> where T: Payload {
 		match context.connections.channel(peer) {
 			Some(channel) => Context::send(context, channel, payload),
@@ -168,6 +184,7 @@ impl Context {
 		}
 	}
 
+	/// Send message using given channel.
 	pub fn send<T>(_context: Arc<Context>, channel: Arc<Channel>, payload: &T) -> IoFuture<()> where T: Payload {
 		trace!("Sending {} message to {}", T::command(), channel.peer_info().address);
 		channel.write_message(payload).then(move |result| {
@@ -186,6 +203,7 @@ impl Context {
 		}).boxed()
 	}
 
+	/// Close channel with given peer info.
 	pub fn close_connection(&self, peer_info: PeerInfo) {
 		if let Some(channel) = self.connections.remove(peer_info.id) {
 			trace!("Disconnecting from {}", peer_info.address);
@@ -235,13 +253,14 @@ impl P2P {
 		}
 	}
 
-	pub fn run(&self) -> Result<(), io::Error> {
+	pub fn run(&self) -> Result<(), Box<error::Error>> {
 		for peer in self.config.peers.iter() {
 			self.connect::<NormalSessionFactory>(*peer);
 		}
 
+		let resolver = try!(DnsResolver::system_config(&self.event_loop_handle));
 		for seed in self.config.seeds.iter() {
-			self.connect::<SeednodeSessionFactory>(*seed);
+			self.connect_to_seednode(&resolver, seed);
 		}
 
 		try!(self.listen());
@@ -250,12 +269,36 @@ impl P2P {
 
 	pub fn connect<T>(&self, ip: net::IpAddr) where T: SessionFactory {
 		let socket = net::SocketAddr::new(ip, self.config.connection.magic.port());
-		let connection = Context::connect::<T>(self.context.clone(), socket, &self.event_loop_handle, &self.config.connection);
-		let pool_work = self.pool.spawn(connection);
+		Context::connect::<T>(self.context.clone(), socket, self.config.connection.clone());
+	}
+
+	pub fn connect_to_seednode(&self, resolver: &Resolver, seednode: &str) {
+		let owned_seednode = seednode.to_owned();
+		let context = self.context.clone();
+		let connection_config = self.config.connection.clone();
+		let dns_lookup = resolver.resolve(seednode).then(move |result| {
+			match result {
+				Ok(address) => match address.pick_one() {
+					Some(socket) => {
+						trace!("Dns lookup of seednode {} finished. Connecting to {}", owned_seednode, socket);
+						Context::connect::<SeednodeSessionFactory>(context, socket, connection_config);
+					},
+					None => {
+						trace!("Dns lookup of seednode {} resolved with no results", owned_seednode);
+					}
+				},
+				Err(_err) => {
+					trace!("Dns lookup of seednode {} failed", owned_seednode);
+				}
+			}
+			finished(())
+		});
+		let pool_work = self.pool.spawn(dns_lookup);
 		self.event_loop_handle.spawn(pool_work);
 	}
 
-	fn listen(&self) -> Result<(), io::Error> {
+
+	fn listen(&self) -> Result<(), Box<error::Error>> {
 		let server = try!(Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone()));
 		let pool_work = self.pool.spawn(server);
 		self.event_loop_handle.spawn(pool_work);

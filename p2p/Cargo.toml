@@ -11,8 +11,9 @@ futures-cpupool = "0.1"
 time = "0.1"
 rand = "0.3"
 log = "0.3"
+abstract-ns = "0.2.1"
+ns-dns-tokio = "0.1.0"
 
 primitives = { path = "../primitives" }
 bitcrypto = { path = "../crypto" }
 message = { path = "../message" }
-chain = { path = "../chain" }

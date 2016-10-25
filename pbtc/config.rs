@@ -6,7 +6,7 @@ pub struct Config {
 	pub magic: Magic,
 	pub port: u16,
 	pub connect: Option<net::IpAddr>,
-	pub seednode: Option<net::IpAddr>,
+	pub seednode: Option<String>,
 	pub print_to_console: bool,
 }
 
