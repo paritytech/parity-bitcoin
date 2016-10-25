@@ -1,7 +1,7 @@
 //! Test storage
 
 use super::{BlockRef, Store, Error};
-use chain::{self, RepresetH256};
+use chain::{self, RepresentH256};
 use primitives::hash::H256;
 use serialization;
 use chain::bytes::Bytes;
