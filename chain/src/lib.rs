@@ -9,7 +9,7 @@ mod block_header;
 mod merkle_root;
 mod transaction;
 
-pub trait ToH256 {
+pub trait RepresetH256 {
 	fn hash(&self) -> primitives::hash::H256;
 }
 
