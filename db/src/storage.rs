@@ -7,7 +7,8 @@ use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use super::BlockRef;
-use {chain, serialization};
+use serialization;
+use chain::{self, RepresetH256};
 
 const COL_COUNT: u32 = 10;
 const COL_META: u32 = 0;
@@ -262,7 +263,7 @@ mod tests {
 
 	use super::{Storage, Store};
 	use devtools::RandomTempPath;
-	use chain::Block;
+	use chain::{Block, RepresetH256};
 	use super::super::BlockRef;
 	use test_data;
 
