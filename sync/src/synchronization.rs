@@ -397,7 +397,7 @@ impl<'a> Synchronization {
 
 #[cfg(test)]
 mod tests {
-	use chain::{Block, RepresetH256};
+	use chain::{Block, RepresentH256};
 	use primitives::hash::H256;
 	use local_chain::LocalChain;
 	use super::{Synchronization, State, Task};
