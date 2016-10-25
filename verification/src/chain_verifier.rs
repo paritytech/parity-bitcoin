@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use db::{self, BlockRef};
-use chain::{self, RepresetH256};
+use chain::{self, RepresentH256};
 use super::{Verify, VerificationResult, Chain, Error, TransactionError};
 use utils;
 
