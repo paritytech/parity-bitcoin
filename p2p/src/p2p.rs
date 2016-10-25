@@ -1,4 +1,4 @@
-use std::{io, net};
+use std::{io, net, error};
 use std::sync::Arc;
 use parking_lot::RwLock;
 use futures::{Future, finished, failed, BoxFuture};
@@ -6,6 +6,8 @@ use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::io::IoFuture;
 use tokio_core::reactor::{Handle, Remote};
+use abstract_ns::Resolver;
+use ns_dns_tokio::DnsResolver;
 use message::{Payload, MessageResult};
 use protocol::Direction;
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
@@ -235,13 +237,14 @@ impl P2P {
 		}
 	}
 
-	pub fn run(&self) -> Result<(), io::Error> {
+	pub fn run(&self) -> Result<(), Box<error::Error>> {
 		for peer in self.config.peers.iter() {
 			self.connect::<NormalSessionFactory>(*peer);
 		}
 
+		let resolver = try!(DnsResolver::system_config(&self.event_loop_handle));
 		for seed in self.config.seeds.iter() {
-			self.connect::<SeednodeSessionFactory>(*seed);
+			self.connect_to_seednode(&resolver, seed);
 		}
 
 		try!(self.listen());
@@ -255,7 +258,38 @@ impl P2P {
 		self.event_loop_handle.spawn(pool_work);
 	}
 
-	fn listen(&self) -> Result<(), io::Error> {
+	pub fn connect_to_seednode(&self, resolver: &Resolver, seednode: &str) {
+		let owned_seednode = seednode.to_owned();
+		let context = self.context.clone();
+		let remote = self.event_loop_handle.remote().clone();
+		let connection_config = self.config.connection.clone();
+		let dns_lookup = resolver.resolve(seednode).then(move |result| {
+			match result {
+				Ok(address) => match address.pick_one() {
+					Some(socket) => {
+						trace!("Dns lookup of seednode {} finished. Connecting to {}", owned_seednode, socket);
+						remote.spawn(move |handle| {
+							let connection = Context::connect::<SeednodeSessionFactory>(context.clone(), socket, handle, &connection_config);
+							context.spawn(connection);
+							Ok(())
+						});
+					},
+					None => {
+						trace!("Dns lookup of seednode {} resolved with no results", owned_seednode);
+					}
+				},
+				Err(_err) => {
+					trace!("Dns lookup of seednode {} failed", owned_seednode);
+				}
+			}
+			finished(())
+		});
+		let pool_work = self.pool.spawn(dns_lookup);
+		self.event_loop_handle.spawn(pool_work);
+	}
+
+
+	fn listen(&self) -> Result<(), Box<error::Error>> {
 		let server = try!(Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone()));
 		let pool_work = self.pool.spawn(server);
 		self.event_loop_handle.spawn(pool_work);
