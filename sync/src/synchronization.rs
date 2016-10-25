@@ -1,7 +1,7 @@
 use std::cmp::{min, max};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
-use chain::Block;
+use chain::{Block, RepresetH256};
 use primitives::hash::H256;
 use local_chain::LocalChain;
 use synchronization_peers::Peers;
@@ -397,7 +397,7 @@ impl<'a> Synchronization {
 
 #[cfg(test)]
 mod tests {
-	use chain::Block;
+	use chain::{Block, RepresetH256};
 	use primitives::hash::H256;
 	use local_chain::LocalChain;
 	use super::{Synchronization, State, Task};
