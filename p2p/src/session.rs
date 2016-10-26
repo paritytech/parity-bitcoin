@@ -4,7 +4,7 @@ use bytes::Bytes;
 use message::{Command, Error};
 use p2p::Context;
 use net::Channel;
-use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, Direction};
+use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, SeednodeProtocol, Direction};
 use PeerId;
 
 pub trait SessionFactory {
@@ -17,7 +17,8 @@ impl SessionFactory for SeednodeSessionFactory {
 	fn new_session(context: Arc<Context>, peer: PeerId) -> Session {
 		let ping = PingProtocol::new(context.clone(), peer).boxed();
 		let addr = AddrProtocol::new(context.clone(), peer).boxed();
-		Session::new(vec![ping, addr])
+		let seed = SeednodeProtocol::new(context.clone(), peer).boxed();
+		Session::new(vec![ping, addr, seed])
 	}
 }
 
