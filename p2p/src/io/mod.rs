@@ -1,3 +1,4 @@
+mod deadline;
 mod handshake;
 mod read_header;
 mod read_message;
@@ -6,6 +7,7 @@ mod read_payload;
 mod sharedtcpstream;
 mod write_message;
 
+pub use self::deadline::{deadline, Deadline, DeadlineStatus};
 pub use self::handshake::{
 	handshake, accept_handshake, Handshake, AcceptHandshake, HandshakeResult
 };
