@@ -3,32 +3,32 @@ use std::collections::HashMap;
 use parking_lot::Mutex;
 use p2p::OutboundSyncConnectionRef;
 use primitives::hash::H256;
-use message::Payload;
-use message::common::InventoryType;
+use message::common::{InventoryVector, InventoryType};
 use message::types;
+use synchronization::{Synchronization, Task as SynchronizationTask};
 use local_chain::LocalChain;
 use best_block::BestBlock;
 
 pub type LocalNodeRef = Arc<Mutex<LocalNode>>;
 
 pub struct LocalNode {
-	peer_counter: usize,
 	chain: LocalChain,
+	peer_counter: usize,
 	peers: HashMap<usize, RemoteNode>,
+	synchronization: Synchronization,
 }
 
 struct RemoteNode {
-	version: u32,
 	connection: OutboundSyncConnectionRef,
-	getdata_requests: usize,
 }
 
 impl LocalNode {
 	pub fn new() -> LocalNodeRef {
 		Arc::new(Mutex::new(LocalNode {
-			peer_counter: 0,
 			chain: LocalChain::new(),
+			peer_counter: 0,
 			peers: HashMap::new(),
+			synchronization: Synchronization::new(),
 		}))
 	}
 
@@ -42,40 +42,16 @@ impl LocalNode {
 		// save connection for future
 		self.peer_counter += 1;
 		self.peers.insert(self.peer_counter, RemoteNode {
-			version: 0,
-			connection: outbound_connection.clone(),
-			getdata_requests: 0,
+			connection: outbound_connection,
 		});
 		self.peer_counter
 	}
 
-	pub fn start_sync_session(&mut self, peer_index: usize, version: u32) {
+	pub fn start_sync_session(&mut self, peer_index: usize, _version: u32) {
 		trace!(target: "sync", "Starting new sync session with peer#{}", peer_index);
 
-		let peer = self.peers.get_mut(&peer_index).unwrap();
-		let mut connection = peer.connection.lock();
-		let connection = &mut *connection;
-		peer.version = version;
-
-		// start headers sync
-		if peer.version >= types::SendHeaders::version() {
-			// send `sendheaders` message to receive `headers` message instead of `inv` message
-			trace!(target: "sync", "Sending `sendheaders` to peer#{}", peer_index);
-			let sendheaders = types::SendHeaders {};
-			connection.send_sendheaders(&sendheaders);
-			// TODO: why we do not support `sendheaders`?
-			// TODO: why latest bitcoind doesn't responds to the `getheaders` message?
-			// TODO: `getheaders` can be used only after `sendheaders`?
-		}
-
-		// get peer' inventory with newest blocks
-		trace!(target: "sync", "Sending `getblocks` to peer#{}", peer_index);
-		let getblocks = types::GetBlocks {
-			version: 0,
-			block_locator_hashes: self.chain.block_locator_hashes(),
-			hash_stop: H256::default(),
-		};
-		connection.send_getblocks(&getblocks);
+		// request inventory from peer
+		self.execute_synchronization_task(SynchronizationTask::RequestInventory(peer_index));
 	} 
 
 	pub fn on_peer_inventory(&mut self, peer_index: usize, message: types::Inv) {
@@ -84,32 +60,22 @@ impl LocalNode {
 		// TODO: after each `getblocks` message bitcoind responds with two `inventory` messages:
 		// (1) with single entry
 		// (2) with 500 entries
-		// what if (1)?
+		// what is (1)?
 
-		let mut getdata = types::GetData {
-			inventory: Vec::new(),
-		};
-		for item in message.inventory.iter() {
-			match InventoryType::from_u32(item.inv_type) {
-				Some(InventoryType::MessageBlock) => {
-					if !self.chain.is_known_block(&item.hash) {
-						getdata.inventory.push(item.clone());
-					}
-				},
-				_ => (),
-			}
+		// process unknown blocks
+		let unknown_blocks: Vec<_> = message.inventory.iter()
+			.filter(|item| InventoryType::from_u32(item.inv_type) == Some(InventoryType::MessageBlock))
+			.filter(|item| !self.chain.is_known_block(&item.hash))
+			.map(|item| item.hash.clone())
+			.collect();
+
+		// if there are unknown blocks => start synchronizing with peer
+		if !unknown_blocks.is_empty() {
+			self.synchronization.on_unknown_blocks(peer_index, unknown_blocks);
+			self.execute_synchronization_tasks();
 		}
 
-		// request unknown inventory data
-		if !getdata.inventory.is_empty() {
-			trace!(target: "sync", "Sending `getdata` message to peer#{}. Querying #{} unknown blocks", peer_index, getdata.inventory.len());
-			let peer = self.peers.get_mut(&peer_index).unwrap();
-			peer.getdata_requests += getdata.inventory.len();
-
-			let mut connection = peer.connection.lock();
-			let connection = &mut *connection;
-			connection.send_getdata(&getdata);
-		}
+		// TODO: process unknown transactions, etc...
 	}
 
 	pub fn on_peer_getdata(&mut self, peer_index: usize, _message: types::GetData) {
@@ -129,27 +95,11 @@ impl LocalNode {
 	}
 
 	pub fn on_peer_block(&mut self, peer_index: usize, message: types::Block) {
-		// insert block to the chain
-		self.chain.insert_block(&message.block);
+		trace!(target: "sync", "Got `block` message from peer#{}", peer_index);
 
-		// decrease pending requests count
-		let peer = self.peers.get_mut(&peer_index).unwrap();
-		peer.getdata_requests -= 1;
-		trace!(target: "sync", "Got `block` message from peer#{}. Pending #{} requests", peer_index, peer.getdata_requests);
-
-		// if there are no pending requests, continue with next blocks chunk
-		if peer.getdata_requests == 0 {
-			trace!(target: "sync", "Sending `getblocks` to peer#{}. Local chain state: {:?}", peer_index, self.chain.info());
-			let getblocks = types::GetBlocks {
-				version: 0,
-				block_locator_hashes: self.chain.block_locator_hashes(),
-				hash_stop: H256::default(),
-			};
-
-			let mut connection = peer.connection.lock();
-			let connection = &mut *connection;
-			connection.send_getblocks(&getblocks);
-		}
+		// try to process new block
+		self.synchronization.on_peer_block(&mut self.chain, peer_index, message.block);
+		self.execute_synchronization_tasks();
 	}
 
 	pub fn on_peer_headers(&mut self, peer_index: usize, _message: types::Headers) {
@@ -198,5 +148,64 @@ impl LocalNode {
 
 	pub fn on_peer_block_txn(&mut self, peer_index: usize, _message: types::BlockTxn) {
 		trace!(target: "sync", "Got `blocktxn` message from peer#{}", peer_index);
+	}
+
+	fn execute_synchronization_tasks(&mut self) {
+		for task in self.synchronization.get_synchronization_tasks() {
+			self.execute_synchronization_task(task)
+		}
+	}
+
+	fn execute_synchronization_task(&mut self, task: SynchronizationTask) {
+		// TODO: what is types::GetBlocks::version here? (@ PR#37)
+
+		match task {
+			SynchronizationTask::RequestBlocks(peer_index, blocks_hashes) => {
+				let getdata = types::GetData {
+					inventory: blocks_hashes.into_iter()
+						.map(|hash| InventoryVector {
+							inv_type: InventoryType::MessageBlock.into(),
+							hash: hash,
+						}).collect()
+				};
+
+				let peer = self.peers.get_mut(&peer_index).unwrap();
+				let mut connection = peer.connection.lock();
+				let connection = &mut *connection;
+
+				trace!(target: "sync", "Querying {} unknown blocks from peer#{}", getdata.inventory.len(), peer_index);
+				connection.send_getdata(&getdata);
+			}
+			SynchronizationTask::RequestInventory(peer_index) => {
+				let getblocks = types::GetBlocks {
+					version: 0,
+					block_locator_hashes: self.synchronization.block_locator_hashes(&self.chain),
+					hash_stop: H256::default(),
+				};
+
+				let peer = self.peers.get_mut(&peer_index).unwrap();
+				let mut connection = peer.connection.lock();
+				let connection = &mut *connection;
+
+				trace!(target: "sync", "Querying full inventory from peer#{}", peer_index);
+				trace!(target: "sync", "Synchronization state: sync = {:?}, chain = {:?}", self.synchronization.information(), self.chain.information());
+				connection.send_getblocks(&getblocks);
+			},
+			SynchronizationTask::RequestBestInventory(peer_index) => {
+				let getblocks = types::GetBlocks {
+					version: 0,
+					block_locator_hashes: self.synchronization.best_block_locator_hashes(&self.chain),
+					hash_stop: H256::default(),
+				};
+
+				let peer = self.peers.get_mut(&peer_index).unwrap();
+				let mut connection = peer.connection.lock();
+				let connection = &mut *connection;
+
+				trace!(target: "sync", "Querying best inventory from peer#{}", peer_index);
+				trace!(target: "sync", "Synchronization state: sync = {:?}, chain = {:?}", self.synchronization.information(), self.chain.information());
+				connection.send_getblocks(&getblocks);
+			},
+		}
 	}
 }
