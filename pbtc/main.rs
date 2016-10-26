@@ -2,6 +2,7 @@
 
 #[macro_use]
 extern crate clap;
+extern crate db;
 extern crate env_logger;
 
 extern crate keys;
@@ -12,6 +13,7 @@ extern crate sync;
 
 mod config;
 
+use std::sync::Arc;
 use std::net::SocketAddr;
 use p2p::{P2P, event_loop, forever, NetConfig};
 use sync::local_node::LocalNode;
@@ -50,7 +52,10 @@ fn run() -> Result<(), String> {
 		seeds: cfg.seednode.map_or_else(|| vec![], |x| vec![x]),
 	};
 
-	let local_sync_node = LocalNode::new();
+	// TODO: in-memory database is used
+	let db = Arc::new(db::TestStorage::with_genesis_block());
+
+	let local_sync_node = LocalNode::new(db);
 	let local_sync_factory = InboundConnectionFactory::with_local_node(local_sync_node.clone());
 
 	let p2p = P2P::new(p2p_cfg, local_sync_factory, el.handle());
