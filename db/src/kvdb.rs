@@ -9,6 +9,7 @@ use rocksdb::{DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
 use elastic_array::ElasticArray32;
 use parking_lot::RwLock;
 use primitives::bytes::Bytes;
+use byteorder::{LittleEndian, ByteOrder};
 
 /// Database error
 pub enum Error {
@@ -88,6 +89,20 @@ impl DBTransaction {
 			col: col,
 			key: ekey,
 		});
+	}
+
+	/// Write u64
+	pub fn write_u64(&mut self, col: Option<u32>, key: &[u8], value: u64) {
+		let mut val = [0u8; 8];
+		LittleEndian::write_u64(&mut val, value);
+		self.put(col, key, &val);
+	}
+
+	/// Write u32
+	pub fn write_u32(&mut self, col: Option<u32>, key: &[u8], value: u32) {
+		let mut val = [0u8; 4];
+		LittleEndian::write_u32(&mut val, value);
+		self.put(col, key, &val);
 	}
 }
 

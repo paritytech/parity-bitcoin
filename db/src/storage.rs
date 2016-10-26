@@ -9,6 +9,7 @@ use primitives::bytes::Bytes;
 use super::BlockRef;
 use serialization;
 use chain::{self, RepresentH256};
+use parking_lot::RwLock;
 
 const COL_COUNT: u32 = 10;
 const COL_META: u32 = 0;
@@ -28,10 +29,10 @@ const DB_VERSION: u32 = 1;
 /// Blockchain storage interface
 pub trait Store : Send + Sync {
 	/// get best block number
-	fn best_block_number(&self) -> Option<u64>;
+	fn best_block_number(&self) -> Option<u32>;
 
 	/// resolves hash by block number
-	fn block_hash(&self, number: u64) -> Option<H256>;
+	fn block_hash(&self, number: u32) -> Option<H256>;
 
 	/// resolves header bytes by block reference (number/hash)
 	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes>;
@@ -63,6 +64,8 @@ pub trait Store : Send + Sync {
 /// Blockchain storage with rocksdb database
 pub struct Storage {
 	database: Database,
+	best_block_number: RwLock<Option<u32>>,
+	best_block_hash: RwLock<Option<H256>>,
 }
 
 #[derive(Debug)]
@@ -93,13 +96,15 @@ impl From<std::io::Error> for Error {
 	}
 }
 
-fn u64_key(num: u64) -> [u8; 8] {
-	let mut result = [0u8; 8];
-	LittleEndian::write_u64(&mut result, num);
+fn u32_key(num: u32) -> [u8; 4] {
+	let mut result = [0u8; 4];
+	LittleEndian::write_u32(&mut result, num);
 	result
 }
 
 const KEY_VERSION: &'static[u8] = b"version";
+const KEY_BEST_BLOCK_NUMBER: &'static[u8] = b"best_block_number";
+const KEY_BEST_BLOCK_HASH: &'static[u8] = b"best_block_hash";
 
 impl Storage {
 
@@ -110,25 +115,41 @@ impl Storage {
 		let cfg = DatabaseConfig::with_columns(Some(COL_COUNT));
 		let db = try!(Database::open(&cfg, &*path.as_ref().to_string_lossy()));
 
-		match try!(db.get(Some(COL_META), KEY_VERSION)) {
-			Some(val) => {
-				let ver = LittleEndian::read_u32(&val);
-				if ver == DB_VERSION {
-					Ok(Storage { database: db, })
-				}
-				else {
-					Err(Error::Meta(MetaError::UnsupportedVersion))
+		let storage = Storage {
+			database: db,
+			best_block_number: RwLock::default(),
+			best_block_hash: RwLock::default(),
+		};
+
+		match storage.read_meta_u32(KEY_VERSION) {
+			Some(ver) => {
+				if ver != DB_VERSION {
+					return Err(Error::Meta(MetaError::UnsupportedVersion))
 				}
 			},
 			_ => {
-				let mut meta_transaction = db.transaction();
-				let mut ver_val = [0u8; 4];
-				LittleEndian::write_u32(&mut ver_val, DB_VERSION);
-				meta_transaction.put(Some(COL_META), KEY_VERSION, &ver_val);
-				try!(db.write(meta_transaction));
-				Ok(Storage { database: db, })
-			}
-		}
+				let mut meta_transaction = storage.database.transaction();
+				meta_transaction.write_u32(Some(COL_META), KEY_VERSION, DB_VERSION);
+				try!(storage.database.write(meta_transaction));
+			},
+		};
+
+		*storage.best_block_number.write() = storage.read_meta_u32(KEY_BEST_BLOCK_NUMBER);
+		*storage.best_block_hash.write() = storage.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val));
+
+		Ok(storage)
+	}
+
+	fn read_meta(&self, key: &[u8]) -> Option<Bytes> {
+		self.get(COL_META, key)
+	}
+
+	fn read_meta_u64(&self, key: &[u8]) -> Option<u64> {
+		self.read_meta(key).map(|val| LittleEndian::read_u64(&val))
+	}
+
+	fn read_meta_u32(&self, key: &[u8]) -> Option<u32> {
+		self.read_meta(key).map(|val| LittleEndian::read_u32(&val))
 	}
 
 	/// is invoked on database non-fatal query errors
@@ -186,12 +207,12 @@ impl Storage {
 }
 
 impl Store for Storage {
-	fn best_block_number(&self) -> Option<u64> {
-		unimplemented!()
+	fn best_block_number(&self) -> Option<u32> {
+		*self.best_block_number.read()
 	}
 
-	fn block_hash(&self, number: u64) -> Option<H256> {
-		self.get(COL_BLOCK_HASHES, &u64_key(number))
+	fn block_hash(&self, number: u32) -> Option<H256> {
+		self.get(COL_BLOCK_HASHES, &u32_key(number))
 			.map(|val| H256::from(&**val))
 	}
 
@@ -233,6 +254,8 @@ impl Store for Storage {
 	}
 
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error> {
+		let best_block_number = self.best_block_number.write();
+
 		let mut transaction = self.database.transaction();
 
 		let tx_space = block.transactions().len() * 32;
@@ -308,7 +331,6 @@ mod tests {
 
 		let loaded_transaction = store.transaction(&tx1).unwrap();
 		assert_eq!(loaded_transaction.hash(), block.transactions()[0].hash());
-
 	}
 
 }
