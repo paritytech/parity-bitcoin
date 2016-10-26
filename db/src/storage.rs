@@ -31,6 +31,9 @@ pub trait Store : Send + Sync {
 	/// get best block number
 	fn best_block_number(&self) -> Option<u32>;
 
+	/// get best block hash
+	fn best_block_hash(&self) -> Option<H256>;
+
 	/// resolves hash by block number
 	fn block_hash(&self, number: u32) -> Option<H256>;
 
@@ -211,6 +214,10 @@ impl Store for Storage {
 		*self.best_block_number.read()
 	}
 
+	fn best_block_hash(&self) -> Option<H256> {
+		self.best_block_hash.read().clone()
+	}
+
 	fn block_hash(&self, number: u32) -> Option<H256> {
 		self.get(COL_BLOCK_HASHES, &u32_key(number))
 			.map(|val| H256::from(&**val))
@@ -254,12 +261,34 @@ impl Store for Storage {
 	}
 
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error> {
-		let best_block_number = self.best_block_number.write();
+		let mut best_block_number = self.best_block_number.write();
+		let mut best_block_hash = self.best_block_hash.write();
+
+		let block_hash = block.hash();
+
+		let new_best_hash = match best_block_hash.as_ref() {
+			Some(best_hash) => {
+				if &block.header().previous_header_hash == best_hash {
+					block_hash.clone()
+				}
+				else {
+					best_hash.clone()
+				}
+			},
+			None => { block_hash.clone() },
+		};
+
+		let new_best_number = match *best_block_number {
+			Some(best_number) => {
+				if block.hash() == new_best_hash { best_number + 1 }
+				else { best_number }
+			},
+			None => 1,
+		};
 
 		let mut transaction = self.database.transaction();
 
 		let tx_space = block.transactions().len() * 32;
-		let block_hash = block.hash();
 		let mut tx_refs = Vec::with_capacity(tx_space);
 		for tx in block.transactions() {
 			let tx_hash = tx.hash();
@@ -278,7 +307,18 @@ impl Store for Storage {
 			&serialization::serialize(block.header())
 		);
 
+		if *best_block_number != Some(new_best_number) {
+			transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
+		}
+
+		if best_block_hash.as_ref() != Some(&new_best_hash) {
+			transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
+		}
+
 		try!(self.database.write(transaction));
+
+		*best_block_number = Some(new_best_number);
+		*best_block_hash = Some(new_best_hash);
 
 		Ok(())
 	}
@@ -318,6 +358,34 @@ mod tests {
 
 		let loaded_block = store.block(BlockRef::Hash(block.hash())).unwrap();
 		assert_eq!(loaded_block.hash(), block.hash());
+	}
+
+	#[test]
+	fn best_block_update() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let block: Block = test_data::block1();
+		store.insert_block(&block).unwrap();
+
+		assert_eq!(store.best_block_number(), Some(1));
+	}
+
+	#[test]
+	fn best_hash_update_fork() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let block: Block = test_data::block1();
+		store.insert_block(&block).unwrap();
+
+		let another_block: Block = test_data::block_h169();
+		store.insert_block(&another_block).unwrap();
+
+		// did not update because `another_block` is not child of `block`
+		assert_eq!(store.best_block_hash(), Some(block.hash()));
+		// number should not be update also
+		assert_eq!(store.best_block_number(), Some(1));
 	}
 
 	#[test]

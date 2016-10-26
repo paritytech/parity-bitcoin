@@ -58,6 +58,10 @@ impl Store for TestStorage {
 		self.data.read().best_block_number.map(|b| b as u32)
 	}
 
+	fn best_block_hash(&self) -> Option<H256> {
+		unimplemented!()
+	}
+
 	fn block_hash(&self, number: u32) -> Option<H256> {
 		let data = self.data.read();
 		data.heights.get(&(number as usize)).cloned()
