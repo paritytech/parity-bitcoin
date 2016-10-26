@@ -14,7 +14,7 @@ pub struct Peers {
 }
 
 /// Information on synchronization peers
-#[cfg(test)]
+#[derive(Debug)]
 pub struct Information {
 	/// Number of currently idle synchronization peers.
 	pub idle: usize,
@@ -31,7 +31,6 @@ impl Peers {
 	}
 
 	/// Get information on synchronization peers
-	#[cfg(test)]
 	pub fn information(&self) -> Information {
 		Information {
 			idle: self.idle_peers.len(),
@@ -82,11 +81,6 @@ impl Peers {
 
 	/// Inventory has been requested from peer.
 	pub fn on_inventory_requested(&mut self, _peer_index: usize) {
-		// TODO
-	}
-
-	/// Wrong block was received from peer.
-	pub fn on_wrong_block_received(&mut self, _peer_index: usize) {
 		// TODO
 	}
 }

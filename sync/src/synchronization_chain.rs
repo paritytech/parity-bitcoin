@@ -4,7 +4,7 @@ use chain::Block;
 use db;
 use primitives::hash::H256;
 use best_block::BestBlock;
-use hash_queue::{HashQueue, HashQueueChain, HashPosition};
+use hash_queue::{HashQueueChain, HashPosition};
 use verification;
 
 /// Thread-safe reference to `Chain`
@@ -112,6 +112,8 @@ impl Chain {
 	#[cfg(test)]
 	/// Create new `Chain` with in-memory test storage
 	pub fn with_test_storage() -> Self {
+		use db::Store;
+
 		// we only work with storages with genesis block
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let genesis_block_hash = storage.block_hash(0)
@@ -142,12 +144,6 @@ impl Chain {
 			verifying: self.hash_chain.len_of(VERIFYING_QUEUE) as u64,
 			stored: self.storage.best_block_number().map_or(0, |number| number + 1),
 		}
-	}
-
-	/// Get total blockchain length
-	pub fn length(&self) -> u64 {
-		self.storage.best_block_number().expect("storage with genesis block is required") + 1
-			+ self.hash_chain.len() as u64
 	}
 
 	/// Get number of blocks in given state
@@ -209,9 +205,8 @@ impl Chain {
 		let mut block_locator_hashes: Vec<H256> = Vec::new();
 
 		// calculate for hash_queue
-		let (local_index, step) = self.block_locator_hashes_for(0, 1, SCHEDULED_QUEUE, &mut block_locator_hashes);
-		let (local_index, step) = self.block_locator_hashes_for(local_index, step, REQUESTED_QUEUE, &mut block_locator_hashes);
-		let (local_index, step) = self.block_locator_hashes_for(local_index, step, VERIFYING_QUEUE, &mut block_locator_hashes);
+		let (local_index, step) = self.block_locator_hashes_for_queue(&mut block_locator_hashes);
+
 		// calculate for storage
 		let storage_best_block_number = self.storage.best_block_number().expect("storage with genesis block is required");
 		let storage_index = if storage_best_block_number < local_index { 0 } else { storage_best_block_number - local_index };
@@ -224,11 +219,19 @@ impl Chain {
 		self.hash_chain.push_back_n_at(SCHEDULED_QUEUE, hashes)
 	}
 
-	/// Pops block with givent state
-	pub fn request_blocks_hashes(&mut self, num_blocks: u64) -> Vec<H256> {
-		let scheduled = self.hash_chain.pop_front_n_at(SCHEDULED_QUEUE, num_blocks as usize);
+	/// Moves n blocks from scheduled queue to requested queue
+	pub fn request_blocks_hashes(&mut self, n: u64) -> Vec<H256> {
+		let scheduled = self.hash_chain.pop_front_n_at(SCHEDULED_QUEUE, n as usize);
 		self.hash_chain.push_back_n_at(REQUESTED_QUEUE, scheduled.clone());
 		scheduled
+	}
+
+	/// Moves n blocks from requested queue to verifying queue
+	#[cfg(test)]
+	pub fn verify_blocks_hashes(&mut self, n: u64) -> Vec<H256> {
+		let requested = self.hash_chain.pop_front_n_at(REQUESTED_QUEUE, n as usize);
+		self.hash_chain.push_back_n_at(VERIFYING_QUEUE, requested.clone());
+		requested
 	}
 
 	/// Schedule block for verification
@@ -244,10 +247,7 @@ impl Chain {
 			return;
 		}
 
-		self.storage.insert_block(&block);
-		self.best_storage_block_hash = hash;
-
-		/* TODO: fails on first 500 blocks
+		// TODO: currently verification fails on first ~500 blocks
 		// TODO: async verification
 		match self.verification_queue.push(block) {
 			Err(err) => {
@@ -275,7 +275,7 @@ impl Chain {
 				trace!(target: "sync", "Error verifying block {:?}: {:?}", hash, self.verification_queue.block_status(&hash));
 				unimplemented!();
 			},
-		}*/
+		}
 	}
 
 	/// Remove block by hash if it is currently in given state
@@ -283,33 +283,26 @@ impl Chain {
 		self.hash_chain.remove_at(state.to_queue_index(), hash)
 	}
 
-	/// Calculate block locator hashes for qiven hash queue
-	fn block_locator_hashes_for(&self, local_index: u64, mut step: u64, queue_index: usize, hashes: &mut Vec<H256>) -> (u64, u64) {
-		let queue = self.hash_chain.queue_at(queue_index);
-		let queue_len = queue.len() as u64;
-
-		// no items in queue => proceed to next storage
+	/// Calculate block locator hashes for hash queue
+	fn block_locator_hashes_for_queue(&self, hashes: &mut Vec<H256>) -> (u64, u64) {
+		let queue_len = self.hash_chain.len() as u64;
 		if queue_len == 0 {
-			return (local_index, step);
+			return (0, 1);
 		}
 
-		// there are less items in the queue than we need to skip => proceed to next storage
-		if queue_len - 1 < local_index {
-			return (local_index - queue_len - 1, step);
-		}
-
-		let mut local_index = queue_len - 1 - local_index;
+		let mut index = queue_len - 1;
+		let mut step = 1u64;
 		loop {
-			let hash = queue[local_index as usize].clone();
-			hashes.push(hash);
+			let block_hash = self.hash_chain[index as usize].clone();
+			hashes.push(block_hash);
 
 			if hashes.len() >= 10 {
 				step <<= 1;
 			}
-			if local_index < step {
-				return (step - local_index - 1, step);
+			if index < step {
+				return (step - index - 1, step);
 			}
-			local_index -= step;
+			index -= step;
 		}
 	}
 
@@ -333,5 +326,112 @@ impl Chain {
 			}
 			index -= step;
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use chain::{Block, RepresentH256};
+	use super::Chain;
+
+	#[test]
+	fn chain_block_locator_hashes() {
+		let mut chain = Chain::with_test_storage();
+		let genesis_hash = chain.best_block().hash;
+		assert_eq!(chain.block_locator_hashes(), vec![genesis_hash.clone()]);
+
+		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
+		let block1_hash = block1.hash();
+
+		chain.verify_and_insert_block(block1.hash(), block1);
+		assert_eq!(chain.block_locator_hashes(), vec![block1_hash.clone(), genesis_hash.clone()]);
+
+		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
+		let block2_hash = block2.hash();
+
+		chain.verify_and_insert_block(block2.hash(), block2);
+		assert_eq!(chain.block_locator_hashes(), vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
+
+		chain.schedule_blocks_hashes(vec![
+			"0000000000000000000000000000000000000000000000000000000000000000".into(),
+			"0000000000000000000000000000000000000000000000000000000000000001".into(),
+			"0000000000000000000000000000000000000000000000000000000000000002".into(),
+			"0000000000000000000000000000000000000000000000000000000000000003".into(),
+			"0000000000000000000000000000000000000000000000000000000000000004".into(),
+			"0000000000000000000000000000000000000000000000000000000000000005".into(),
+			"0000000000000000000000000000000000000000000000000000000000000006".into(),
+			"0000000000000000000000000000000000000000000000000000000000000007".into(),
+			"0000000000000000000000000000000000000000000000000000000000000008".into(),
+			"0000000000000000000000000000000000000000000000000000000000000009".into(),
+			"0000000000000000000000000000000000000000000000000000000000000010".into(),
+		]);
+		chain.request_blocks_hashes(10);
+		chain.verify_blocks_hashes(10);
+
+		assert_eq!(chain.best_block_locator_hashes(), vec!["0000000000000000000000000000000000000000000000000000000000000010".into()]);
+		assert_eq!(chain.block_locator_hashes(), vec![
+			"0000000000000000000000000000000000000000000000000000000000000010".into(),
+			"0000000000000000000000000000000000000000000000000000000000000009".into(),
+			"0000000000000000000000000000000000000000000000000000000000000008".into(),
+			"0000000000000000000000000000000000000000000000000000000000000007".into(),
+			"0000000000000000000000000000000000000000000000000000000000000006".into(),
+			"0000000000000000000000000000000000000000000000000000000000000005".into(),
+			"0000000000000000000000000000000000000000000000000000000000000004".into(),
+			"0000000000000000000000000000000000000000000000000000000000000003".into(),
+			"0000000000000000000000000000000000000000000000000000000000000002".into(),
+			"0000000000000000000000000000000000000000000000000000000000000001".into(),
+			block2_hash.clone(),
+			genesis_hash.clone(),
+		]);
+
+		chain.schedule_blocks_hashes(vec![
+			"0000000000000000000000000000000000000000000000000000000000000011".into(),
+			"0000000000000000000000000000000000000000000000000000000000000012".into(),
+			"0000000000000000000000000000000000000000000000000000000000000013".into(),
+			"0000000000000000000000000000000000000000000000000000000000000014".into(),
+			"0000000000000000000000000000000000000000000000000000000000000015".into(),
+			"0000000000000000000000000000000000000000000000000000000000000016".into(),
+		]);
+		chain.request_blocks_hashes(10);
+
+		assert_eq!(chain.best_block_locator_hashes(), vec!["0000000000000000000000000000000000000000000000000000000000000016".into()]);
+		assert_eq!(chain.block_locator_hashes(), vec![
+			"0000000000000000000000000000000000000000000000000000000000000016".into(),
+			"0000000000000000000000000000000000000000000000000000000000000015".into(),
+			"0000000000000000000000000000000000000000000000000000000000000014".into(),
+			"0000000000000000000000000000000000000000000000000000000000000013".into(),
+			"0000000000000000000000000000000000000000000000000000000000000012".into(),
+			"0000000000000000000000000000000000000000000000000000000000000011".into(),
+			"0000000000000000000000000000000000000000000000000000000000000010".into(),
+			"0000000000000000000000000000000000000000000000000000000000000009".into(),
+			"0000000000000000000000000000000000000000000000000000000000000008".into(),
+			"0000000000000000000000000000000000000000000000000000000000000007".into(),
+			"0000000000000000000000000000000000000000000000000000000000000005".into(),
+			"0000000000000000000000000000000000000000000000000000000000000001".into(),
+			genesis_hash.clone(),
+		]);
+
+		chain.schedule_blocks_hashes(vec![
+			"0000000000000000000000000000000000000000000000000000000000000020".into(),
+			"0000000000000000000000000000000000000000000000000000000000000021".into(),
+			"0000000000000000000000000000000000000000000000000000000000000022".into(),
+		]);
+
+		assert_eq!(chain.best_block_locator_hashes(), vec!["0000000000000000000000000000000000000000000000000000000000000022".into()]);
+		assert_eq!(chain.block_locator_hashes(), vec![
+			"0000000000000000000000000000000000000000000000000000000000000022".into(),
+			"0000000000000000000000000000000000000000000000000000000000000021".into(),
+			"0000000000000000000000000000000000000000000000000000000000000020".into(),
+			"0000000000000000000000000000000000000000000000000000000000000016".into(),
+			"0000000000000000000000000000000000000000000000000000000000000015".into(),
+			"0000000000000000000000000000000000000000000000000000000000000014".into(),
+			"0000000000000000000000000000000000000000000000000000000000000013".into(),
+			"0000000000000000000000000000000000000000000000000000000000000012".into(),
+			"0000000000000000000000000000000000000000000000000000000000000011".into(),
+			"0000000000000000000000000000000000000000000000000000000000000010".into(),
+			"0000000000000000000000000000000000000000000000000000000000000008".into(),
+			"0000000000000000000000000000000000000000000000000000000000000004".into(),
+			genesis_hash.clone(),
+		]);
 	}
 }

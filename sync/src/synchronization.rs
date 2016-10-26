@@ -1,10 +1,10 @@
 use std::cmp::{min, max};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use chain::{Block, RepresentH256};
 use primitives::hash::H256;
 use hash_queue::HashPosition;
-use synchronization_peers::Peers;
+use synchronization_peers::{Peers, Information as PeersInformation};
 use synchronization_chain::{ChainRef, Information as ChainInformation, BlockState};
 
 ///! Blocks synchronization process:
@@ -88,6 +88,8 @@ pub enum State {
 pub struct Information {
 	/// Current synchronization state.
 	pub state: State,
+	/// Information on synchronization peers.
+	pub peers: PeersInformation,
 	/// Current synchronization chain inormation.
 	pub chain: ChainInformation,
 	/// Number of currently orphaned blocks.
@@ -121,6 +123,7 @@ impl Synchronization {
 	pub fn information(&self) -> Information {
 		Information {
 			state: self.state,
+			peers: self.peers.information(),
 			chain: self.chain.read().information(),
 			orphaned: self.orphaned_blocks.len(),
 		}
@@ -274,201 +277,89 @@ impl Synchronization {
 
 #[cfg(test)]
 mod tests {
+	use parking_lot::RwLock;
 	use chain::{Block, RepresentH256};
-	use primitives::hash::H256;
-	use local_chain::LocalChain;
 	use super::{Synchronization, State, Task};
+	use synchronization_chain::{Chain, ChainRef};
 
 	#[test]
 	fn synchronization_saturated_on_start() {
-		let sync = Synchronization::new();
+		let chain = ChainRef::new(RwLock::new(Chain::with_test_storage()));
+		let sync = Synchronization::new(chain);
 		let info = sync.information();
 		assert_eq!(info.state, State::Saturated);
-		assert_eq!(info.requested, 0);
-		assert_eq!(info.queued, 0);
 		assert_eq!(info.orphaned, 0);
 	}
 
 	#[test]
 	fn synchronization_in_order_block_path() {
-		let mut chain = LocalChain::with_test_storage();
-		let mut sync = Synchronization::new();
+		let chain = ChainRef::new(RwLock::new(Chain::with_test_storage()));
+		let mut sync = Synchronization::new(chain);
 
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
 
 		sync.on_unknown_blocks(5, vec![block1.hash()]);
 		assert_eq!(sync.information().state, State::Synchronizing);
-		assert_eq!(sync.information().requested, 0);
-		assert_eq!(sync.information().queued, 1);
 		assert_eq!(sync.information().orphaned, 0);
-		assert_eq!(sync.peers().information().idle, 1);
-		assert_eq!(sync.peers().information().active, 0);
+		assert_eq!(sync.information().chain.scheduled, 1);
+		assert_eq!(sync.information().chain.requested, 0);
+		assert_eq!(sync.information().chain.stored, 1);
+		assert_eq!(sync.information().peers.idle, 1);
+		assert_eq!(sync.information().peers.active, 0);
 
 		let tasks = sync.get_synchronization_tasks();
 		assert_eq!(tasks.len(), 2);
 		assert_eq!(tasks[0], Task::RequestBestInventory(5));
 		assert_eq!(tasks[1], Task::RequestBlocks(5, vec![block1.hash()]));
 		assert_eq!(sync.information().state, State::Synchronizing);
-		assert_eq!(sync.information().requested, 1);
-		assert_eq!(sync.information().queued, 0);
 		assert_eq!(sync.information().orphaned, 0);
-		assert_eq!(sync.peers().information().idle, 0);
-		assert_eq!(sync.peers().information().active, 1);
+		assert_eq!(sync.information().chain.scheduled, 0);
+		assert_eq!(sync.information().chain.requested, 1);
+		assert_eq!(sync.information().chain.stored, 1);
+		assert_eq!(sync.information().peers.idle, 0);
+		assert_eq!(sync.information().peers.active, 1);
 
 		// push unknown block => nothing should change
-		sync.on_peer_block(&mut chain, 5, block2);
+		sync.on_peer_block(5, block2);
 		assert_eq!(sync.information().state, State::Synchronizing);
-		assert_eq!(sync.information().requested, 1);
-		assert_eq!(sync.information().queued, 0);
 		assert_eq!(sync.information().orphaned, 0);
-		assert_eq!(sync.peers().information().idle, 0);
-		assert_eq!(sync.peers().information().active, 1);
+		assert_eq!(sync.information().chain.scheduled, 0);
+		assert_eq!(sync.information().chain.requested, 1);
+		assert_eq!(sync.information().chain.stored, 1);
+		assert_eq!(sync.information().peers.idle, 0);
+		assert_eq!(sync.information().peers.active, 1);
 
 		// push requested block => nothing should change
-		sync.on_peer_block(&mut chain, 5, block1);
+		sync.on_peer_block(5, block1);
 		assert_eq!(sync.information().state, State::Saturated);
-		assert_eq!(sync.information().requested, 0);
-		assert_eq!(sync.information().queued, 0);
 		assert_eq!(sync.information().orphaned, 0);
-		assert_eq!(sync.peers().information().idle, 1);
-		assert_eq!(sync.peers().information().active, 0);
-		assert_eq!(chain.information().length, 2);
+		assert_eq!(sync.information().chain.scheduled, 0);
+		assert_eq!(sync.information().chain.requested, 0);
+		assert_eq!(sync.information().chain.stored, 2);
+		assert_eq!(sync.information().peers.idle, 1);
+		assert_eq!(sync.information().peers.active, 0);
 	}
 
 	#[test]
 	fn synchronization_out_of_order_block_path() {
-		let mut chain = LocalChain::with_test_storage();
-		let mut sync = Synchronization::new();
+		let chain = ChainRef::new(RwLock::new(Chain::with_test_storage()));
+		let mut sync = Synchronization::new(chain);
 
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
 
 		sync.on_unknown_blocks(5, vec![block2.hash()]);
 		sync.get_synchronization_tasks();
-		sync.on_peer_block(&mut chain, 5, block2);
+		sync.on_peer_block(5, block2);
 
 		// out-of-order block was presented by the peer
 		assert_eq!(sync.information().state, State::Saturated);
-		assert_eq!(sync.information().requested, 0);
-		assert_eq!(sync.information().queued, 0);
 		assert_eq!(sync.information().orphaned, 0);
-		assert_eq!(sync.peers().information().idle, 1);
-		assert_eq!(sync.peers().information().active, 0);
-		assert_eq!(chain.information().length, 1);
+		assert_eq!(sync.information().chain.scheduled, 0);
+		assert_eq!(sync.information().chain.requested, 0);
+		assert_eq!(sync.information().chain.stored, 1);
+		assert_eq!(sync.information().peers.idle, 1);
+		assert_eq!(sync.information().peers.active, 0);
 		// TODO: check that peer is penalized
-	}
-
-	#[test]
-	fn synchronization_block_locator_hashes() {
-		let mut chain = LocalChain::with_test_storage();
-		let genesis_hash = chain.best_block().hash;
-
-		let mut hashes: Vec<H256> = Vec::new(); chain.block_locator_hashes(0, 100, &mut hashes);
-		assert_eq!(hashes, vec![genesis_hash.clone()]);
-
-		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
-		let block1_hash = block1.hash();
-
-		chain.insert_block(block1);
-		let mut hashes: Vec<H256> = Vec::new(); chain.block_locator_hashes(0, 1, &mut hashes);
-		assert_eq!(hashes, vec![genesis_hash.clone()]);
-		let mut hashes: Vec<H256> = Vec::new(); chain.block_locator_hashes(1, 1, &mut hashes);
-		assert_eq!(hashes, vec![block1_hash.clone(), genesis_hash.clone()]);
-		let mut hashes: Vec<H256> = Vec::new(); chain.block_locator_hashes(1, 10, &mut hashes);
-		assert_eq!(hashes, vec![block1_hash.clone(), genesis_hash.clone()]);
-
-		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
-		let block2_hash = block2.hash();
-
-		chain.insert_block(block2);
-		let mut hashes: Vec<H256> = Vec::new(); chain.block_locator_hashes(2, 1, &mut hashes);
-		assert_eq!(hashes, vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
-		let mut hashes: Vec<H256> = Vec::new(); chain.block_locator_hashes(2, 10, &mut hashes);
-		assert_eq!(hashes, vec![block2_hash.clone(), genesis_hash.clone()]);
-		let mut hashes: Vec<H256> = Vec::new(); chain.block_locator_hashes(2, 2, &mut hashes);
-		assert_eq!(hashes, vec![block2_hash.clone(), genesis_hash.clone()]);
-
-		let mut sync = Synchronization::new();
-		{
-			let verifying_hashes = sync.verifying_hashes_mut();
-			verifying_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000000".into());
-			verifying_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000001".into());
-			verifying_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000002".into());
-			verifying_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000003".into());
-			verifying_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000004".into());
-			verifying_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000005".into());
-			verifying_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000006".into());
-			verifying_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000007".into());
-			verifying_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000008".into());
-			verifying_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000009".into());
-			verifying_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000010".into());
-		}
-
-		assert_eq!(sync.best_block_locator_hashes(&chain), vec!["0000000000000000000000000000000000000000000000000000000000000010".into()]);
-		assert_eq!(sync.block_locator_hashes(&chain), vec![
-			"0000000000000000000000000000000000000000000000000000000000000010".into(),
-			"0000000000000000000000000000000000000000000000000000000000000009".into(),
-			"0000000000000000000000000000000000000000000000000000000000000008".into(),
-			"0000000000000000000000000000000000000000000000000000000000000007".into(),
-			"0000000000000000000000000000000000000000000000000000000000000006".into(),
-			"0000000000000000000000000000000000000000000000000000000000000005".into(),
-			"0000000000000000000000000000000000000000000000000000000000000004".into(),
-			"0000000000000000000000000000000000000000000000000000000000000003".into(),
-			"0000000000000000000000000000000000000000000000000000000000000002".into(),
-			"0000000000000000000000000000000000000000000000000000000000000001".into(),
-			block2_hash.clone(),
-			genesis_hash.clone(),
-		]);
-
-		{
-			let requested_hashes = sync.requested_hashes_mut();
-			requested_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000011".into());
-			requested_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000012".into());
-			requested_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000013".into());
-			requested_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000014".into());
-			requested_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000015".into());
-			requested_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000016".into());
-		}
-
-		assert_eq!(sync.best_block_locator_hashes(&chain), vec!["0000000000000000000000000000000000000000000000000000000000000016".into()]);
-		assert_eq!(sync.block_locator_hashes(&chain), vec![
-			"0000000000000000000000000000000000000000000000000000000000000016".into(),
-			"0000000000000000000000000000000000000000000000000000000000000015".into(),
-			"0000000000000000000000000000000000000000000000000000000000000014".into(),
-			"0000000000000000000000000000000000000000000000000000000000000013".into(),
-			"0000000000000000000000000000000000000000000000000000000000000012".into(),
-			"0000000000000000000000000000000000000000000000000000000000000011".into(),
-			"0000000000000000000000000000000000000000000000000000000000000010".into(),
-			"0000000000000000000000000000000000000000000000000000000000000009".into(),
-			"0000000000000000000000000000000000000000000000000000000000000008".into(),
-			"0000000000000000000000000000000000000000000000000000000000000007".into(),
-			"0000000000000000000000000000000000000000000000000000000000000005".into(),
-			"0000000000000000000000000000000000000000000000000000000000000001".into(),
-			genesis_hash.clone(),
-		]);
-
-		{
-			let queued_hashes = sync.queued_hashes_mut();
-			queued_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000020".into());
-			queued_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000021".into());
-			queued_hashes.push_back("0000000000000000000000000000000000000000000000000000000000000022".into());
-		}
-
-		assert_eq!(sync.best_block_locator_hashes(&chain), vec!["0000000000000000000000000000000000000000000000000000000000000022".into()]);
-		assert_eq!(sync.block_locator_hashes(&chain), vec![
-			"0000000000000000000000000000000000000000000000000000000000000022".into(),
-			"0000000000000000000000000000000000000000000000000000000000000021".into(),
-			"0000000000000000000000000000000000000000000000000000000000000020".into(),
-			"0000000000000000000000000000000000000000000000000000000000000016".into(),
-			"0000000000000000000000000000000000000000000000000000000000000015".into(),
-			"0000000000000000000000000000000000000000000000000000000000000014".into(),
-			"0000000000000000000000000000000000000000000000000000000000000013".into(),
-			"0000000000000000000000000000000000000000000000000000000000000012".into(),
-			"0000000000000000000000000000000000000000000000000000000000000011".into(),
-			"0000000000000000000000000000000000000000000000000000000000000010".into(),
-			"0000000000000000000000000000000000000000000000000000000000000008".into(),
-			"0000000000000000000000000000000000000000000000000000000000000004".into(),
-			genesis_hash.clone(),
-		]);
 	}
 }

@@ -40,20 +40,12 @@ impl HashQueue {
 		self.queue.is_empty()
 	}
 
-	pub fn front<'a>(&'a self) -> Option<&'a H256> {
-		self.queue.front()
-	}
-
 	pub fn back<'a>(&'a self) -> Option<&'a H256> {
 		self.queue.back()
 	}
 
 	pub fn contains(&self, hash: &H256) -> bool {
 		self.set.contains(hash)
-	}
-
-	pub fn queue<'a>(&'a self) -> &'a VecDeque<H256> {
-		&self.queue
 	}
 
 	pub fn pop_front(&mut self) -> Option<H256> {
@@ -140,17 +132,20 @@ impl HashQueueChain {
 		self.chain[chain_index].is_empty()
 	}
 
-	pub fn front<'a>(&'a self) -> Option<&'a H256> {
-		self.chain[0].front()
-	}
+	pub fn back(&self) -> Option<H256> {
+		let mut queue_index = self.chain.len() - 1;
+		loop {
+			let ref queue = self.chain[queue_index];
+			let queue_back = queue.back();
+			if queue_back.is_some() {
+				return queue_back.cloned();
+			}
 
-	pub fn front_of<'a>(&'a self, queue_index: usize) -> Option<&'a H256> {
-		self.chain[queue_index].front()
-	}
-
-	pub fn back<'a>(&'a self) -> Option<&'a H256> {
-		let queue_index = self.chain.len() - 1;
-		self.chain[queue_index].back()
+			queue_index = queue_index - 1;
+			if queue_index == 0 {
+				return None;
+			}
+		}
 	}
 
 	pub fn is_contained_in(&self, queue_index: usize, hash: &H256) -> bool {
@@ -166,22 +161,8 @@ impl HashQueueChain {
 		None
 	}
 
-	pub fn queue_at<'a>(&'a self, queue_index: usize) -> &'a VecDeque<H256> {
-		self.chain[queue_index].queue()
-	}
-
-	pub fn pop_front_at(&mut self, queue_index: usize) -> H256 {
-		self.chain[queue_index].pop_front()
-			.expect("must be checked by caller")
-	}
-
 	pub fn pop_front_n_at(&mut self, queue_index: usize, n: usize) -> Vec<H256> {
 		self.chain[queue_index].pop_front_n(n)
-	}
-
-	pub fn push_back(&mut self, hash: H256) {
-		let queue_index = self.chain.len() - 1;
-		self.chain[queue_index].push_back(hash)
 	}
 
 	pub fn push_back_n_at(&mut self, queue_index: usize, hashes: Vec<H256>) {
