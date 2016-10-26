@@ -13,7 +13,7 @@ use synchronization_peers::Peers;
 ///! 2) no forks support
 ///!
 ///! When new peer is connected:
-///! 1) send `getdata` message with full block locator hashes
+///! 1) send `inventory` message with full block locator hashes
 ///!
 ///! When `inventory` message is received from peer:
 ///! 1) if synchronization queue is empty:
@@ -33,7 +33,7 @@ use synchronization_peers::Peers;
 ///! 1) if any basic verification is failed (TODO):
 ///! 1.1) penalize peer
 ///! 1.2) stop
-///! 1) if not(remove block was not requested):
+///! 1) if not(remove block) [i.e. block was not requested]:
 ///! 1.1) ignore it (TODO: try to append to the chain)
 ///! 1.2) stop
 ///! 2) if this block is first block in the `requested_hashes`:

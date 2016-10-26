@@ -157,6 +157,8 @@ impl LocalNode {
 	}
 
 	fn execute_synchronization_task(&mut self, task: SynchronizationTask) {
+		// TODO: what is types::GetBlocks::version here? (@ PR#37)
+
 		match task {
 			SynchronizationTask::RequestBlocks(peer_index, blocks_hashes) => {
 				let getdata = types::GetData {

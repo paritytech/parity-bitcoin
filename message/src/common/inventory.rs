@@ -32,7 +32,7 @@ impl From<InventoryType> for u32 {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct InventoryVector {
-	pub inv_type: u32,
+	pub inv_type: u32, // TODO: change to InventoryType as discussed in #37
 	pub hash: H256,
 }
 
