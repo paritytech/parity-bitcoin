@@ -142,7 +142,7 @@ impl Chain {
 			scheduled: self.hash_chain.len_of(SCHEDULED_QUEUE) as u64,
 			requested: self.hash_chain.len_of(REQUESTED_QUEUE) as u64,
 			verifying: self.hash_chain.len_of(VERIFYING_QUEUE) as u64,
-			stored: self.storage.best_block_number().map_or(0, |number| number + 1),
+			stored: self.storage.best_block_number().map_or(0, |number| number as u64 + 1),
 		}
 	}
 
@@ -161,11 +161,11 @@ impl Chain {
 		let storage_best_block_number = self.storage.best_block_number().expect("storage with genesis block is required");
 		match self.hash_chain.back() {
 			Some(hash) => BestBlock {
-				height: storage_best_block_number + self.hash_chain.len() as u64,
+				height: storage_best_block_number as u64 + self.hash_chain.len() as u64,
 				hash: hash.clone(),
 			},
 			None => BestBlock {
-				height: storage_best_block_number,
+				height: storage_best_block_number as u64,
 				hash: self.storage.block_hash(storage_best_block_number).expect("storage with genesis block is required"),
 			}
 		}
@@ -209,8 +209,8 @@ impl Chain {
 
 		// calculate for storage
 		let storage_best_block_number = self.storage.best_block_number().expect("storage with genesis block is required");
-		let storage_index = if storage_best_block_number < local_index { 0 } else { storage_best_block_number - local_index };
-		self.block_locator_hashes_for_storage(storage_index, step, &mut block_locator_hashes);
+		let storage_index = if (storage_best_block_number as u64) < local_index { 0 } else { (storage_best_block_number as u64) - local_index };
+		self.block_locator_hashes_for_storage(storage_index as u64, step, &mut block_locator_hashes);
 		block_locator_hashes
 	}
 
@@ -255,7 +255,7 @@ impl Chain {
 				trace!(target: "sync", "Cannot push block {:?} to verification queue: {:?}", hash, err);
 				unimplemented!();
 			},
-			_ => (), 
+			_ => (),
 		}
 		self.verification_queue.process();
 		match self.verification_queue.pop_valid() {
@@ -309,7 +309,7 @@ impl Chain {
 	/// Calculate block locator hashes for storage
 	fn block_locator_hashes_for_storage(&self, mut index: u64, mut step: u64, hashes: &mut Vec<H256>) {
 		loop {
-			let block_hash = self.storage.block_hash(index)
+			let block_hash = self.storage.block_hash(index as u32)
 				.expect("private function; index calculated in `block_locator_hashes`; qed");
 			hashes.push(block_hash);
 
