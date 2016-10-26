@@ -9,6 +9,7 @@ pub struct TransactionMeta {
 	spent: BitVec,
 }
 
+#[derive(Debug)]
 pub enum Error {
 	KeyTooShort(usize),
 }

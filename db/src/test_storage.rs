@@ -9,6 +9,7 @@ use std::mem::replace;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use parking_lot::RwLock;
+use transaction_meta::TransactionMeta;
 
 #[derive(Default)]
 pub struct TestStorage {
@@ -130,5 +131,9 @@ impl Store for TestStorage {
 		}
 
 		Ok(())
+	}
+
+	fn transaction_meta(&self, _hash: &H256) -> Option<TransactionMeta> {
+		unimplemented!();
 	}
 }

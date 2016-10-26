@@ -2,7 +2,7 @@
 
 use std::{self, fs};
 use std::path::Path;
-use kvdb::{Database, DatabaseConfig};
+use kvdb::{DBTransaction, Database, DatabaseConfig};
 use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
@@ -10,6 +10,7 @@ use super::BlockRef;
 use serialization;
 use chain::{self, RepresentH256};
 use parking_lot::RwLock;
+use transaction_meta::TransactionMeta;
 
 const COL_COUNT: u32 = 10;
 const COL_META: u32 = 0;
@@ -17,7 +18,7 @@ const COL_BLOCK_HASHES: u32 = 1;
 const COL_BLOCK_HEADERS: u32 = 2;
 const COL_BLOCK_TRANSACTIONS: u32 = 3;
 const COL_TRANSACTIONS: u32 = 4;
-const _COL_RESERVED1: u32 = 5;
+const COL_TRANSACTIONS_META: u32 = 5;
 const _COL_RESERVED2: u32 = 6;
 const _COL_RESERVED3: u32 = 7;
 const _COL_RESERVED4: u32 = 8;
@@ -62,6 +63,9 @@ pub trait Store : Send + Sync {
 
 	/// insert block in the storage
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error>;
+
+	/// get transaction metadata
+	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta>;
 }
 
 /// Blockchain storage with rocksdb database
@@ -147,10 +151,6 @@ impl Storage {
 		self.get(COL_META, key)
 	}
 
-	fn read_meta_u64(&self, key: &[u8]) -> Option<u64> {
-		self.read_meta(key).map(|val| LittleEndian::read_u64(&val))
-	}
-
 	fn read_meta_u32(&self, key: &[u8]) -> Option<u32> {
 		self.read_meta(key).map(|val| LittleEndian::read_u32(&val))
 	}
@@ -206,6 +206,19 @@ impl Storage {
 				})
 			})
 			.collect()
+	}
+
+	/// update transactions metadata in the specified database transaction
+	fn update_transactions_meta(&self, db_transaction: &mut DBTransaction, accepted_txs: &[chain::Transaction]) {
+		for accepted_tx in accepted_txs.iter() {
+			for (input_idx, input) in accepted_tx.inputs.iter().enumerate() {
+				// todo : hard error when no meta?
+				let mut meta = self.transaction_meta(&input.previous_output.hash)
+					.unwrap_or(TransactionMeta::new(0, input_idx+1));
+				meta.note_used(input_idx);
+				db_transaction.put(Some(COL_TRANSACTIONS_META), &*input.previous_output.hash, &meta.to_bytes());
+			}
+		}
 	}
 }
 
@@ -267,15 +280,8 @@ impl Store for Storage {
 		let block_hash = block.hash();
 
 		let new_best_hash = match best_block_hash.as_ref() {
-			Some(best_hash) => {
-				if &block.header().previous_header_hash == best_hash {
-					block_hash.clone()
-				}
-				else {
-					best_hash.clone()
-				}
-			},
-			None => { block_hash.clone() },
+			Some(best_hash) if &block.header().previous_header_hash != best_hash => best_hash.clone(),
+			_ => block_hash.clone(),
 		};
 
 		let new_best_number = match *best_block_number {
@@ -307,6 +313,8 @@ impl Store for Storage {
 			&serialization::serialize(block.header())
 		);
 
+		self.update_transactions_meta(&mut transaction, &block.transactions()[1..]);
+
 		if *best_block_number != Some(new_best_number) {
 			transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 		}
@@ -331,6 +339,11 @@ impl Store for Storage {
 		})
 	}
 
+	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
+		self.get(COL_TRANSACTIONS_META, &**hash).map(|val|
+			TransactionMeta::from_bytes(&val).unwrap_or_else(|e| panic!("Invalid transaction metadata: db corrupted? ({:?})", e))
+		)
+	}
 }
 
 #[cfg(test)]
