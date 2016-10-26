@@ -6,7 +6,7 @@ use bytes::Bytes;
 use message::Error;
 use message::common::Command;
 
-pub use self::addr::AddrProtocol;
+pub use self::addr::{AddrProtocol, SeednodeProtocol};
 pub use self::ping::PingProtocol;
 pub use self::sync::{SyncProtocol, InboundSyncConnection, InboundSyncConnectionRef, OutboundSyncConnection, OutboundSyncConnectionRef, LocalSyncNode, LocalSyncNodeRef};
 

@@ -1,11 +1,11 @@
-use std::{io, net, error};
+use std::{io, net, error, time};
 use std::sync::Arc;
 use parking_lot::RwLock;
 use futures::{Future, finished, failed, BoxFuture};
 use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::io::IoFuture;
-use tokio_core::reactor::{Handle, Remote};
+use tokio_core::reactor::{Handle, Remote, Timeout};
 use abstract_ns::Resolver;
 use ns_dns_tokio::DnsResolver;
 use message::{Payload, MessageResult};
@@ -13,7 +13,7 @@ use protocol::Direction;
 use net::{connect, listen, Connections, Channel, Config as NetConfig};
 use util::{NodeTable, Node};
 use session::{SessionFactory, SeednodeSessionFactory, NormalSessionFactory};
-use {Config, PeerInfo, PeerId};
+use {Config, PeerId};
 use protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef};
 
 pub type BoxedEmptyFuture = BoxFuture<(), ()>;
@@ -50,6 +50,21 @@ impl Context {
 		self.remote.spawn(move |_handle| {
 			pool_work.then(|_| finished(()))
 		})
+	}
+
+	/// Schedules execution of function in future.
+	/// Use wisely, it keeps used objects in memory until after it is resolved.
+	pub fn execute_after<F>(&self, duration: time::Duration, f: F) where F: FnOnce() + 'static + Send {
+		let pool = self.pool.clone();
+		self.remote.spawn(move |handle| {
+			let timeout = Timeout::new(duration, handle)
+				.expect("Expected to schedule timeout")
+				.then(move |_| {
+					f();
+					finished(())
+				});
+			pool.spawn(timeout)
+		});
 	}
 
 	/// Returns addresses of recently active nodes. Sorted and limited to 1000.
@@ -153,19 +168,19 @@ impl Context {
 						},
 						Err(err) => {
 							// protocol error
-							context.close_connection(channel.peer_info());
+							context.close_channel_with_error(channel.peer_info().id, &err);
 							finished(Err(err)).boxed()
 						}
 					}
 				},
 				Ok(Err(err)) => {
 					// protocol error
-					context.close_connection(channel.peer_info());
+					context.close_channel_with_error(channel.peer_info().id, &err);
 					finished(Err(err)).boxed()
 				},
 				Err(err) => {
 					// network error
-					context.close_connection(channel.peer_info());
+					context.close_channel_with_error(channel.peer_info().id, &err);
 					failed(err).boxed()
 				}
 			}
@@ -204,11 +219,20 @@ impl Context {
 	}
 
 	/// Close channel with given peer info.
-	pub fn close_connection(&self, peer_info: PeerInfo) {
-		if let Some(channel) = self.connections.remove(peer_info.id) {
-			trace!("Disconnecting from {}", peer_info.address);
+	pub fn close_channel(&self, id: PeerId) {
+		if let Some(channel) = self.connections.remove(id) {
+			trace!("Disconnecting from {}", channel.peer_info().address);
 			channel.shutdown();
-			self.node_table.write().note_failure(&peer_info.address);
+		}
+	}
+
+	/// Close channel with given peer info.
+	pub fn close_channel_with_error(&self, id: PeerId, error: &error::Error) {
+		if let Some(channel) = self.connections.remove(id) {
+			let address = channel.peer_info().address;
+			trace!("Disconnecting from {} caused by {}", address, error.description());
+			channel.shutdown();
+			self.node_table.write().note_failure(&address);
 		}
 	}
 
