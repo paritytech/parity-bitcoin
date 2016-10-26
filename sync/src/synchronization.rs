@@ -272,91 +272,29 @@ impl Synchronization {
 		}
 
 		tasks
-	}
-
-	/// Calculate block locator hashes for given store
-	fn block_locator_hashes_for(local_index: usize, mut step: usize, store: &VecDeque<H256>, target: &mut Vec<H256>) -> (usize, usize) {
-		let store_len = store.len();
-		if store_len == 0 {
-			return (local_index, step);
-		}
-		if store.len() - 1 < local_index {
-			return (local_index - store.len() - 1, step);
-		}
-
-		let mut local_index = store.len() - 1 - local_index;
-		loop {
-			let hash = store[local_index].clone();
-			target.push(hash);
-
-			if target.len() >= 10 {
-				step <<= 1;
-			}
-			if local_index < step {
-				return (step - local_index - 1, step);
-			}
-			local_index -= step;
-		}
-	}
-
-	/// Add block to the verification queue.
-	fn queue_block_for_verification(chain: &mut LocalChain, peers: &mut Peers, peer_index: Option<usize>, block: Block) {
-		// TODO: add another basic verifications here (use verification package)
-		// TODO: return error if basic verification failed && reset synchronization state
-		if chain.best_block().hash != block.block_header.previous_header_hash {
-			// penalize peer
-			if let Some(peer_index) = peer_index {
-				peers.on_wrong_block_received(peer_index);
-			}
-			return;
-		}
-
-		// TODO: move to the verification queue instead of local_chain
-		chain.insert_block(block);
-	}
-
-	#[cfg(test)]
-	pub fn peers(&'a self) -> &'a Peers {
-		&self.peers
-	}
-
-	#[cfg(test)]
-	pub fn requested_hashes_mut(&'a mut self) -> &'a mut VecDeque<H256> {
-		&mut self.requested_hashes
-	}
-
-	#[cfg(test)]
-	pub fn queued_hashes_mut(&'a mut self) -> &'a mut VecDeque<H256> {
-		&mut self.queued_hashes
-	}
-
-	#[cfg(test)]
-	pub fn verifying_hashes_mut(&'a mut self) -> &'a mut VecDeque<H256> {
-		&mut self.verifying_hashes
 	}	
 }
 
 #[cfg(test)]
 mod tests {
+	use parking_lot::RwLock;
 	use chain::{Block, RepresentH256};
-	use primitives::hash::H256;
-	use local_chain::LocalChain;
 	use super::{Synchronization, State, Task};
+	use synchronization_chain::{Chain, ChainRef};
 
 	#[test]
 	fn synchronization_saturated_on_start() {
-		let sync = Synchronization::new();
+		let chain = ChainRef::new(RwLock::new(Chain::with_test_storage()));
+		let sync = Synchronization::new(chain);
 		let info = sync.information();
 		assert_eq!(info.state, State::Saturated);
-		assert_eq!(info.requested, 0);
-		assert_eq!(info.queued, 0);
 		assert_eq!(info.orphaned, 0);
 	}
 
 	#[test]
 	fn synchronization_in_order_block_path() {
-		let mut chain = LocalChain::new();
-		let mut sync = Synchronization::new();
+		let chain = ChainRef::new(RwLock::new(Chain::with_test_storage()));
+		let mut sync = Synchronization::new(chain);
 
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
