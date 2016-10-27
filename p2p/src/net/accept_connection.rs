@@ -1,37 +1,23 @@
 use std::{net, io};
+use std::time::Duration;
 use futures::{Future, Poll};
-use futures::stream::Stream;
 use tokio_core::reactor::Handle;
-use tokio_core::net::{TcpStream, TcpListener};
-use tokio_core::io::IoStream;
+use tokio_core::net::TcpStream;
 use message::{MessageResult, Magic};
-use io::{accept_handshake, AcceptHandshake};
+use io::{accept_handshake, AcceptHandshake, Deadline, deadline};
 use net::{Config, Connection};
 
-pub fn listen(handle: &Handle, config: Config) -> Result<Listen, io::Error> {
-	let listener = try!(TcpListener::bind(&config.local_address, handle));
-	let listen = Listen {
-		inner: listener.incoming()
-			.and_then(move |(stream, address)| accept_connection(stream, &config, address))
-			.boxed(),
-	};
-	Ok(listen)
-}
-
-
-pub struct Listen {
-	inner: IoStream<MessageResult<Connection>>,
-}
-
-fn accept_connection(stream: TcpStream, config: &Config, address: net::SocketAddr) -> AcceptConnection {
-	AcceptConnection {
+pub fn accept_connection(stream: TcpStream, handle: &Handle, config: &Config, address: net::SocketAddr) -> Deadline<AcceptConnection> {
+	let accept = AcceptConnection {
 		handshake: accept_handshake(stream, config.magic, config.version(&address)),
 		magic: config.magic,
 		address: address,
-	}
+	};
+
+	deadline(Duration::new(5, 0), handle, accept).expect("Failed to create timeout")
 }
 
-struct AcceptConnection {
+pub struct AcceptConnection {
 	handshake: AcceptHandshake<TcpStream>,
 	magic: Magic,
 	address: net::SocketAddr,
@@ -58,11 +44,11 @@ impl Future for AcceptConnection {
 	}
 }
 
-impl Stream for Listen {
-	type Item = MessageResult<Connection>;
-	type Error = io::Error;
+//impl Stream for Listen {
+	//type Item = DeadlineStatus<MessageResult<Connection>>;
+	//type Error = io::Error;
 
-	fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-		self.inner.poll()
-	}
-}
+	//fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+		//self.inner.poll()
+	//}
+//}
