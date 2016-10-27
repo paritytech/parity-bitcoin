@@ -467,4 +467,16 @@ mod tests {
 		assert_eq!(loaded_transaction.hash(), block.transactions()[0].hash());
 	}
 
+	#[test]
+	fn transaction_meta_update() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		store.insert_block(&test_data::block_h9()).unwrap();
+		store.insert_block(&test_data::block_h170()).unwrap();
+		store.insert_block(&test_data::block_h181()).unwrap();
+		store.insert_block(&test_data::block_h182()).unwrap();
+		store.insert_block(&test_data::block_h221()).unwrap();
+
+	}
 }
