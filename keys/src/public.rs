@@ -35,7 +35,7 @@ impl Public {
 	pub fn verify(&self, message: &Message, signature: &Signature) -> Result<bool, Error> {
 		let context = &SECP256K1;
 		let public = try!(key::PublicKey::from_slice(context, self));
-		let mut signature = try!(SecpSignature::from_der(context, signature));
+		let mut signature = try!(SecpSignature::from_der_lax(context, signature));
 		signature.normalize_s(context);
 		let message = try!(SecpMessage::from_slice(&**message));
 		match context.verify(&message, &signature, &public) {
