@@ -112,9 +112,6 @@ pub struct Synchronization {
 	verification_worker: VerificationWorker,
 	/// Blocks from requested_hashes, but received out-of-order.
 	orphaned_blocks: HashMap<H256, Block>,
-
-	start_time: time::Tm,
-	last_chunk_best_block_number: u64,
 }
 
 impl Synchronization {
@@ -126,8 +123,6 @@ impl Synchronization {
 			chain: chain,
 			verification_worker: verification_worker,
 			orphaned_blocks: HashMap::new(),
-			start_time: time::now(),
-			last_chunk_best_block_number: 0,
 		}
 	}
 
@@ -213,12 +208,6 @@ impl Synchronization {
 		let block_position = chain.remove_block_with_state(&block_hash, BlockState::Requested);
 		if block_position == HashPosition::Missing {
 			return;
-		}
-
-		let best_block = chain.best_block();
-		if best_block.height > self.last_chunk_best_block_number && (best_block.height - self.last_chunk_best_block_number) / 1000 != 0 {
-			println!("=== SYNCHRONIZED {} blocks in {}", best_block.height, time::now() - self.start_time);
-			self.last_chunk_best_block_number = best_block.height;
 		}
 
 		// requeste block is received => move to saturated state if there are no more blocks

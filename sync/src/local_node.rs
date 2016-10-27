@@ -99,13 +99,10 @@ impl LocalNode {
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_transaction(&mut self, peer_index: usize, _message: types::Tx) {
-		trace!(target: "sync", "Got `tx` message from peer#{}", peer_index);
+	pub fn on_peer_transaction(&mut self, _peer_index: usize, _message: types::Tx) {
 	}
 
-	pub fn on_peer_block(&mut self, peer_index: usize, message: types::Block) {
-		// trace!(target: "sync", "Got `block` message from peer#{}", peer_index);
-
+	pub fn on_peer_block(&mut self, _peer_index: usize, message: types::Block) {
 		// try to process new block
 		self.sync.on_peer_block(peer_index, message.block);
 		self.execute_synchronization_tasks();
