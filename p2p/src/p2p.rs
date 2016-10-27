@@ -5,16 +5,18 @@ use futures::{Future, finished, failed, BoxFuture};
 use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::io::IoFuture;
+use tokio_core::net::{TcpListener, TcpStream};
 use tokio_core::reactor::{Handle, Remote, Timeout};
 use abstract_ns::Resolver;
 use ns_dns_tokio::DnsResolver;
 use message::{Payload, MessageResult};
 use protocol::Direction;
-use net::{connect, listen, Connections, Channel, Config as NetConfig};
+use net::{connect, Connections, Channel, Config as NetConfig, accept_connection};
 use util::{NodeTable, Node};
 use session::{SessionFactory, SeednodeSessionFactory, NormalSessionFactory};
 use {Config, PeerId};
 use protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef};
+use io::DeadlineStatus;
 
 pub type BoxedEmptyFuture = BoxFuture<(), ()>;
 
@@ -84,7 +86,7 @@ impl Context {
 		let connection = connect(&socket, handle, config);
 		connection.then(move |result| {
 			match result {
-				Ok(Ok(connection)) => {
+				Ok(DeadlineStatus::Meet(Ok(connection))) => {
 					// successfull hanshake
 					trace!("Connected to {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
@@ -94,11 +96,17 @@ impl Context {
 					channel.session().initialize(channel.clone(), Direction::Outbound);
 					Context::on_message(context, channel)
 				},
-				Ok(Err(err)) => {
+				Ok(DeadlineStatus::Meet(Err(err))) => {
 					// protocol error
 					trace!("Handshake with {} failed", socket);
 					// TODO: close socket
 					finished(Err(err)).boxed()
+				},
+				Ok(DeadlineStatus::Timeout) => {
+					// connection time out
+					trace!("Handshake with {} timedout", socket);
+					// TODO: close socket
+					finished(Ok(())).boxed()
 				},
 				Err(err) => {
 					// network error
@@ -118,13 +126,10 @@ impl Context {
 		})
 	}
 
-	/// Starts tcp server and listens for incomming connections.
-	pub fn listen(context: Arc<Context>, handle: &Handle, config: NetConfig) -> Result<BoxedEmptyFuture, io::Error> {
-		trace!("Starting tcp server");
-		let listen = try!(listen(&handle, config));
-		let server = listen.then(move |result| {
+	pub fn accept_connection_future(context: Arc<Context>, stream: TcpStream, socket: net::SocketAddr, handle: &Handle, config: NetConfig) -> BoxedEmptyFuture {
+		accept_connection(stream, handle, &config, socket).then(move |result| {
 			match result {
-				Ok(Ok(connection)) => {
+				Ok(DeadlineStatus::Meet(Ok(connection))) => {
 					// successfull hanshake
 					trace!("Accepted connection from {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
@@ -134,10 +139,16 @@ impl Context {
 					channel.session().initialize(channel.clone(), Direction::Inbound);
 					Context::on_message(context.clone(), channel)
 				},
-				Ok(Err(err)) => {
+				Ok(DeadlineStatus::Meet(Err(err))) => {
 					// protocol error
 					// TODO: close socket
 					finished(Err(err)).boxed()
+				},
+				Ok(DeadlineStatus::Timeout) => {
+					// connection time out
+					trace!("Handshake with {} timedout", socket);
+					// TODO: close socket
+					finished(Ok(())).boxed()
 				},
 				Err(err) => {
 					// network error
@@ -145,9 +156,28 @@ impl Context {
 				}
 			}
 		})
-		.for_each(|_| Ok(()))
 		.then(|_| finished(()))
-		.boxed();
+		.boxed()
+	}
+
+	pub fn accept_connection(context: Arc<Context>, stream: TcpStream, socket: net::SocketAddr, config: NetConfig) {
+		context.remote.clone().spawn(move |handle| {
+			context.pool.clone().spawn(Context::accept_connection_future(context, stream, socket, handle, config))
+		})
+	}
+
+	/// Starts tcp server and listens for incomming connections.
+	pub fn listen(context: Arc<Context>, handle: &Handle, config: NetConfig) -> Result<BoxedEmptyFuture, io::Error> {
+		trace!("Starting tcp server");
+		let server = try!(TcpListener::bind(&config.local_address, handle));
+		let server = server.incoming()
+			.and_then(move |(stream, socket)| {
+				Context::accept_connection(context.clone(), stream, socket, config.clone());
+				Ok(())
+			})
+			.for_each(|_| Ok(()))
+			.then(|_| finished(()))
+			.boxed();
 		Ok(server)
 	}
 
@@ -324,8 +354,7 @@ impl P2P {
 
 	fn listen(&self) -> Result<(), Box<error::Error>> {
 		let server = try!(Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone()));
-		let pool_work = self.pool.spawn(server);
-		self.event_loop_handle.spawn(pool_work);
+		self.event_loop_handle.spawn(server);
 		Ok(())
 	}
 }

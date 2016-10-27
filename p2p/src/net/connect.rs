@@ -1,4 +1,5 @@
 use std::io;
+use std::time::Duration;
 use std::net::SocketAddr;
 use futures::{Future, Poll, Async};
 use tokio_core::reactor::Handle;
@@ -6,18 +7,20 @@ use tokio_core::net::{TcpStream, TcpStreamNew};
 use message::Error;
 use message::common::Magic;
 use message::types::Version;
-use io::{handshake, Handshake};
+use io::{handshake, Handshake, Deadline, deadline};
 use net::{Config, Connection};
 
-pub fn connect(address: &SocketAddr, handle: &Handle, config: &Config) -> Connect {
-	Connect {
+pub fn connect(address: &SocketAddr, handle: &Handle, config: &Config) -> Deadline<Connect> {
+	let connect = Connect {
 		state: ConnectState::TcpConnect {
 			future: TcpStream::connect(address, handle),
 			version: Some(config.version(address)),
 		},
 		magic: config.magic,
 		address: *address,
-	}
+	};
+
+	deadline(Duration::new(5, 0), handle, connect).expect("Failed to create timeout")
 }
 
 enum ConnectState {
