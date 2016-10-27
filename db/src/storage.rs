@@ -383,15 +383,14 @@ mod tests {
 
 
 	#[test]
-	fn insert_block() {
+	fn insert_genesis() {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
 
-		let block: Block = test_data::block1();
+		let block: Block = test_data::genesis();
 		store.insert_block(&block).unwrap();
 
-		let loaded_block = store.block(BlockRef::Hash(block.hash())).unwrap();
-		assert_eq!(loaded_block.hash(), block.hash());
+		assert_eq!(store.best_block_number(), Some(0));
 	}
 
 	#[test]
@@ -399,7 +398,10 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
 
-		let block: Block = test_data::block1();
+		let genesis: Block = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let block: Block = test_data::block_h1();
 		store.insert_block(&block).unwrap();
 
 		assert_eq!(store.best_block_number(), Some(1));
@@ -419,7 +421,7 @@ mod tests {
 		// did not update because `another_block` is not child of `block`
 		assert_eq!(store.best_block_hash(), Some(block.hash()));
 		// number should not be update also
-		assert_eq!(store.best_block_number(), Some(1));
+		assert_eq!(store.best_block_number(), Some(0));
 	}
 
 	#[test]
