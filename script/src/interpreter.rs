@@ -1846,4 +1846,20 @@ mod tests {
 			.verify_p2sh(true);
 		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
 	}
+
+	// https://blockchain.info/en/tx/12b5633bad1f9c167d523ad1aa1947b2732a865bf5414eab2f9e5ae5d5c191ba?show_adv=true
+	#[test]
+	fn test_transaction_with_high_s_signature() {
+		let tx: Transaction = "010000000173805864da01f15093f7837607ab8be7c3705e29a9d4a12c9116d709f8911e590100000049483045022052ffc1929a2d8bd365c6a2a4e3421711b4b1e1b8781698ca9075807b4227abcb0221009984107ddb9e3813782b095d0d84361ed4c76e5edaf6561d252ae162c2341cfb01ffffffff0200e1f50500000000434104baa9d36653155627c740b3409a734d4eaf5dcca9fb4f736622ee18efcf0aec2b758b2ec40db18fbae708f691edb2d4a2a3775eb413d16e2e3c0f8d4c69119fd1ac009ce4a60000000043410411db93e1dcdb8a016b49840f8c53bc1eb68a382e97b1482ecad7b148a6909a5cb2e0eaddfb84ccf9744464f82e160bfa9b8b64f9d4c03f999b8643f656b412a3ac00000000".into();
+		let signer: TransactionInputSigner = tx.into();
+		let checker = TransactionSignatureChecker {
+			signer: signer,
+			input_index: 0,
+		};
+		let input: Script = "483045022052ffc1929a2d8bd365c6a2a4e3421711b4b1e1b8781698ca9075807b4227abcb0221009984107ddb9e3813782b095d0d84361ed4c76e5edaf6561d252ae162c2341cfb01".into();
+		let output: Script = "410411db93e1dcdb8a016b49840f8c53bc1eb68a382e97b1482ecad7b148a6909a5cb2e0eaddfb84ccf9744464f82e160bfa9b8b64f9d4c03f999b8643f656b412a3ac".into();
+		let flags = VerificationFlags::default()
+			.verify_p2sh(true);
+		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+	}
 }
