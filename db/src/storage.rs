@@ -11,6 +11,7 @@ use serialization;
 use chain::{self, RepresentH256};
 use parking_lot::RwLock;
 use transaction_meta::TransactionMeta;
+use std::collections::HashMap;
 
 const COL_COUNT: u32 = 10;
 const COL_META: u32 = 0;
@@ -222,15 +223,37 @@ impl Storage {
 	}
 
 	/// update transactions metadata in the specified database transaction
-	fn update_transactions_meta(&self, db_transaction: &mut DBTransaction, accepted_txs: &[chain::Transaction]) {
-		for accepted_tx in accepted_txs.iter() {
-			for (input_idx, input) in accepted_tx.inputs.iter().enumerate() {
-				// todo : hard error when no meta?
-				let mut meta = self.transaction_meta(&input.previous_output.hash)
-					.unwrap_or(TransactionMeta::new(0, input_idx+1));
-				meta.note_used(input_idx);
-				db_transaction.put(Some(COL_TRANSACTIONS_META), &*input.previous_output.hash, &meta.to_bytes());
+	fn update_transactions_meta(&self, db_transaction: &mut DBTransaction, number: u32, accepted_txs: &[chain::Transaction]) {
+		let mut meta_buf = HashMap::<H256, TransactionMeta>::new();
+		for (accepted_tx_idx, accepted_tx) in accepted_txs.iter().enumerate() {
+			// adding unspent transaction meta
+			let meta = TransactionMeta::new(number, accepted_tx.outputs.len());
+			db_transaction.put(Some(COL_TRANSACTIONS_META), &*accepted_tx.hash(), &meta.to_bytes());
+
+			// marking used transactions as spent
+			if accepted_tx_idx > 0 {
+				for (input_idx, input) in accepted_tx.inputs.iter().enumerate() {
+
+					meta_buf.entry(input.previous_output.hash.clone())
+						.or_insert(
+							self.transaction_meta(&input.previous_output.hash)
+								.unwrap_or_else(|| panic!(
+									"No transaction metadata for {}! Corrupted DB? Reindex?",
+									&input.previous_output.hash
+								))
+						);
+
+					// either panics on inserts in the previous line
+					let mut meta = meta_buf.get_mut(&input.previous_output.hash)
+						.expect("We just inserted transaction hash above or paniced there");
+					meta.note_used(input_idx);
+				}
 			}
+		}
+
+		// actually saving meta
+		for (hash, meta) in meta_buf.drain() {
+			db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.to_bytes());
 		}
 	}
 }
@@ -326,7 +349,7 @@ impl Store for Storage {
 		);
 
 		if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
-			self.update_transactions_meta(&mut transaction, &block.transactions()[1..]);
+			self.update_transactions_meta(&mut transaction, new_best_number, block.transactions());
 			transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 
 			// updating main chain height reference
@@ -377,7 +400,7 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
 
-		let block: Block = test_data::block1();
+		let block: Block = test_data::block_h1();
 		store.insert_block(&block).unwrap();
 
 		let loaded_block = store.block(BlockRef::Hash(block.hash())).unwrap();
@@ -416,10 +439,10 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
 
-		let block: Block = test_data::block1();
+		let block: Block = test_data::block_h1();
 		store.insert_block(&block).unwrap();
 
-		let another_block: Block = test_data::block_h169();
+		let another_block: Block = test_data::block_h9();
 		store.insert_block(&another_block).unwrap();
 
 		// did not update because `another_block` is not child of `block`
@@ -433,7 +456,10 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
 
-		let block: Block = test_data::block1();
+		let block: Block = test_data::block_h9();
+		store.insert_block(&block).unwrap();
+
+		let block: Block = test_data::block_h170();
 		let tx1 = block.transactions()[0].hash();
 		store.insert_block(&block).unwrap();
 
