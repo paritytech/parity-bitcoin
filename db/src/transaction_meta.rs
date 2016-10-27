@@ -40,8 +40,12 @@ impl TransactionMeta {
 
 		Ok(TransactionMeta {
 			block_height: LittleEndian::read_u32(&bytes[0..4]),
-			spent: BitVec::from_bytes(&bytes[5..]),
+			spent: BitVec::from_bytes(&bytes[4..]),
 		})
 	}
+
+	pub fn height(&self) -> u32 { self.block_height }
+
+	pub fn is_spent(&self, idx: usize) -> bool { self.spent.get(idx).expect("Index should be verified by the caller") }
 
 }

@@ -11,6 +11,7 @@ use serialization;
 use chain::{self, RepresentH256};
 use parking_lot::RwLock;
 use transaction_meta::TransactionMeta;
+use std::collections::HashMap;
 
 const COL_COUNT: u32 = 10;
 const COL_META: u32 = 0;
@@ -222,15 +223,37 @@ impl Storage {
 	}
 
 	/// update transactions metadata in the specified database transaction
-	fn update_transactions_meta(&self, db_transaction: &mut DBTransaction, accepted_txs: &[chain::Transaction]) {
-		for accepted_tx in accepted_txs.iter() {
-			for (input_idx, input) in accepted_tx.inputs.iter().enumerate() {
-				// todo : hard error when no meta?
-				let mut meta = self.transaction_meta(&input.previous_output.hash)
-					.unwrap_or(TransactionMeta::new(0, input_idx+1));
-				meta.note_used(input_idx);
-				db_transaction.put(Some(COL_TRANSACTIONS_META), &*input.previous_output.hash, &meta.to_bytes());
+	fn update_transactions_meta(&self, db_transaction: &mut DBTransaction, number: u32, accepted_txs: &[chain::Transaction]) {
+		let mut meta_buf = HashMap::<H256, TransactionMeta>::new();
+		for (accepted_tx_idx, accepted_tx) in accepted_txs.iter().enumerate() {
+			// adding unspent transaction meta
+			let meta = TransactionMeta::new(number, accepted_tx.outputs.len());
+			db_transaction.put(Some(COL_TRANSACTIONS_META), &*accepted_tx.hash(), &meta.to_bytes());
+
+			// marking used transactions as spent
+			if accepted_tx_idx > 0 {
+				for (input_idx, input) in accepted_tx.inputs.iter().enumerate() {
+
+					meta_buf.entry(input.previous_output.hash.clone())
+						.or_insert(
+							self.transaction_meta(&input.previous_output.hash)
+								.unwrap_or_else(|| panic!(
+									"No transaction metadata for {}! Corrupted DB? Reindex?",
+									&input.previous_output.hash
+								))
+						);
+
+					// either panics on inserts in the previous line
+					let mut meta = meta_buf.get_mut(&input.previous_output.hash)
+						.expect("We just inserted transaction hash above or paniced there");
+					meta.note_used(input_idx);
+				}
 			}
+		}
+
+		// actually saving meta
+		for (hash, meta) in meta_buf.drain() {
+			db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.to_bytes());
 		}
 	}
 }
@@ -301,7 +324,7 @@ impl Store for Storage {
 				if block.hash() == new_best_hash { best_number + 1 }
 				else { best_number }
 			},
-			None => 1,
+			None => 0,
 		};
 
 		let mut transaction = self.database.transaction();
@@ -326,8 +349,11 @@ impl Store for Storage {
 		);
 
 		if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
-			self.update_transactions_meta(&mut transaction, &block.transactions()[1..]);
+			self.update_transactions_meta(&mut transaction, new_best_number, block.transactions());
 			transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
+
+			// updating main chain height reference
+			transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash))
 		}
 
 		transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
@@ -359,9 +385,34 @@ mod tests {
 
 	use super::{Storage, Store};
 	use devtools::RandomTempPath;
-	use chain::{Block, RepresentH256};
+	use chain::{
+		Block, BlockHeader, Transaction, RepresentH256, TransactionOutput,
+		TransactionInput, OutPoint,
+	};
 	use super::super::BlockRef;
 	use test_data;
+	use primitives::hash::H256;
+	use primitives::bytes::Bytes;
+
+	fn dummy_coinbase_tx() -> Transaction {
+		Transaction {
+			version: 0,
+			inputs: vec![
+				TransactionInput {
+					previous_output: OutPoint { hash: H256::from(0), index: 0xffffffff },
+					script_sig: Bytes::new_with_len(0),
+					sequence: 0
+				}
+			],
+			outputs: vec![
+				TransactionOutput {
+					value: 0,
+					script_pubkey: Bytes::new_with_len(0),
+				}
+			],
+			lock_time: 0,
+		}
+	}
 
 	#[test]
 	fn open_store() {
@@ -374,11 +425,24 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
 
-		let block: Block = test_data::block1();
+		let block: Block = test_data::block_h1();
 		store.insert_block(&block).unwrap();
 
 		let loaded_block = store.block(BlockRef::Hash(block.hash())).unwrap();
 		assert_eq!(loaded_block.hash(), block.hash());
+	}
+
+
+	#[test]
+	fn insert_genesis() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let block: Block = test_data::genesis();
+		store.insert_block(&block).unwrap();
+
+		assert_eq!(store.best_block_number(), Some(0));
+		assert_eq!(store.block_hash(0), Some(block.hash()));
 	}
 
 	#[test]
@@ -386,7 +450,10 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
 
-		let block: Block = test_data::block1();
+		let genesis: Block = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let block: Block = test_data::block_h1();
 		store.insert_block(&block).unwrap();
 
 		assert_eq!(store.best_block_number(), Some(1));
@@ -397,16 +464,16 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
 
-		let block: Block = test_data::block1();
+		let block: Block = test_data::block_h1();
 		store.insert_block(&block).unwrap();
 
-		let another_block: Block = test_data::block_h169();
+		let another_block: Block = test_data::block_h9();
 		store.insert_block(&another_block).unwrap();
 
 		// did not update because `another_block` is not child of `block`
 		assert_eq!(store.best_block_hash(), Some(block.hash()));
 		// number should not be update also
-		assert_eq!(store.best_block_number(), Some(1));
+		assert_eq!(store.best_block_number(), Some(0));
 	}
 
 	#[test]
@@ -414,7 +481,10 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
 
-		let block: Block = test_data::block1();
+		let block: Block = test_data::block_h9();
+		store.insert_block(&block).unwrap();
+
+		let block: Block = test_data::block_h170();
 		let tx1 = block.transactions()[0].hash();
 		store.insert_block(&block).unwrap();
 
@@ -422,4 +492,54 @@ mod tests {
 		assert_eq!(loaded_transaction.hash(), block.transactions()[0].hash());
 	}
 
+	#[test]
+	fn transaction_meta_update() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let genesis_meta = store.transaction_meta(&genesis_coinbase).unwrap();
+		assert!(!genesis_meta.is_spent(0));
+
+		let forged_block = Block::new(
+			BlockHeader {
+				version: 0,
+				previous_header_hash: genesis.hash(),
+				merkle_root_hash: H256::from(0),
+				nbits: 0,
+				time: 0,
+				nonce: 0,
+			},
+			vec![
+				dummy_coinbase_tx(),
+				Transaction {
+					version: 0,
+					inputs: vec![
+						TransactionInput {
+							previous_output: OutPoint { hash: genesis_coinbase.clone(), index: 0 },
+							script_sig: Bytes::new_with_len(0),
+							sequence: 0
+						}
+					],
+					outputs: vec![
+						TransactionOutput {
+							value: 0,
+							script_pubkey: Bytes::new_with_len(0),
+						}
+					],
+					lock_time: 0,
+				},
+			]
+		);
+		store.insert_block(&forged_block).unwrap();
+
+		let genesis_meta = store.transaction_meta(&genesis_coinbase).unwrap();
+		assert!(genesis_meta.is_spent(0));
+
+		assert_eq!(store.best_block_number(), Some(1));
+	}
 }
