@@ -68,11 +68,16 @@ pub trait Store : Send + Sync {
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta>;
 }
 
+#[derive(Debug, Clone)]
+pub struct BestBlock {
+	pub number: u32,
+	pub hash: H256,
+}
+
 /// Blockchain storage with rocksdb database
 pub struct Storage {
 	database: Database,
-	best_block_number: RwLock<Option<u32>>,
-	best_block_hash: RwLock<Option<H256>>,
+	best_block: RwLock<Option<BestBlock>>,
 }
 
 #[derive(Debug)]
@@ -124,8 +129,7 @@ impl Storage {
 
 		let storage = Storage {
 			database: db,
-			best_block_number: RwLock::default(),
-			best_block_hash: RwLock::default(),
+			best_block: RwLock::default(),
 		};
 
 		match storage.read_meta_u32(KEY_VERSION) {
@@ -141,8 +145,17 @@ impl Storage {
 			},
 		};
 
-		*storage.best_block_number.write() = storage.read_meta_u32(KEY_BEST_BLOCK_NUMBER);
-		*storage.best_block_hash.write() = storage.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val));
+		let best_number = storage.read_meta_u32(KEY_BEST_BLOCK_NUMBER);
+		let best_hash = storage.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val));
+
+		if best_number.is_some() && best_hash.is_some() {
+			*storage.best_block.write() = Some(
+				BestBlock {
+					number: best_number.expect("is_some() is checked above for block number"),
+					hash: best_hash.expect("is_some() is checked above for block hash"),
+				}
+			);
+		}
 
 		Ok(storage)
 	}
@@ -224,11 +237,11 @@ impl Storage {
 
 impl Store for Storage {
 	fn best_block_number(&self) -> Option<u32> {
-		*self.best_block_number.read()
+		self.best_block.read().as_ref().map(|bb| bb.number)
 	}
 
 	fn best_block_hash(&self) -> Option<H256> {
-		self.best_block_hash.read().clone()
+		self.best_block.read().as_ref().map(|h| h.hash.clone())
 	}
 
 	fn block_hash(&self, number: u32) -> Option<H256> {
@@ -274,17 +287,16 @@ impl Store for Storage {
 	}
 
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error> {
-		let mut best_block_number = self.best_block_number.write();
-		let mut best_block_hash = self.best_block_hash.write();
+		let mut best_block = self.best_block.write();
 
 		let block_hash = block.hash();
 
-		let new_best_hash = match best_block_hash.as_ref() {
+		let new_best_hash = match best_block.as_ref().map(|bb| &bb.hash) {
 			Some(best_hash) if &block.header().previous_header_hash != best_hash => best_hash.clone(),
 			_ => block_hash.clone(),
 		};
 
-		let new_best_number = match *best_block_number {
+		let new_best_number = match best_block.as_ref().map(|b| b.number) {
 			Some(best_number) => {
 				if block.hash() == new_best_hash { best_number + 1 }
 				else { best_number }
@@ -313,20 +325,16 @@ impl Store for Storage {
 			&serialization::serialize(block.header())
 		);
 
-		self.update_transactions_meta(&mut transaction, &block.transactions()[1..]);
-
-		if *best_block_number != Some(new_best_number) {
+		if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
+			self.update_transactions_meta(&mut transaction, &block.transactions()[1..]);
 			transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 		}
 
-		if best_block_hash.as_ref() != Some(&new_best_hash) {
-			transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
-		}
+		transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
 
 		try!(self.database.write(transaction));
 
-		*best_block_number = Some(new_best_number);
-		*best_block_hash = Some(new_best_hash);
+		*best_block = Some(BestBlock { hash: new_best_hash, number: new_best_number });
 
 		Ok(())
 	}
