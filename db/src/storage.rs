@@ -301,7 +301,7 @@ impl Store for Storage {
 				if block.hash() == new_best_hash { best_number + 1 }
 				else { best_number }
 			},
-			None => 1,
+			None => 0,
 		};
 
 		let mut transaction = self.database.transaction();
@@ -368,6 +368,19 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		assert!(Storage::new(path.as_path()).is_ok());
 	}
+
+	#[test]
+	fn insert_block() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let block: Block = test_data::block1();
+		store.insert_block(&block).unwrap();
+
+		let loaded_block = store.block(BlockRef::Hash(block.hash())).unwrap();
+		assert_eq!(loaded_block.hash(), block.hash());
+	}
+
 
 	#[test]
 	fn insert_block() {
