@@ -44,4 +44,8 @@ impl TransactionMeta {
 		})
 	}
 
+	pub fn height(&self) -> u32 { self.block_height }
+
+	pub fn is_spent(&self, idx: usize) -> bool { self.spent.get(idx).expect("Index should be verified by the caller") }
+
 }
