@@ -43,12 +43,3 @@ impl Future for AcceptConnection {
 		Ok(Ok(connection).into())
 	}
 }
-
-//impl Stream for Listen {
-	//type Item = DeadlineStatus<MessageResult<Connection>>;
-	//type Error = io::Error;
-
-	//fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-		//self.inner.poll()
-	//}
-//}
