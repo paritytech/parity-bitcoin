@@ -328,6 +328,9 @@ impl Store for Storage {
 		if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
 			self.update_transactions_meta(&mut transaction, &block.transactions()[1..]);
 			transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
+
+			// updating main chain height reference
+			transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash))
 		}
 
 		transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
@@ -391,6 +394,7 @@ mod tests {
 		store.insert_block(&block).unwrap();
 
 		assert_eq!(store.best_block_number(), Some(0));
+		assert_eq!(store.block_hash(0), Some(block.hash()));
 	}
 
 	#[test]
