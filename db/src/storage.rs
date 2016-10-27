@@ -385,14 +385,9 @@ mod tests {
 
 	use super::{Storage, Store};
 	use devtools::RandomTempPath;
-	use chain::{
-		Block, BlockHeader, Transaction, RepresentH256, TransactionOutput,
-		TransactionInput, OutPoint,
-	};
+	use chain::{Block, RepresentH256};
 	use super::super::BlockRef;
 	use test_data;
-	use primitives::hash::H256;
-	use primitives::bytes::Bytes;
 
 	#[test]
 	fn open_store() {
