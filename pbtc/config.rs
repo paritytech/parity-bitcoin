@@ -8,10 +8,12 @@ pub struct Config {
 	pub connect: Option<net::IpAddr>,
 	pub seednode: Option<String>,
 	pub print_to_console: bool,
+	pub use_disk_database: bool,
 }
 
 pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	let print_to_console = matches.is_present("printtoconsole");
+	let use_disk_database = matches.is_present("diskdb");
 	let magic = match matches.is_present("testnet") {
 		true => Magic::Testnet,
 		false => Magic::Mainnet,
@@ -38,6 +40,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		port: port,
 		connect: connect,
 		seednode: seednode,
+		use_disk_database: use_disk_database,
 	};
 
 	Ok(config)
