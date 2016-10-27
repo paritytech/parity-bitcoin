@@ -176,10 +176,14 @@ impl LocalNode {
 						}).collect()
 				};
 
-				let connection = &mut *self.peers.get_mut(&peer_index).unwrap().lock();
-
-				trace!(target: "sync", "Querying {} unknown blocks from peer#{}", getdata.inventory.len(), peer_index);
-				connection.send_getdata(&getdata);
+				match self.peers.get_mut(&peer_index) {
+					Some(connection) => {
+						let connection = &mut *connection.lock();
+						trace!(target: "sync", "Querying {} unknown blocks from peer#{}", getdata.inventory.len(), peer_index);
+						connection.send_getdata(&getdata);
+					}
+					_ => (),
+				}
 			}
 			SynchronizationTask::RequestInventory(peer_index) => {
 				let block_locator_hashes = self.chain.read().block_locator_hashes();
@@ -189,11 +193,15 @@ impl LocalNode {
 					hash_stop: H256::default(),
 				};
 
-				let connection = &mut *self.peers.get_mut(&peer_index).unwrap().lock();
-
-				trace!(target: "sync", "Querying full inventory from peer#{}", peer_index);
-				trace!(target: "sync", "Synchronization state: sync = {:?}", self.sync.information());
-				connection.send_getblocks(&getblocks);
+				match self.peers.get_mut(&peer_index) {
+					Some(connection) => {
+						let connection = &mut *connection.lock();
+						trace!(target: "sync", "Querying full inventory from peer#{}", peer_index);
+						trace!(target: "sync", "Synchronization state: sync = {:?}", self.sync.information());
+						connection.send_getblocks(&getblocks);
+					},
+					_ => (),
+				}
 			},
 			SynchronizationTask::RequestBestInventory(peer_index) => {
 				let block_locator_hashes = self.chain.read().best_block_locator_hashes();
@@ -203,11 +211,15 @@ impl LocalNode {
 					hash_stop: H256::default(),
 				};
 
-				let connection = &mut *self.peers.get_mut(&peer_index).unwrap().lock();
-
-				trace!(target: "sync", "Querying best inventory from peer#{}", peer_index);
-				trace!(target: "sync", "Synchronization state: {:?}", self.sync.information());
-				connection.send_getblocks(&getblocks);
+				match self.peers.get_mut(&peer_index) {
+					Some(connection) => {
+						let connection = &mut *connection.lock();
+						trace!(target: "sync", "Querying best inventory from peer#{}", peer_index);
+						trace!(target: "sync", "Synchronization state: {:?}", self.sync.information());
+						connection.send_getblocks(&getblocks);
+					},
+					_ => (),
+				}
 			},
 		}
 	}
