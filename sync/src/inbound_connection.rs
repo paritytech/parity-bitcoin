@@ -3,6 +3,9 @@ use message::types;
 use p2p::{InboundSyncConnection, InboundSyncConnectionRef};
 use local_node::LocalNodeRef;
 
+// TODO: too many locks (connection is locked -> node is locked -> chain is locked)
+// at least connection must be lock-safe
+
 pub struct InboundConnection {
 	local_node: LocalNodeRef,
 	peer_index: usize,

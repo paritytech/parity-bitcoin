@@ -6,8 +6,11 @@ authors = ["Ethcore <admin@ethcore.io>"]
 [dependencies]
 parking_lot = "0.3"
 log = "0.3"
+linked-hash-map = "0.3"
 
 chain = { path = "../chain" }
+db = { path = "../db" }
 message = { path = "../message" }
 p2p = { path = "../p2p" }
 primitives = { path = "../primitives" }
+verification = { path = "../verification" }

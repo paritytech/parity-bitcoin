@@ -27,6 +27,9 @@ const DB_VERSION: u32 = 1;
 
 /// Blockchain storage interface
 pub trait Store : Send + Sync {
+	/// get best block number
+	fn best_block_number(&self) -> Option<u64>;
+
 	/// resolves hash by block number
 	fn block_hash(&self, number: u64) -> Option<H256>;
 
@@ -47,6 +50,11 @@ pub trait Store : Send + Sync {
 
 	/// resolves deserialized block body by block reference (number/hash)
 	fn block(&self, block_ref: BlockRef) -> Option<chain::Block>;
+
+	/// returns true if store contains given block
+	fn contains_block(&self, block_ref: BlockRef) -> bool {
+		self.block_header_bytes(block_ref).is_some()
+	}
 
 	/// insert block in the storage
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error>;
@@ -178,6 +186,10 @@ impl Storage {
 }
 
 impl Store for Storage {
+	fn best_block_number(&self) -> Option<u64> {
+		unimplemented!()
+	}
+
 	fn block_hash(&self, number: u64) -> Option<H256> {
 		self.get(COL_BLOCK_HASHES, &u64_key(number))
 			.map(|val| H256::from(&**val))
