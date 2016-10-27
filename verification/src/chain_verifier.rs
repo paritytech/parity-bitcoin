@@ -18,7 +18,7 @@ impl ChainVerifier {
 		ChainVerifier { store: store }
 	}
 
-	fn verify_transaction(&self, transaction: &chain::Transaction) -> Result<(), TransactionError> {
+	fn verify_transaction(&self, block: &chain::Block, transaction: &chain::Transaction) -> Result<(), TransactionError> {
 		use script::{
 			TransactionInputSigner,
 			TransactionSignatureChecker,
@@ -28,9 +28,15 @@ impl ChainVerifier {
 		};
 
 		for (input_index, input) in transaction.inputs().iter().enumerate() {
-			let parent_transaction = match self.store.transaction(&input.previous_output.hash) {
-				Some(tx) => tx,
-				None => { return Err(TransactionError::Input(input_index)); }
+			let store_parent_transaction = self.store.transaction(&input.previous_output.hash);
+			let parent_transaction = match store_parent_transaction {
+				Some(ref tx) => tx,
+				None => {
+					match block.transactions.iter().filter(|t| t.hash() == input.previous_output.hash).nth(0) {
+						Some(ref tx) => tx,
+						None => { return Err(TransactionError::Input(input_index)); },
+					}
+				},
 			};
 			if parent_transaction.outputs.len() <= input.previous_output.index as usize {
 				return Err(TransactionError::Input(input_index));
@@ -89,7 +95,7 @@ impl Verify for ChainVerifier {
 
 		// verify transactions (except coinbase)
 		for (idx, transaction) in block.transactions().iter().skip(1).enumerate() {
-			try!(self.verify_transaction(transaction).map_err(|e| Error::Transaction(idx, e)));
+			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
 		}
 
 		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
