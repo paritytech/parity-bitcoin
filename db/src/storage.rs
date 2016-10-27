@@ -394,26 +394,6 @@ mod tests {
 	use primitives::hash::H256;
 	use primitives::bytes::Bytes;
 
-	fn dummy_coinbase_tx() -> Transaction {
-		Transaction {
-			version: 0,
-			inputs: vec![
-				TransactionInput {
-					previous_output: OutPoint { hash: H256::from(0), index: 0xffffffff },
-					script_sig: Bytes::new_with_len(0),
-					sequence: 0
-				}
-			],
-			outputs: vec![
-				TransactionOutput {
-					value: 0,
-					script_pubkey: Bytes::new_with_len(0),
-				}
-			],
-			lock_time: 0,
-		}
-	}
-
 	#[test]
 	fn open_store() {
 		let path = RandomTempPath::create_dir();
@@ -505,36 +485,15 @@ mod tests {
 		let genesis_meta = store.transaction_meta(&genesis_coinbase).unwrap();
 		assert!(!genesis_meta.is_spent(0));
 
-		let forged_block = Block::new(
-			BlockHeader {
-				version: 0,
-				previous_header_hash: genesis.hash(),
-				merkle_root_hash: H256::from(0),
-				nbits: 0,
-				time: 0,
-				nonce: 0,
-			},
-			vec![
-				dummy_coinbase_tx(),
-				Transaction {
-					version: 0,
-					inputs: vec![
-						TransactionInput {
-							previous_output: OutPoint { hash: genesis_coinbase.clone(), index: 0 },
-							script_sig: Bytes::new_with_len(0),
-							sequence: 0
-						}
-					],
-					outputs: vec![
-						TransactionOutput {
-							value: 0,
-							script_pubkey: Bytes::new_with_len(0),
-						}
-					],
-					lock_time: 0,
-				},
-			]
-		);
+		let forged_block = test_data::block_builder()
+			.header().parent(genesis.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase.clone()).build()
+				.output().build()
+				.build()
+			.build();
+
 		store.insert_block(&forged_block).unwrap();
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase).unwrap();
