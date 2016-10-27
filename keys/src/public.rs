@@ -1,5 +1,4 @@
-use std::fmt;
-use std::ops::Deref;
+use std::{fmt, ops};
 use secp256k1::key;
 use secp256k1::{Message as SecpMessage, RecoveryId, RecoverableSignature, Error as SecpError, Signature as SecpSignature};
 use hex::ToHex;
@@ -36,7 +35,8 @@ impl Public {
 	pub fn verify(&self, message: &Message, signature: &Signature) -> Result<bool, Error> {
 		let context = &SECP256K1;
 		let public = try!(key::PublicKey::from_slice(context, self));
-		let signature = try!(SecpSignature::from_der(context, signature));
+		let mut signature = try!(SecpSignature::from_der(context, signature));
+		signature.normalize_s(context);
 		let message = try!(SecpMessage::from_slice(&**message));
 		match context.verify(&message, &signature, &public) {
 			Ok(_) => Ok(true),
@@ -67,7 +67,7 @@ impl Public {
 	}
 }
 
-impl Deref for Public {
+impl ops::Deref for Public {
 	type Target = [u8];
 
 	fn deref(&self) -> &Self::Target {
