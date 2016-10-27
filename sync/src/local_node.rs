@@ -9,6 +9,7 @@ use message::types;
 use synchronization::{Synchronization, Task as SynchronizationTask};
 use synchronization_chain::{Chain, ChainRef, BlockState};
 use best_block::BestBlock;
+use verification_worker::VerificationWorker;
 
 /// Thread-safe reference to the `LocalNode`
 pub type LocalNodeRef = Arc<Mutex<LocalNode>>;
@@ -28,12 +29,13 @@ pub struct LocalNode {
 impl LocalNode {
 	/// New synchronization node with given storage
 	pub fn new(storage: Arc<db::Store>) -> LocalNodeRef {
-		let chain = ChainRef::new(RwLock::new(Chain::new(storage)));
+		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
+		let verification_worker = VerificationWorker::new(storage, chain.clone());
 		Arc::new(Mutex::new(LocalNode {
 			peer_counter: 0,
 			peers: HashMap::new(),
 			chain: chain.clone(),
-			sync: Synchronization::new(chain),
+			sync: Synchronization::new(chain, verification_worker),
 		}))
 	}
 
@@ -102,7 +104,7 @@ impl LocalNode {
 	}
 
 	pub fn on_peer_block(&mut self, peer_index: usize, message: types::Block) {
-		trace!(target: "sync", "Got `block` message from peer#{}", peer_index);
+		// trace!(target: "sync", "Got `block` message from peer#{}", peer_index);
 
 		// try to process new block
 		self.sync.on_peer_block(peer_index, message.block);

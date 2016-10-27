@@ -5,7 +5,7 @@ use db;
 use primitives::hash::H256;
 use best_block::BestBlock;
 use hash_queue::{HashQueueChain, HashPosition};
-use verification;
+use verification_worker::VerificationWorker;
 
 /// Thread-safe reference to `Chain`
 pub type ChainRef = Arc<RwLock<Chain>>;
@@ -59,8 +59,6 @@ pub struct Chain {
 	best_storage_block_hash: H256,
 	/// Local blocks storage
 	storage: Arc<db::Store>,
-	/// Verification queue
-	verification_queue: verification::Queue,
 	/// In-memory queue of blocks hashes
 	hash_chain: HashQueueChain,
 }
@@ -96,15 +94,10 @@ impl Chain {
 		let best_storage_block_hash = storage.block_hash(best_storage_block_number)
 			.expect("checked above");
 
-		// default verification queue
-		let verifier = Box::new(verification::ChainVerifier::new(storage.clone()));
-		let verification_queue = verification::Queue::new(verifier);
-
 		Chain {
 			genesis_block_hash: genesis_block_hash,
 			best_storage_block_hash: best_storage_block_hash,
 			storage: storage,
-			verification_queue: verification_queue,
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
 		}
 	}
@@ -235,52 +228,44 @@ impl Chain {
 	}
 
 	/// Schedule block for verification
-	pub fn verify_and_insert_block(&mut self, hash: H256, block: Block) {
-		// TODO: add another basic verifications here (use verification package)
-		// TODO: return error if basic verification failed && reset synchronization state
-		if block.block_header.previous_header_hash != self.best_storage_block_hash {
-			// TODO: penalize peer
-			// if let Some(peer_index) = peer_index {
-			//	peers.on_wrong_block_received(peer_index);
-			// }
-			trace!(target: "sync", "Out-of order block dropped: {:?}", hash);
-			return;
-		}
+	pub fn verify_and_insert_block(&mut self, verification_worker: &VerificationWorker, hash: H256, block: Block) {
+		// remember that block is currently verifying
+		self.hash_chain.push_back_at(VERIFYING_QUEUE, hash);
 
-		// TODO: currently verification fails on first ~500 blocks
-		// TODO: async verification
-		match self.verification_queue.push(block) {
-			Err(err) => {
-				// TODO: penalize peer
-				trace!(target: "sync", "Cannot push block {:?} to verification queue: {:?}", hash, err);
-				unimplemented!();
-			},
-			_ => (),
-		}
-		self.verification_queue.process();
-		match self.verification_queue.pop_valid() {
-			Some((hash, block)) => {
-				// TODO: check block.chain here when working on forks
-				match self.storage.insert_block(&block.block) {
-					Err(err) => {
-						trace!(target: "sync", "Cannot insert block {:?} to database: {:?}", hash, err);
-						unimplemented!();
-					},
-					_ => {
-						self.best_storage_block_hash = hash;
-					},
-				}
-			},
-			_ => {
-				trace!(target: "sync", "Error verifying block {:?}: {:?}", hash, self.verification_queue.block_status(&hash));
-				unimplemented!();
-			},
-		}
+		// queue verification
+		verification_worker.verify_block(block);
 	}
 
 	/// Remove block by hash if it is currently in given state
 	pub fn remove_block_with_state(&mut self, hash: &H256, state: BlockState) -> HashPosition {
 		self.hash_chain.remove_at(state.to_queue_index(), hash)
+	}
+
+	/// When block verification error occured
+	pub fn on_block_verification_error(&mut self, hash: H256) {
+		// remove from verifying queue
+		self.hash_chain.remove_at(VERIFYING_QUEUE, &hash);
+
+		// TODO: reset synchronization process???
+		unimplemented!();
+	}
+
+	/// When block is successfully verified
+	pub fn on_block_verification_success(&mut self, hash: H256, block: Block) {
+		// remove from verifying queue
+		self.hash_chain.remove_at(VERIFYING_QUEUE, &hash);
+
+		// insert to storage
+		match self.storage.insert_block(&block) {
+			Err(err) => {
+				trace!(target: "sync", "Cannot insert block {:?} to database: {:?}", hash, err);
+				// TODO: ???
+				unimplemented!();
+			},
+			_ => {
+				self.best_storage_block_hash = hash;
+			},
+		}
 	}
 
 	/// Calculate block locator hashes for hash queue

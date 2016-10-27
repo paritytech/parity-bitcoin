@@ -6,6 +6,8 @@ use primitives::hash::H256;
 use hash_queue::HashPosition;
 use synchronization_peers::{Peers, Information as PeersInformation};
 use synchronization_chain::{ChainRef, Information as ChainInformation, BlockState};
+use verification_worker::VerificationWorker;
+use time;
 
 ///! Blocks synchronization process:
 ///!
@@ -57,10 +59,12 @@ use synchronization_chain::{ChainRef, Information as ChainInformation, BlockStat
 ///! TODO: check + optimize algorithm for Saturated state
 
 
-/// Approximate maximal number of blocks hashes in queued_hashes_set.
+/// Approximate maximal number of blocks hashes in scheduled queue.
 const MAX_SCHEDULED_HASHES: u64 = 4 * 1024;
-/// Approximate maximal number of blocks hashes in requested_hashes_set.
+/// Approximate maximal number of blocks hashes in requested queue.
 const MAX_REQUESTED_BLOCKS: u64 = 512;
+/// Approximate maximal number of blocks in verifying queue.
+const MAX_VERIFYING_BLOCKS: u64 = 512;
 /// Minimum number of blocks to request from peer
 const MIN_BLOCKS_IN_REQUEST: u64 = 32;
 /// Maximum number of blocks to request from peer
@@ -104,18 +108,26 @@ pub struct Synchronization {
 	peers: Peers,
 	/// Chain reference.
 	chain: ChainRef,
+	/// Verification worker
+	verification_worker: VerificationWorker,
 	/// Blocks from requested_hashes, but received out-of-order.
 	orphaned_blocks: HashMap<H256, Block>,
+
+	start_time: time::Tm,
+	last_chunk_best_block_number: u64,
 }
 
 impl Synchronization {
 	/// Create new synchronization window
-	pub fn new(chain: ChainRef) -> Synchronization {
+	pub fn new(chain: ChainRef, verification_worker: VerificationWorker) -> Synchronization {
 		Synchronization {
 			state: State::Saturated,
 			peers: Peers::new(),
 			chain: chain,
+			verification_worker: verification_worker,
 			orphaned_blocks: HashMap::new(),
+			start_time: time::now(),
+			last_chunk_best_block_number: 0,
 		}
 	}
 
@@ -203,6 +215,12 @@ impl Synchronization {
 			return;
 		}
 
+		let best_block = chain.best_block();
+		if best_block.height > self.last_chunk_best_block_number && (best_block.height - self.last_chunk_best_block_number) / 1000 != 0 {
+			println!("=== SYNCHRONIZED {} blocks in {}", best_block.height, time::now() - self.start_time);
+			self.last_chunk_best_block_number = best_block.height;
+		}
+
 		// requeste block is received => move to saturated state if there are no more blocks
 		if !chain.has_blocks_of_state(BlockState::Scheduled)
 			&& !chain.has_blocks_of_state(BlockState::Requested) {
@@ -212,14 +230,14 @@ impl Synchronization {
 		// check if this block is next block in the blockchain
 		if block_position == HashPosition::Front {
 			// this is next block in the blockchain => queue for verification
-			chain.verify_and_insert_block(block_hash.clone(), block);
+			chain.verify_and_insert_block(&self.verification_worker, block_hash.clone(), block);
 
 			// check orphaned blocks
 			let mut orphaned_parent_hash = block_hash;
 			while let Entry::Occupied(orphaned_block_entry) = self.orphaned_blocks.entry(orphaned_parent_hash) {
 				let (_, orphaned_block) = orphaned_block_entry.remove_entry();
 				orphaned_parent_hash = orphaned_block.hash();
-				chain.verify_and_insert_block(orphaned_parent_hash.clone(), orphaned_block);
+				chain.verify_and_insert_block(&self.verification_worker, orphaned_parent_hash.clone(), orphaned_block);
 			}
 
 			return;
@@ -253,7 +271,8 @@ impl Synchronization {
 
 		// check if we can move some blocks from scheduled to requested queue
 		let requested_hashes_len = chain.length_of_state(BlockState::Requested);
-		if requested_hashes_len < MAX_REQUESTED_BLOCKS && scheduled_hashes_len != 0 {
+		let verifying_hashes_len = chain.length_of_state(BlockState::Verifying);
+		if requested_hashes_len + verifying_hashes_len < MAX_REQUESTED_BLOCKS + MAX_VERIFYING_BLOCKS && scheduled_hashes_len != 0 {
 			let idle_peers = self.peers.idle_peers();
 			let idle_peers_len = idle_peers.len() as u64;
 			if idle_peers_len != 0 {
