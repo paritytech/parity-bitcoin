@@ -26,4 +26,7 @@ args:
     - printtoconsole:
         long: printtoconsole
         help: Send trace/debug info to console instead of debug.log file
+    - diskdb:
+        long: diskdb
+        help: Use disk storage instead of in-memory one
 
