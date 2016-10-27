@@ -40,7 +40,7 @@ impl TransactionMeta {
 
 		Ok(TransactionMeta {
 			block_height: LittleEndian::read_u32(&bytes[0..4]),
-			spent: BitVec::from_bytes(&bytes[5..]),
+			spent: BitVec::from_bytes(&bytes[4..]),
 		})
 	}
 

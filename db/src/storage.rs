@@ -349,7 +349,7 @@ impl Store for Storage {
 		);
 
 		if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
-			//self.update_transactions_meta(&mut transaction, new_best_number, block.transactions());
+			self.update_transactions_meta(&mut transaction, new_best_number, block.transactions());
 			transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 
 			// updating main chain height reference
@@ -385,10 +385,34 @@ mod tests {
 
 	use super::{Storage, Store};
 	use devtools::RandomTempPath;
-	use chain::{Block, RepresentH256};
+	use chain::{
+		Block, BlockHeader, Transaction, RepresentH256, TransactionOutput,
+		TransactionInput, OutPoint,
+	};
 	use super::super::BlockRef;
 	use test_data;
 	use primitives::hash::H256;
+	use primitives::bytes::Bytes;
+
+	fn dummy_coinbase_tx() -> Transaction {
+		Transaction {
+			version: 0,
+			inputs: vec![
+				TransactionInput {
+					previous_output: OutPoint { hash: H256::from(0), index: 0xffffffff },
+					script_sig: Bytes::new_with_len(0),
+					sequence: 0
+				}
+			],
+			outputs: vec![
+				TransactionOutput {
+					value: 0,
+					script_pubkey: Bytes::new_with_len(0),
+				}
+			],
+			lock_time: 0,
+		}
+	}
 
 	#[test]
 	fn open_store() {
@@ -473,18 +497,49 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
 
-		store.insert_block(&test_data::block_h9()).unwrap();
-		store.insert_block(&test_data::block_h170()).unwrap();
-		store.insert_block(&test_data::block_h181()).unwrap();
-		store.insert_block(&test_data::block_h182()).unwrap();
-		store.insert_block(&test_data::block_h221()).unwrap();
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
 
-//		assert_eq!(store.best_block_number(), Some(4));
-//
-//		let tx_221_hash = test_data::block_h182().transactions()[1].hash();
-//
-//		let meta = store.transaction_meta(&tx_221_hash).unwrap();
-//		assert_eq!(meta.height(), 3);
-//		assert_eq!(meta.is_spent(0), true);
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let genesis_meta = store.transaction_meta(&genesis_coinbase).unwrap();
+		assert!(!genesis_meta.is_spent(0));
+
+		let forged_block = Block::new(
+			BlockHeader {
+				version: 0,
+				previous_header_hash: genesis.hash(),
+				merkle_root_hash: H256::from(0),
+				nbits: 0,
+				time: 0,
+				nonce: 0,
+			},
+			vec![
+				dummy_coinbase_tx(),
+				Transaction {
+					version: 0,
+					inputs: vec![
+						TransactionInput {
+							previous_output: OutPoint { hash: genesis_coinbase.clone(), index: 0 },
+							script_sig: Bytes::new_with_len(0),
+							sequence: 0
+						}
+					],
+					outputs: vec![
+						TransactionOutput {
+							value: 0,
+							script_pubkey: Bytes::new_with_len(0),
+						}
+					],
+					lock_time: 0,
+				},
+			]
+		);
+		store.insert_block(&forged_block).unwrap();
+
+		let genesis_meta = store.transaction_meta(&genesis_coinbase).unwrap();
+		assert!(genesis_meta.is_spent(0));
+
+		assert_eq!(store.best_block_number(), Some(1));
 	}
 }
