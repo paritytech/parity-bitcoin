@@ -174,6 +174,11 @@ impl<F> TransactionBuilder<F> where F: Invoke<chain::Transaction> {
 		self
 	}
 
+	fn with_output(mut self, input: chain::TransactionOutput) -> Self {
+		self.outputs.push(input);
+		self
+	}
+
 	pub fn lock_time(mut self, time: u32) -> Self {
 		self.lock_time = time;
 		self
@@ -185,6 +190,10 @@ impl<F> TransactionBuilder<F> where F: Invoke<chain::Transaction> {
 
 	pub fn coinbase(self) -> Self {
 		self.input().coinbase().build()
+	}
+
+	pub fn output(self) -> TransactionOutputBuilder<Self> {
+		TransactionOutputBuilder::with_callback(self)
 	}
 
 	pub fn build(self) -> F::Result {
@@ -210,10 +219,20 @@ impl<F> Invoke<chain::TransactionInput> for TransactionBuilder<F>
 	}
 }
 
+impl<F> Invoke<chain::TransactionOutput> for TransactionBuilder<F>
+	where F: Invoke<chain::Transaction>
+{
+	type Result = Self;
+
+	fn invoke(self, tx: chain::TransactionOutput) -> Self {
+		self.with_output(tx)
+	}
+}
+
 pub struct TransactionInputBuilder<F=Identity> {
 	callback: F,
 	output: Option<chain::OutPoint>,
-	script_sig: Bytes,
+	signature: Bytes,
 	sequence: u32,
 }
 
@@ -222,15 +241,23 @@ impl<F> TransactionInputBuilder<F> where F: Invoke<chain::TransactionInput> {
 		TransactionInputBuilder {
 			callback: callback,
 			output: None,
-			script_sig: Bytes::new_with_len(0),
+			signature: Bytes::new_with_len(0),
 			sequence: 0,
 		}
 	}
 
-	pub fn with_hash_and_index(mut self, hash: H256, index: u32) -> Self {
-		self.output = Some(chain::OutPoint { hash: hash, index: index });
+	pub fn hash(mut self, hash: H256) -> Self {
+		let mut output = self.output.unwrap_or(chain::OutPoint { hash: hash.clone(), index: 0 });
+		output.hash = hash;
+		self.output = Some(output);
 		self
+	}
 
+	pub fn index(mut self, index: u32) -> Self {
+		let mut output = self.output.unwrap_or(chain::OutPoint { hash: H256::from(0), index: index });
+		output.index = index;
+		self.output = Some(output);
+		self
 	}
 
 	pub fn coinbase(mut self) -> Self {
@@ -242,8 +269,39 @@ impl<F> TransactionInputBuilder<F> where F: Invoke<chain::TransactionInput> {
 		self.callback.invoke(
 			chain::TransactionInput {
 				previous_output: self.output.unwrap_or_else(|| panic!("Building input without previous output")),
-				script_sig: self.script_sig,
+				script_sig: self.signature,
 				sequence: self.sequence,
+			}
+		)
+	}
+}
+
+
+pub struct TransactionOutputBuilder<F=Identity> {
+	callback: F,
+	value: u64,
+	signature: Bytes,
+}
+
+impl<F> TransactionOutputBuilder<F> where F: Invoke<chain::TransactionOutput> {
+	fn with_callback(callback: F) -> Self {
+		TransactionOutputBuilder {
+			callback: callback,
+			signature: Bytes::new_with_len(0),
+			value: 0,
+		}
+	}
+
+	pub fn value(mut self, value: u64) -> Self {
+		self.value = value;
+		self
+	}
+
+	pub fn build(self) -> F::Result {
+		self.callback.invoke(
+			chain::TransactionOutput {
+				script_pubkey: self.signature,
+				value: self.value,
 			}
 		)
 	}
@@ -274,4 +332,19 @@ fn example3() {
 		.build();
 
 	assert!(block.transactions()[0].is_coinbase());
+}
+
+#[test]
+fn example4() {
+	let block = block_builder().header().build()
+		.transaction().coinbase()
+			.output().value(10).build()
+			.build()
+		.transaction()
+			.input().hash(H256::from(1)).index(1).build()
+			.build()
+		.build();
+
+	assert_eq!(block.transactions().len(), 2);
+	assert_eq!(block.transactions()[1].inputs[0].previous_output.hash, H256::from(1));
 }
