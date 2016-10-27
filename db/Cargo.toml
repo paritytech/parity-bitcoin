@@ -13,6 +13,7 @@ chain = { path = "../chain"  }
 serialization = { path = "../serialization" }
 parking_lot = "0.3"
 test-data = { path = "../test-data" }
+bit-vec = "0.4"
 
 [features]
 dev = []

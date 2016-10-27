@@ -2,13 +2,15 @@
 
 use std::{self, fs};
 use std::path::Path;
-use kvdb::{Database, DatabaseConfig};
+use kvdb::{DBTransaction, Database, DatabaseConfig};
 use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use super::BlockRef;
 use serialization;
 use chain::{self, RepresentH256};
+use parking_lot::RwLock;
+use transaction_meta::TransactionMeta;
 
 const COL_COUNT: u32 = 10;
 const COL_META: u32 = 0;
@@ -16,7 +18,7 @@ const COL_BLOCK_HASHES: u32 = 1;
 const COL_BLOCK_HEADERS: u32 = 2;
 const COL_BLOCK_TRANSACTIONS: u32 = 3;
 const COL_TRANSACTIONS: u32 = 4;
-const _COL_RESERVED1: u32 = 5;
+const COL_TRANSACTIONS_META: u32 = 5;
 const _COL_RESERVED2: u32 = 6;
 const _COL_RESERVED3: u32 = 7;
 const _COL_RESERVED4: u32 = 8;
@@ -28,10 +30,13 @@ const DB_VERSION: u32 = 1;
 /// Blockchain storage interface
 pub trait Store : Send + Sync {
 	/// get best block number
-	fn best_block_number(&self) -> Option<u64>;
+	fn best_block_number(&self) -> Option<u32>;
+
+	/// get best block hash
+	fn best_block_hash(&self) -> Option<H256>;
 
 	/// resolves hash by block number
-	fn block_hash(&self, number: u64) -> Option<H256>;
+	fn block_hash(&self, number: u32) -> Option<H256>;
 
 	/// resolves header bytes by block reference (number/hash)
 	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes>;
@@ -58,11 +63,21 @@ pub trait Store : Send + Sync {
 
 	/// insert block in the storage
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error>;
+
+	/// get transaction metadata
+	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta>;
+}
+
+#[derive(Debug, Clone)]
+pub struct BestBlock {
+	pub number: u32,
+	pub hash: H256,
 }
 
 /// Blockchain storage with rocksdb database
 pub struct Storage {
 	database: Database,
+	best_block: RwLock<Option<BestBlock>>,
 }
 
 #[derive(Debug)]
@@ -93,13 +108,15 @@ impl From<std::io::Error> for Error {
 	}
 }
 
-fn u64_key(num: u64) -> [u8; 8] {
-	let mut result = [0u8; 8];
-	LittleEndian::write_u64(&mut result, num);
+fn u32_key(num: u32) -> [u8; 4] {
+	let mut result = [0u8; 4];
+	LittleEndian::write_u32(&mut result, num);
 	result
 }
 
 const KEY_VERSION: &'static[u8] = b"version";
+const KEY_BEST_BLOCK_NUMBER: &'static[u8] = b"best_block_number";
+const KEY_BEST_BLOCK_HASH: &'static[u8] = b"best_block_hash";
 
 impl Storage {
 
@@ -110,25 +127,45 @@ impl Storage {
 		let cfg = DatabaseConfig::with_columns(Some(COL_COUNT));
 		let db = try!(Database::open(&cfg, &*path.as_ref().to_string_lossy()));
 
-		match try!(db.get(Some(COL_META), KEY_VERSION)) {
-			Some(val) => {
-				let ver = LittleEndian::read_u32(&val);
-				if ver == DB_VERSION {
-					Ok(Storage { database: db, })
-				}
-				else {
-					Err(Error::Meta(MetaError::UnsupportedVersion))
+		let storage = Storage {
+			database: db,
+			best_block: RwLock::default(),
+		};
+
+		match storage.read_meta_u32(KEY_VERSION) {
+			Some(ver) => {
+				if ver != DB_VERSION {
+					return Err(Error::Meta(MetaError::UnsupportedVersion))
 				}
 			},
 			_ => {
-				let mut meta_transaction = db.transaction();
-				let mut ver_val = [0u8; 4];
-				LittleEndian::write_u32(&mut ver_val, DB_VERSION);
-				meta_transaction.put(Some(COL_META), KEY_VERSION, &ver_val);
-				try!(db.write(meta_transaction));
-				Ok(Storage { database: db, })
-			}
+				let mut meta_transaction = storage.database.transaction();
+				meta_transaction.write_u32(Some(COL_META), KEY_VERSION, DB_VERSION);
+				try!(storage.database.write(meta_transaction));
+			},
+		};
+
+		let best_number = storage.read_meta_u32(KEY_BEST_BLOCK_NUMBER);
+		let best_hash = storage.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val));
+
+		if best_number.is_some() && best_hash.is_some() {
+			*storage.best_block.write() = Some(
+				BestBlock {
+					number: best_number.expect("is_some() is checked above for block number"),
+					hash: best_hash.expect("is_some() is checked above for block hash"),
+				}
+			);
 		}
+
+		Ok(storage)
+	}
+
+	fn read_meta(&self, key: &[u8]) -> Option<Bytes> {
+		self.get(COL_META, key)
+	}
+
+	fn read_meta_u32(&self, key: &[u8]) -> Option<u32> {
+		self.read_meta(key).map(|val| LittleEndian::read_u32(&val))
 	}
 
 	/// is invoked on database non-fatal query errors
@@ -183,15 +220,32 @@ impl Storage {
 			})
 			.collect()
 	}
+
+	/// update transactions metadata in the specified database transaction
+	fn update_transactions_meta(&self, db_transaction: &mut DBTransaction, accepted_txs: &[chain::Transaction]) {
+		for accepted_tx in accepted_txs.iter() {
+			for (input_idx, input) in accepted_tx.inputs.iter().enumerate() {
+				// todo : hard error when no meta?
+				let mut meta = self.transaction_meta(&input.previous_output.hash)
+					.unwrap_or(TransactionMeta::new(0, input_idx+1));
+				meta.note_used(input_idx);
+				db_transaction.put(Some(COL_TRANSACTIONS_META), &*input.previous_output.hash, &meta.to_bytes());
+			}
+		}
+	}
 }
 
 impl Store for Storage {
-	fn best_block_number(&self) -> Option<u64> {
-		unimplemented!()
+	fn best_block_number(&self) -> Option<u32> {
+		self.best_block.read().as_ref().map(|bb| bb.number)
 	}
 
-	fn block_hash(&self, number: u64) -> Option<H256> {
-		self.get(COL_BLOCK_HASHES, &u64_key(number))
+	fn best_block_hash(&self) -> Option<H256> {
+		self.best_block.read().as_ref().map(|h| h.hash.clone())
+	}
+
+	fn block_hash(&self, number: u32) -> Option<H256> {
+		self.get(COL_BLOCK_HASHES, &u32_key(number))
 			.map(|val| H256::from(&**val))
 	}
 
@@ -233,10 +287,26 @@ impl Store for Storage {
 	}
 
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error> {
+		let mut best_block = self.best_block.write();
+
+		let block_hash = block.hash();
+
+		let new_best_hash = match best_block.as_ref().map(|bb| &bb.hash) {
+			Some(best_hash) if &block.header().previous_header_hash != best_hash => best_hash.clone(),
+			_ => block_hash.clone(),
+		};
+
+		let new_best_number = match best_block.as_ref().map(|b| b.number) {
+			Some(best_number) => {
+				if block.hash() == new_best_hash { best_number + 1 }
+				else { best_number }
+			},
+			None => 1,
+		};
+
 		let mut transaction = self.database.transaction();
 
 		let tx_space = block.transactions().len() * 32;
-		let block_hash = block.hash();
 		let mut tx_refs = Vec::with_capacity(tx_space);
 		for tx in block.transactions() {
 			let tx_hash = tx.hash();
@@ -255,7 +325,16 @@ impl Store for Storage {
 			&serialization::serialize(block.header())
 		);
 
+		if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
+			self.update_transactions_meta(&mut transaction, &block.transactions()[1..]);
+			transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
+		}
+
+		transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
+
 		try!(self.database.write(transaction));
+
+		*best_block = Some(BestBlock { hash: new_best_hash, number: new_best_number });
 
 		Ok(())
 	}
@@ -268,6 +347,11 @@ impl Store for Storage {
 		})
 	}
 
+	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
+		self.get(COL_TRANSACTIONS_META, &**hash).map(|val|
+			TransactionMeta::from_bytes(&val).unwrap_or_else(|e| panic!("Invalid transaction metadata: db corrupted? ({:?})", e))
+		)
+	}
 }
 
 #[cfg(test)]
@@ -298,6 +382,34 @@ mod tests {
 	}
 
 	#[test]
+	fn best_block_update() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let block: Block = test_data::block1();
+		store.insert_block(&block).unwrap();
+
+		assert_eq!(store.best_block_number(), Some(1));
+	}
+
+	#[test]
+	fn best_hash_update_fork() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let block: Block = test_data::block1();
+		store.insert_block(&block).unwrap();
+
+		let another_block: Block = test_data::block_h169();
+		store.insert_block(&another_block).unwrap();
+
+		// did not update because `another_block` is not child of `block`
+		assert_eq!(store.best_block_hash(), Some(block.hash()));
+		// number should not be update also
+		assert_eq!(store.best_block_number(), Some(1));
+	}
+
+	#[test]
 	fn load_transaction() {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
@@ -308,7 +420,6 @@ mod tests {
 
 		let loaded_transaction = store.transaction(&tx1).unwrap();
 		assert_eq!(loaded_transaction.hash(), block.transactions()[0].hash());
-
 	}
 
 }

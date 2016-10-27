@@ -9,6 +9,7 @@ use std::mem::replace;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use parking_lot::RwLock;
+use transaction_meta::TransactionMeta;
 
 #[derive(Default)]
 pub struct TestStorage {
@@ -54,11 +55,15 @@ impl TestStorage {
 }
 
 impl Store for TestStorage {
-	fn best_block_number(&self) -> Option<u64> {
-		self.data.read().best_block_number.map(|b| b as u64)
+	fn best_block_number(&self) -> Option<u32> {
+		self.data.read().best_block_number.map(|b| b as u32)
 	}
 
-	fn block_hash(&self, number: u64) -> Option<H256> {
+	fn best_block_hash(&self) -> Option<H256> {
+		unimplemented!()
+	}
+
+	fn block_hash(&self, number: u32) -> Option<H256> {
 		let data = self.data.read();
 		data.heights.get(&(number as usize)).cloned()
 	}
@@ -126,5 +131,9 @@ impl Store for TestStorage {
 		}
 
 		Ok(())
+	}
+
+	fn transaction_meta(&self, _hash: &H256) -> Option<TransactionMeta> {
+		unimplemented!();
 	}
 }

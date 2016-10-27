@@ -7,6 +7,7 @@ extern crate primitives;
 extern crate byteorder;
 extern crate chain;
 extern crate serialization;
+extern crate bit_vec;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
@@ -17,9 +18,10 @@ mod kvdb;
 mod storage;
 #[cfg(feature="dev")]
 mod test_storage;
+mod transaction_meta;
 
 pub enum BlockRef {
-	Number(u64),
+	Number(u32),
 	Hash(primitives::hash::H256),
 }
 
