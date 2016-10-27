@@ -117,7 +117,7 @@ impl Store for TestStorage {
 			},
 			Entry::Vacant(entry) => {
 				entry.insert(block.clone());
-			}
+			},
 		}
 		match data.best_block_number {
 			Some(best_block_number) => {
@@ -127,7 +127,7 @@ impl Store for TestStorage {
 			None => {
 				data.best_block_number = Some(0);
 				data.heights.insert(0, hash);
-			}
+			},
 		}
 
 		Ok(())
