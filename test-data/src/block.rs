@@ -2,6 +2,7 @@
 
 use chain;
 use primitives::hash::H256;
+use primitives::bytes::Bytes;
 use invoke::{Invoke, Identity};
 
 pub struct BlockBuilder<F=Identity> {
@@ -168,9 +169,22 @@ impl<F> TransactionBuilder<F> where F: Invoke<chain::Transaction> {
 		}
 	}
 
+	fn with_input(mut self, input: chain::TransactionInput) -> Self {
+		self.inputs.push(input);
+		self
+	}
+
 	pub fn lock_time(mut self, time: u32) -> Self {
 		self.lock_time = time;
 		self
+	}
+
+	pub fn input(self) -> TransactionInputBuilder<Self> {
+		TransactionInputBuilder::with_callback(self)
+	}
+
+	pub fn coinbase(self) -> Self {
+		self.input().coinbase().build()
 	}
 
 	pub fn build(self) -> F::Result {
@@ -180,6 +194,56 @@ impl<F> TransactionBuilder<F> where F: Invoke<chain::Transaction> {
 				version: self.version,
 				inputs: self.inputs,
 				outputs: self.outputs,
+			}
+		)
+	}
+}
+
+
+impl<F> Invoke<chain::TransactionInput> for TransactionBuilder<F>
+	where F: Invoke<chain::Transaction>
+{
+	type Result = Self;
+
+	fn invoke(self, tx: chain::TransactionInput) -> Self {
+		self.with_input(tx)
+	}
+}
+
+pub struct TransactionInputBuilder<F=Identity> {
+	callback: F,
+	output: Option<chain::OutPoint>,
+	script_sig: Bytes,
+	sequence: u32,
+}
+
+impl<F> TransactionInputBuilder<F> where F: Invoke<chain::TransactionInput> {
+	fn with_callback(callback: F) -> Self {
+		TransactionInputBuilder {
+			callback: callback,
+			output: None,
+			script_sig: Bytes::new_with_len(0),
+			sequence: 0,
+		}
+	}
+
+	pub fn with_hash_and_index(mut self, hash: H256, index: u32) -> Self {
+		self.output = Some(chain::OutPoint { hash: hash, index: index });
+		self
+
+	}
+
+	pub fn coinbase(mut self) -> Self {
+		self.output = Some(chain::OutPoint { hash: H256::from(0), index: 0xffffffff });
+		self
+	}
+
+	pub fn build(self) -> F::Result {
+		self.callback.invoke(
+			chain::TransactionInput {
+				previous_output: self.output.unwrap_or_else(|| panic!("Building input without previous output")),
+				script_sig: self.script_sig,
+				sequence: self.sequence,
 			}
 		)
 	}
@@ -201,4 +265,13 @@ fn example2() {
 		.build();
 
 	assert_eq!(block.transactions().len(), 1);
+}
+
+#[test]
+fn example3() {
+	let block = block_builder().header().build()
+		.transaction().coinbase().build()
+		.build();
+
+	assert!(block.transactions()[0].is_coinbase());
 }
