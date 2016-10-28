@@ -102,33 +102,6 @@ impl Chain {
 		}
 	}
 
-	#[cfg(test)]
-	/// Create new `Chain` with in-memory test storage
-	pub fn with_test_storage() -> Self {
-		use db::Store;
-
-		// we only work with storages with genesis block
-		let storage = Arc::new(db::TestStorage::with_genesis_block());
-		let genesis_block_hash = storage.block_hash(0)
-			.expect("storage with genesis block is required");
-		let best_storage_block_number = storage.best_block_number()
-			.expect("non-empty storage is required");
-		let best_storage_block_hash = storage.block_hash(best_storage_block_number)
-			.expect("checked above");
-
-		// default verification queue
-		let verifier = Box::new(verification::ChainVerifier::new(storage.clone()));
-		let verification_queue = verification::Queue::new(verifier);
-
-		Chain {
-			genesis_block_hash: genesis_block_hash,
-			best_storage_block_hash: best_storage_block_hash,
-			storage: storage,
-			verification_queue: verification_queue,
-			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
-		}
-	}
-
 	/// Get information on current blockchain state
 	pub fn information(&self) -> Information {
 		Information {
@@ -316,25 +289,27 @@ impl Chain {
 
 #[cfg(test)]
 mod tests {
+	use std::sync::Arc;
 	use chain::{Block, RepresentH256};
 	use super::Chain;
+	use db;
 
 	#[test]
 	fn chain_block_locator_hashes() {
-		let mut chain = Chain::with_test_storage();
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
 		let genesis_hash = chain.best_block().hash;
 		assert_eq!(chain.block_locator_hashes(), vec![genesis_hash.clone()]);
 
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
 		let block1_hash = block1.hash();
 
-		chain.verify_and_insert_block(block1.hash(), block1);
+		chain.on_block_verification_success(block1.hash(), block1);
 		assert_eq!(chain.block_locator_hashes(), vec![block1_hash.clone(), genesis_hash.clone()]);
 
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
 		let block2_hash = block2.hash();
 
-		chain.verify_and_insert_block(block2.hash(), block2);
+		chain.on_block_verification_success(block2.hash(), block2);
 		assert_eq!(chain.block_locator_hashes(), vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
 
 		chain.schedule_blocks_hashes(vec![

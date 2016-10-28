@@ -6,12 +6,12 @@ use synchronization_chain::ChainRef;
 use db;
 use verification::{Verify, ChainVerifier};
 
-/// Verification thread
+/// Asynhcronous verification worker
 pub struct VerificationWorker {
 	/// Transmission channel
 	work_sender: Sender<VerificationTask>,
 	/// Verification thread
-	worker_thread: thread::JoinHandle<()>,
+	worker_thread: Option<thread::JoinHandle<()>>,
 }
 
 /// Verification thread tasks
@@ -27,12 +27,12 @@ impl VerificationWorker {
 		let (sender, receiver) = channel();
 		let worker = VerificationWorker {
 			work_sender: sender,
-			worker_thread: thread::Builder::new()
+			worker_thread: Some(thread::Builder::new()
 				.name("Sync verification thread".to_string())
 				.spawn(move || {
 					VerificationWorker::worker_proc(receiver, chain, storage)
 				})
-				.expect("Error creating verification thread"),
+				.expect("Error creating verification thread")),
 		};
 		worker
 	}
@@ -61,12 +61,20 @@ impl VerificationWorker {
 			}
 		}
 	}
+
+	#[cfg(test)]
+	pub fn finish_and_stop(&mut self) {
+		self.work_sender.send(VerificationTask::Stop).expect("TODO");
+		self.worker_thread.take().map(|jh| jh.join().expect("Clean shutdown."));
+	}
 }
 
 impl Drop for VerificationWorker {
 	fn drop(&mut self) {
 		// TODO: it won't stop until all scheduled block are verified. Bad
-		self.work_sender.send(VerificationTask::Stop).expect("TODO");
-		//self.worker_thread.join().expect("Clean shutdown.");
+		if let Some(join_handle) = self.worker_thread.take() {
+			self.work_sender.send(VerificationTask::Stop).expect("TODO");
+			join_handle.join().expect("Clean shutdown.");
+		}
 	}
 }

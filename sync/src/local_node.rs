@@ -104,7 +104,7 @@ impl LocalNode {
 
 	pub fn on_peer_block(&mut self, _peer_index: usize, message: types::Block) {
 		// try to process new block
-		self.sync.on_peer_block(peer_index, message.block);
+		self.sync.on_peer_block(_peer_index, message.block);
 		self.execute_synchronization_tasks();
 	}
 
