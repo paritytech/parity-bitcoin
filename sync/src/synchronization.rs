@@ -88,9 +88,9 @@ pub enum Task {
 	RequestBestInventory(usize),
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub enum State {
-	Synchronizing(time::Tm, u64),
+	Synchronizing(f64, u64),
 	Saturated,
 }
 
@@ -216,7 +216,9 @@ impl Synchronization {
 
 		// new block is requested => move to synchronizing state
 		let mut chain = self.chain.write();
-		self.state = State::Synchronizing(time::now_utc(), chain.best_block().height);
+		if !self.state.is_synchronizing() {
+			self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().height);
+		}
 
 		// when synchronization is idling
 		// => request full inventory
@@ -276,7 +278,8 @@ impl Synchronization {
 
 		// requested block is received => move to saturated state if there are no more blocks
 		if !chain.has_blocks_of_state(BlockState::Scheduled)
-			&& !chain.has_blocks_of_state(BlockState::Requested) {
+			&& !chain.has_blocks_of_state(BlockState::Requested)
+			&& !chain.has_blocks_of_state(BlockState::Verifying) {
 			self.state = State::Saturated;
 		}
 
@@ -337,19 +340,20 @@ impl Synchronization {
 		// display information if processed many blocks || enough time has passed since sync start
 		let mut chain = self.chain.write();
 		if let State::Synchronizing(timestamp, num_of_blocks) = self.state {
-			let new_timestamp = time::now_utc();
+			let new_timestamp = time::precise_time_s();
 			let timestamp_diff = new_timestamp - timestamp;
 			let new_num_of_blocks = chain.best_block().height;
 			let blocks_diff = if new_num_of_blocks > num_of_blocks { new_num_of_blocks - num_of_blocks} else { 0 };
-			if timestamp_diff.num_minutes() > 1 || blocks_diff > 1000 {
+			if timestamp_diff >= 60.0 || blocks_diff > 1000 {
 				self.state = State::Synchronizing(new_timestamp, new_num_of_blocks);
 
 				info!(target: "sync", "Processed {} blocks in {} seconds. Chain information: {:?}"
-					, blocks_diff, timestamp_diff.num_seconds()
+					, blocks_diff, timestamp_diff
 					, chain.information());
 			}
 		}
 
+		// TODO: instead of issuing duplicated inventory requests, wait until enough new blocks are verified, then issue
 		// check if we can query some blocks hashes
 		let scheduled_hashes_len = chain.length_of_state(BlockState::Scheduled);
 		if scheduled_hashes_len < MAX_SCHEDULED_HASHES {
@@ -398,7 +402,7 @@ impl Synchronization {
 		// TODO: reset verification queue
 
 		let mut chain = self.chain.write();
-		self.state = State::Synchronizing(time::now_utc(), chain.best_block().height);
+		self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().height);
 		chain.remove_blocks_with_state(BlockState::Requested);
 		chain.remove_blocks_with_state(BlockState::Scheduled);
 		chain.remove_blocks_with_state(BlockState::Verifying);

@@ -201,7 +201,18 @@ impl Chain {
 
 	/// Prepare best block locator hashes
 	pub fn best_block_locator_hashes(&self) -> Vec<H256> {
-		vec![self.best_block().hash]
+		let mut result: Vec<H256> = Vec::with_capacity(4);
+		if let Some(best_block) = self.hash_chain.back_at(SCHEDULED_QUEUE) {
+			result.push(best_block);
+		}
+		if let Some(best_block) = self.hash_chain.back_at(REQUESTED_QUEUE) {
+			result.push(best_block);
+		}
+		if let Some(best_block) = self.hash_chain.back_at(VERIFYING_QUEUE) {
+			result.push(best_block);
+		}
+		result.push(self.best_storage_block_hash.clone());
+		result
 	}
 
 	/// Prepare block locator hashes, as described in protocol documentation:
