@@ -1,7 +1,8 @@
 use std::sync::Arc;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use db;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use chain::RepresentH256;
 use p2p::OutboundSyncConnectionRef;
 use primitives::hash::H256;
@@ -13,10 +14,8 @@ use best_block::BestBlock;
 
 /// Thread-safe reference to the `LocalNode`.
 /// Locks order:
-/// 1) lock for inbound_connection (TODO: remove)
-/// 2) global lock for local_node (TODO: remove if possible)
-/// 3) sync Mutex
-/// 4) chain RwLock
+/// 1) sync Mutex
+/// 2) chain RwLock
 pub type LocalNodeRef = Arc<Mutex<LocalNode>>;
 
 /// Local synchronization node
@@ -192,7 +191,7 @@ impl LocalNode {
 
 				match self.peers.get_mut(&peer_index) {
 					Some(connection) => {
-						let connection = &mut *connection.lock();
+						let connection = &mut *connection;
 						trace!(target: "sync", "Querying {} unknown blocks from peer#{}", getdata.inventory.len(), peer_index);
 						connection.send_getdata(&getdata);
 					}
@@ -209,7 +208,7 @@ impl LocalNode {
 
 				match self.peers.get_mut(&peer_index) {
 					Some(connection) => {
-						let connection = &mut *connection.lock();
+						let connection = &mut *connection;
 						trace!(target: "sync", "Querying full inventory from peer#{}", peer_index);
 						connection.send_getblocks(&getblocks);
 					},
@@ -226,7 +225,7 @@ impl LocalNode {
 
 				match self.peers.get_mut(&peer_index) {
 					Some(connection) => {
-						let connection = &mut *connection.lock();
+						let connection = &mut *connection;
 						trace!(target: "sync", "Querying best inventory from peer#{}", peer_index);
 						connection.send_getblocks(&getblocks);
 					},

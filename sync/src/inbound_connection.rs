@@ -1,10 +1,6 @@
-use parking_lot::Mutex;
 use message::types;
 use p2p::{InboundSyncConnection, InboundSyncConnectionRef};
 use local_node::LocalNodeRef;
-
-// TODO: too many locks (connection is locked -> node is locked -> chain is locked)
-// at least connection must be lock-safe
 
 pub struct InboundConnection {
 	local_node: LocalNodeRef,
@@ -13,10 +9,10 @@ pub struct InboundConnection {
 
 impl InboundConnection {
 	pub fn new(local_node: LocalNodeRef, peer_index: usize) -> InboundSyncConnectionRef {
-		InboundSyncConnectionRef::new(Mutex::new(Box::new(InboundConnection {
+		Box::new(InboundConnection {
 			local_node: local_node,
 			peer_index: peer_index,
-		})))
+		})
 	}
 }
 
