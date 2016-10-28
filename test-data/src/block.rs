@@ -58,6 +58,11 @@ impl<F> BlockBuilder<F> where F: Invoke<chain::Block> {
 		TransactionBuilder::with_callback(self)
 	}
 
+	pub fn derived_transaction(self, tx_idx: usize, output_idx: u32) -> TransactionBuilder<Self> {
+		let tx = self.transactions.get(tx_idx).expect(&format!("using derive_transaction with the wrong index ({})", tx_idx)).clone();
+		TransactionBuilder::with_callback(self).input().hash(tx.hash()).index(output_idx).build()
+	}
+
 	pub fn build(self) -> F::Result {
 		self.callback.invoke(
 			chain::Block::new(

@@ -235,19 +235,26 @@ impl Storage {
 		// another iteration skipping coinbase transaction
 		for accepted_tx in accepted_txs.iter().skip(1) {
 			for (input_idx, input) in accepted_tx.inputs.iter().enumerate() {
-				meta_buf.entry(input.previous_output.hash.clone())
-					.or_insert(
+				if !match meta_buf.get_mut(&input.previous_output.hash) {
+					Some(ref mut meta) => {
+						meta.note_used(input_idx);
+						true
+					},
+					None => false,
+				} {
+					let mut meta =
 						self.transaction_meta(&input.previous_output.hash)
 							.unwrap_or_else(|| panic!(
 								"No transaction metadata for {}! Corrupted DB? Reindex?",
 								&input.previous_output.hash
-							))
-					);
+							));
 
-				// either panics on inserts in the previous line
-				let mut meta = meta_buf.get_mut(&input.previous_output.hash)
-					.expect("We just inserted transaction hash above or paniced there");
-				meta.note_used(input_idx);
+					meta.note_used(input_idx);
+
+					meta_buf.insert(
+						input.previous_output.hash.clone(),
+						meta);
+				}
 			}
 		}
 
@@ -495,5 +502,34 @@ mod tests {
 		assert!(genesis_meta.is_spent(0));
 
 		assert_eq!(store.best_block_number(), Some(1));
+	}
+
+	#[test]
+	fn transaction_meta_same_block() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let block = test_data::block_builder()
+			.header().parent(genesis.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().value(30).build()
+				.output().value(20).build()
+				.build()
+			.derived_transaction(1, 0)
+				.output().value(30).build()
+				.build()
+			.build();
+
+		store.insert_block(&block).unwrap();
+
+		let meta = store.transaction_meta(&block.transactions()[1].hash()).unwrap();
+		assert!(meta.is_spent(0), "Transaction #1 first output in the new block should be recorded as spent");
+		assert!(!meta.is_spent(1), "Transaction #1 second output in the new block should be recorded as unspent");
 	}
 }
