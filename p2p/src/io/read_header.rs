@@ -30,8 +30,7 @@ impl<A> Future for ReadHeader<A> where A: io::Read {
 mod tests {
 	use futures::Future;
 	use bytes::Bytes;
-	use message::MessageHeader;
-	use message::common::Magic;
+	use message::{Magic, MessageHeader, Error};
 	use super::read_header;
 
 	#[test]
@@ -45,6 +44,18 @@ mod tests {
 		};
 
 		assert_eq!(read_header(raw.as_ref(), Magic::Mainnet).wait().unwrap().1, Ok(expected));
-		assert!(read_header(raw.as_ref(), Magic::Testnet).wait().unwrap().1.is_err());
+		assert_eq!(read_header(raw.as_ref(), Magic::Testnet).wait().unwrap().1, Err(Error::WrongMagic));
+	}
+
+	#[test]
+	fn test_read_header_with_invalid_magic() {
+		let raw: Bytes = "f9beb4d86164647200000000000000001f000000ed52399b".into();
+		assert_eq!(read_header(raw.as_ref(), Magic::Testnet).wait().unwrap().1, Err(Error::InvalidMagic));
+	}
+
+	#[test]
+	fn test_read_too_short_header() {
+		let raw: Bytes = "f9beb4d96164647200000000000000001f000000ed5239".into();
+		assert!(read_header(raw.as_ref(), Magic::Mainnet).wait().is_err());
 	}
 }
