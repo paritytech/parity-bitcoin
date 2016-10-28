@@ -63,6 +63,27 @@ impl<F> BlockBuilder<F> where F: Invoke<chain::Block> {
 		TransactionBuilder::with_callback(self).input().hash(tx.hash()).index(output_idx).build()
 	}
 
+	// use vec![(0, 1), (0, 2), (1, 1)]
+	pub fn derived_transactions<I>(self, outputs: I) -> TransactionBuilder<Self>
+		where I: IntoIterator<Item=(usize, u32)>
+	{
+		let mut derives = Vec::new();
+		for (tx_idx, output_idx) in outputs {
+			derives.push(
+				(
+					self.transactions.get(tx_idx).expect(&format!("using derive_transaction with the wrong index ({})", tx_idx)).hash(),
+					output_idx
+				)
+			);
+		}
+
+		let mut builder = TransactionBuilder::with_callback(self);
+		for (tx_hash, output_idx) in derives {
+			builder = builder.input().hash(tx_hash).index(output_idx).build();
+		}
+		builder
+	}
+
 	pub fn build(self) -> F::Result {
 		self.callback.invoke(
 			chain::Block::new(

@@ -234,10 +234,10 @@ impl Storage {
 
 		// another iteration skipping coinbase transaction
 		for accepted_tx in accepted_txs.iter().skip(1) {
-			for (input_idx, input) in accepted_tx.inputs.iter().enumerate() {
+			for input in accepted_tx.inputs.iter() {
 				if !match meta_buf.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
-						meta.note_used(input_idx);
+						meta.note_used(input.previous_output.index as usize);
 						true
 					},
 					None => false,
@@ -249,7 +249,7 @@ impl Storage {
 								&input.previous_output.hash
 							));
 
-					meta.note_used(input_idx);
+					meta.note_used(input.previous_output.index as usize);
 
 					meta_buf.insert(
 						input.previous_output.hash.clone(),
@@ -531,5 +531,54 @@ mod tests {
 		let meta = store.transaction_meta(&block.transactions()[1].hash()).unwrap();
 		assert!(meta.is_spent(0), "Transaction #1 first output in the new block should be recorded as spent");
 		assert!(!meta.is_spent(1), "Transaction #1 second output in the new block should be recorded as unspent");
+	}
+
+	#[test]
+	fn transaction_meta_complex() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let block1 = test_data::block_builder()
+			.header().parent(genesis.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().value(10).build()
+				.output().value(15).build()
+				.output().value(10).build()
+				.output().value(1).build()
+				.output().value(4).build()
+				.output().value(10).build()
+				.build()
+			.build();
+
+		store.insert_block(&block1).unwrap();
+
+		let tx_big = block1.transactions()[1].hash();
+		let block2 = test_data::block_builder()
+			.header().parent(block1.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(tx_big.clone()).index(0).build()
+				.input().hash(tx_big.clone()).index(2).build()
+				.input().hash(tx_big.clone()).index(5).build()
+				.output().value(30).build()
+				.build()
+			.build();
+
+		store.insert_block(&block2).unwrap();
+
+		let meta = store.transaction_meta(&tx_big).unwrap();
+		assert!(meta.is_spent(0), "Transaction #1 output #0 in the new block should be recorded as spent");
+		assert!(meta.is_spent(2), "Transaction #1 output #2 in the new block should be recorded as spent");
+		assert!(meta.is_spent(5), "Transaction #1 output #5 in the new block should be recorded as spent");
+
+		assert!(!meta.is_spent(1), "Transaction #1 output #1 in the new block should be recorded as unspent");
+		assert!(!meta.is_spent(3), "Transaction #1 second #3 in the new block should be recorded as unspent");
 	}
 }
