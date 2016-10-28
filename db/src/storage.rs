@@ -225,29 +225,29 @@ impl Storage {
 	/// update transactions metadata in the specified database transaction
 	fn update_transactions_meta(&self, db_transaction: &mut DBTransaction, number: u32, accepted_txs: &[chain::Transaction]) {
 		let mut meta_buf = HashMap::<H256, TransactionMeta>::new();
-		for (accepted_tx_idx, accepted_tx) in accepted_txs.iter().enumerate() {
+
+		// inserting new meta for coinbase transaction
+		for accepted_tx in accepted_txs.iter() {
 			// adding unspent transaction meta
-			let meta = TransactionMeta::new(number, accepted_tx.outputs.len());
-			db_transaction.put(Some(COL_TRANSACTIONS_META), &*accepted_tx.hash(), &meta.to_bytes());
+			meta_buf.insert(accepted_tx.hash(), TransactionMeta::new(number, accepted_tx.outputs.len()));
+		}
 
-			// marking used transactions as spent
-			if accepted_tx_idx > 0 {
-				for (input_idx, input) in accepted_tx.inputs.iter().enumerate() {
+		// another iteration skipping coinbase transaction
+		for accepted_tx in accepted_txs.iter().skip(1) {
+			for (input_idx, input) in accepted_tx.inputs.iter().enumerate() {
+				meta_buf.entry(input.previous_output.hash.clone())
+					.or_insert(
+						self.transaction_meta(&input.previous_output.hash)
+							.unwrap_or_else(|| panic!(
+								"No transaction metadata for {}! Corrupted DB? Reindex?",
+								&input.previous_output.hash
+							))
+					);
 
-					meta_buf.entry(input.previous_output.hash.clone())
-						.or_insert(
-							self.transaction_meta(&input.previous_output.hash)
-								.unwrap_or_else(|| panic!(
-									"No transaction metadata for {}! Corrupted DB? Reindex?",
-									&input.previous_output.hash
-								))
-						);
-
-					// either panics on inserts in the previous line
-					let mut meta = meta_buf.get_mut(&input.previous_output.hash)
-						.expect("We just inserted transaction hash above or paniced there");
-					meta.note_used(input_idx);
-				}
+				// either panics on inserts in the previous line
+				let mut meta = meta_buf.get_mut(&input.previous_output.hash)
+					.expect("We just inserted transaction hash above or paniced there");
+				meta.note_used(input_idx);
 			}
 		}
 
