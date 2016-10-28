@@ -225,28 +225,35 @@ impl Storage {
 	/// update transactions metadata in the specified database transaction
 	fn update_transactions_meta(&self, db_transaction: &mut DBTransaction, number: u32, accepted_txs: &[chain::Transaction]) {
 		let mut meta_buf = HashMap::<H256, TransactionMeta>::new();
-		for (accepted_tx_idx, accepted_tx) in accepted_txs.iter().enumerate() {
+
+		// inserting new meta for coinbase transaction
+		for accepted_tx in accepted_txs.iter() {
 			// adding unspent transaction meta
-			let meta = TransactionMeta::new(number, accepted_tx.outputs.len());
-			db_transaction.put(Some(COL_TRANSACTIONS_META), &*accepted_tx.hash(), &meta.to_bytes());
+			meta_buf.insert(accepted_tx.hash(), TransactionMeta::new(number, accepted_tx.outputs.len()));
+		}
 
-			// marking used transactions as spent
-			if accepted_tx_idx > 0 {
-				for (input_idx, input) in accepted_tx.inputs.iter().enumerate() {
+		// another iteration skipping coinbase transaction
+		for accepted_tx in accepted_txs.iter().skip(1) {
+			for input in accepted_tx.inputs.iter() {
+				if !match meta_buf.get_mut(&input.previous_output.hash) {
+					Some(ref mut meta) => {
+						meta.note_used(input.previous_output.index as usize);
+						true
+					},
+					None => false,
+				} {
+					let mut meta =
+						self.transaction_meta(&input.previous_output.hash)
+							.unwrap_or_else(|| panic!(
+								"No transaction metadata for {}! Corrupted DB? Reindex?",
+								&input.previous_output.hash
+							));
 
-					meta_buf.entry(input.previous_output.hash.clone())
-						.or_insert(
-							self.transaction_meta(&input.previous_output.hash)
-								.unwrap_or_else(|| panic!(
-									"No transaction metadata for {}! Corrupted DB? Reindex?",
-									&input.previous_output.hash
-								))
-						);
+					meta.note_used(input.previous_output.index as usize);
 
-					// either panics on inserts in the previous line
-					let mut meta = meta_buf.get_mut(&input.previous_output.hash)
-						.expect("We just inserted transaction hash above or paniced there");
-					meta.note_used(input_idx);
+					meta_buf.insert(
+						input.previous_output.hash.clone(),
+						meta);
 				}
 			}
 		}
@@ -495,5 +502,83 @@ mod tests {
 		assert!(genesis_meta.is_spent(0));
 
 		assert_eq!(store.best_block_number(), Some(1));
+	}
+
+	#[test]
+	fn transaction_meta_same_block() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let block = test_data::block_builder()
+			.header().parent(genesis.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().value(30).build()
+				.output().value(20).build()
+				.build()
+			.derived_transaction(1, 0)
+				.output().value(30).build()
+				.build()
+			.build();
+
+		store.insert_block(&block).unwrap();
+
+		let meta = store.transaction_meta(&block.transactions()[1].hash()).unwrap();
+		assert!(meta.is_spent(0), "Transaction #1 first output in the new block should be recorded as spent");
+		assert!(!meta.is_spent(1), "Transaction #1 second output in the new block should be recorded as unspent");
+	}
+
+	#[test]
+	fn transaction_meta_complex() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let block1 = test_data::block_builder()
+			.header().parent(genesis.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().value(10).build()
+				.output().value(15).build()
+				.output().value(10).build()
+				.output().value(1).build()
+				.output().value(4).build()
+				.output().value(10).build()
+				.build()
+			.build();
+
+		store.insert_block(&block1).unwrap();
+
+		let tx_big = block1.transactions()[1].hash();
+		let block2 = test_data::block_builder()
+			.header().parent(block1.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(tx_big.clone()).index(0).build()
+				.input().hash(tx_big.clone()).index(2).build()
+				.input().hash(tx_big.clone()).index(5).build()
+				.output().value(30).build()
+				.build()
+			.build();
+
+		store.insert_block(&block2).unwrap();
+
+		let meta = store.transaction_meta(&tx_big).unwrap();
+		assert!(meta.is_spent(0), "Transaction #1 output #0 in the new block should be recorded as spent");
+		assert!(meta.is_spent(2), "Transaction #1 output #2 in the new block should be recorded as spent");
+		assert!(meta.is_spent(5), "Transaction #1 output #5 in the new block should be recorded as spent");
+
+		assert!(!meta.is_spent(1), "Transaction #1 output #1 in the new block should be recorded as unspent");
+		assert!(!meta.is_spent(3), "Transaction #1 second #3 in the new block should be recorded as unspent");
 	}
 }
