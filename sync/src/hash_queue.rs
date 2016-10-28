@@ -165,6 +165,10 @@ impl HashQueueChain {
 		self.chain[queue_index].pop_front_n(n)
 	}
 
+	pub fn push_back_at(&mut self, queue_index: usize, hash: H256) {
+		self.chain[queue_index].push_back(hash)
+	}
+
 	pub fn push_back_n_at(&mut self, queue_index: usize, hashes: Vec<H256>) {
 		self.chain[queue_index].push_back_n(hashes)
 	}

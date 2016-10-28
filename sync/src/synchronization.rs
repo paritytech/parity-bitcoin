@@ -6,6 +6,7 @@ use primitives::hash::H256;
 use hash_queue::HashPosition;
 use synchronization_peers::{Peers, Information as PeersInformation};
 use synchronization_chain::{ChainRef, Information as ChainInformation, BlockState};
+use verification_worker::VerificationWorker;
 
 ///! Blocks synchronization process:
 ///!
@@ -57,10 +58,12 @@ use synchronization_chain::{ChainRef, Information as ChainInformation, BlockStat
 ///! TODO: check + optimize algorithm for Saturated state
 
 
-/// Approximate maximal number of blocks hashes in queued_hashes_set.
+/// Approximate maximal number of blocks hashes in scheduled queue.
 const MAX_SCHEDULED_HASHES: u64 = 4 * 1024;
-/// Approximate maximal number of blocks hashes in requested_hashes_set.
+/// Approximate maximal number of blocks hashes in requested queue.
 const MAX_REQUESTED_BLOCKS: u64 = 512;
+/// Approximate maximal number of blocks in verifying queue.
+const MAX_VERIFYING_BLOCKS: u64 = 512;
 /// Minimum number of blocks to request from peer
 const MIN_BLOCKS_IN_REQUEST: u64 = 32;
 /// Maximum number of blocks to request from peer
@@ -104,17 +107,20 @@ pub struct Synchronization {
 	peers: Peers,
 	/// Chain reference.
 	chain: ChainRef,
+	/// Verification worker
+	verification_worker: VerificationWorker,
 	/// Blocks from requested_hashes, but received out-of-order.
 	orphaned_blocks: HashMap<H256, Block>,
 }
 
 impl Synchronization {
 	/// Create new synchronization window
-	pub fn new(chain: ChainRef) -> Synchronization {
+	pub fn new(chain: ChainRef, verification_worker: VerificationWorker) -> Synchronization {
 		Synchronization {
 			state: State::Saturated,
 			peers: Peers::new(),
 			chain: chain,
+			verification_worker: verification_worker,
 			orphaned_blocks: HashMap::new(),
 		}
 	}
@@ -212,14 +218,14 @@ impl Synchronization {
 		// check if this block is next block in the blockchain
 		if block_position == HashPosition::Front {
 			// this is next block in the blockchain => queue for verification
-			chain.verify_and_insert_block(block_hash.clone(), block);
+			chain.verify_and_insert_block(&self.verification_worker, block_hash.clone(), block);
 
 			// check orphaned blocks
 			let mut orphaned_parent_hash = block_hash;
 			while let Entry::Occupied(orphaned_block_entry) = self.orphaned_blocks.entry(orphaned_parent_hash) {
 				let (_, orphaned_block) = orphaned_block_entry.remove_entry();
 				orphaned_parent_hash = orphaned_block.hash();
-				chain.verify_and_insert_block(orphaned_parent_hash.clone(), orphaned_block);
+				chain.verify_and_insert_block(&self.verification_worker, orphaned_parent_hash.clone(), orphaned_block);
 			}
 
 			return;
@@ -253,7 +259,8 @@ impl Synchronization {
 
 		// check if we can move some blocks from scheduled to requested queue
 		let requested_hashes_len = chain.length_of_state(BlockState::Requested);
-		if requested_hashes_len < MAX_REQUESTED_BLOCKS && scheduled_hashes_len != 0 {
+		let verifying_hashes_len = chain.length_of_state(BlockState::Verifying);
+		if requested_hashes_len + verifying_hashes_len < MAX_REQUESTED_BLOCKS + MAX_VERIFYING_BLOCKS && scheduled_hashes_len != 0 {
 			let idle_peers = self.peers.idle_peers();
 			let idle_peers_len = idle_peers.len() as u64;
 			if idle_peers_len != 0 {
@@ -272,20 +279,35 @@ impl Synchronization {
 		}
 
 		tasks
-	}	
+	}
+
+	#[cfg(test)]
+	pub fn wait_idle(&mut self) {
+		self.verification_worker.finish_and_stop();
+	}
 }
 
 #[cfg(test)]
 mod tests {
+	use std::sync::Arc;
 	use parking_lot::RwLock;
 	use chain::{Block, RepresentH256};
 	use super::{Synchronization, State, Task};
 	use synchronization_chain::{Chain, ChainRef};
+	use verification_worker::VerificationWorker;
+	use db;
+
+	fn create_sync() -> Synchronization {
+		let storage = Arc::new(db::TestStorage::with_genesis_block());
+		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
+		let verification_worker = VerificationWorker::new(storage, chain.clone());
+		let sync = Synchronization::new(chain, verification_worker);
+		sync
+	} 
 
 	#[test]
 	fn synchronization_saturated_on_start() {
-		let chain = ChainRef::new(RwLock::new(Chain::with_test_storage()));
-		let sync = Synchronization::new(chain);
+		let sync = create_sync();
 		let info = sync.information();
 		assert_eq!(info.state, State::Saturated);
 		assert_eq!(info.orphaned, 0);
@@ -293,8 +315,7 @@ mod tests {
 
 	#[test]
 	fn synchronization_in_order_block_path() {
-		let chain = ChainRef::new(RwLock::new(Chain::with_test_storage()));
-		let mut sync = Synchronization::new(chain);
+		let mut sync = create_sync();
 
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
@@ -330,8 +351,9 @@ mod tests {
 		assert_eq!(sync.information().peers.idle, 0);
 		assert_eq!(sync.information().peers.active, 1);
 
-		// push requested block => nothing should change
+		// push requested block => should be moved to the test storage
 		sync.on_peer_block(5, block1);
+		sync.wait_idle();
 		assert_eq!(sync.information().state, State::Saturated);
 		assert_eq!(sync.information().orphaned, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
@@ -343,8 +365,7 @@ mod tests {
 
 	#[test]
 	fn synchronization_out_of_order_block_path() {
-		let chain = ChainRef::new(RwLock::new(Chain::with_test_storage()));
-		let mut sync = Synchronization::new(chain);
+		let mut sync = create_sync();
 
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
 

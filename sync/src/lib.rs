@@ -6,6 +6,7 @@ extern crate message;
 extern crate p2p;
 extern crate parking_lot;
 extern crate primitives;
+extern crate time;
 extern crate verification;
 
 mod best_block;
@@ -16,3 +17,4 @@ pub mod local_node;
 mod synchronization;
 mod synchronization_chain;
 mod synchronization_peers;
+mod verification_worker;
