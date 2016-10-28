@@ -460,7 +460,7 @@ mod tests {
 	use std::sync::Arc;
 	use parking_lot::RwLock;
 	use chain::{Block, RepresentH256};
-	use super::{Synchronization, SynchronizationRef, Config, State, Task};
+	use super::{Synchronization, SynchronizationRef, Config, Task};
 	use synchronization_chain::{Chain, ChainRef};
 	use db;
 
@@ -477,7 +477,7 @@ mod tests {
 		let sync = create_sync();
 		let sync = sync.lock();
 		let info = sync.information();
-		assert_eq!(info.state, State::Saturated);
+		assert!(!info.state.is_synchronizing());
 		assert_eq!(info.orphaned, 0);
 	}
 
@@ -522,7 +522,7 @@ mod tests {
 
 		// push requested block => should be moved to the test storage
 		sync.on_peer_block(5, block1);
-		assert_eq!(sync.information().state, State::Saturated);
+		assert!(!sync.information().state.is_synchronizing());
 		assert_eq!(sync.information().orphaned, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 0);
@@ -543,7 +543,7 @@ mod tests {
 		sync.on_peer_block(5, block2);
 
 		// out-of-order block was presented by the peer
-		assert_eq!(sync.information().state, State::Saturated);
+		assert!(!sync.information().state.is_synchronizing());
 		assert_eq!(sync.information().orphaned, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 0);
