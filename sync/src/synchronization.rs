@@ -78,7 +78,7 @@ const MIN_BLOCKS_IN_REQUEST: u64 = 32;
 const MAX_BLOCKS_IN_REQUEST: u64 = 512;
 
 /// Thread-safe reference to the `Synchronization`
-pub type SynchronizationRef = Arc<Mutex<Synchronization>>;
+pub type SynchronizationRef<T> = Arc<Mutex<Synchronization<T>>>;
 
 /// Synchronization task for the peer.
 #[derive(Debug, Eq, PartialEq)]
@@ -111,6 +111,11 @@ pub struct Information {
 	pub orphaned: usize,
 }
 
+/// Synchronization task executor
+pub trait TaskExecutor {
+	fn execute(&mut self, task: Task);
+}
+
 /// Verification thread tasks
 enum VerificationTask {
 	/// Verify single block
@@ -127,11 +132,13 @@ pub struct Config {
 } 
 
 /// New blocks synchronization process.
-pub struct Synchronization {
+pub struct Synchronization<T: TaskExecutor + Send + 'static> {
 	/// Synchronization state.
 	state: State,
 	/// Synchronization peers.
 	peers: Peers,
+	/// Task executor.
+	executor: Arc<Mutex<T>>,
 	/// Chain reference.
 	chain: ChainRef,
 	/// Blocks from requested_hashes, but received out-of-order.
@@ -151,7 +158,7 @@ impl State {
 	}
 }
 
-impl Drop for Synchronization {
+impl<T> Drop for Synchronization<T> where T: TaskExecutor + Send + 'static {
 	fn drop(&mut self) {
 		if let Some(join_handle) = self.verification_worker_thread.take() {
 			self.verification_work_sender
@@ -163,13 +170,14 @@ impl Drop for Synchronization {
 	}
 }
 
-impl Synchronization {
+impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 	/// Create new synchronization window
-	pub fn new(config: Config, chain: ChainRef) -> SynchronizationRef {
+	pub fn new(config: Config, executor: Arc<Mutex<T>>, chain: ChainRef) -> SynchronizationRef<T> {
 		let sync = SynchronizationRef::new(Mutex::new(
 			Synchronization {
 				state: State::Saturated,
 				peers: Peers::new(),
+				executor: executor,
 				chain: chain.clone(),
 				orphaned_blocks: HashMap::new(),
 				verification_work_sender: None,
@@ -206,7 +214,37 @@ impl Synchronization {
 	}
 
 	/// Try to queue synchronization of unknown blocks when new inventory is received.
-	pub fn on_unknown_blocks(&mut self, peer_index: usize, mut peer_hashes: Vec<H256>) {
+	pub fn on_unknown_blocks(&mut self, peer_index: usize, peer_hashes: Vec<H256>) {
+		self.process_unknown_blocks(peer_index, peer_hashes);
+		self.execute_synchronization_tasks();
+	}
+
+	/// Process new block.
+	pub fn on_peer_block(&mut self, peer_index: usize, block: Block) {
+		let block_hash = block.hash();
+
+		// update peers to select next tasks
+		self.peers.on_block_received(peer_index, &block_hash);
+
+		self.process_peer_block(block_hash, block);
+		self.execute_synchronization_tasks();
+	}
+
+	/// Reset synchronization process
+	pub fn reset(&mut self) {
+		self.peers.reset();
+		self.orphaned_blocks.clear();
+		// TODO: reset verification queue
+
+		let mut chain = self.chain.write();
+		self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().height);
+		chain.remove_blocks_with_state(BlockState::Requested);
+		chain.remove_blocks_with_state(BlockState::Scheduled);
+		chain.remove_blocks_with_state(BlockState::Verifying);
+	}
+
+	/// Process new unknown blocks
+	fn process_unknown_blocks(&mut self, peer_index: usize, mut peer_hashes: Vec<H256>) {
 		//     | requested | QUEUED |
 		// ---                          [1]
 		//         ---                  [2] +
@@ -219,8 +257,9 @@ impl Synchronization {
 		//            ---+--------+---  [9] +
 		//  ---+---------+--------+---  [10]
 
-		// new block is requested => move to synchronizing state
 		let mut chain = self.chain.write();
+
+		// new block is scheduled => move to synchronizing state
 		if !self.state.is_synchronizing() {
 			self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().height);
 		}
@@ -267,13 +306,8 @@ impl Synchronization {
 		}
 	}
 
-	/// Process new block.
-	pub fn on_peer_block(&mut self, peer_index: usize, block: Block) {
-		let block_hash = block.hash();
-
-		// update peers to select next tasks
-		self.peers.on_block_received(peer_index, &block_hash);
-
+	/// Process new peer block
+	fn process_peer_block(&mut self, block_hash: H256, block: Block) {
 		// this block is not requested for synchronization
 		let mut chain = self.chain.write();
 		let block_position = chain.remove_block_with_state(&block_hash, BlockState::Requested);
@@ -339,82 +373,75 @@ impl Synchronization {
 	}
 
 	/// Schedule new synchronization tasks, if any.
-	pub fn get_synchronization_tasks(&mut self) -> Vec<Task> {
+	fn execute_synchronization_tasks(&mut self) {
 		let mut tasks: Vec<Task> = Vec::new();
 
-		// display information if processed many blocks || enough time has passed since sync start
-		let mut chain = self.chain.write();
-		if let State::Synchronizing(timestamp, num_of_blocks) = self.state {
-			let new_timestamp = time::precise_time_s();
-			let timestamp_diff = new_timestamp - timestamp;
-			let new_num_of_blocks = chain.best_block().height;
-			let blocks_diff = if new_num_of_blocks > num_of_blocks { new_num_of_blocks - num_of_blocks} else { 0 };
-			if timestamp_diff >= 60.0 || blocks_diff > 1000 {
-				self.state = State::Synchronizing(new_timestamp, new_num_of_blocks);
+		// prepar synchronization tasks
+		{
+			// display information if processed many blocks || enough time has passed since sync start
+			let mut chain = self.chain.write();
+			if let State::Synchronizing(timestamp, num_of_blocks) = self.state {
+				let new_timestamp = time::precise_time_s();
+				let timestamp_diff = new_timestamp - timestamp;
+				let new_num_of_blocks = chain.best_block().height;
+				let blocks_diff = if new_num_of_blocks > num_of_blocks { new_num_of_blocks - num_of_blocks} else { 0 };
+				if timestamp_diff >= 60.0 || blocks_diff > 1000 {
+					self.state = State::Synchronizing(new_timestamp, new_num_of_blocks);
 
-				info!(target: "sync", "Processed {} blocks in {} seconds. Chain information: {:?}"
-					, blocks_diff, timestamp_diff
-					, chain.information());
-			}
-		}
-
-		// TODO: instead of issuing duplicated inventory requests, wait until enough new blocks are verified, then issue
-		// check if we can query some blocks hashes
-		let scheduled_hashes_len = chain.length_of_state(BlockState::Scheduled);
-		if scheduled_hashes_len < MAX_SCHEDULED_HASHES {
-			if self.state.is_synchronizing() {
-				if let Some(idle_peer) = self.peers.idle_peer() {
-					tasks.push(Task::RequestBestInventory(idle_peer));
-					self.peers.on_inventory_requested(idle_peer);
+					info!(target: "sync", "Processed {} blocks in {} seconds. Chain information: {:?}"
+						, blocks_diff, timestamp_diff
+						, chain.information());
 				}
 			}
-			else {
-				if let Some(idle_peer) = self.peers.idle_peer() {
-					tasks.push(Task::RequestInventory(idle_peer));
-					self.peers.on_inventory_requested(idle_peer);
-				}
-			}
-		}
 
-		// check if we can move some blocks from scheduled to requested queue
-		let requested_hashes_len = chain.length_of_state(BlockState::Requested);
-		let verifying_hashes_len = chain.length_of_state(BlockState::Verifying);
-		if requested_hashes_len + verifying_hashes_len < MAX_REQUESTED_BLOCKS + MAX_VERIFYING_BLOCKS && scheduled_hashes_len != 0 {
-			let idle_peers = self.peers.idle_peers();
-			let idle_peers_len = idle_peers.len() as u64;
-			if idle_peers_len != 0 {
-				let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(scheduled_hashes_len / idle_peers_len, MIN_BLOCKS_IN_REQUEST));
-				for idle_peer in idle_peers {
-					let peer_chunk_size = min(chain.length_of_state(BlockState::Scheduled), chunk_size);
-					if peer_chunk_size == 0 {
-						break;
+			// TODO: instead of issuing duplicated inventory requests, wait until enough new blocks are verified, then issue
+			// check if we can query some blocks hashes
+			let scheduled_hashes_len = chain.length_of_state(BlockState::Scheduled);
+			if scheduled_hashes_len < MAX_SCHEDULED_HASHES {
+				if self.state.is_synchronizing() {
+					if let Some(idle_peer) = self.peers.idle_peer() {
+						tasks.push(Task::RequestBestInventory(idle_peer));
+						self.peers.on_inventory_requested(idle_peer);
 					}
+				}
+				else {
+					if let Some(idle_peer) = self.peers.idle_peer() {
+						tasks.push(Task::RequestInventory(idle_peer));
+						self.peers.on_inventory_requested(idle_peer);
+					}
+				}
+			}
 
-					let requested_hashes = chain.request_blocks_hashes(peer_chunk_size);
-					self.peers.on_blocks_requested(idle_peer, &requested_hashes);
-					tasks.push(Task::RequestBlocks(idle_peer, requested_hashes));
+			// check if we can move some blocks from scheduled to requested queue
+			let requested_hashes_len = chain.length_of_state(BlockState::Requested);
+			let verifying_hashes_len = chain.length_of_state(BlockState::Verifying);
+			if requested_hashes_len + verifying_hashes_len < MAX_REQUESTED_BLOCKS + MAX_VERIFYING_BLOCKS && scheduled_hashes_len != 0 {
+				let idle_peers = self.peers.idle_peers();
+				let idle_peers_len = idle_peers.len() as u64;
+				if idle_peers_len != 0 {
+					let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(scheduled_hashes_len / idle_peers_len, MIN_BLOCKS_IN_REQUEST));
+					for idle_peer in idle_peers {
+						let peer_chunk_size = min(chain.length_of_state(BlockState::Scheduled), chunk_size);
+						if peer_chunk_size == 0 {
+							break;
+						}
+
+						let requested_hashes = chain.request_blocks_hashes(peer_chunk_size);
+						self.peers.on_blocks_requested(idle_peer, &requested_hashes);
+						tasks.push(Task::RequestBlocks(idle_peer, requested_hashes));
+					}
 				}
 			}
 		}
 
-		tasks
-	}
-
-	/// Reset synchronization process
-	pub fn reset(&mut self) {
-		self.peers.reset();
-		self.orphaned_blocks.clear();
-		// TODO: reset verification queue
-
-		let mut chain = self.chain.write();
-		self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().height);
-		chain.remove_blocks_with_state(BlockState::Requested);
-		chain.remove_blocks_with_state(BlockState::Scheduled);
-		chain.remove_blocks_with_state(BlockState::Verifying);
+		// execute synchronization tasks
+		for task in tasks {
+			self.executor.lock().execute(task);
+		}
 	}
 
 	/// Thread procedure for handling verification tasks
-	fn verification_worker_proc(sync: SynchronizationRef, storage: Arc<db::Store>, work_receiver: Receiver<VerificationTask>) {
+	fn verification_worker_proc(sync: SynchronizationRef<T>, storage: Arc<db::Store>, work_receiver: Receiver<VerificationTask>) {
 		let verifier = ChainVerifier::new(storage);
 		while let Ok(task) = work_receiver.recv() {
 			match task {
@@ -458,23 +485,42 @@ impl Synchronization {
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
-	use parking_lot::RwLock;
+	use std::mem::replace;
+	use parking_lot::{Mutex, RwLock};
 	use chain::{Block, RepresentH256};
-	use super::{Synchronization, SynchronizationRef, Config, Task};
+	use super::{Synchronization, SynchronizationRef, Config, Task, TaskExecutor};
 	use synchronization_chain::{Chain, ChainRef};
 	use db;
 
-	fn create_sync() -> SynchronizationRef {
+	#[derive(Default)]
+	struct DummyTaskExecutor {
+		pub tasks: Vec<Task>,
+	}
+
+	impl DummyTaskExecutor {
+		pub fn take_tasks(&mut self) -> Vec<Task> {
+			replace(&mut self.tasks, Vec::new())
+		}
+	}
+
+	impl TaskExecutor for DummyTaskExecutor {
+		fn execute(&mut self, task: Task) {
+			self.tasks.push(task);
+		}
+	}
+
+	fn create_sync() -> (Arc<Mutex<DummyTaskExecutor>>, SynchronizationRef<DummyTaskExecutor>) {
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
-		Synchronization::new(Config {
+		let executor = Arc::new(Mutex::new(DummyTaskExecutor::default()));
+		(executor.clone(), Synchronization::new(Config {
 			skip_block_verification: true,
-		}, chain)
+		}, executor, chain))
 	} 
 
 	#[test]
 	fn synchronization_saturated_on_start() {
-		let sync = create_sync();
+		let (_, sync) = create_sync();
 		let sync = sync.lock();
 		let info = sync.information();
 		assert!(!info.state.is_synchronizing());
@@ -483,22 +529,14 @@ mod tests {
 
 	#[test]
 	fn synchronization_in_order_block_path() {
-		let sync = create_sync();
+		let (executor, sync) = create_sync();
 
 		let mut sync = sync.lock();
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
 
 		sync.on_unknown_blocks(5, vec![block1.hash()]);
-		assert!(sync.information().state.is_synchronizing());
-		assert_eq!(sync.information().orphaned, 0);
-		assert_eq!(sync.information().chain.scheduled, 1);
-		assert_eq!(sync.information().chain.requested, 0);
-		assert_eq!(sync.information().chain.stored, 1);
-		assert_eq!(sync.information().peers.idle, 1);
-		assert_eq!(sync.information().peers.active, 0);
-
-		let tasks = sync.get_synchronization_tasks();
+		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks.len(), 2);
 		assert_eq!(tasks[0], Task::RequestBestInventory(5));
 		assert_eq!(tasks[1], Task::RequestBlocks(5, vec![block1.hash()]));
@@ -533,13 +571,12 @@ mod tests {
 
 	#[test]
 	fn synchronization_out_of_order_block_path() {
-		let sync = create_sync();
+		let (_, sync) = create_sync();
 		let mut sync = sync.lock();
 
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
 
 		sync.on_unknown_blocks(5, vec![block2.hash()]);
-		sync.get_synchronization_tasks();
 		sync.on_peer_block(5, block2);
 
 		// out-of-order block was presented by the peer
