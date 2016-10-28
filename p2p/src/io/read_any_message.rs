@@ -63,3 +63,35 @@ impl<A> Future for ReadAnyMessage<A> where A: io::Read {
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use futures::Future;
+	use bytes::Bytes;
+	use message::{Magic, Error};
+	use super::read_any_message;
+
+	#[test]
+	fn test_read_any_message() {
+		let raw: Bytes = "f9beb4d970696e6700000000000000000800000083c00c765845303b6da97786".into();
+		let name = "ping".into();
+		let nonce = "5845303b6da97786".into();
+		let expected = (name, nonce);
+
+		assert_eq!(read_any_message(raw.as_ref(), Magic::Mainnet).wait().unwrap(), Ok(expected));
+		assert_eq!(read_any_message(raw.as_ref(), Magic::Testnet).wait().unwrap(), Err(Error::WrongMagic));
+	}
+
+	#[test]
+	fn test_read_too_short_any_message() {
+		let raw: Bytes = "f9beb4d970696e6700000000000000000800000083c00c765845303b6da977".into();
+		assert!(read_any_message(raw.as_ref(), Magic::Mainnet).wait().is_err());
+	}
+
+
+	#[test]
+	fn test_read_any_message_with_invalid_checksum() {
+		let raw: Bytes = "f9beb4d970696e6700000000000000000800000083c01c765845303b6da97786".into();
+		assert_eq!(read_any_message(raw.as_ref(), Magic::Mainnet).wait().unwrap(), Err(Error::InvalidChecksum));
+	}
+}
