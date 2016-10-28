@@ -2,16 +2,21 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use db;
 use parking_lot::{Mutex, RwLock};
+use chain::RepresentH256;
 use p2p::OutboundSyncConnectionRef;
 use primitives::hash::H256;
 use message::common::{InventoryVector, InventoryType};
 use message::types;
-use synchronization::{Synchronization, Task as SynchronizationTask};
+use synchronization::{Synchronization, SynchronizationRef, Config as SynchronizationConfig, Task as SynchronizationTask};
 use synchronization_chain::{Chain, ChainRef, BlockState};
 use best_block::BestBlock;
-use verification_worker::VerificationWorker;
 
-/// Thread-safe reference to the `LocalNode`
+/// Thread-safe reference to the `LocalNode`.
+/// Locks order:
+/// 1) lock for inbound_connection (TODO: remove)
+/// 2) global lock for local_node (TODO: remove if possible)
+/// 3) sync Mutex
+/// 4) chain RwLock
 pub type LocalNodeRef = Arc<Mutex<LocalNode>>;
 
 /// Local synchronization node
@@ -23,19 +28,19 @@ pub struct LocalNode {
 	/// Synchronization chain
 	chain: ChainRef,
 	/// Synchronization process
-	sync: Synchronization,
+	sync: SynchronizationRef,
 }
 
 impl LocalNode {
 	/// New synchronization node with given storage
 	pub fn new(storage: Arc<db::Store>) -> LocalNodeRef {
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
-		let verification_worker = VerificationWorker::new(storage, chain.clone());
+		let sync = Synchronization::new(SynchronizationConfig::default(), chain.clone());
 		Arc::new(Mutex::new(LocalNode {
 			peer_counter: 0,
 			peers: HashMap::new(),
 			chain: chain.clone(),
-			sync: Synchronization::new(chain, verification_worker),
+			sync: sync,
 		}))
 	}
 
@@ -80,8 +85,12 @@ impl LocalNode {
 
 		// if there are unknown blocks => start synchronizing with peer
 		if !unknown_blocks.is_empty() {
-			self.sync.on_unknown_blocks(peer_index, unknown_blocks);
-			self.execute_synchronization_tasks();
+			let synchronization_tasks = {
+				let mut sync = self.sync.lock();
+				sync.on_unknown_blocks(peer_index, unknown_blocks);
+				sync.get_synchronization_tasks()
+			};
+			self.execute_synchronization_tasks(synchronization_tasks);
 		}
 
 		// TODO: process unknown transactions, etc...
@@ -102,10 +111,16 @@ impl LocalNode {
 	pub fn on_peer_transaction(&mut self, _peer_index: usize, _message: types::Tx) {
 	}
 
-	pub fn on_peer_block(&mut self, _peer_index: usize, message: types::Block) {
+	pub fn on_peer_block(&mut self, peer_index: usize, message: types::Block) {
+		trace!(target: "sync", "Got `block` message from peer#{}. Block hash: {}", peer_index, message.block.hash());
+
 		// try to process new block
-		self.sync.on_peer_block(_peer_index, message.block);
-		self.execute_synchronization_tasks();
+		let synhcronization_tasks = {
+			let mut sync = self.sync.lock();
+			sync.on_peer_block(peer_index, message.block);
+			sync.get_synchronization_tasks()
+		};
+		self.execute_synchronization_tasks(synhcronization_tasks);
 	}
 
 	pub fn on_peer_headers(&mut self, peer_index: usize, _message: types::Headers) {
@@ -156,8 +171,8 @@ impl LocalNode {
 		trace!(target: "sync", "Got `blocktxn` message from peer#{}", peer_index);
 	}
 
-	fn execute_synchronization_tasks(&mut self) {
-		for task in self.sync.get_synchronization_tasks() {
+	fn execute_synchronization_tasks(&mut self, tasks: Vec<SynchronizationTask>) {
+		for task in tasks {
 			self.execute_synchronization_task(task)
 		}
 	}
@@ -196,7 +211,6 @@ impl LocalNode {
 					Some(connection) => {
 						let connection = &mut *connection.lock();
 						trace!(target: "sync", "Querying full inventory from peer#{}", peer_index);
-						trace!(target: "sync", "Synchronization state: sync = {:?}", self.sync.information());
 						connection.send_getblocks(&getblocks);
 					},
 					_ => (),
@@ -214,7 +228,6 @@ impl LocalNode {
 					Some(connection) => {
 						let connection = &mut *connection.lock();
 						trace!(target: "sync", "Querying best inventory from peer#{}", peer_index);
-						trace!(target: "sync", "Synchronization state: {:?}", self.sync.information());
 						connection.send_getblocks(&getblocks);
 					},
 					_ => (),

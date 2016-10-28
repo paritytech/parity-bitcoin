@@ -83,6 +83,11 @@ impl Peers {
 	pub fn on_inventory_requested(&mut self, _peer_index: usize) {
 		// TODO
 	}
+
+	/// Reset peers state
+	pub fn reset(&mut self) {
+		self.idle_peers.extend(self.blocks_requests.drain().map(|(k, _)| k));
+	}
 }
 
 #[cfg(test)]

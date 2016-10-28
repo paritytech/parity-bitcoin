@@ -17,4 +17,3 @@ pub mod local_node;
 mod synchronization;
 mod synchronization_chain;
 mod synchronization_peers;
-mod verification_worker;

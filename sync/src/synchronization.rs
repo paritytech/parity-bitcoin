@@ -1,12 +1,18 @@
+use std::thread;
+use std::sync::Arc;
 use std::cmp::{min, max};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::sync::mpsc::{channel, Sender, Receiver};
+use parking_lot::Mutex;
+use db;
 use chain::{Block, RepresentH256};
 use primitives::hash::H256;
 use hash_queue::HashPosition;
 use synchronization_peers::{Peers, Information as PeersInformation};
 use synchronization_chain::{ChainRef, Information as ChainInformation, BlockState};
-use verification_worker::VerificationWorker;
+use verification::{ChainVerifier, Error as VerificationError, Verify};
+use time;
 
 ///! Blocks synchronization process:
 ///!
@@ -57,7 +63,6 @@ use verification_worker::VerificationWorker;
 ///! TODO: spawn management thread [watch for not-stalling sync]
 ///! TODO: check + optimize algorithm for Saturated state
 
-
 /// Approximate maximal number of blocks hashes in scheduled queue.
 const MAX_SCHEDULED_HASHES: u64 = 4 * 1024;
 /// Approximate maximal number of blocks hashes in requested queue.
@@ -68,6 +73,9 @@ const MAX_VERIFYING_BLOCKS: u64 = 512;
 const MIN_BLOCKS_IN_REQUEST: u64 = 32;
 /// Maximum number of blocks to request from peer
 const MAX_BLOCKS_IN_REQUEST: u64 = 512;
+
+/// Thread-safe reference to the `Synchronization`
+pub type SynchronizationRef = Arc<Mutex<Synchronization>>;
 
 /// Synchronization task for the peer.
 #[derive(Debug, Eq, PartialEq)]
@@ -82,7 +90,7 @@ pub enum Task {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum State {
-	Synchronizing,
+	Synchronizing(time::Tm, u64),
 	Saturated,
 }
 
@@ -99,6 +107,21 @@ pub struct Information {
 	pub orphaned: usize,
 }
 
+/// Verification thread tasks
+enum VerificationTask {
+	/// Verify single block
+	VerifyBlock(Block),
+	/// Stop verification thread
+	Stop,
+}
+
+/// Synchronization config
+#[derive(Default)]
+pub struct Config {
+	/// Skip blocks verification
+	pub skip_block_verification: bool,
+} 
+
 /// New blocks synchronization process.
 pub struct Synchronization {
 	/// Synchronization state.
@@ -107,22 +130,64 @@ pub struct Synchronization {
 	peers: Peers,
 	/// Chain reference.
 	chain: ChainRef,
-	/// Verification worker
-	verification_worker: VerificationWorker,
 	/// Blocks from requested_hashes, but received out-of-order.
 	orphaned_blocks: HashMap<H256, Block>,
+	/// Verification work transmission channel.
+	verification_work_sender: Option<Sender<VerificationTask>>,
+	/// Verification thread.
+	verification_worker_thread: Option<thread::JoinHandle<()>>,
+}
+
+impl State {
+	pub fn is_synchronizing(&self) -> bool {
+		match self {
+			&State::Synchronizing(_, _) => true,
+			_ => false,
+		}
+	}
+}
+
+impl Drop for Synchronization {
+	fn drop(&mut self) {
+		if let Some(join_handle) = self.verification_worker_thread.take() {
+			self.verification_work_sender
+				.take()
+				.expect("Some(join_handle) => Some(verification_work_sender)")
+				.send(VerificationTask::Stop).expect("TODO");
+			join_handle.join().expect("Clean shutdown.");
+		}
+	}
 }
 
 impl Synchronization {
 	/// Create new synchronization window
-	pub fn new(chain: ChainRef, verification_worker: VerificationWorker) -> Synchronization {
-		Synchronization {
-			state: State::Saturated,
-			peers: Peers::new(),
-			chain: chain,
-			verification_worker: verification_worker,
-			orphaned_blocks: HashMap::new(),
+	pub fn new(config: Config, chain: ChainRef) -> SynchronizationRef {
+		let sync = SynchronizationRef::new(Mutex::new(
+			Synchronization {
+				state: State::Saturated,
+				peers: Peers::new(),
+				chain: chain.clone(),
+				orphaned_blocks: HashMap::new(),
+				verification_work_sender: None,
+				verification_worker_thread: None,
+			}
+		));
+
+		if !config.skip_block_verification {
+			let (verification_work_sender, verification_work_receiver) = channel();
+			let csync = sync.clone();
+			let mut lsync = sync.lock();
+			let storage = chain.read().storage();
+			lsync.verification_work_sender = Some(verification_work_sender);
+			lsync.verification_worker_thread = Some(thread::Builder::new()
+				.name("Sync verification thread".to_string())
+				.spawn(move || {
+					Synchronization::verification_worker_proc(csync, storage, verification_work_receiver)
+				})
+				.expect("Error creating verification thread"));
 		}
+
+		sync
 	}
 
 	/// Get information on current synchronization state.
@@ -150,11 +215,11 @@ impl Synchronization {
 		//  ---+---------+--------+---  [10]
 
 		// new block is requested => move to synchronizing state
-		self.state = State::Synchronizing;
+		let mut chain = self.chain.write();
+		self.state = State::Synchronizing(time::now_utc(), chain.best_block().height);
 
 		// when synchronization is idling
 		// => request full inventory
-		let mut chain = self.chain.write();
 		if !chain.has_blocks_of_state(BlockState::Scheduled)
 			&& !chain.has_blocks_of_state(BlockState::Requested) {
 			chain.schedule_blocks_hashes(peer_hashes);
@@ -209,7 +274,7 @@ impl Synchronization {
 			return;
 		}
 
-		// requeste block is received => move to saturated state if there are no more blocks
+		// requested block is received => move to saturated state if there are no more blocks
 		if !chain.has_blocks_of_state(BlockState::Scheduled)
 			&& !chain.has_blocks_of_state(BlockState::Requested) {
 			self.state = State::Saturated;
@@ -217,15 +282,45 @@ impl Synchronization {
 
 		// check if this block is next block in the blockchain
 		if block_position == HashPosition::Front {
-			// this is next block in the blockchain => queue for verification
-			chain.verify_and_insert_block(&self.verification_worker, block_hash.clone(), block);
+			// check if this parent of this block is current best_block
+			let expecting_previous_header_hash = chain.best_block_of_state(BlockState::Verifying)
+				.unwrap_or_else(|| {
+					chain.best_block_of_state(BlockState::Stored)
+						.expect("storage with genesis block is required")
+				}).hash;
+			if block.block_header.previous_header_hash != expecting_previous_header_hash {
+				// TODO: penalize peer
+				warn!(target: "sync", "Out-of-order block {:?} was dropped. Expecting block with parent hash {:?}", block_hash, expecting_previous_header_hash);
+				return;
+			}
 
-			// check orphaned blocks
-			let mut orphaned_parent_hash = block_hash;
-			while let Entry::Occupied(orphaned_block_entry) = self.orphaned_blocks.entry(orphaned_parent_hash) {
-				let (_, orphaned_block) = orphaned_block_entry.remove_entry();
-				orphaned_parent_hash = orphaned_block.hash();
-				chain.verify_and_insert_block(&self.verification_worker, orphaned_parent_hash.clone(), orphaned_block);
+			// this is next block in the blockchain => queue for verification
+			// also unwrap all dependent orphan blocks
+			let mut current_block = block;
+			let mut current_block_hash = block_hash;
+			loop {
+				match self.verification_work_sender {
+					Some(ref verification_work_sender) => {
+						chain.verify_block_hash(current_block_hash.clone());
+						verification_work_sender
+							.send(VerificationTask::VerifyBlock(current_block))
+							.expect("Verification thread have the same lifetime as `Synchronization`");
+					},
+					None => {
+						chain.insert_best_block(current_block)
+							.expect("Error inserting to db.");
+					}
+				};
+
+				// proceed to the next orphaned block
+				if let Entry::Occupied(orphaned_block_entry) = self.orphaned_blocks.entry(current_block_hash) {
+					let (orphaned_parent_hash, orphaned_block) = orphaned_block_entry.remove_entry();
+					current_block_hash = orphaned_parent_hash;
+					current_block = orphaned_block;
+				}
+				else {
+					break;
+				}
 			}
 
 			return;
@@ -239,11 +334,26 @@ impl Synchronization {
 	pub fn get_synchronization_tasks(&mut self) -> Vec<Task> {
 		let mut tasks: Vec<Task> = Vec::new();
 
-		// check if we can query some blocks hashes
+		// display information if processed many blocks || enough time has passed since sync start
 		let mut chain = self.chain.write();
+		if let State::Synchronizing(timestamp, num_of_blocks) = self.state {
+			let new_timestamp = time::now_utc();
+			let timestamp_diff = new_timestamp - timestamp;
+			let new_num_of_blocks = chain.best_block().height;
+			let blocks_diff = if new_num_of_blocks > num_of_blocks { new_num_of_blocks - num_of_blocks} else { 0 };
+			if timestamp_diff.num_minutes() > 1 || blocks_diff > 1000 {
+				self.state = State::Synchronizing(new_timestamp, new_num_of_blocks);
+
+				info!(target: "sync", "Processed {} blocks in {} seconds. Chain information: {:?}"
+					, blocks_diff, timestamp_diff.num_seconds()
+					, chain.information());
+			}
+		}
+
+		// check if we can query some blocks hashes
 		let scheduled_hashes_len = chain.length_of_state(BlockState::Scheduled);
 		if scheduled_hashes_len < MAX_SCHEDULED_HASHES {
-			if self.state == State::Synchronizing {
+			if self.state.is_synchronizing() {
 				if let Some(idle_peer) = self.peers.idle_peer() {
 					tasks.push(Task::RequestBestInventory(idle_peer));
 					self.peers.on_inventory_requested(idle_peer);
@@ -281,9 +391,58 @@ impl Synchronization {
 		tasks
 	}
 
-	#[cfg(test)]
-	pub fn wait_idle(&mut self) {
-		self.verification_worker.finish_and_stop();
+	/// Reset synchronization process
+	pub fn reset(&mut self) {
+		self.peers.reset();
+		self.orphaned_blocks.clear();
+		// TODO: reset verification queue
+
+		let mut chain = self.chain.write();
+		self.state = State::Synchronizing(time::now_utc(), chain.best_block().height);
+		chain.remove_blocks_with_state(BlockState::Requested);
+		chain.remove_blocks_with_state(BlockState::Scheduled);
+		chain.remove_blocks_with_state(BlockState::Verifying);
+	}
+
+	/// Thread procedure for handling verification tasks
+	fn verification_worker_proc(sync: SynchronizationRef, storage: Arc<db::Store>, work_receiver: Receiver<VerificationTask>) {
+		let verifier = ChainVerifier::new(storage);
+		while let Ok(task) = work_receiver.recv() {
+			match task {
+				VerificationTask::VerifyBlock(block) => {
+					match verifier.verify(&block) {
+						Ok(_chain) => {
+							sync.lock().on_block_verification_success(block)
+						},
+						Err(err) => {
+							sync.lock().on_block_verification_error(&err, &block.hash())
+						}
+					}
+				},
+				_ => break,
+			}
+		}
+	}
+
+	/// Process successful block verification
+	fn on_block_verification_success(&mut self, block: Block) {
+		let hash = block.hash();
+		let mut chain = self.chain.write();
+
+		// remove from verifying queue
+		assert_eq!(chain.remove_block_with_state(&hash, BlockState::Verifying), HashPosition::Front);
+
+		// insert to storage
+		chain.insert_best_block(block)
+			.expect("Error inserting to db.");
+	}
+
+	/// Process failed block verification
+	fn on_block_verification_error(&mut self, err: &VerificationError, hash: &H256) {
+		warn!(target: "sync", "Block {:?} verification failed with error {:?}", hash, err);
+
+		// reset synchronization process
+		self.reset();
 	}
 }
 
@@ -292,22 +451,22 @@ mod tests {
 	use std::sync::Arc;
 	use parking_lot::RwLock;
 	use chain::{Block, RepresentH256};
-	use super::{Synchronization, State, Task};
+	use super::{Synchronization, SynchronizationRef, Config, State, Task};
 	use synchronization_chain::{Chain, ChainRef};
-	use verification_worker::VerificationWorker;
 	use db;
 
-	fn create_sync() -> Synchronization {
+	fn create_sync() -> SynchronizationRef {
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
-		let verification_worker = VerificationWorker::new(storage, chain.clone());
-		let sync = Synchronization::new(chain, verification_worker);
-		sync
+		Synchronization::new(Config {
+			skip_block_verification: true,
+		}, chain)
 	} 
 
 	#[test]
 	fn synchronization_saturated_on_start() {
 		let sync = create_sync();
+		let sync = sync.lock();
 		let info = sync.information();
 		assert_eq!(info.state, State::Saturated);
 		assert_eq!(info.orphaned, 0);
@@ -315,13 +474,14 @@ mod tests {
 
 	#[test]
 	fn synchronization_in_order_block_path() {
-		let mut sync = create_sync();
+		let sync = create_sync();
 
+		let mut sync = sync.lock();
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
 
 		sync.on_unknown_blocks(5, vec![block1.hash()]);
-		assert_eq!(sync.information().state, State::Synchronizing);
+		assert!(sync.information().state.is_synchronizing());
 		assert_eq!(sync.information().orphaned, 0);
 		assert_eq!(sync.information().chain.scheduled, 1);
 		assert_eq!(sync.information().chain.requested, 0);
@@ -333,7 +493,7 @@ mod tests {
 		assert_eq!(tasks.len(), 2);
 		assert_eq!(tasks[0], Task::RequestBestInventory(5));
 		assert_eq!(tasks[1], Task::RequestBlocks(5, vec![block1.hash()]));
-		assert_eq!(sync.information().state, State::Synchronizing);
+		assert!(sync.information().state.is_synchronizing());
 		assert_eq!(sync.information().orphaned, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 1);
@@ -343,7 +503,7 @@ mod tests {
 
 		// push unknown block => nothing should change
 		sync.on_peer_block(5, block2);
-		assert_eq!(sync.information().state, State::Synchronizing);
+		assert!(sync.information().state.is_synchronizing());
 		assert_eq!(sync.information().orphaned, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 1);
@@ -353,7 +513,6 @@ mod tests {
 
 		// push requested block => should be moved to the test storage
 		sync.on_peer_block(5, block1);
-		sync.wait_idle();
 		assert_eq!(sync.information().state, State::Saturated);
 		assert_eq!(sync.information().orphaned, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
@@ -365,7 +524,8 @@ mod tests {
 
 	#[test]
 	fn synchronization_out_of_order_block_path() {
-		let mut sync = create_sync();
+		let sync = create_sync();
+		let mut sync = sync.lock();
 
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
 
