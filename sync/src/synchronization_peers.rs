@@ -14,6 +14,7 @@ pub struct Peers {
 }
 
 /// Information on synchronization peers
+#[cfg(test)]
 #[derive(Debug)]
 pub struct Information {
 	/// Number of currently idle synchronization peers.
@@ -31,6 +32,7 @@ impl Peers {
 	}
 
 	/// Get information on synchronization peers
+	#[cfg(test)]
 	pub fn information(&self) -> Information {
 		Information {
 			idle: self.idle_peers.len(),

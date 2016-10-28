@@ -9,8 +9,11 @@ use db;
 use chain::{Block, RepresentH256};
 use primitives::hash::H256;
 use hash_queue::HashPosition;
-use synchronization_peers::{Peers, Information as PeersInformation};
-use synchronization_chain::{ChainRef, Information as ChainInformation, BlockState};
+use synchronization_peers::Peers;
+#[cfg(test)] use synchronization_peers::{Information as PeersInformation};
+use synchronization_chain::{ChainRef, BlockState};
+#[cfg(test)]
+use synchronization_chain::{Information as ChainInformation};
 use verification::{ChainVerifier, Error as VerificationError, Verify};
 use time;
 
@@ -95,6 +98,7 @@ pub enum State {
 }
 
 /// Information on current synchronization state.
+#[cfg(test)]
 #[derive(Debug)]
 pub struct Information {
 	/// Current synchronization state.
@@ -191,6 +195,7 @@ impl Synchronization {
 	}
 
 	/// Get information on current synchronization state.
+	#[cfg(test)]
 	pub fn information(&self) -> Information {
 		Information {
 			state: self.state,
