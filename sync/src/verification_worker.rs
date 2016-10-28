@@ -16,7 +16,7 @@ pub struct VerificationWorker {
 
 /// Verification thread tasks
 enum VerificationTask {
-	/// Verify single lock
+	/// Verify single block
 	VerifyBlock(Block),
 	/// Stop verification thread
 	Stop,
