@@ -102,6 +102,11 @@ impl HashQueue {
 		// unreachable because hash is not missing, not at the front and not inside
 		unreachable!()
 	}
+
+	pub fn remove_all(&mut self) {
+		self.queue.clear();
+		self.set.clear();
+	}
 }
 
 impl Index<usize> for HashQueue {
@@ -130,6 +135,11 @@ impl HashQueueChain {
 
 	pub fn is_empty_at(&self, chain_index: usize) -> bool {
 		self.chain[chain_index].is_empty()
+	}
+
+	pub fn back_at(&self, chain_index: usize) -> Option<H256> {
+		let ref queue = self.chain[chain_index];
+		queue.back().cloned()
 	}
 
 	pub fn back(&self) -> Option<H256> {
@@ -165,12 +175,20 @@ impl HashQueueChain {
 		self.chain[queue_index].pop_front_n(n)
 	}
 
+	pub fn push_back_at(&mut self, queue_index: usize, hash: H256) {
+		self.chain[queue_index].push_back(hash)
+	}
+
 	pub fn push_back_n_at(&mut self, queue_index: usize, hashes: Vec<H256>) {
 		self.chain[queue_index].push_back_n(hashes)
 	}
 
 	pub fn remove_at(&mut self, queue_index: usize, hash: &H256) -> HashPosition {
 		self.chain[queue_index].remove(hash)
+	}
+
+	pub fn remove_all_at(&mut self, queue_index: usize) {
+		self.chain[queue_index].remove_all();
 	}
 }
 
