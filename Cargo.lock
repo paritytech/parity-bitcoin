@@ -567,12 +567,12 @@ version = "0.1.0"
 dependencies = [
  "chain 0.1.0",
  "db 0.1.0",
- "linked-hash-map 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "message 0.1.0",
  "p2p 0.1.0",
  "parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
+ "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
  "verification 0.1.0",
 ]
 

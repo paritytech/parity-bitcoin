@@ -1,11 +1,10 @@
 use std::sync::Arc;
 use parking_lot::RwLock;
-use chain::Block;
+use chain::{Block, RepresentH256};
 use db;
 use primitives::hash::H256;
 use best_block::BestBlock;
 use hash_queue::{HashQueueChain, HashPosition};
-use verification;
 
 /// Thread-safe reference to `Chain`
 pub type ChainRef = Arc<RwLock<Chain>>;
@@ -59,8 +58,6 @@ pub struct Chain {
 	best_storage_block_hash: H256,
 	/// Local blocks storage
 	storage: Arc<db::Store>,
-	/// Verification queue
-	verification_queue: verification::Queue,
 	/// In-memory queue of blocks hashes
 	hash_chain: HashQueueChain,
 }
@@ -96,42 +93,10 @@ impl Chain {
 		let best_storage_block_hash = storage.block_hash(best_storage_block_number)
 			.expect("checked above");
 
-		// default verification queue
-		let verifier = Box::new(verification::ChainVerifier::new(storage.clone()));
-		let verification_queue = verification::Queue::new(verifier);
-
 		Chain {
 			genesis_block_hash: genesis_block_hash,
 			best_storage_block_hash: best_storage_block_hash,
 			storage: storage,
-			verification_queue: verification_queue,
-			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
-		}
-	}
-
-	#[cfg(test)]
-	/// Create new `Chain` with in-memory test storage
-	pub fn with_test_storage() -> Self {
-		use db::Store;
-
-		// we only work with storages with genesis block
-		let storage = Arc::new(db::TestStorage::with_genesis_block());
-		let genesis_block_hash = storage.block_hash(0)
-			.expect("storage with genesis block is required");
-		let best_storage_block_number = storage.best_block_number()
-			.expect("non-empty storage is required");
-		let best_storage_block_hash = storage.block_hash(best_storage_block_number)
-			.expect("checked above");
-
-		// default verification queue
-		let verifier = Box::new(verification::ChainVerifier::new(storage.clone()));
-		let verification_queue = verification::Queue::new(verifier);
-
-		Chain {
-			genesis_block_hash: genesis_block_hash,
-			best_storage_block_hash: best_storage_block_hash,
-			storage: storage,
-			verification_queue: verification_queue,
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
 		}
 	}
@@ -144,6 +109,11 @@ impl Chain {
 			verifying: self.hash_chain.len_of(VERIFYING_QUEUE) as u64,
 			stored: self.storage.best_block_number().map_or(0, |number| number as u64 + 1),
 		}
+	}
+
+	/// Get storage
+	pub fn storage(&self) -> Arc<db::Store> {
+		self.storage.clone()
 	}
 
 	/// Get number of blocks in given state
@@ -168,6 +138,41 @@ impl Chain {
 				height: storage_best_block_number as u64,
 				hash: self.storage.block_hash(storage_best_block_number).expect("storage with genesis block is required"),
 			}
+		}
+	}
+
+	/// Get best block of given state
+	pub fn best_block_of_state(&self, state: BlockState) -> Option<BestBlock> {
+		match state {
+			BlockState::Scheduled => self.hash_chain.back_at(SCHEDULED_QUEUE)
+				.map(|hash| BestBlock {
+					hash: hash,
+					height: self.storage.best_block_number().expect("storage with genesis block is required") as u64 + 1
+						+ self.hash_chain.len_of(VERIFYING_QUEUE) as u64
+						+ self.hash_chain.len_of(REQUESTED_QUEUE) as u64
+						+ self.hash_chain.len_of(SCHEDULED_QUEUE) as u64
+				}),
+			BlockState::Requested => self.hash_chain.back_at(REQUESTED_QUEUE)
+				.map(|hash| BestBlock {
+					hash: hash,
+					height: self.storage.best_block_number().expect("storage with genesis block is required") as u64 + 1
+						+ self.hash_chain.len_of(VERIFYING_QUEUE) as u64
+						+ self.hash_chain.len_of(REQUESTED_QUEUE) as u64
+				}),
+			BlockState::Verifying => self.hash_chain.back_at(VERIFYING_QUEUE)
+				.map(|hash| BestBlock {
+					hash: hash,
+					height: self.storage.best_block_number().expect("storage with genesis block is required") as u64 + 1
+						+ self.hash_chain.len_of(VERIFYING_QUEUE) as u64
+				}),
+			BlockState::Stored => {
+					let storage_best_block_number = self.storage.best_block_number().expect("storage with genesis block is required");
+					Some(BestBlock {
+						height: storage_best_block_number as u64,
+						hash: self.storage.block_hash(storage_best_block_number).expect("storage with genesis block is required"),
+					})
+				},
+			_ => panic!("not supported"),
 		}
 	}
 
@@ -196,7 +201,18 @@ impl Chain {
 
 	/// Prepare best block locator hashes
 	pub fn best_block_locator_hashes(&self) -> Vec<H256> {
-		vec![self.best_block().hash]
+		let mut result: Vec<H256> = Vec::with_capacity(4);
+		if let Some(best_block) = self.hash_chain.back_at(SCHEDULED_QUEUE) {
+			result.push(best_block);
+		}
+		if let Some(best_block) = self.hash_chain.back_at(REQUESTED_QUEUE) {
+			result.push(best_block);
+		}
+		if let Some(best_block) = self.hash_chain.back_at(VERIFYING_QUEUE) {
+			result.push(best_block);
+		}
+		result.push(self.best_storage_block_hash.clone());
+		result
 	}
 
 	/// Prepare block locator hashes, as described in protocol documentation:
@@ -226,6 +242,11 @@ impl Chain {
 		scheduled
 	}
 
+	/// Add block to verifying queue
+	pub fn verify_block_hash(&mut self, hash: H256) {
+		self.hash_chain.push_back_at(VERIFYING_QUEUE, hash);
+	}
+
 	/// Moves n blocks from requested queue to verifying queue
 	#[cfg(test)]
 	pub fn verify_blocks_hashes(&mut self, n: u64) -> Vec<H256> {
@@ -234,53 +255,27 @@ impl Chain {
 		requested
 	}
 
-	/// Schedule block for verification
-	pub fn verify_and_insert_block(&mut self, hash: H256, block: Block) {
-		// TODO: add another basic verifications here (use verification package)
-		// TODO: return error if basic verification failed && reset synchronization state
+	/// Insert new best block to storage
+	pub fn insert_best_block(&mut self, block: Block) -> Result<(), db::Error> {
 		if block.block_header.previous_header_hash != self.best_storage_block_hash {
-			// TODO: penalize peer
-			// if let Some(peer_index) = peer_index {
-			//	peers.on_wrong_block_received(peer_index);
-			// }
-			trace!(target: "sync", "Out-of order block dropped: {:?}", hash);
-			return;
+			return Err(db::Error::DB("Trying to insert out-of-order block".into()));
 		}
 
-		// TODO: currently verification fails on first ~500 blocks
-		// TODO: async verification
-		match self.verification_queue.push(block) {
-			Err(err) => {
-				// TODO: penalize peer
-				trace!(target: "sync", "Cannot push block {:?} to verification queue: {:?}", hash, err);
-				unimplemented!();
-			},
-			_ => (),
-		}
-		self.verification_queue.process();
-		match self.verification_queue.pop_valid() {
-			Some((hash, block)) => {
-				// TODO: check block.chain here when working on forks
-				match self.storage.insert_block(&block.block) {
-					Err(err) => {
-						trace!(target: "sync", "Cannot insert block {:?} to database: {:?}", hash, err);
-						unimplemented!();
-					},
-					_ => {
-						self.best_storage_block_hash = hash;
-					},
-				}
-			},
-			_ => {
-				trace!(target: "sync", "Error verifying block {:?}: {:?}", hash, self.verification_queue.block_status(&hash));
-				unimplemented!();
-			},
-		}
+		// remember new best block hash
+		self.best_storage_block_hash = block.hash();
+
+		// insert to storage
+		self.storage.insert_block(&block)
 	}
 
 	/// Remove block by hash if it is currently in given state
 	pub fn remove_block_with_state(&mut self, hash: &H256, state: BlockState) -> HashPosition {
 		self.hash_chain.remove_at(state.to_queue_index(), hash)
+	}
+
+	/// Remove all blocks with given state
+	pub fn remove_blocks_with_state(&mut self, state: BlockState) {
+		self.hash_chain.remove_all_at(state.to_queue_index());
 	}
 
 	/// Calculate block locator hashes for hash queue
@@ -331,25 +326,27 @@ impl Chain {
 
 #[cfg(test)]
 mod tests {
+	use std::sync::Arc;
 	use chain::{Block, RepresentH256};
 	use super::Chain;
+	use db;
 
 	#[test]
 	fn chain_block_locator_hashes() {
-		let mut chain = Chain::with_test_storage();
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
 		let genesis_hash = chain.best_block().hash;
 		assert_eq!(chain.block_locator_hashes(), vec![genesis_hash.clone()]);
 
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
 		let block1_hash = block1.hash();
 
-		chain.verify_and_insert_block(block1.hash(), block1);
+		chain.insert_best_block(block1).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block1_hash.clone(), genesis_hash.clone()]);
 
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
 		let block2_hash = block2.hash();
 
-		chain.verify_and_insert_block(block2.hash(), block2);
+		chain.insert_best_block(block2).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
 
 		chain.schedule_blocks_hashes(vec![
@@ -368,7 +365,7 @@ mod tests {
 		chain.request_blocks_hashes(10);
 		chain.verify_blocks_hashes(10);
 
-		assert_eq!(chain.best_block_locator_hashes(), vec!["0000000000000000000000000000000000000000000000000000000000000010".into()]);
+		assert_eq!(chain.best_block_locator_hashes()[0], "0000000000000000000000000000000000000000000000000000000000000010".into());
 		assert_eq!(chain.block_locator_hashes(), vec![
 			"0000000000000000000000000000000000000000000000000000000000000010".into(),
 			"0000000000000000000000000000000000000000000000000000000000000009".into(),
@@ -394,7 +391,7 @@ mod tests {
 		]);
 		chain.request_blocks_hashes(10);
 
-		assert_eq!(chain.best_block_locator_hashes(), vec!["0000000000000000000000000000000000000000000000000000000000000016".into()]);
+		assert_eq!(chain.best_block_locator_hashes()[0], "0000000000000000000000000000000000000000000000000000000000000016".into());
 		assert_eq!(chain.block_locator_hashes(), vec![
 			"0000000000000000000000000000000000000000000000000000000000000016".into(),
 			"0000000000000000000000000000000000000000000000000000000000000015".into(),
@@ -417,7 +414,7 @@ mod tests {
 			"0000000000000000000000000000000000000000000000000000000000000022".into(),
 		]);
 
-		assert_eq!(chain.best_block_locator_hashes(), vec!["0000000000000000000000000000000000000000000000000000000000000022".into()]);
+		assert_eq!(chain.best_block_locator_hashes()[0], "0000000000000000000000000000000000000000000000000000000000000022".into());
 		assert_eq!(chain.block_locator_hashes(), vec![
 			"0000000000000000000000000000000000000000000000000000000000000022".into(),
 			"0000000000000000000000000000000000000000000000000000000000000021".into(),
