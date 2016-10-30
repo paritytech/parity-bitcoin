@@ -64,7 +64,7 @@ impl LocalNode {
 
 		// request inventory from peer
 		self.executor.lock().execute(SynchronizationTask::RequestInventory(peer_index));
-	} 
+	}
 
 	pub fn on_peer_inventory(&self, peer_index: usize, message: types::Inv) {
 		trace!(target: "sync", "Got `inventory` message from peer#{}. Inventory len: {}", peer_index, message.inventory.len());
@@ -78,7 +78,7 @@ impl LocalNode {
 		let unknown_blocks: Vec<_> = {
 			let chain = self.chain.read();
 			message.inventory.iter()
-				.filter(|item| InventoryType::from_u32(item.inv_type) == Some(InventoryType::MessageBlock))
+				.filter(|item| item.inv_type == InventoryType::MessageBlock)
 				.filter(|item| chain.block_state(&item.hash) == BlockState::Unknown)
 				.map(|item| item.hash.clone())
 				.collect()
