@@ -1,3 +1,4 @@
+use std::io;
 use bytes::Bytes;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use hash::{H32, H48, H96, H160, H256, H264, H512, H520};
@@ -90,7 +91,7 @@ impl Serializable for u64 {
 
 impl Deserializable for bool {
 	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
 		let value = try!(reader.read_u8());
 		match value {
 			0 => Ok(false),
@@ -102,42 +103,42 @@ impl Deserializable for bool {
 
 impl Deserializable for i32 {
 	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
 		Ok(try!(reader.read_i32::<LittleEndian>()))
 	}
 }
 
 impl Deserializable for i64 {
 	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
 		Ok(try!(reader.read_i64::<LittleEndian>()))
 	}
 }
 
 impl Deserializable for u8 {
 	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
 		Ok(try!(reader.read_u8()))
 	}
 }
 
 impl Deserializable for u16 {
 	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
 		Ok(try!(reader.read_u16::<LittleEndian>()))
 	}
 }
 
 impl Deserializable for u32 {
 	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
 		Ok(try!(reader.read_u32::<LittleEndian>()))
 	}
 }
 
 impl Deserializable for u64 {
 	#[inline]
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
 		Ok(try!(reader.read_u64::<LittleEndian>()))
 	}
 }
@@ -158,7 +159,7 @@ impl Serializable for String {
 }
 
 impl Deserializable for String {
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
 		let bytes: Bytes = try!(reader.read());
 		Ok(String::from_utf8_lossy(&bytes).into_owned())
 	}
@@ -178,10 +179,9 @@ macro_rules! impl_ser_for_hash {
 		}
 
 		impl Deserializable for $name {
-			fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
-				let slice = try!(reader.read_slice($size));
+			fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
 				let mut result = Self::default();
-				result.copy_from_slice(slice);
+				try!(reader.read_slice(&mut *result));
 				Ok(result)
 			}
 		}
@@ -211,16 +211,18 @@ impl Serializable for Bytes {
 }
 
 impl Deserializable for Bytes {
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
 		let len = try!(reader.read::<CompactInteger>());
-		reader.read_slice(len.into()).map(|b| b.to_vec().into())
+		let mut bytes = Bytes::new_with_len(len.into());
+		try!(reader.read_slice(&mut bytes));
+		Ok(bytes)
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use bytes::Bytes;
-	use {serialize, deserialize, Stream, Reader, Error};
+	use {serialize, deserialize, deserialize_iterator, Stream, Reader, Error};
 
 	#[test]
 	fn test_reader_read() {
@@ -239,6 +241,19 @@ mod tests {
 		assert_eq!(4u64, reader.read().unwrap());
 		assert!(reader.is_finished());
 		assert_eq!(Error::UnexpectedEnd, reader.read::<u8>().unwrap_err());
+	}
+
+	#[test]
+	fn test_reader_iterator() {
+		let buffer = vec![
+			1u8, 0,
+			2, 0,
+			3, 0,
+			4, 0,
+		];
+
+		let result = deserialize_iterator(&buffer as &[u8]).collect::<Result<Vec<u16>, _>>().unwrap();
+		assert_eq!(result, vec![1u16, 2, 3, 4]);
 	}
 
 	#[test]
@@ -265,7 +280,7 @@ mod tests {
 	fn test_bytes_deserialize() {
 		let raw: Bytes = "020145".into();
 		let expected: Bytes = "0145".into();
-		assert_eq!(expected, deserialize(&raw).unwrap());
+		assert_eq!(expected, deserialize(raw.as_ref()).unwrap());
 	}
 
 	#[test]
@@ -289,10 +304,10 @@ mod tests {
 	fn test_string_deserialize() {
 		let raw: Bytes = "0776657273696f6e".into();
 		let expected: String = "version".into();
-		assert_eq!(expected, deserialize::<String>(&raw).unwrap());
+		assert_eq!(expected, deserialize::<_, String>(raw.as_ref()).unwrap());
 		let raw: Bytes = "00".into();
 		let expected: String = "".into();
-		assert_eq!(expected, deserialize::<String>(&raw).unwrap());
+		assert_eq!(expected, deserialize::<_, String>(raw.as_ref()).unwrap());
 	}
 
 	#[test]

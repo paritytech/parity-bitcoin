@@ -1,14 +1,21 @@
-use std::{io, cmp};
+use std::{io, marker};
 use compact_integer::CompactInteger;
 
-pub fn deserialize<T>(buffer: &[u8]) -> Result<T, Error> where T: Deserializable {
-	let mut reader = Reader::new(buffer);
+pub fn deserialize<R, T>(buffer: R) -> Result<T, Error> where R: io::Read, T: Deserializable {
+	let mut reader = Reader::from_read(buffer);
 	let result = try!(reader.read());
-	if !reader.is_finished() {
-		return Err(Error::UnreadData);
-	}
 
-	Ok(result)
+	match reader.is_finished() {
+		false => Err(Error::UnreadData),
+		true => Ok(result),
+	}
+}
+
+pub fn deserialize_iterator<R, T>(buffer: R) -> ReadIterator<R, T> where R: io::Read, T: Deserializable {
+	ReadIterator {
+		reader: Reader::from_read(buffer),
+		iter_type: marker::PhantomData,
+	}
 }
 
 #[derive(Debug, PartialEq)]
@@ -25,29 +32,50 @@ impl From<io::Error> for Error {
 }
 
 pub trait Deserializable {
-	fn deserialize(reader: &mut Reader) -> Result<Self, Error> where Self: Sized;
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read;
 }
 
+/// Bitcoin structures reader.
 #[derive(Debug)]
-pub struct Reader<'a> {
-	buffer: &'a [u8],
-	read: usize,
+pub struct Reader<T> {
+	buffer: T,
+	peeked: Option<u8>,
 }
 
-impl<'a> io::Read for Reader<'a> {
-	fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-		let to_read = cmp::min(self.buffer.len() - self.read, buf.len());
-		buf[0..to_read].copy_from_slice(&self.buffer[self.read..self.read + to_read]);
-		self.read += to_read;
-		Ok(to_read)
+impl<'a> Reader<&'a [u8]> {
+	/// Convenient way of creating for slice of bytes
+	pub fn new(buffer: &'a [u8]) -> Self {
+		Reader {
+			buffer: buffer,
+			peeked: None,
+		}
 	}
 }
 
-impl<'a> Reader<'a> {
-	pub fn new(buffer: &'a [u8]) -> Reader {
+impl<T> io::Read for Reader<T> where T: io::Read {
+	fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+		// most of the times, there will be nothing in peeked,
+		// so to make it as efficient as possible, check it
+		// only once
+		match self.peeked.take() {
+			None => io::Read::read(&mut self.buffer, buf),
+			Some(peeked) if buf.is_empty() => {
+				self.peeked = Some(peeked);
+				Ok(0)
+			},
+			Some(peeked) => {
+				buf[0] = peeked;
+				io::Read::read(&mut self.buffer, &mut buf[1..]).map(|x| x + 1)
+			},
+		}
+	}
+}
+
+impl<R> Reader<R> where R: io::Read {
+	pub fn from_read(read: R) -> Self {
 		Reader {
-			buffer: buffer,
-			read: 0,
+			buffer: read,
+			peeked: None,
 		}
 	}
 
@@ -55,14 +83,8 @@ impl<'a> Reader<'a> {
 		T::deserialize(self)
 	}
 
-	pub fn read_slice(&mut self, len: usize) -> Result<&'a [u8], Error> {
-		if self.read + len > self.buffer.len() {
-			return Err(Error::UnexpectedEnd);
-		}
-
-		let result = &self.buffer[self.read..self.read + len];
-		self.read += len;
-		Ok(result)
+	pub fn read_slice(&mut self, bytes: &mut [u8]) -> Result<(), Error> {
+		io::Read::read_exact(self, bytes).map_err(|_| Error::UnexpectedEnd)
 	}
 
 	pub fn read_list<T>(&mut self) -> Result<Vec<T>, Error> where T: Deserializable {
@@ -91,8 +113,35 @@ impl<'a> Reader<'a> {
 		Ok(result)
 	}
 
-	/// Returns true if reading is finished.
-	pub fn is_finished(&self) -> bool {
-		self.read == self.buffer.len()
+	pub fn is_finished(&mut self) -> bool {
+		if self.peeked.is_some() {
+			return false;
+		}
+
+		let peek: &mut [u8] = &mut [0u8];
+		match self.read_slice(peek) {
+			Ok(_) => {
+				self.peeked = Some(peek[0]);
+				false
+			},
+			Err(_) => true,
+		}
+	}
+}
+
+/// Should be used to iterate over structures of the same type
+pub struct ReadIterator<R, T> {
+	reader: Reader<R>,
+	iter_type: marker::PhantomData<T>,
+}
+
+impl<R, T> Iterator for ReadIterator<R, T> where R: io::Read, T: Deserializable {
+	type Item = Result<T, Error>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		match self.reader.is_finished() {
+			true => None,
+			false => Some(self.reader.read())
+		}
 	}
 }
