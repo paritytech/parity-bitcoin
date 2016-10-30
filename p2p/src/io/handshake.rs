@@ -28,7 +28,7 @@ pub fn negotiate_version(local: u32, other: u32) -> u32 {
 	cmp::min(local, other)
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct HandshakeResult {
 	pub version: Version,
 	pub negotiated_version: u32,
@@ -178,5 +178,135 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 			Async::NotReady => self.poll(),
 			result => Ok(result)
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::io;
+	use futures::Future;
+	use bytes::Bytes;
+	use ser::Stream;
+	use message::{Magic, Message};
+	use message::types::Verack;
+	use message::types::version::{Version, V0, V106, V70001};
+	use super::{handshake, accept_handshake, HandshakeResult};
+
+	pub struct TestIo {
+		read: io::Cursor<Bytes>,
+		write: Bytes,
+	}
+
+	impl io::Read for TestIo {
+		fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+			io::Read::read(&mut self.read, buf)
+		}
+	}
+
+	impl io::Write for TestIo {
+		fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+			io::Write::write(&mut self.write, buf)
+		}
+
+		fn flush(&mut self) -> io::Result<()> {
+			io::Write::flush(&mut self.write)
+		}
+	}
+
+	fn local_version() -> Version {
+		Version::V70001(V0 {
+			version: 70001,
+			services: 1u64.into(),
+			timestamp: 0x4d1015e6,
+			// address and port of remote
+			// services set to 0, cause we know nothing about the node
+			receiver: "00000000000000000000000000000000000000002f5a0808208d".into(),
+		}, V106 {
+			// our local address (not sure if it is valid, or if it is checked at all
+			// services set to 0, because we support nothing
+			from: "00000000000000000000000000000000000000007f000001208d".into(),
+			nonce: 0x3c76a409eb48a227,
+			user_agent: "pbtc".into(),
+			start_height: 0,
+		}, V70001 {
+			relay: true,
+		})
+	}
+
+	fn remote_version() -> Version {
+		Version::V70001(V0 {
+			version: 70012,
+			services: 1u64.into(),
+			timestamp: 0x4d1015e6,
+			// services set to 1, house receiver supports at least the network
+			receiver: "010000000000000000000000000000000000ffffc2b5936adde9".into(),
+		}, V106 {
+			// remote address, port
+			// and supported protocols
+			from: "050000000000000000000000000000000000ffff2f5a0808208d".into(),
+			nonce: 0x3c76a409eb48a227,
+			user_agent: "/Satoshi:0.12.1/".into(),
+			start_height: 0,
+		}, V70001 {
+			relay: true,
+		})
+	}
+
+	#[test]
+	fn test_handshake() {
+		let magic = Magic::Mainnet;
+		let version = 70012;
+		let local_version = local_version();
+		let remote_version = remote_version();
+
+		let mut remote_stream = Stream::new();
+		remote_stream.append_slice(Message::new(magic, version, &remote_version).unwrap().as_ref());
+		remote_stream.append_slice(Message::new(magic, version, &Verack).unwrap().as_ref());
+
+		let expected = HandshakeResult {
+			version: remote_version,
+			negotiated_version: 70001,
+		};
+
+		let mut expected_stream = Stream::new();
+		expected_stream.append_slice(Message::new(magic, version, &local_version).unwrap().as_ref());
+
+		let test_io = TestIo {
+			read: io::Cursor::new(remote_stream.out()),
+			write: Bytes::default(),
+		};
+
+		let hs = handshake(test_io, magic, local_version).wait().unwrap();
+		assert_eq!(hs.0.write, expected_stream.out());
+		assert_eq!(hs.1.unwrap(), expected);
+	}
+
+	#[test]
+	fn test_accept_handshake() {
+		let magic = Magic::Mainnet;
+		let version = 70012;
+		let local_version = local_version();
+		let remote_version = remote_version();
+
+		let mut remote_stream = Stream::new();
+		remote_stream.append_slice(Message::new(magic, version, &remote_version).unwrap().as_ref());
+
+		let test_io = TestIo {
+			read: io::Cursor::new(remote_stream.out()),
+			write: Bytes::default(),
+		};
+
+		let expected = HandshakeResult {
+			version: remote_version,
+			negotiated_version: 70001,
+		};
+
+		let mut expected_stream = Stream::new();
+		expected_stream.append_slice(Message::new(magic, version, &local_version).unwrap().as_ref());
+		expected_stream.append_slice(Message::new(magic, version, &Verack).unwrap().as_ref());
+
+		let hs = accept_handshake(test_io, magic, local_version).wait().unwrap();
+		assert_eq!(hs.0.write, expected_stream.out());
+		assert_eq!(hs.1.unwrap(), expected);
 	}
 }
