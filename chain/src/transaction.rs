@@ -1,7 +1,7 @@
-
 //! Bitcoin trainsaction.
 //! https://en.bitcoin.it/wiki/Protocol_documentation#tx
 
+use std::io;
 use heapsize::HeapSizeOf;
 use hex::FromHex;
 use bytes::Bytes;
@@ -51,7 +51,7 @@ impl Serializable for OutPoint {
 }
 
 impl Deserializable for OutPoint {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = OutPoint {
 			hash: try!(reader.read()),
 			index: try!(reader.read()),
@@ -95,7 +95,7 @@ impl Serializable for TransactionInput {
 }
 
 impl Deserializable for TransactionInput {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = TransactionInput {
 			previous_output: try!(reader.read()),
 			script_sig: try!(reader.read()),
@@ -147,7 +147,7 @@ impl Serializable for TransactionOutput {
 }
 
 impl Deserializable for TransactionOutput {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = TransactionOutput {
 			value: try!(reader.read()),
 			script_pubkey: try!(reader.read()),
@@ -209,7 +209,7 @@ impl Serializable for Transaction {
 }
 
 impl Deserializable for Transaction {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = Transaction {
 			version: try!(reader.read()),
 			inputs: try!(reader.read_list()),
@@ -223,7 +223,7 @@ impl Deserializable for Transaction {
 
 impl From<&'static str> for Transaction {
 	fn from(s: &'static str) -> Self {
-		deserialize(&s.from_hex().unwrap()).unwrap()
+		deserialize(&s.from_hex().unwrap() as &[u8]).unwrap()
 	}
 }
 

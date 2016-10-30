@@ -91,7 +91,7 @@ impl Serializable for u64 {
 
 impl Deserializable for bool {
 	#[inline]
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 		let value = try!(reader.read_u8());
 		match value {
 			0 => Ok(false),
@@ -103,42 +103,42 @@ impl Deserializable for bool {
 
 impl Deserializable for i32 {
 	#[inline]
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 		Ok(try!(reader.read_i32::<LittleEndian>()))
 	}
 }
 
 impl Deserializable for i64 {
 	#[inline]
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 		Ok(try!(reader.read_i64::<LittleEndian>()))
 	}
 }
 
 impl Deserializable for u8 {
 	#[inline]
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 		Ok(try!(reader.read_u8()))
 	}
 }
 
 impl Deserializable for u16 {
 	#[inline]
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 		Ok(try!(reader.read_u16::<LittleEndian>()))
 	}
 }
 
 impl Deserializable for u32 {
 	#[inline]
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 		Ok(try!(reader.read_u32::<LittleEndian>()))
 	}
 }
 
 impl Deserializable for u64 {
 	#[inline]
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 		Ok(try!(reader.read_u64::<LittleEndian>()))
 	}
 }
@@ -159,7 +159,7 @@ impl Serializable for String {
 }
 
 impl Deserializable for String {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 		let bytes: Bytes = try!(reader.read());
 		Ok(String::from_utf8_lossy(&bytes).into_owned())
 	}
@@ -179,7 +179,7 @@ macro_rules! impl_ser_for_hash {
 		}
 
 		impl Deserializable for $name {
-			fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
+			fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 				let mut result = Self::default();
 				try!(reader.read_slice(&mut *result));
 				Ok(result)
@@ -211,7 +211,7 @@ impl Serializable for Bytes {
 }
 
 impl Deserializable for Bytes {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where Self: Sized, T: io::Read {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 		let len = try!(reader.read::<CompactInteger>());
 		let mut bytes = Bytes::new_with_len(len.into());
 		try!(reader.read_slice(&mut bytes));

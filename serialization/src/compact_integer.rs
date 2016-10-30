@@ -94,7 +94,7 @@ impl Serializable for CompactInteger {
 }
 
 impl Deserializable for CompactInteger {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where Self: Sized, T: io::Read {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = match try!(reader.read::<u8>()) {
 			i @ 0...0xfc => i.into(),
 			0xfd => try!(reader.read::<u16>()).into(),
