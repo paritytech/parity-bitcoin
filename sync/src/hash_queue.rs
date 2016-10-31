@@ -32,8 +32,8 @@ impl HashQueue {
 		}
 	}
 
-	pub fn len(&self) -> usize {
-		self.queue.len()
+	pub fn len(&self) -> u32 {
+		self.queue.len() as u32
 	}
 
 	pub fn is_empty(&self) -> bool {
@@ -58,7 +58,7 @@ impl HashQueue {
 		}
 	}
 
-	pub fn pop_front_n(&mut self, n: usize) -> Vec<H256> {
+	pub fn pop_front_n(&mut self, n: u32) -> Vec<H256> {
 		let mut result: Vec<H256> = Vec::new();
 		for _ in 0..n {
 			match self.pop_front() {
@@ -109,11 +109,11 @@ impl HashQueue {
 	}
 }
 
-impl Index<usize> for HashQueue {
+impl Index<u32> for HashQueue {
 	type Output = H256;
 
-	fn index(&self, index: usize) -> &Self::Output {
-		&self.queue[index]
+	fn index(&self, index: u32) -> &Self::Output {
+		&self.queue[index as usize]
 	}
 }
 
@@ -125,20 +125,20 @@ impl HashQueueChain {
 		}
 	}
 
-	pub fn len(&self) -> usize {
+	pub fn len(&self) -> u32 {
 		self.chain.iter().fold(0, |total, chain| total + chain.len())
 	}
 
-	pub fn len_of(&self, chain_index: usize) -> usize {
-		self.chain[chain_index].len()
+	pub fn len_of(&self, queue_index: usize) -> u32 {
+		self.chain[queue_index].len()
 	}
 
-	pub fn is_empty_at(&self, chain_index: usize) -> bool {
-		self.chain[chain_index].is_empty()
+	pub fn is_empty_at(&self, queue_index: usize) -> bool {
+		self.chain[queue_index].is_empty()
 	}
 
-	pub fn back_at(&self, chain_index: usize) -> Option<H256> {
-		let ref queue = self.chain[chain_index];
+	pub fn back_at(&self, queue_index: usize) -> Option<H256> {
+		let ref queue = self.chain[queue_index];
 		queue.back().cloned()
 	}
 
@@ -171,7 +171,7 @@ impl HashQueueChain {
 		None
 	}
 
-	pub fn pop_front_n_at(&mut self, queue_index: usize, n: usize) -> Vec<H256> {
+	pub fn pop_front_n_at(&mut self, queue_index: usize, n: u32) -> Vec<H256> {
 		self.chain[queue_index].pop_front_n(n)
 	}
 
@@ -192,10 +192,10 @@ impl HashQueueChain {
 	}
 }
 
-impl Index<usize> for HashQueueChain {
+impl Index<u32> for HashQueueChain {
 	type Output = H256;
 
-	fn index<'a>(&'a self, mut index: usize) -> &'a Self::Output {
+	fn index<'a>(&'a self, mut index: u32) -> &'a Self::Output {
 		for queue in self.chain.iter() {
 			let queue_len = queue.len();
 			if index < queue_len {

@@ -9,7 +9,6 @@ extern crate primitives;
 extern crate time;
 extern crate verification;
 
-mod best_block;
 mod hash_queue;
 mod inbound_connection;
 pub mod inbound_connection_factory;

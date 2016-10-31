@@ -18,7 +18,7 @@ impl InboundConnectionFactory {
 
 impl LocalSyncNode for InboundConnectionFactory {
 	fn start_height(&self) -> i32 {
-		self.local_node.best_block().height as i32
+		self.local_node.best_block().number as i32
 	}
 
 	fn create_sync_session(&self, best_block_height: i32, outbound_connection: OutboundSyncConnectionRef) -> InboundSyncConnectionRef {

@@ -14,6 +14,7 @@ extern crate ethcore_devtools as devtools;
 #[cfg(test)]
 extern crate test_data;
 
+mod best_block;
 mod kvdb;
 mod storage;
 #[cfg(feature="dev")]
@@ -25,6 +26,7 @@ pub enum BlockRef {
 	Hash(primitives::hash::H256),
 }
 
+pub use best_block::BestBlock;
 pub use storage::{Storage, Store, Error};
 pub use kvdb::Database;
 
