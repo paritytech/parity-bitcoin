@@ -41,6 +41,7 @@ impl Peers {
 	}
 
 	/// Get idle peer.
+	#[cfg(test)]
 	pub fn idle_peer(&self) -> Option<usize> {
 		self.idle_peers.iter().cloned().next()
 	}
@@ -77,15 +78,18 @@ impl Peers {
 
 	/// Blocks have been requested from peer.
 	pub fn on_blocks_requested(&mut self, peer_index: usize, blocks_hashes: &Vec<H256>) {
-		// blocks can only be requested from idle peers
-		assert_eq!(self.idle_peers.remove(&peer_index), true);
+		// inventory can only be requested from idle peers
+		assert!(!self.blocks_requests.contains_key(&peer_index));
+
+		self.idle_peers.remove(&peer_index);
 		self.blocks_requests.entry(peer_index).or_insert(HashSet::new()).extend(blocks_hashes.iter().cloned());
 	}
 
 	/// Inventory has been requested from peer.
 	pub fn on_inventory_requested(&mut self, peer_index: usize) {
 		// inventory can only be requested from idle peers
-		assert_eq!(self.idle_peers.remove(&peer_index), true);
+		assert!(!self.blocks_requests.contains_key(&peer_index));
+		self.idle_peers.remove(&peer_index);
 
 		// peer is now out-of-synchronization process, because:
 		// 1) if it has new blocks, it will respond with `inventory` message && will be insrted back here

@@ -282,27 +282,26 @@ impl Index<usize> for HashQueueChain {
 
 #[cfg(test)]
 mod tests {
-	use primitives::hash::H256;
 	use super::{HashQueue, HashQueueChain, HashPosition};
 
 	#[test]
 	fn hash_queue_empty() {
-		let queue = HashQueue::new();
-		assert_eq!(queue.len(), 1);
+		let mut queue = HashQueue::new();
+		assert_eq!(queue.len(), 0);
 		assert_eq!(queue.is_empty(), true);
 		assert_eq!(queue.front(), None);
 		assert_eq!(queue.back(), None);
 		assert_eq!(queue.pre_back(), None);
-		assert_eq!(queue.back_skip_n(), None);
-		assert_eq!(queue.contains("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), false);
+		assert_eq!(queue.back_skip_n(100), None);
+		assert_eq!(queue.contains(&"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), false);
 		assert_eq!(queue.pop_front(), None);
 		assert_eq!(queue.pop_front_n(100), vec![]);
-		assert_eq!(queue.remove("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), HashPosition::Missing);
+		assert_eq!(queue.remove(&"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), HashPosition::Missing);
 	}
 
 	#[test]
 	fn hash_queue_chain_empty() {
-		let chain = HashQueueChain::with_number_of_queues(3);
+		let mut chain = HashQueueChain::with_number_of_queues(3);
 		assert_eq!(chain.len(), 0);
 		assert_eq!(chain.len_of(0), 0);
 		assert_eq!(chain.is_empty_at(0), true);
