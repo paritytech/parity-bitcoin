@@ -1,3 +1,4 @@
+use std::io;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 use chain::{BlockHeader, ShortTransactionID};
 use common::PrefilledTransaction;
@@ -21,7 +22,7 @@ impl Serializable for BlockHeaderAndIDs {
 }
 
 impl Deserializable for BlockHeaderAndIDs {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let header= BlockHeaderAndIDs {
 			header: try!(reader.read()),
 			nonce: try!(reader.read()),

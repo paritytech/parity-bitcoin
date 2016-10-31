@@ -11,12 +11,12 @@ pub fn deserialize_payload<T>(buffer: &[u8], version: u32) -> Result<T, Error> w
 	Ok(result)
 }
 
-pub struct PayloadReader<'a> {
-	reader: Reader<'a>,
+pub struct PayloadReader<T> {
+	reader: Reader<T>,
 	version: u32,
 }
 
-impl<'a> PayloadReader<'a> {
+impl<'a> PayloadReader<&'a [u8]> {
 	pub fn new(buffer: &'a [u8], version: u32) -> Self {
 		PayloadReader {
 			reader: Reader::new(buffer),
@@ -32,7 +32,7 @@ impl<'a> PayloadReader<'a> {
 		T::deserialize_payload(&mut self.reader, self.version)
 	}
 
-	pub fn is_finished(&self) -> bool {
+	pub fn is_finished(&mut self) -> bool {
 		self.reader.is_finished()
 	}
 }

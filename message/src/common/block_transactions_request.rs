@@ -1,3 +1,4 @@
+use std::io;
 use hash::H256;
 use ser::{
 	Serializable, Stream, CompactInteger,
@@ -24,7 +25,7 @@ impl Serializable for BlockTransactionsRequest {
 }
 
 impl Deserializable for BlockTransactionsRequest {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let blockhash = try!(reader.read());
 		let indexes: Vec<CompactInteger> = try!(reader.read_list());
 

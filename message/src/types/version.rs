@@ -1,3 +1,4 @@
+use std::io;
 use bytes::Bytes;
 use ser::{
 	Serializable, Stream,
@@ -24,7 +25,7 @@ impl Payload for Version {
 	}
 
 	// version package is an serialization excpetion
-	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
+	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let simple: V0 = try!(reader.read());
 
 		if simple.version < 106 {
@@ -111,7 +112,7 @@ impl Serializable for V0 {
 }
 
 impl Deserializable for V0 {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = V0 {
 			version: try!(reader.read()),
 			services: try!(reader.read()),
@@ -134,7 +135,7 @@ impl Serializable for V106 {
 }
 
 impl Deserializable for V106 {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = V106 {
 			from: try!(reader.read()),
 			nonce: try!(reader.read()),
@@ -153,7 +154,7 @@ impl Serializable for V70001 {
 }
 
 impl Deserializable for V70001 {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = V70001 {
 			relay: try!(reader.read()),
 		};

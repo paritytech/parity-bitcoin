@@ -1,7 +1,7 @@
 //! A type of variable-length integer commonly used in the Bitcoin P2P protocol and Bitcoin serialized data structures.
 //! https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers
 
-use std::fmt;
+use std::{fmt, io};
 use {
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError
@@ -94,7 +94,7 @@ impl Serializable for CompactInteger {
 }
 
 impl Deserializable for CompactInteger {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = match try!(reader.read::<u8>()) {
 			i @ 0...0xfc => i.into(),
 			0xfd => try!(reader.read::<u16>()).into(),

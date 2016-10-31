@@ -9,5 +9,5 @@ pub mod stream;
 pub use primitives::{hash, bytes};
 
 pub use compact_integer::CompactInteger;
-pub use self::reader::{Reader, Deserializable, deserialize, Error};
+pub use self::reader::{Reader, Deserializable, deserialize, deserialize_iterator, Error};
 pub use self::stream::{Stream, Serializable, serialize, serialized_list_size};

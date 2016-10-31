@@ -1,3 +1,4 @@
+use std::io;
 use ser::{Stream, Reader};
 use common::BlockHeaderAndIDs;
 use {Payload, MessageResult};
@@ -16,7 +17,7 @@ impl Payload for CompactBlock {
 		"cmpctblock"
 	}
 
-	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
+	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let block = CompactBlock {
 			header: try!(reader.read()),
 		};

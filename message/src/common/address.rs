@@ -1,3 +1,4 @@
+use std::io;
 use bytes::Bytes;
 use ser::{
 	Stream, Serializable,
@@ -22,7 +23,7 @@ impl Serializable for NetAddress {
 }
 
 impl Deserializable for NetAddress {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let net = NetAddress {
 			services: try!(reader.read()),
 			address: try!(reader.read()),
@@ -35,7 +36,7 @@ impl Deserializable for NetAddress {
 impl From<&'static str> for NetAddress {
 	fn from(s: &'static str) -> Self {
 		let bytes: Bytes = s.into();
-		deserialize(&bytes).unwrap()
+		deserialize(bytes.as_ref()).unwrap()
 	}
 }
 
@@ -65,7 +66,7 @@ mod tests {
 	#[test]
 	fn test_net_address_deserialize() {
 		let bytes = vec![
-			0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x01u8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x0a, 0x00, 0x00, 0x01,
 			0x20, 0x8d
 		];
@@ -76,7 +77,7 @@ mod tests {
 			port: 8333.into(),
 		};
 
-		assert_eq!(expected, deserialize(&bytes).unwrap());
+		assert_eq!(expected, deserialize(&bytes as &[u8]).unwrap());
 	}
 
 	#[test]

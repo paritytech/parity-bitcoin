@@ -1,3 +1,4 @@
+use std::io;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 use {Payload, MessageResult};
 
@@ -45,7 +46,7 @@ impl Serializable for RejectCode {
 }
 
 impl Deserializable for RejectCode {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let v: u8 = try!(reader.read());
 		RejectCode::from_u8(v).ok_or_else(|| ReaderError::MalformedData)
 	}
@@ -68,7 +69,7 @@ impl Payload for Reject {
 		"reject"
 	}
 
-	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
+	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let reject = Reject {
 			message: try!(reader.read()),
 			code: try!(reader.read()),

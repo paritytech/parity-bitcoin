@@ -1,4 +1,4 @@
-use std::{str, fmt};
+use std::{str, fmt, io};
 use std::ascii::AsciiExt;
 use hash::H96;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
@@ -57,7 +57,7 @@ impl Serializable for Command {
 }
 
 impl Deserializable for Command {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		reader.read().map(Command)
 	}
 }
@@ -101,7 +101,7 @@ mod tests {
 		let raw: Bytes = "76657273696f6e0000000000".into();
 		let expected: Command = "version".into();
 
-		assert_eq!(expected, deserialize::<Command>(&raw).unwrap());
+		assert_eq!(expected, deserialize::<_, Command>(raw.as_ref()).unwrap());
 	}
 
 	#[test]
