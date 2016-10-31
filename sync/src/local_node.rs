@@ -8,7 +8,7 @@ use p2p::OutboundSyncConnectionRef;
 use message::common::InventoryType;
 use message::types;
 use synchronization::{Synchronization, SynchronizationRef, Config as SynchronizationConfig, Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor};
-use synchronization_chain::{Chain, ChainRef, BlockState};
+use synchronization_chain::{Chain, ChainRef};
 use synchronization_executor::LocalSynchronizationTaskExecutor;
 use best_block::BestBlock;
 
@@ -74,19 +74,15 @@ impl LocalNode {
 		// (2) with 500 entries
 		// what is (1)?
 
-		// process unknown blocks
-		let unknown_blocks: Vec<_> = {
-			let chain = self.chain.read();
-			message.inventory.iter()
-				.filter(|item| item.inv_type == InventoryType::MessageBlock)
-				.filter(|item| chain.block_state(&item.hash) == BlockState::Unknown)
-				.map(|item| item.hash.clone())
-				.collect()
-		};
+		// process blocks first
+		let blocks_inventory: Vec<_> = message.inventory.iter()
+			.filter(|item| item.inv_type == InventoryType::MessageBlock)
+			.map(|item| item.hash.clone())
+			.collect();
 
 		// if there are unknown blocks => start synchronizing with peer
-		if !unknown_blocks.is_empty() {
-			self.sync.lock().on_unknown_blocks(peer_index, unknown_blocks);
+		if !blocks_inventory.is_empty() {
+			self.sync.lock().on_new_blocks_inventory(peer_index, blocks_inventory);
 		}
 
 		// TODO: process unknown transactions, etc...
@@ -104,7 +100,8 @@ impl LocalNode {
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_transaction(&self, _peer_index: usize, _message: types::Tx) {
+	pub fn on_peer_transaction(&self, peer_index: usize, message: types::Tx) {
+		trace!(target: "sync", "Got `transaction` message from peer#{}. Transaction hash: {}", peer_index, message.transaction.hash());
 	}
 
 	pub fn on_peer_block(&self, peer_index: usize, message: types::Block) {

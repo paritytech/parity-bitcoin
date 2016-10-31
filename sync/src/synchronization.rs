@@ -214,8 +214,8 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 	}
 
 	/// Try to queue synchronization of unknown blocks when new inventory is received.
-	pub fn on_unknown_blocks(&mut self, peer_index: usize, peer_hashes: Vec<H256>) {
-		self.process_unknown_blocks(peer_index, peer_hashes);
+	pub fn on_new_blocks_inventory(&mut self, peer_index: usize, peer_hashes: Vec<H256>) {
+		self.process_new_blocks_inventory(peer_index, peer_hashes);
 		self.execute_synchronization_tasks();
 	}
 
@@ -241,10 +241,12 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 		chain.remove_blocks_with_state(BlockState::Requested);
 		chain.remove_blocks_with_state(BlockState::Scheduled);
 		chain.remove_blocks_with_state(BlockState::Verifying);
+
+		warn!(target: "sync", "Synchronization process restarting from block {:?}", chain.best_block());
 	}
 
-	/// Process new unknown blocks
-	fn process_unknown_blocks(&mut self, peer_index: usize, mut peer_hashes: Vec<H256>) {
+	/// Process new blocks inventory
+	fn process_new_blocks_inventory(&mut self, peer_index: usize, mut peer_hashes: Vec<H256>) {
 		//     | requested | QUEUED |
 		// ---                          [1]
 		//         ---                  [2] +
@@ -375,9 +377,11 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 	/// Schedule new synchronization tasks, if any.
 	fn execute_synchronization_tasks(&mut self) {
 		let mut tasks: Vec<Task> = Vec::new();
+		let idle_peers = self.peers.idle_peers();
+		let idle_peers_len = idle_peers.len() as u64;
 
-		// prepar synchronization tasks
-		{
+		// prepare synchronization tasks
+		if idle_peers_len != 0 {
 			// display information if processed many blocks || enough time has passed since sync start
 			let mut chain = self.chain.write();
 			if let State::Synchronizing(timestamp, num_of_blocks) = self.state {
@@ -399,16 +403,12 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 			let scheduled_hashes_len = chain.length_of_state(BlockState::Scheduled);
 			if scheduled_hashes_len < MAX_SCHEDULED_HASHES {
 				if self.state.is_synchronizing() {
-					if let Some(idle_peer) = self.peers.idle_peer() {
-						tasks.push(Task::RequestBestInventory(idle_peer));
-						self.peers.on_inventory_requested(idle_peer);
-					}
+					tasks.push(Task::RequestBestInventory(idle_peers[0]));
+					self.peers.on_inventory_requested(idle_peers[0]);
 				}
 				else {
-					if let Some(idle_peer) = self.peers.idle_peer() {
-						tasks.push(Task::RequestInventory(idle_peer));
-						self.peers.on_inventory_requested(idle_peer);
-					}
+					tasks.push(Task::RequestInventory(idle_peers[0]));
+					self.peers.on_inventory_requested(idle_peers[0]);
 				}
 			}
 
@@ -416,20 +416,16 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 			let requested_hashes_len = chain.length_of_state(BlockState::Requested);
 			let verifying_hashes_len = chain.length_of_state(BlockState::Verifying);
 			if requested_hashes_len + verifying_hashes_len < MAX_REQUESTED_BLOCKS + MAX_VERIFYING_BLOCKS && scheduled_hashes_len != 0 {
-				let idle_peers = self.peers.idle_peers();
-				let idle_peers_len = idle_peers.len() as u64;
-				if idle_peers_len != 0 {
-					let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(scheduled_hashes_len / idle_peers_len, MIN_BLOCKS_IN_REQUEST));
-					for idle_peer in idle_peers {
-						let peer_chunk_size = min(chain.length_of_state(BlockState::Scheduled), chunk_size);
-						if peer_chunk_size == 0 {
-							break;
-						}
-
-						let requested_hashes = chain.request_blocks_hashes(peer_chunk_size);
-						self.peers.on_blocks_requested(idle_peer, &requested_hashes);
-						tasks.push(Task::RequestBlocks(idle_peer, requested_hashes));
+				let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(scheduled_hashes_len / idle_peers_len, MIN_BLOCKS_IN_REQUEST));
+				for idle_peer in idle_peers {
+					let peer_chunk_size = min(chain.length_of_state(BlockState::Scheduled), chunk_size);
+					if peer_chunk_size == 0 {
+						break;
 					}
+
+					let requested_hashes = chain.request_blocks_hashes(peer_chunk_size);
+					self.peers.on_blocks_requested(idle_peer, &requested_hashes);
+					tasks.push(Task::RequestBlocks(idle_peer, requested_hashes));
 				}
 			}
 		}
@@ -462,15 +458,20 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 
 	/// Process successful block verification
 	fn on_block_verification_success(&mut self, block: Block) {
-		let hash = block.hash();
-		let mut chain = self.chain.write();
+		{
+			let hash = block.hash();
+			let mut chain = self.chain.write();
 
-		// remove from verifying queue
-		assert_eq!(chain.remove_block_with_state(&hash, BlockState::Verifying), HashPosition::Front);
+			// remove from verifying queue
+			assert_eq!(chain.remove_block_with_state(&hash, BlockState::Verifying), HashPosition::Front);
 
-		// insert to storage
-		chain.insert_best_block(block)
-			.expect("Error inserting to db.");
+			// insert to storage
+			chain.insert_best_block(block)
+				.expect("Error inserting to db.");
+		}
+
+		// continue with synchronization
+		self.execute_synchronization_tasks();
 	}
 
 	/// Process failed block verification
@@ -479,6 +480,9 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 
 		// reset synchronization process
 		self.reset();
+
+		// start new tasks
+		self.execute_synchronization_tasks();
 	}
 }
 
@@ -535,7 +539,7 @@ mod tests {
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
 
-		sync.on_unknown_blocks(5, vec![block1.hash()]);
+		sync.on_new_blocks_inventory(5, vec![block1.hash()]);
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks.len(), 2);
 		assert_eq!(tasks[0], Task::RequestBestInventory(5));
@@ -565,7 +569,8 @@ mod tests {
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 0);
 		assert_eq!(sync.information().chain.stored, 2);
-		assert_eq!(sync.information().peers.idle, 1);
+		// we have just requested new `inventory` from the peer => peer is forgotten
+		assert_eq!(sync.information().peers.idle, 0);
 		assert_eq!(sync.information().peers.active, 0);
 	}
 
@@ -576,7 +581,7 @@ mod tests {
 
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
 
-		sync.on_unknown_blocks(5, vec![block2.hash()]);
+		sync.on_new_blocks_inventory(5, vec![block2.hash()]);
 		sync.on_peer_block(5, block2);
 
 		// out-of-order block was presented by the peer
@@ -585,7 +590,8 @@ mod tests {
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 0);
 		assert_eq!(sync.information().chain.stored, 1);
-		assert_eq!(sync.information().peers.idle, 1);
+		// we have just requested new `inventory` from the peer => peer is forgotten
+		assert_eq!(sync.information().peers.idle, 0);
 		assert_eq!(sync.information().peers.active, 0);
 		// TODO: check that peer is penalized
 	}
