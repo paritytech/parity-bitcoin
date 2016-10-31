@@ -145,8 +145,8 @@ impl Queue {
 		}
 		{
 			Ok(chain) => {
-				let mut verified = self.verified.write();
 				let mut processing = self.processing.write();
+				let mut verified = self.verified.write();
 				processing.remove(&hash);
 				verified.insert(hash, VerifiedBlock::new(chain, item.block()));
 			},
