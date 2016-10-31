@@ -23,7 +23,7 @@ impl InboundSyncConnection for InboundConnection {
 	}
 
 	fn close_session(&self) {
-		// TODO: implement
+		self.local_node.stop_sync_session(self.peer_index)
 	}
 
 	fn on_inventory(&self, message: types::Inv) {
