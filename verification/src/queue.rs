@@ -86,7 +86,11 @@ impl Schedule {
 pub struct Queue {
 	verifier: Box<ContinueVerify<State=usize>>,
 	items: RwLock<Schedule>,
+
 	// todo: write lock on verified should continue until blocks are persisted in the database
+	// todo: OR journal verified transactions before they are persisted
+	// todo: OTHERWISE verification thread may behave suboptiomal, trying to verify the same block
+	// todo:           over and over again until in finally gets inserted
 	verified: RwLock<LinkedHashMap<H256, VerifiedBlock>>,
 	invalid: RwLock<HashSet<H256>>,
 	processing: RwLock<HashSet<H256>>,
