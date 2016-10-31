@@ -2,15 +2,16 @@
 
 #[macro_use]
 extern crate clap;
-extern crate db;
 extern crate env_logger;
 
+extern crate db;
 extern crate chain;
 extern crate keys;
 extern crate script;
 extern crate message;
 extern crate p2p;
 extern crate sync;
+extern crate import;
 
 mod config;
 
@@ -54,10 +55,21 @@ fn init_db(db: &Arc<db::Store>) {
 	}
 }
 
+fn import_blockchain(db_path: &str) {
+	for (_i, _blk) in import::open_blk_dir(db_path).expect("TODO").enumerate() {
+		// import logic goes here
+	}
+}
+
 fn run() -> Result<(), String> {
 	let yaml = load_yaml!("cli.yml");
 	let matches = clap::App::from_yaml(yaml).get_matches();
 	let cfg = try!(config::parse(&matches));
+
+	if let Some(ref import_path) = cfg.import_path {
+		import_blockchain(import_path);
+		return Ok(())
+	}
 
 	let mut el = event_loop();
 

@@ -13,5 +13,6 @@ cargo test\
 	-p script\
 	-p serialization\
 	-p sync\
+	-p import\
 	-p pbtc\
 	-p verification
