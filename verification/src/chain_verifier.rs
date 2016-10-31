@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use db::{self, BlockRef};
 use chain::{self, RepresentH256};
-use super::{Verify, VerificationResult, Chain, Error, TransactionError};
+use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
 use utils;
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
@@ -97,6 +97,25 @@ impl Verify for ChainVerifier {
 		for (idx, transaction) in block.transactions().iter().skip(1).enumerate() {
 			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
 		}
+
+		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
+			Some(b) => b,
+			None => { return Ok(Chain::Orphan); }
+		};
+
+		Ok(Chain::Main)
+	}
+}
+
+impl ContinueVerify for ChainVerifier {
+	type State = usize;
+
+	fn continue_verify(&self, block: &chain::Block, state: usize) -> VerificationResult {
+		// verify transactions (except coinbase)
+		for (idx, transaction) in block.transactions().iter().skip(state).enumerate() {
+			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
+		}
+
 
 		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
 			Some(b) => b,
