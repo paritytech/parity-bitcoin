@@ -200,10 +200,11 @@ impl Queue {
 #[cfg(test)]
 mod tests {
 	use super::Queue;
-	use super::super::{BlockStatus, VerificationResult, Verify, ContinueVerify, Chain, Error as VerificationError};
+	use super::super::{BlockStatus, VerificationResult, Verify, ContinueVerify, Chain, Error as VerificationError, TransactionError};
 	use chain::{Block, RepresentH256};
 	use primitives::hash::H256;
 	use test_data;
+	use std::collections::HashMap;
 
 	struct FacileVerifier;
 	impl Verify for FacileVerifier {
@@ -221,6 +222,26 @@ mod tests {
 	}
 
 	impl ContinueVerify for EvilVerifier {
+		type State = usize;
+		fn continue_verify(&self, _block: &Block, _state: usize) -> VerificationResult { Ok(Chain::Main) }
+	}
+
+	struct HupVerifier {
+		hups: HashMap<H256, usize>,
+	}
+
+	impl Verify for HupVerifier {
+		fn verify(&self, block: &Block) -> VerificationResult {
+			if let Some(hup) = self.hups.get(&block.hash()) {
+				Err(VerificationError::Transaction(*hup, TransactionError::Inconclusive(H256::from(0))))
+			}
+			else {
+				Ok(Chain::Main)
+			}
+		}
+	}
+
+	impl ContinueVerify for HupVerifier {
 		type State = usize;
 		fn continue_verify(&self, _block: &Block, _state: usize) -> VerificationResult { Ok(Chain::Main) }
 	}
@@ -319,4 +340,64 @@ mod tests {
 		assert_eq!(queue.block_status(&hash), BlockStatus::Absent);
 		assert_eq!(h, hash);
 	}
+
+
+	#[test]
+	fn verification_stalls_on_unverifiable() {
+		let b1 = test_data::block_builder()
+			.header().build()
+			.build();
+		let b2 = test_data::block_builder()
+			.header().parent(b1.hash()).build()
+			.build();
+
+		let mut hup_verifier = HupVerifier { hups: HashMap::new() };
+		hup_verifier.hups.insert(b2.hash(), 5);
+
+		let queue = Queue::new(Box::new(hup_verifier));
+		queue.push(b1.clone()).unwrap();
+		queue.push(b2.clone()).unwrap();
+
+		queue.process();
+		assert_eq!(queue.block_status(&b1.hash()), BlockStatus::Valid);
+
+		queue.process();
+		assert_eq!(queue.block_status(&b2.hash()),
+			BlockStatus::Pending,
+			"Block #2 supposed to stay in the pending state, because it requires 'processing' and 'verified' lines to be empty to continue" );
+
+	}
+
+	#[test]
+	fn verification_continues_stalled_block() {
+		let b1 = test_data::block_builder()
+			.header().build()
+			.build();
+		let b2 = test_data::block_builder()
+			.header().parent(b1.hash()).build()
+			.build();
+
+		let mut hup_verifier = HupVerifier { hups: HashMap::new() };
+		hup_verifier.hups.insert(b2.hash(), 5);
+
+		let queue = Queue::new(Box::new(hup_verifier));
+		queue.push(b1.clone()).unwrap();
+		queue.push(b2.clone()).unwrap();
+
+		queue.process();
+		assert_eq!(queue.block_status(&b1.hash()), BlockStatus::Valid);
+
+		queue.process();
+		assert_eq!(queue.block_status(&b2.hash()),
+			BlockStatus::Pending,
+			"Block #2 supposed to stay in the pending state, because it requires 'processing' and 'verified' lines to be empty to continue" );
+
+		queue.pop_valid();
+		queue.process();
+
+		assert_eq!(queue.block_status(&b2.hash()),
+			BlockStatus::Valid,
+			"Block #2 supposed to achieve valid state, because it requires 'processing' and 'verified' lines to be empty, which are indeed empty" );
+	}
+
 }

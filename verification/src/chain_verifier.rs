@@ -181,5 +181,4 @@ mod tests {
 		));
 		assert_eq!(should_be, verifier.verify(&b170));
 	}
-
 }
