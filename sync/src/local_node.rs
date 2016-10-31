@@ -31,6 +31,7 @@ pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections + Send + 
 /// Peers list
 pub trait PeersConnections {
 	fn add_peer_connection(&mut self, peer_index: usize, outbound_connection: OutboundSyncConnectionRef);
+	fn remove_peer_connection(&mut self, peer_index: usize);
 }
 
 impl<T> LocalNode<T> where T: SynchronizationTaskExecutor + PeersConnections + Send + 'static {
@@ -64,6 +65,13 @@ impl<T> LocalNode<T> where T: SynchronizationTaskExecutor + PeersConnections + S
 
 		// request inventory from peer
 		self.executor.lock().execute(SynchronizationTask::RequestInventory(peer_index));
+	}
+
+	pub fn stop_sync_session(&self, peer_index: usize) {
+		trace!(target: "sync", "Stopping sync session with peer#{}", peer_index);
+
+		self.executor.lock().remove_peer_connection(peer_index);
+		self.sync.lock().on_peer_disconnected(peer_index);
 	}
 
 	pub fn on_peer_inventory(&self, peer_index: usize, message: types::Inv) {

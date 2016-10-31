@@ -32,6 +32,10 @@ impl PeersConnections for LocalSynchronizationTaskExecutor {
 	fn add_peer_connection(&mut self, index: usize, connection: OutboundSyncConnectionRef) {
 		self.peers.insert(index, connection);
 	}
+
+	fn remove_peer_connection(&mut self, index: usize) {
+		self.peers.remove(&index);
+	}
 }
 
 impl SynchronizationTaskExecutor for LocalSynchronizationTaskExecutor {

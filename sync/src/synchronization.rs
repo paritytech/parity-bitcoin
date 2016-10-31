@@ -230,19 +230,31 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 		self.execute_synchronization_tasks();
 	}
 
+	/// Peer disconnected.
+	pub fn on_peer_disconnected(&mut self, peer_index: usize) {
+		self.peers.on_peer_disconnected(peer_index);
+
+		// when last peer is disconnected, reset, but let verifying blocks be verified
+		self.reset(false);
+	}
+
 	/// Reset synchronization process
-	pub fn reset(&mut self) {
+	pub fn reset(&mut self, is_hard: bool) {
 		self.peers.reset();
 		self.orphaned_blocks.clear();
 		// TODO: reset verification queue
 
 		let mut chain = self.chain.write();
-		self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
 		chain.remove_blocks_with_state(BlockState::Requested);
 		chain.remove_blocks_with_state(BlockState::Scheduled);
-		chain.remove_blocks_with_state(BlockState::Verifying);
-
-		warn!(target: "sync", "Synchronization process restarting from block {:?}", chain.best_block());
+		if is_hard {
+			self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
+			chain.remove_blocks_with_state(BlockState::Verifying);
+			warn!(target: "sync", "Synchronization process restarting from block {:?}", chain.best_block());
+		}
+		else {
+			self.state = State::Saturated;
+		}
 	}
 
 	/// Process new blocks inventory
@@ -483,7 +495,7 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 		warn!(target: "sync", "Block {:?} verification failed with error {:?}", hash, err);
 
 		// reset synchronization process
-		self.reset();
+		self.reset(true);
 
 		// start new tasks
 		self.execute_synchronization_tasks();
@@ -515,6 +527,7 @@ pub mod tests {
 
 	impl PeersConnections for DummyTaskExecutor {
 		fn add_peer_connection(&mut self, _: usize, _: OutboundSyncConnectionRef) {}
+		fn remove_peer_connection(&mut self, _: usize) {}
 	}
 
 	impl TaskExecutor for DummyTaskExecutor {
@@ -649,6 +662,25 @@ pub mod tests {
 			assert!(sync.information().chain.requested == 0
 				&& sync.information().orphaned == 0
 				&& sync.information().chain.stored == 3);
+		}
+	}
+
+	#[test]
+	fn synchronization_reset_when_peer_is_disconnected() {
+		let (_, sync) = create_sync();
+
+		// request new blocks
+		{
+			let mut sync = sync.lock();
+			sync.on_new_blocks_inventory(1, vec!["0000000000000000000000000000000000000000000000000000000000000000".into()]);
+			assert!(sync.information().state.is_synchronizing());
+		}
+
+		// lost connection to peer => synchronization state lost
+		{
+			let mut sync = sync.lock();
+			sync.on_peer_disconnected(1);
+			assert!(!sync.information().state.is_synchronizing());
 		}
 	}
 }
