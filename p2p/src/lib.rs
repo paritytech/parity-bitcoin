@@ -13,6 +13,7 @@ extern crate ns_dns_tokio;
 extern crate bitcrypto as crypto;
 extern crate message;
 extern crate primitives;
+extern crate serialization as ser;
 
 mod io;
 mod net;

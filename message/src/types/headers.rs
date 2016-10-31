@@ -1,3 +1,4 @@
+use std::io;
 use chain::BlockHeader;
 use ser::{Stream, Reader};
 use {Payload, MessageResult};
@@ -17,7 +18,7 @@ impl Payload for Headers {
 		"headers"
 	}
 
-	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
+	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let headers = Headers {
 			headers: try!(reader.read_list()),
 		};

@@ -1,3 +1,4 @@
+use std::io;
 use ser::{
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError,
@@ -28,7 +29,7 @@ impl Payload for Addr {
 		"addr"
 	}
 
-	fn deserialize_payload(reader: &mut Reader, version: u32) -> MessageResult<Self> where Self: Sized {
+	fn deserialize_payload<T>(reader: &mut Reader<T>, version: u32) -> MessageResult<Self> where T: io::Read {
 		let result = if version < 31402 {
 			reader.read().map(Addr::V0)
 		} else {
@@ -69,7 +70,7 @@ impl Serializable for AddressEntry {
 }
 
 impl Deserializable for AddressEntry {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let entry = AddressEntry {
 			timestamp: try!(reader.read()),
 			address: try!(reader.read()),
@@ -91,7 +92,7 @@ impl Serializable for V31402 {
 }
 
 impl Deserializable for V31402 {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = V31402 {
 			addresses: try!(reader.read_list_max(1000)),
 		};
@@ -112,7 +113,7 @@ impl Serializable for V0 {
 }
 
 impl Deserializable for V0 {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = V0 {
 			addresses: try!(reader.read_list_max(1000)),
 		};
@@ -173,7 +174,7 @@ mod tests {
 			],
 		};
 
-		assert_eq!(expected, deserialize(&raw).unwrap());
+		assert_eq!(expected, deserialize(raw.as_ref()).unwrap());
 	}
 }
 

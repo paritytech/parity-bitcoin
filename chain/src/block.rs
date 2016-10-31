@@ -1,3 +1,4 @@
+use std::io;
 use hex::FromHex;
 use hash::H256;
 use ser::{
@@ -23,7 +24,7 @@ impl Serializable for Block {
 }
 
 impl Deserializable for Block {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = Block {
 			block_header: try!(reader.read()),
 			transactions: try!(reader.read_list()),
@@ -35,7 +36,7 @@ impl Deserializable for Block {
 
 impl From<&'static str> for Block {
 	fn from(s: &'static str) -> Self {
-		deserialize(&s.from_hex().unwrap()).unwrap()
+		deserialize(&s.from_hex().unwrap() as &[u8]).unwrap()
 	}
 }
 

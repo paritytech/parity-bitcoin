@@ -1,3 +1,4 @@
+use std::io;
 use ser::{
 	Serializable, Stream,
 	Deserializable, Reader, Error as ReaderError
@@ -88,7 +89,7 @@ impl Serializable for Services {
 }
 
 impl Deserializable for Services {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		reader.read().map(Services)
 	}
 }

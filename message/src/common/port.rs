@@ -1,3 +1,4 @@
+use std::io;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 
@@ -23,7 +24,7 @@ impl Serializable for Port {
 }
 
 impl Deserializable for Port {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		Ok(try!(reader.read_u16::<BigEndian>().map(Port)))
 	}
 }
@@ -41,7 +42,7 @@ mod	tests {
 
 	#[test]
 	fn test_port_deserialize() {
-		assert_eq!(Port::from(1), deserialize(&[0x00, 0x01]).unwrap());
-		assert_eq!(Port::from(0x1234), deserialize(&[0x12, 0x34]).unwrap());
+		assert_eq!(Port::from(1), deserialize(&[0x00u8, 0x01] as &[u8]).unwrap());
+		assert_eq!(Port::from(0x1234), deserialize(&[0x12u8, 0x34] as &[u8]).unwrap());
 	}
 }

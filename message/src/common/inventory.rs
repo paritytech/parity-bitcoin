@@ -1,3 +1,4 @@
+use std::io;
 use hash::H256;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 
@@ -30,9 +31,22 @@ impl From<InventoryType> for u32 {
 	}
 }
 
+impl Serializable for InventoryType {
+	fn serialize(&self, stream: &mut Stream) {
+		stream.append(&u32::from(*self));
+	}
+}
+
+impl Deserializable for InventoryType {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
+		let t: u32 = try!(reader.read());
+		InventoryType::from_u32(t).ok_or(ReaderError::MalformedData)
+	}
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct InventoryVector {
-	pub inv_type: u32, // TODO: change to InventoryType as discussed in #37
+	pub inv_type: InventoryType,
 	pub hash: H256,
 }
 
@@ -45,19 +59,13 @@ impl Serializable for InventoryVector {
 }
 
 impl Deserializable for InventoryVector {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let vec = InventoryVector {
 			inv_type: try!(reader.read()),
 			hash: try!(reader.read()),
 		};
 
 		Ok(vec)
-	}
-}
-
-impl InventoryVector {
-	pub fn inventory_type(&self) -> Option<InventoryType> {
-		InventoryType::from_u32(self.inv_type)
 	}
 }
 
@@ -72,7 +80,7 @@ mod tests {
 		let expected = "020000000000000000000000000000000000000000000000000000000000000000000004".into();
 
 		let inventory = InventoryVector {
-			inv_type: 2,
+			inv_type: InventoryType::MessageBlock,
 			hash: 4u8.into(),
 		};
 
@@ -84,11 +92,11 @@ mod tests {
 		let raw: Bytes = "020000000000000000000000000000000000000000000000000000000000000000000004".into();
 
 		let expected = InventoryVector {
-			inv_type: 2,
+			inv_type: InventoryType::MessageBlock,
 			hash: 4u8.into(),
 		};
 
-		assert_eq!(expected, deserialize(&raw).unwrap());
+		assert_eq!(expected, deserialize(raw.as_ref()).unwrap());
 	}
 
 	#[test]

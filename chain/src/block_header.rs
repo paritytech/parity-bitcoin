@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, io};
 use ser::{
 	Deserializable, Reader, Error as ReaderError,
 	Serializable, Stream, serialize
@@ -48,7 +48,7 @@ impl Serializable for BlockHeader {
 }
 
 impl Deserializable for BlockHeader {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let block_header = BlockHeader {
 			version: try!(reader.read()),
 			previous_header_hash: try!(reader.read()),

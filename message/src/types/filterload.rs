@@ -1,3 +1,4 @@
+use std::io;
 use bytes::Bytes;
 use ser::{Stream, Reader};
 use {Payload, MessageResult};
@@ -20,7 +21,7 @@ impl Payload for FilterLoad {
 		"filterload"
 	}
 
-	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
+	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let filterload = FilterLoad {
 			filter: try!(reader.read()),
 			hash_functions: try!(reader.read()),

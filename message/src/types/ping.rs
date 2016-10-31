@@ -1,3 +1,4 @@
+use std::io;
 use ser::{Stream, Reader};
 use {MessageResult, Payload};
 
@@ -23,7 +24,7 @@ impl Payload for Ping {
 		"ping"
 	}
 
-	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
+	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let ping = Ping {
 			nonce: try!(reader.read()),
 		};

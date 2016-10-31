@@ -4,6 +4,7 @@ use bit_vec::BitVec;
 use byteorder::{LittleEndian, ByteOrder};
 
 /// structure for indexing transaction info
+#[derive(Debug)]
 pub struct TransactionMeta {
 	block_height: u32,
 	spent: BitVec,
