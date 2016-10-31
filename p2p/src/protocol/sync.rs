@@ -17,6 +17,7 @@ pub trait LocalSyncNode : Send + Sync {
 
 pub trait InboundSyncConnection : Send + Sync {
 	fn start_sync_session(&self, version: u32);
+	fn close_session(&self);
 	fn on_inventory(&self, message: types::Inv);
 	fn on_getdata(&self, message: types::GetData);
 	fn on_getblocks(&self, message: types::GetBlocks);
@@ -248,5 +249,9 @@ impl Protocol for SyncProtocol {
 			self.inbound_connection.on_block_txn(message);
 		}
 		Ok(())
+	}
+
+	fn on_close(&mut self) {
+		self.inbound_connection.close_session()
 	}
 }
