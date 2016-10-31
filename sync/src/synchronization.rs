@@ -270,7 +270,10 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 		// => request full inventory
 		if !chain.has_blocks_of_state(BlockState::Scheduled)
 			&& !chain.has_blocks_of_state(BlockState::Requested) {
-			chain.schedule_blocks_hashes(peer_hashes);
+			let unknown_blocks = peer_hashes.into_iter()
+				.filter(|hash| chain.block_has_state(&hash, BlockState::Unknown))
+				.collect();
+			chain.schedule_blocks_hashes(unknown_blocks);
 			self.peers.insert(peer_index);
 			return;
 		}
@@ -289,21 +292,22 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 		// try to find new blocks for synchronization from inventory
 		let mut last_known_peer_hash_index = peer_hashes_len - 1;
 		loop {
-			if last_known_peer_hash_index == 0 {
-				// either these are blocks from the future or blocks from the past
-				// => TODO: ignore this peer during synchronization
-				return;
-			}
-
-			if chain.block_has_state(&peer_hashes[last_known_peer_hash_index], BlockState::Scheduled) {
-				// we have found first block which is scheduled
+			if chain.block_state(&peer_hashes[last_known_peer_hash_index]) != BlockState::Unknown {
+				// we have found first block which is known to us
 				// => blocks in range [(last_known_peer_hash_index + 1)..peer_hashes_len] are unknown
+				//    && must be scheduled for request
 				let unknown_peer_hashes = peer_hashes.split_off(last_known_peer_hash_index + 1);
+
 				chain.schedule_blocks_hashes(unknown_peer_hashes);
 				self.peers.insert(peer_index);
 				return;
 			}
 
+			if last_known_peer_hash_index == 0 {
+				// either these are blocks from the future or blocks from the past
+				// => TODO: ignore this peer during synchronization
+				return;
+			}
 			last_known_peer_hash_index -= 1;
 		}
 	}
@@ -371,7 +375,7 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 		}
 
 		// this block is not the next one => mark it as orphaned
-		self.orphaned_blocks.insert(block_hash, block);
+		self.orphaned_blocks.insert(block.block_header.previous_header_hash.clone(), block);
 	}
 
 	/// Schedule new synchronization tasks, if any.
@@ -487,17 +491,19 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
 	use std::sync::Arc;
 	use std::mem::replace;
 	use parking_lot::{Mutex, RwLock};
 	use chain::{Block, RepresentH256};
 	use super::{Synchronization, SynchronizationRef, Config, Task, TaskExecutor};
+	use local_node::PeersConnections;
 	use synchronization_chain::{Chain, ChainRef};
+	use p2p::OutboundSyncConnectionRef;
 	use db;
 
 	#[derive(Default)]
-	struct DummyTaskExecutor {
+	pub struct DummyTaskExecutor {
 		pub tasks: Vec<Task>,
 	}
 
@@ -505,6 +511,10 @@ mod tests {
 		pub fn take_tasks(&mut self) -> Vec<Task> {
 			replace(&mut self.tasks, Vec::new())
 		}
+	}
+
+	impl PeersConnections for DummyTaskExecutor {
+		fn add_peer_connection(&mut self, _: usize, _: OutboundSyncConnectionRef) {}
 	}
 
 	impl TaskExecutor for DummyTaskExecutor {
@@ -594,5 +604,51 @@ mod tests {
 		assert_eq!(sync.information().peers.idle, 0);
 		assert_eq!(sync.information().peers.active, 0);
 		// TODO: check that peer is penalized
+	}
+
+	#[test]
+	fn synchronization_parallel_peers() {
+		let (executor, sync) = create_sync();
+
+		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
+		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
+
+		{
+			let mut sync = sync.lock();
+			// not synchronizing after start
+			assert!(!sync.information().state.is_synchronizing());
+			// receive inventory from new peer#1
+			sync.on_new_blocks_inventory(1, vec![block1.hash()]);
+			assert_eq!(sync.information().chain.requested, 1);
+			// synchronization has started && new blocks have been requested
+			let tasks = executor.lock().take_tasks();
+			assert!(sync.information().state.is_synchronizing());
+			assert_eq!(tasks, vec![Task::RequestBestInventory(1), Task::RequestBlocks(1, vec![block1.hash()])]);
+		}
+
+		{
+			let mut sync = sync.lock();
+			// receive inventory from new peer#2
+			sync.on_new_blocks_inventory(2, vec![block1.hash(), block2.hash()]);
+			assert_eq!(sync.information().chain.requested, 2);
+			// synchronization has started && new blocks have been requested
+			let tasks = executor.lock().take_tasks();
+			assert!(sync.information().state.is_synchronizing());
+			assert_eq!(tasks, vec![Task::RequestBestInventory(2), Task::RequestBlocks(2, vec![block2.hash()])]);
+		}
+
+		{
+			let mut sync = sync.lock();
+			// receive block from peer#2
+			sync.on_peer_block(2, block2);
+			assert!(sync.information().chain.requested == 1
+				&& sync.information().orphaned == 1);
+			// receive block from peer#1
+			sync.on_peer_block(1, block1);
+			println!("=== {:?}", sync.information().chain);
+			assert!(sync.information().chain.requested == 0
+				&& sync.information().orphaned == 0
+				&& sync.information().chain.stored == 3);
+		}
 	}
 }

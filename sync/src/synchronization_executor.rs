@@ -7,6 +7,7 @@ use primitives::hash::H256;
 use p2p::OutboundSyncConnectionRef;
 use synchronization_chain::ChainRef;
 use synchronization::{Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor};
+use local_node::PeersConnections;
 
 pub type LocalSynchronizationTaskExecutorRef = Arc<Mutex<LocalSynchronizationTaskExecutor>>;
 
@@ -25,8 +26,10 @@ impl LocalSynchronizationTaskExecutor {
 			chain: chain,
 		}))
 	}
+}
 
-	pub fn add_peer_connection(&mut self, index: usize, connection: OutboundSyncConnectionRef) {
+impl PeersConnections for LocalSynchronizationTaskExecutor {
+	fn add_peer_connection(&mut self, index: usize, connection: OutboundSyncConnectionRef) {
 		self.peers.insert(index, connection);
 	}
 }

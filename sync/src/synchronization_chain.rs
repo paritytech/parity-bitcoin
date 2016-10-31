@@ -54,8 +54,8 @@ pub struct Information {
 pub struct Chain {
 	/// Genesis block hash (stored for optimizations)
 	genesis_block_hash: H256,
-	/// Best storage block hash (stored for optimizations)
-	best_storage_block_hash: H256,
+	/// Best storage block (stored for optimizations)
+	best_storage_block: db::BestBlock,
 	/// Local blocks storage
 	storage: Arc<db::Store>,
 	/// In-memory queue of blocks hashes
@@ -93,7 +93,7 @@ impl Chain {
 
 		Chain {
 			genesis_block_hash: genesis_block_hash,
-			best_storage_block_hash: best_storage_block.hash,
+			best_storage_block: best_storage_block,
 			storage: storage,
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
 		}
@@ -116,12 +116,18 @@ impl Chain {
 
 	/// Get number of blocks in given state
 	pub fn length_of_state(&self, state: BlockState) -> u32 {
-		self.hash_chain.len_of(state.to_queue_index())
+		match state {
+			BlockState::Stored => self.best_storage_block.number + 1,
+			_ => self.hash_chain.len_of(state.to_queue_index()),
+		}
 	}
 
 	/// Returns true if has blocks of given type
 	pub fn has_blocks_of_state(&self, state: BlockState) -> bool {
-		!self.hash_chain.is_empty_at(state.to_queue_index())
+		match state {
+			BlockState::Stored => true, // storage with genesis block is required
+			_ => !self.hash_chain.is_empty_at(state.to_queue_index()),
+		}
 	}
 
 	/// Get best block
@@ -205,7 +211,7 @@ impl Chain {
 		if let Some(pre_best_block) = self.hash_chain.back_skip_n_at(VERIFYING_QUEUE, 2) {
 			result.push(pre_best_block);
 		}
-		result.push(self.best_storage_block_hash.clone());
+		result.push(self.best_storage_block.hash.clone());
 		result
 	}
 
@@ -251,12 +257,13 @@ impl Chain {
 
 	/// Insert new best block to storage
 	pub fn insert_best_block(&mut self, block: Block) -> Result<(), db::Error> {
-		if block.block_header.previous_header_hash != self.best_storage_block_hash {
+		if block.block_header.previous_header_hash != self.best_storage_block.hash {
 			return Err(db::Error::DB("Trying to insert out-of-order block".into()));
 		}
 
 		// remember new best block hash
-		self.best_storage_block_hash = block.hash();
+		self.best_storage_block.number += 1;
+		self.best_storage_block.hash = block.hash();
 
 		// insert to storage
 		self.storage.insert_block(&block)
@@ -335,7 +342,7 @@ impl fmt::Debug for Chain {
 				let queue_len = self.hash_chain.len_of(queue);
 				if queue_len != 0 {
 					try!(writeln!(f, "\tworse({}): {} {:?}", state, num + 1, self.hash_chain.front_at(queue)));
-					num += 1 + queue_len;
+					num += queue_len;
 					if let Some(pre_best) = self.hash_chain.pre_back_at(queue) {
 						try!(writeln!(f, "\tpre-best({}): {} {:?}", state, num - 1, pre_best));
 					}
@@ -351,8 +358,94 @@ impl fmt::Debug for Chain {
 mod tests {
 	use std::sync::Arc;
 	use chain::{Block, RepresentH256};
-	use super::Chain;
-	use db;
+	use hash_queue::HashPosition;
+	use super::{Chain, BlockState};
+	use db::{self, Store, BestBlock};
+
+	#[test]
+	fn chain_empty() {
+		let db = Arc::new(db::TestStorage::with_genesis_block());
+		let db_best_block = BestBlock { number: 0, hash: db.best_block().expect("storage with genesis block is required").hash };
+		let chain = Chain::new(db.clone());
+		assert_eq!(chain.information().scheduled, 0);
+		assert_eq!(chain.information().requested, 0);
+		assert_eq!(chain.information().verifying, 0);
+		assert_eq!(chain.information().stored, 1);
+		assert_eq!(chain.length_of_state(BlockState::Scheduled), 0);
+		assert_eq!(chain.length_of_state(BlockState::Requested), 0);
+		assert_eq!(chain.length_of_state(BlockState::Verifying), 0);
+		assert_eq!(chain.length_of_state(BlockState::Stored), 1);
+		assert_eq!(chain.has_blocks_of_state(BlockState::Scheduled), false);
+		assert_eq!(chain.has_blocks_of_state(BlockState::Requested), false);
+		assert_eq!(chain.has_blocks_of_state(BlockState::Verifying), false);
+		assert_eq!(chain.has_blocks_of_state(BlockState::Stored), true);
+		assert_eq!(&chain.best_block(), &db_best_block);
+		assert_eq!(chain.best_block_of_state(BlockState::Scheduled), None);
+		assert_eq!(chain.best_block_of_state(BlockState::Requested), None);
+		assert_eq!(chain.best_block_of_state(BlockState::Verifying), None);
+		assert_eq!(chain.best_block_of_state(BlockState::Stored), Some(db_best_block.clone()));
+		assert_eq!(chain.block_has_state(&db_best_block.hash, BlockState::Requested), false);
+		assert_eq!(chain.block_has_state(&db_best_block.hash, BlockState::Stored), true);
+		assert_eq!(chain.block_state(&db_best_block.hash), BlockState::Stored);
+		assert_eq!(chain.block_state(&"0000000000000000000000000000000000000000000000000000000000000000".into()), BlockState::Unknown);
+	}
+
+	#[test]
+	fn chain_block_path() {
+		let db = Arc::new(db::TestStorage::with_genesis_block());
+		let mut chain = Chain::new(db.clone());
+
+		// add 6 blocks to scheduled queue
+		chain.schedule_blocks_hashes(vec![
+			"0000000000000000000000000000000000000000000000000000000000000000".into(),
+			"0000000000000000000000000000000000000000000000000000000000000001".into(),
+			"0000000000000000000000000000000000000000000000000000000000000002".into(),
+			"0000000000000000000000000000000000000000000000000000000000000003".into(),
+			"0000000000000000000000000000000000000000000000000000000000000004".into(),
+			"0000000000000000000000000000000000000000000000000000000000000005".into(),
+		]);
+		assert!(chain.information().scheduled == 6 && chain.information().requested == 0
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+
+		// move 2 best blocks (0 && 1) to requested queue
+		chain.request_blocks_hashes(2);
+		assert!(chain.information().scheduled == 4 && chain.information().requested == 2
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+		// move 0 best blocks to requested queue
+		chain.request_blocks_hashes(0);
+		assert!(chain.information().scheduled == 4 && chain.information().requested == 2
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+		// move 1 best blocks (2) to requested queue
+		chain.request_blocks_hashes(1);
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 3
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+
+		// try to remove block 0 from scheduled queue => missing
+		assert_eq!(chain.remove_block_with_state(&"0000000000000000000000000000000000000000000000000000000000000000".into(), BlockState::Scheduled), HashPosition::Missing);
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 3
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+		// remove blocks 0 & 1 from requested queue
+		assert_eq!(chain.remove_block_with_state(&"0000000000000000000000000000000000000000000000000000000000000001".into(), BlockState::Requested), HashPosition::Inside);
+		assert_eq!(chain.remove_block_with_state(&"0000000000000000000000000000000000000000000000000000000000000000".into(), BlockState::Requested), HashPosition::Front);
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+		// mark 0 & 1 as verifying
+		chain.verify_block_hash("0000000000000000000000000000000000000000000000000000000000000001".into());
+		chain.verify_block_hash("0000000000000000000000000000000000000000000000000000000000000002".into());
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
+			&& chain.information().verifying == 2 && chain.information().stored == 1);
+
+		// mark block 0 as verified
+		assert_eq!(chain.remove_block_with_state(&"0000000000000000000000000000000000000000000000000000000000000001".into(), BlockState::Verifying), HashPosition::Front);
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
+			&& chain.information().verifying == 1 && chain.information().stored == 1);
+		// insert new best block to the chain
+		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
+		chain.insert_best_block(block1).expect("Db error");
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
+			&& chain.information().verifying == 1 && chain.information().stored == 2);
+		assert_eq!(db.best_block().expect("storage with genesis block is required").number, 1);
+	}
 
 	#[test]
 	fn chain_block_locator_hashes() {
