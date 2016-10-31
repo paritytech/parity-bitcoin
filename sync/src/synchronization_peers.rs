@@ -119,6 +119,29 @@ mod tests {
 	}
 
 	#[test]
+	fn peers_all_idle_after_reset() {
+		let mut peers = Peers::new();
+		peers.on_blocks_requested(7, &vec![H256::default()]);
+		peers.on_blocks_requested(8, &vec![H256::default()]);
+		assert_eq!(peers.information().idle, 0);
+		assert_eq!(peers.information().active, 2);
+		peers.reset();
+		assert_eq!(peers.information().idle, 2);
+		assert_eq!(peers.information().active, 0);
+	}
+
+	#[test]
+	fn peers_removed_after_inventory_request() {
+		let mut peers = Peers::new();
+		peers.insert(5);
+		peers.insert(7);
+		assert_eq!(peers.information().idle, 2);
+		assert_eq!(peers.information().active, 0);
+		peers.on_inventory_requested(5);
+		assert_eq!(peers.information().idle, 1);
+	}
+
+	#[test]
 	fn peers_insert_remove_idle() {
 		let mut peers = Peers::new();
 
