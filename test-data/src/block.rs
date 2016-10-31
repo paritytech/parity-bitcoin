@@ -1,9 +1,50 @@
 //! Block builder
 
-use chain;
+use chain::{self, RepresentH256};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use invoke::{Invoke, Identity};
+
+pub struct BlockHashBuilder<F=Identity> {
+	callback: F,
+	block: Option<chain::Block>,
+}
+
+impl<F> BlockHashBuilder<F> where F: Invoke<(H256, chain::Block)> {
+	pub fn with_callback(callback: F) -> Self {
+		BlockHashBuilder {
+			block: None,
+			callback: callback,
+		}
+	}
+
+	pub fn block(self) -> BlockBuilder<Self> {
+		BlockBuilder::with_callback(self)
+	}
+
+	pub fn with_block(mut self, block: chain::Block) -> Self {
+		self.block = Some(block);
+		self
+	}
+
+	pub fn build(self) -> F::Result {
+		let block = self.block.expect("Block is supposed to be build here to get hash");
+		self.callback.invoke((
+			block.hash(),
+			block
+		))
+	}
+}
+
+impl<F> Invoke<chain::Block> for BlockHashBuilder<F>
+	where F: Invoke<(H256, chain::Block)>
+{
+	type Result = Self;
+
+	fn invoke(self, block: chain::Block) -> Self {
+		self.with_block(block)
+	}
+}
 
 pub struct BlockBuilder<F=Identity> {
 	callback: F,
