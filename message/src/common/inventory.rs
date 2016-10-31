@@ -1,3 +1,4 @@
+use std::io;
 use hash::H256;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 
@@ -45,7 +46,7 @@ impl Serializable for InventoryVector {
 }
 
 impl Deserializable for InventoryVector {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let vec = InventoryVector {
 			inv_type: try!(reader.read()),
 			hash: try!(reader.read()),
@@ -88,7 +89,7 @@ mod tests {
 			hash: 4u8.into(),
 		};
 
-		assert_eq!(expected, deserialize(&raw).unwrap());
+		assert_eq!(expected, deserialize(raw.as_ref()).unwrap());
 	}
 
 	#[test]

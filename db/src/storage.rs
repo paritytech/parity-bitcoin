@@ -210,7 +210,7 @@ impl Storage {
 			.into_iter()
 			.filter_map(|tx_hash| {
 				self.transaction_bytes(&tx_hash).and_then(|tx_bytes| {
-					match serialization::deserialize::<chain::Transaction>(&tx_bytes) {
+					match serialization::deserialize::<_, chain::Transaction>(tx_bytes.as_ref()) {
 						Ok(tx) => Some(tx),
 						Err(e) => {
 							self.db_error(format!("Error deserializing transaction, possible db corruption ({:?})", e));
@@ -304,7 +304,7 @@ impl Store for Storage {
 			self.get(COL_BLOCK_HEADERS, &*block_hash)
 				.and_then(|header_bytes| {
 					let transactions = self.block_transactions_by_hash(&block_hash);;
-					let maybe_header = match serialization::deserialize::<chain::BlockHeader>(&header_bytes) {
+					let maybe_header = match serialization::deserialize::<_, chain::BlockHeader>(header_bytes.as_ref()) {
 						Ok(header) => Some(header),
 						Err(e) => {
 							self.db_error(format!("Error deserializing header, possible db corruption ({:?})", e));
@@ -374,7 +374,7 @@ impl Store for Storage {
 
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
 		self.transaction_bytes(hash).and_then(|tx_bytes| {
-			serialization::deserialize(&tx_bytes).map_err(
+			serialization::deserialize(tx_bytes.as_ref()).map_err(
 				|e| self.db_error(format!("Error deserializing transaction, possible db corruption ({:?})", e))
 			).ok()
 		})

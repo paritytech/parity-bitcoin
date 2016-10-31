@@ -1,3 +1,4 @@
+use std::io;
 use ser::{
 	Serializable, Stream, CompactInteger,
 	Deserializable, Reader, Error as ReaderError
@@ -19,7 +20,7 @@ impl Serializable for PrefilledTransaction {
 }
 
 impl Deserializable for PrefilledTransaction {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let compact: CompactInteger = try!(reader.read());
 		let tx = PrefilledTransaction {
 			index: compact.into(),

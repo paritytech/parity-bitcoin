@@ -1,3 +1,4 @@
+use std::io;
 use hash::H256;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 use chain::Transaction;
@@ -17,7 +18,7 @@ impl Serializable for BlockTransactions {
 }
 
 impl Deserializable for BlockTransactions {
-	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let block_transactions = BlockTransactions {
 			blockhash: try!(reader.read()),
 			transactions: try!(reader.read_list()),

@@ -1,3 +1,4 @@
+use std::io;
 use hash::H256;
 use bytes::Bytes;
 use ser::{Stream, Reader};
@@ -21,7 +22,7 @@ impl Payload for MerkleBlock {
 		"merkleblock"
 	}
 
-	fn deserialize_payload(reader: &mut Reader, _version: u32) -> MessageResult<Self> where Self: Sized {
+	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let merkle_block = MerkleBlock {
 			block_header: try!(reader.read()),
 			total_transactions: try!(reader.read()),
