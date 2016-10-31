@@ -31,9 +31,22 @@ impl From<InventoryType> for u32 {
 	}
 }
 
+impl Serializable for InventoryType {
+	fn serialize(&self, stream: &mut Stream) {
+		stream.append(&u32::from(*self));
+	}
+}
+
+impl Deserializable for InventoryType {
+	fn deserialize(reader: &mut Reader) -> Result<Self, ReaderError> where Self: Sized {
+		let t: u32 = try!(reader.read());
+		InventoryType::from_u32(t).ok_or(ReaderError::MalformedData)
+	}
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct InventoryVector {
-	pub inv_type: u32, // TODO: change to InventoryType as discussed in #37
+	pub inv_type: InventoryType,
 	pub hash: H256,
 }
 
@@ -56,12 +69,6 @@ impl Deserializable for InventoryVector {
 	}
 }
 
-impl InventoryVector {
-	pub fn inventory_type(&self) -> Option<InventoryType> {
-		InventoryType::from_u32(self.inv_type)
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use bytes::Bytes;
@@ -73,7 +80,7 @@ mod tests {
 		let expected = "020000000000000000000000000000000000000000000000000000000000000000000004".into();
 
 		let inventory = InventoryVector {
-			inv_type: 2,
+			inv_type: InventoryType::MessageBlock,
 			hash: 4u8.into(),
 		};
 
@@ -85,7 +92,7 @@ mod tests {
 		let raw: Bytes = "020000000000000000000000000000000000000000000000000000000000000000000004".into();
 
 		let expected = InventoryVector {
-			inv_type: 2,
+			inv_type: InventoryType::MessageBlock,
 			hash: 4u8.into(),
 		};
 

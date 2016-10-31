@@ -40,7 +40,7 @@ impl SynchronizationTaskExecutor for LocalSynchronizationTaskExecutor {
 				let getdata = types::GetData {
 					inventory: blocks_hashes.into_iter()
 						.map(|hash| InventoryVector {
-							inv_type: InventoryType::MessageBlock.into(),
+							inv_type: InventoryType::MessageBlock,
 							hash: hash,
 						}).collect()
 				};
