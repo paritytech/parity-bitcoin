@@ -181,9 +181,15 @@ impl HashQueueChain {
 	}
 
 	/// Returns element at the front of the given queue.
+	pub fn front_at(&self, queue_index: usize) -> Option<H256> {
+		let ref queue = self.chain[queue_index];
+		queue.front()
+	}
+
+	/// Returns element at the front of the given queue.
 	pub fn back_at(&self, queue_index: usize) -> Option<H256> {
 		let ref queue = self.chain[queue_index];
-		queue.back().cloned()
+		queue.back()
 	}
 
 	/// Returns previous-to back element from the given queue.

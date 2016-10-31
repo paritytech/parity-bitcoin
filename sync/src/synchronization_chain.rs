@@ -322,9 +322,9 @@ impl fmt::Debug for Chain {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		try!(writeln!(f, "chain: ["));
 		{
-			let mut num = self.storage.best_block_number().unwrap() as usize;
+			let mut num = self.storage.best_block().expect("Storage with genesis block is required").number;
 			try!(writeln!(f, "\tworse(stored): {} {:?}", 0, self.storage.block_hash(0)));
-			try!(writeln!(f, "\tbest(stored): {} {:?}", num, self.storage.block_hash(num as u32)));
+			try!(writeln!(f, "\tbest(stored): {} {:?}", num, self.storage.block_hash(num)));
 
 			let queues = vec![
 				("verifying", VERIFYING_QUEUE),
