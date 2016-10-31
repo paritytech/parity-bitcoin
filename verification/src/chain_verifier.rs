@@ -34,7 +34,7 @@ impl ChainVerifier {
 				None => {
 					match block.transactions.iter().filter(|t| t.hash() == input.previous_output.hash).nth(0) {
 						Some(ref tx) => tx,
-						None => { return Err(TransactionError::Input(input_index)); },
+						None => { return Err(TransactionError::Inconclusive(input.previous_output.hash.clone())); },
 					}
 				},
 			};
@@ -111,7 +111,7 @@ impl Verify for ChainVerifier {
 mod tests {
 
 	use super::ChainVerifier;
-	use super::super::{Verify, Chain};
+	use super::super::{Verify, Chain, Error, TransactionError};
 	use db::TestStorage;
 	use test_data;
 	use std::sync::Arc;
@@ -144,6 +144,23 @@ mod tests {
 		let b1 = test_data::block_h170();
 		let verifier = ChainVerifier::new(Arc::new(storage));
 		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
+	}
+
+	#[test]
+	fn unknown_transaction_returns_inconclusive() {
+		let storage = TestStorage::with_blocks(
+			&vec![
+				test_data::block_h169(),
+			]
+		);
+		let b170 = test_data::block_h170();
+		let verifier = ChainVerifier::new(Arc::new(storage));
+
+		let should_be = Err(Error::Transaction(
+			0,
+			TransactionError::Inconclusive("c997a5e56e104102fa209c6a852dd90660a20b2d9c352423edce25857fcd3704".into())
+		));
+		assert_eq!(should_be, verifier.verify(&b170));
 	}
 
 }

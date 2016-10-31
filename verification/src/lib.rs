@@ -22,7 +22,9 @@ mod chain_verifier;
 pub use queue::Queue;
 pub use chain_verifier::ChainVerifier;
 
-#[derive(Debug)]
+use primitives::hash::H256;
+
+#[derive(Debug, PartialEq)]
 /// All possible verification errors
 pub enum Error {
 	/// has an equal duplicate in the chain
@@ -43,7 +45,7 @@ pub enum Error {
 	MerkleRoot,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 /// Possible transactions verification errors
 pub enum TransactionError {
 	/// Not found corresponding output for transaction input
@@ -52,6 +54,8 @@ pub enum TransactionError {
 	Maturity,
 	/// Signature invalid for given input
 	Signature(usize),
+	/// Inconclusive (unknown parent transaction)
+	Inconclusive(H256),
 }
 
 #[derive(PartialEq, Debug)]
