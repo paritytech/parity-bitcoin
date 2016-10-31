@@ -1,9 +1,56 @@
 //! Block builder
 
-use chain;
+use chain::{self, RepresentH256};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use invoke::{Invoke, Identity};
+
+pub struct BlockHashBuilder<F=Identity> {
+	callback: F,
+	block: Option<chain::Block>,
+}
+
+impl BlockHashBuilder {
+	pub fn new() -> Self {
+		BlockHashBuilder::with_callback(Identity)
+	}
+}
+
+impl<F> BlockHashBuilder<F> where F: Invoke<(H256, chain::Block)> {
+	pub fn with_callback(callback: F) -> Self {
+		BlockHashBuilder {
+			block: None,
+			callback: callback,
+		}
+	}
+
+	pub fn block(self) -> BlockBuilder<Self> {
+		BlockBuilder::with_callback(self)
+	}
+
+	pub fn with_block(mut self, block: chain::Block) -> Self {
+		self.block = Some(block);
+		self
+	}
+
+	pub fn build(self) -> F::Result {
+		let block = self.block.expect("Block is supposed to be build here to get hash");
+		self.callback.invoke((
+			block.hash(),
+			block
+		))
+	}
+}
+
+impl<F> Invoke<chain::Block> for BlockHashBuilder<F>
+	where F: Invoke<(H256, chain::Block)>
+{
+	type Result = Self;
+
+	fn invoke(self, block: chain::Block) -> Self {
+		self.with_block(block)
+	}
+}
 
 pub struct BlockBuilder<F=Identity> {
 	callback: F,
@@ -334,6 +381,7 @@ impl<F> TransactionOutputBuilder<F> where F: Invoke<chain::TransactionOutput> {
 }
 
 pub fn block_builder() -> BlockBuilder { BlockBuilder::new() }
+pub fn block_hash_builder() -> BlockHashBuilder { BlockHashBuilder::new() }
 
 #[test]
 fn example1() {
@@ -373,4 +421,16 @@ fn example4() {
 
 	assert_eq!(block.transactions().len(), 2);
 	assert_eq!(block.transactions()[1].inputs[0].previous_output.hash, H256::from(1));
+}
+
+#[test]
+fn example5() {
+	let (hash, block) = block_hash_builder()
+		.block()
+			.header().parent(H256::from(0)).build()
+			.build()
+		.build();
+
+	assert_eq!(hash, "9f54dbfe94217c473e9acd5f52303d85ce1ef5e563a7e55b378ad555089fdd4d".into());
+	assert_eq!(block.header().previous_header_hash, "0000000000000000000000000000000000000000000000000000000000000000".into());
 }
