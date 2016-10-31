@@ -16,46 +16,46 @@ pub trait LocalSyncNode : Send + Sync {
 }
 
 pub trait InboundSyncConnection : Send + Sync {
-	fn start_sync_session(&mut self, version: u32);
-	fn on_inventory(&mut self, message: types::Inv);
-	fn on_getdata(&mut self, message: types::GetData);
-	fn on_getblocks(&mut self, message: types::GetBlocks);
-	fn on_getheaders(&mut self, message: types::GetHeaders);
-	fn on_transaction(&mut self, message: types::Tx);
-	fn on_block(&mut self, message: types::Block);
-	fn on_headers(&mut self, message: types::Headers);
-	fn on_mempool(&mut self, message: types::MemPool);
-	fn on_filterload(&mut self, message: types::FilterLoad);
-	fn on_filteradd(&mut self, message: types::FilterAdd);
-	fn on_filterclear(&mut self, message: types::FilterClear);
-	fn on_merkleblock(&mut self, message: types::MerkleBlock);
-	fn on_sendheaders(&mut self, message: types::SendHeaders);
-	fn on_feefilter(&mut self, message: types::FeeFilter);
-	fn on_send_compact(&mut self, message: types::SendCompact);
-	fn on_compact_block(&mut self, message: types::CompactBlock);
-	fn on_get_block_txn(&mut self, message: types::GetBlockTxn);
-	fn on_block_txn(&mut self, message: types::BlockTxn);
+	fn start_sync_session(&self, version: u32);
+	fn on_inventory(&self, message: types::Inv);
+	fn on_getdata(&self, message: types::GetData);
+	fn on_getblocks(&self, message: types::GetBlocks);
+	fn on_getheaders(&self, message: types::GetHeaders);
+	fn on_transaction(&self, message: types::Tx);
+	fn on_block(&self, message: types::Block);
+	fn on_headers(&self, message: types::Headers);
+	fn on_mempool(&self, message: types::MemPool);
+	fn on_filterload(&self, message: types::FilterLoad);
+	fn on_filteradd(&self, message: types::FilterAdd);
+	fn on_filterclear(&self, message: types::FilterClear);
+	fn on_merkleblock(&self, message: types::MerkleBlock);
+	fn on_sendheaders(&self, message: types::SendHeaders);
+	fn on_feefilter(&self, message: types::FeeFilter);
+	fn on_send_compact(&self, message: types::SendCompact);
+	fn on_compact_block(&self, message: types::CompactBlock);
+	fn on_get_block_txn(&self, message: types::GetBlockTxn);
+	fn on_block_txn(&self, message: types::BlockTxn);
 }
 
 pub trait OutboundSyncConnection : Send + Sync {
-	fn send_inventory(&mut self, message: &types::Inv);
-	fn send_getdata(&mut self, message: &types::GetData);
-	fn send_getblocks(&mut self, message: &types::GetBlocks);
-	fn send_getheaders(&mut self, message: &types::GetHeaders);
-	fn send_transaction(&mut self, message: &types::Tx);
-	fn send_block(&mut self, message: &types::Block);
-	fn send_headers(&mut self, message: &types::Headers);
-	fn send_mempool(&mut self, message: &types::MemPool);
-	fn send_filterload(&mut self, message: &types::FilterLoad);
-	fn send_filteradd(&mut self, message: &types::FilterAdd);
-	fn send_filterclear(&mut self, message: &types::FilterClear);
-	fn send_merkleblock(&mut self, message: &types::MerkleBlock);
-	fn send_sendheaders(&mut self, message: &types::SendHeaders);
-	fn send_feefilter(&mut self, message: &types::FeeFilter);
-	fn send_send_compact(&mut self, message: &types::SendCompact);
-	fn send_compact_block(&mut self, message: &types::CompactBlock);
-	fn send_get_block_txn(&mut self, message: &types::GetBlockTxn);
-	fn send_block_txn(&mut self, message: &types::BlockTxn);
+	fn send_inventory(&self, message: &types::Inv);
+	fn send_getdata(&self, message: &types::GetData);
+	fn send_getblocks(&self, message: &types::GetBlocks);
+	fn send_getheaders(&self, message: &types::GetHeaders);
+	fn send_transaction(&self, message: &types::Tx);
+	fn send_block(&self, message: &types::Block);
+	fn send_headers(&self, message: &types::Headers);
+	fn send_mempool(&self, message: &types::MemPool);
+	fn send_filterload(&self, message: &types::FilterLoad);
+	fn send_filteradd(&self, message: &types::FilterAdd);
+	fn send_filterclear(&self, message: &types::FilterClear);
+	fn send_merkleblock(&self, message: &types::MerkleBlock);
+	fn send_sendheaders(&self, message: &types::SendHeaders);
+	fn send_feefilter(&self, message: &types::FeeFilter);
+	fn send_send_compact(&self, message: &types::SendCompact);
+	fn send_compact_block(&self, message: &types::CompactBlock);
+	fn send_get_block_txn(&self, message: &types::GetBlockTxn);
+	fn send_block_txn(&self, message: &types::BlockTxn);
 }
 
 struct OutboundSync {
@@ -82,75 +82,75 @@ impl OutboundSync {
 }
 
 impl OutboundSyncConnection for OutboundSync {
-	fn send_inventory(&mut self, message: &types::Inv) {
+	fn send_inventory(&self, message: &types::Inv) {
 		self.send_message(message);
 	}
 
-	fn send_getdata(&mut self, message: &types::GetData) {
+	fn send_getdata(&self, message: &types::GetData) {
 		self.send_message(message);
 	}
 
-	fn send_getblocks(&mut self, message: &types::GetBlocks) {
+	fn send_getblocks(&self, message: &types::GetBlocks) {
 		self.send_message(message);
 	}
 
-	fn send_getheaders(&mut self, message: &types::GetHeaders) {
+	fn send_getheaders(&self, message: &types::GetHeaders) {
 		self.send_message(message);
 	}
 
-	fn send_transaction(&mut self, message: &types::Tx) {
+	fn send_transaction(&self, message: &types::Tx) {
 		self.send_message(message);
 	}
 
-	fn send_block(&mut self, message: &types::Block) {
+	fn send_block(&self, message: &types::Block) {
 		self.send_message(message);
 	}
 
-	fn send_headers(&mut self, message: &types::Headers) {
+	fn send_headers(&self, message: &types::Headers) {
 		self.send_message(message);
 	}
 
-	fn send_mempool(&mut self, message: &types::MemPool) {
+	fn send_mempool(&self, message: &types::MemPool) {
 		self.send_message(message);
 	}
 
-	fn send_filterload(&mut self, message: &types::FilterLoad) {
+	fn send_filterload(&self, message: &types::FilterLoad) {
 		self.send_message(message);
 	}
 
-	fn send_filteradd(&mut self, message: &types::FilterAdd) {
+	fn send_filteradd(&self, message: &types::FilterAdd) {
 		self.send_message(message);
 	}
 
-	fn send_filterclear(&mut self, message: &types::FilterClear) {
+	fn send_filterclear(&self, message: &types::FilterClear) {
 		self.send_message(message);
 	}
 
-	fn send_merkleblock(&mut self, message: &types::MerkleBlock) {
+	fn send_merkleblock(&self, message: &types::MerkleBlock) {
 		self.send_message(message);
 	}
 
-	fn send_sendheaders(&mut self, message: &types::SendHeaders) {
+	fn send_sendheaders(&self, message: &types::SendHeaders) {
 		self.send_message(message);
 	}
 
-	fn send_feefilter(&mut self, message: &types::FeeFilter) {
+	fn send_feefilter(&self, message: &types::FeeFilter) {
 		self.send_message(message);
 	}
 
-	fn send_send_compact(&mut self, message: &types::SendCompact) {
+	fn send_send_compact(&self, message: &types::SendCompact) {
 		self.send_message(message);
 	}
 
-	fn send_compact_block(&mut self, message: &types::CompactBlock) {
+	fn send_compact_block(&self, message: &types::CompactBlock) {
 		self.send_message(message);
 	}
 
-	fn send_get_block_txn(&mut self, message: &types::GetBlockTxn) {
+	fn send_get_block_txn(&self, message: &types::GetBlockTxn) {
 		self.send_message(message);
 	}
 
-	fn send_block_txn(&mut self, message: &types::BlockTxn) {
+	fn send_block_txn(&self, message: &types::BlockTxn) {
 		self.send_message(message);
 	}
 }

@@ -45,13 +45,10 @@ impl SynchronizationTaskExecutor for LocalSynchronizationTaskExecutor {
 						}).collect()
 				};
 
-				match self.peers.get_mut(&peer_index) {
-					Some(connection) => {
-						let connection = &mut *connection;
-						trace!(target: "sync", "Querying {} unknown blocks from peer#{}", getdata.inventory.len(), peer_index);
-						connection.send_getdata(&getdata);
-					}
-					_ => (),
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					let connection = &mut *connection;
+					trace!(target: "sync", "Querying {} unknown blocks from peer#{}", getdata.inventory.len(), peer_index);
+					connection.send_getdata(&getdata);
 				}
 			}
 			SynchronizationTask::RequestInventory(peer_index) => {
@@ -62,13 +59,10 @@ impl SynchronizationTaskExecutor for LocalSynchronizationTaskExecutor {
 					hash_stop: H256::default(),
 				};
 
-				match self.peers.get_mut(&peer_index) {
-					Some(connection) => {
-						let connection = &mut *connection;
-						trace!(target: "sync", "Querying full inventory from peer#{}", peer_index);
-						connection.send_getblocks(&getblocks);
-					},
-					_ => (),
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					let connection = &mut *connection;
+					trace!(target: "sync", "Querying full inventory from peer#{}", peer_index);
+					connection.send_getblocks(&getblocks);
 				}
 			},
 			SynchronizationTask::RequestBestInventory(peer_index) => {
@@ -79,13 +73,10 @@ impl SynchronizationTaskExecutor for LocalSynchronizationTaskExecutor {
 					hash_stop: H256::default(),
 				};
 
-				match self.peers.get_mut(&peer_index) {
-					Some(connection) => {
-						let connection = &mut *connection;
-						trace!(target: "sync", "Querying best inventory from peer#{}", peer_index);
-						connection.send_getblocks(&getblocks);
-					},
-					_ => (),
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					let connection = &mut *connection;
+					trace!(target: "sync", "Querying best inventory from peer#{}", peer_index);
+					connection.send_getblocks(&getblocks);
 				}
 			},
 		}
