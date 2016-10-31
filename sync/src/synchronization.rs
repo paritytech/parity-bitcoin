@@ -214,8 +214,8 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 	}
 
 	/// Try to queue synchronization of unknown blocks when new inventory is received.
-	pub fn on_unknown_blocks(&mut self, peer_index: usize, peer_hashes: Vec<H256>) {
-		self.process_unknown_blocks(peer_index, peer_hashes);
+	pub fn on_new_blocks_inventory(&mut self, peer_index: usize, peer_hashes: Vec<H256>) {
+		self.process_new_blocks_inventory(peer_index, peer_hashes);
 		self.execute_synchronization_tasks();
 	}
 
@@ -241,10 +241,12 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 		chain.remove_blocks_with_state(BlockState::Requested);
 		chain.remove_blocks_with_state(BlockState::Scheduled);
 		chain.remove_blocks_with_state(BlockState::Verifying);
+
+		warn!(target: "sync", "Synchronization process restarting from block {:?}", chain.best_block());
 	}
 
-	/// Process new unknown blocks
-	fn process_unknown_blocks(&mut self, peer_index: usize, mut peer_hashes: Vec<H256>) {
+	/// Process new blocks inventory
+	fn process_new_blocks_inventory(&mut self, peer_index: usize, mut peer_hashes: Vec<H256>) {
 		//     | requested | QUEUED |
 		// ---                          [1]
 		//         ---                  [2] +
@@ -376,7 +378,7 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 	fn execute_synchronization_tasks(&mut self) {
 		let mut tasks: Vec<Task> = Vec::new();
 
-		// prepar synchronization tasks
+		// prepare synchronization tasks
 		{
 			// display information if processed many blocks || enough time has passed since sync start
 			let mut chain = self.chain.write();
@@ -462,15 +464,20 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 
 	/// Process successful block verification
 	fn on_block_verification_success(&mut self, block: Block) {
-		let hash = block.hash();
-		let mut chain = self.chain.write();
+		{
+			let hash = block.hash();
+			let mut chain = self.chain.write();
 
-		// remove from verifying queue
-		assert_eq!(chain.remove_block_with_state(&hash, BlockState::Verifying), HashPosition::Front);
+			// remove from verifying queue
+			assert_eq!(chain.remove_block_with_state(&hash, BlockState::Verifying), HashPosition::Front);
 
-		// insert to storage
-		chain.insert_best_block(block)
-			.expect("Error inserting to db.");
+			// insert to storage
+			chain.insert_best_block(block)
+				.expect("Error inserting to db.");
+		}
+
+		// continue with synchronization
+		self.execute_synchronization_tasks();
 	}
 
 	/// Process failed block verification
@@ -479,6 +486,9 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 
 		// reset synchronization process
 		self.reset();
+
+		// start new tasks
+		self.execute_synchronization_tasks();
 	}
 }
 

@@ -14,12 +14,14 @@ pub enum HashPosition {
 	Inside,
 }
 
+/// Ordered queue with O(1) contains() && random access operations cost.
 #[derive(Clone)]
 pub struct HashQueue {
 	queue: VecDeque<H256>,
 	set: HashSet<H256>
 }
 
+/// Chain of linked queues. First queue has index zero.
 pub struct HashQueueChain {
 	chain: Vec<HashQueue>,
 }
@@ -32,22 +34,54 @@ impl HashQueue {
 		}
 	}
 
+	/// Returns len of the given queue.
 	pub fn len(&self) -> usize {
 		self.queue.len()
 	}
 
+	/// Returns true if queue is empty.
 	pub fn is_empty(&self) -> bool {
 		self.queue.is_empty()
 	}
 
-	pub fn back<'a>(&'a self) -> Option<&'a H256> {
-		self.queue.back()
+	/// Returns front element from the given queue.
+	pub fn front(&self) -> Option<H256> {
+		self.queue.front().cloned()
 	}
 
+	/// Returns back element from the given queue.
+	pub fn back(&self) -> Option<H256> {
+		self.queue.back().cloned()
+	}
+
+	/// Returns previous-to back element from the given queue.
+	pub fn pre_back(&self) -> Option<H256> {
+		let queue_len = self.queue.len();
+		if queue_len <= 1 {
+			return None;
+		}
+		Some(self.queue[queue_len - 2].clone())
+	}
+
+	/// Returns n-th element (n is starting from 0), starting from the back-element in the queue.
+	/// If there are no n-th element - returns (n-1) element & etc.
+	pub fn back_skip_n(&self, n: usize) -> Option<H256> {
+		let queue_len = self.queue.len();
+		if queue_len == 0 {
+			return None;
+		}
+		if n + 1 > queue_len {
+			return Some(self.queue[0].clone())
+		}
+		return Some(self.queue[queue_len - n - 1].clone())
+	}
+
+	/// Returns true if queue contains element.
 	pub fn contains(&self, hash: &H256) -> bool {
 		self.set.contains(hash)
 	}
 
+	/// Removes element from the front of the queue.
 	pub fn pop_front(&mut self) -> Option<H256> {
 		match self.queue.pop_front() {
 			Some(hash) => {
@@ -58,6 +92,7 @@ impl HashQueue {
 		}
 	}
 
+	/// Removes n elements from the front of the queue.
 	pub fn pop_front_n(&mut self, n: usize) -> Vec<H256> {
 		let mut result: Vec<H256> = Vec::new();
 		for _ in 0..n {
@@ -69,6 +104,7 @@ impl HashQueue {
 		result
 	}
 
+	/// Adds element to the back of the queue.
 	pub fn push_back(&mut self, hash: H256) {
 		if !self.set.insert(hash.clone()) {
 			panic!("must be checked by caller");
@@ -76,12 +112,14 @@ impl HashQueue {
 		self.queue.push_back(hash);
 	}
 
+	/// Adds elements to the back of the queue.
 	pub fn push_back_n(&mut self, hashes: Vec<H256>) {
 		for hash in hashes {
 			self.push_back(hash);
 		}
 	}
 
+	/// Removes element from the queue, returning its position.
 	pub fn remove(&mut self, hash: &H256) -> HashPosition {
 		if !self.set.remove(hash) {
 			return HashPosition::Missing;
@@ -103,6 +141,7 @@ impl HashQueue {
 		unreachable!()
 	}
 
+	/// Removes all elements from the queue.
 	pub fn remove_all(&mut self) {
 		self.queue.clear();
 		self.set.clear();
@@ -118,6 +157,7 @@ impl Index<usize> for HashQueue {
 }
 
 impl HashQueueChain {
+	/// Creates chain with given number of queues.
 	pub fn with_number_of_queues(number_of_queues: usize) -> Self {
 		assert!(number_of_queues != 0);
 		HashQueueChain {
@@ -125,30 +165,54 @@ impl HashQueueChain {
 		}
 	}
 
+	/// Returns length of the whole chain.
 	pub fn len(&self) -> usize {
 		self.chain.iter().fold(0, |total, chain| total + chain.len())
 	}
 
+	/// Returns length of the given queue.
 	pub fn len_of(&self, chain_index: usize) -> usize {
 		self.chain[chain_index].len()
 	}
 
+	/// Returns true if given queue is empty.
 	pub fn is_empty_at(&self, chain_index: usize) -> bool {
 		self.chain[chain_index].is_empty()
 	}
 
-	pub fn back_at(&self, chain_index: usize) -> Option<H256> {
+	/// Returns element at the front of the given queue.
+	pub fn front_at(&self, chain_index: usize) -> Option<H256> {
 		let ref queue = self.chain[chain_index];
-		queue.back().cloned()
+		queue.front()
 	}
 
+	/// Returns element at the back of the given queue.
+	pub fn back_at(&self, chain_index: usize) -> Option<H256> {
+		let ref queue = self.chain[chain_index];
+		queue.back()
+	}
+
+	/// Returns previous-to back element from the given queue.
+	pub fn pre_back_at(&self, chain_index: usize) -> Option<H256> {
+		let ref queue = self.chain[chain_index];
+		queue.pre_back()
+	}
+
+	/// Returns n-th element (n is starting from 0), starting from the back-element in given queue.
+	/// If there are no n-th element - returns (n-1) element & etc.
+	pub fn back_skip_n_at(&self, chain_index: usize, n: usize) -> Option<H256> {
+		let ref queue = self.chain[chain_index];
+		queue.back_skip_n(n)
+	}
+
+	/// Returns the back of the whole chain.
 	pub fn back(&self) -> Option<H256> {
 		let mut queue_index = self.chain.len() - 1;
 		loop {
 			let ref queue = self.chain[queue_index];
 			let queue_back = queue.back();
 			if queue_back.is_some() {
-				return queue_back.cloned();
+				return queue_back;
 			}
 
 			queue_index = queue_index - 1;
@@ -158,10 +222,12 @@ impl HashQueueChain {
 		}
 	}
 
+	/// Checks if hash is contained in given queue.
 	pub fn is_contained_in(&self, queue_index: usize, hash: &H256) -> bool {
 		self.chain[queue_index].contains(hash)
 	}
 
+	/// Returns the index of queue, hash is contained in.
 	pub fn contains_in(&self, hash: &H256) -> Option<usize> {
 		for i in 0..self.chain.len() {
 			if self.chain[i].contains(hash) {
@@ -171,22 +237,27 @@ impl HashQueueChain {
 		None
 	}
 
+	/// Remove a number of hashes from the front of the given queue.
 	pub fn pop_front_n_at(&mut self, queue_index: usize, n: usize) -> Vec<H256> {
 		self.chain[queue_index].pop_front_n(n)
 	}
 
+	/// Push hash onto the back of the given queue.
 	pub fn push_back_at(&mut self, queue_index: usize, hash: H256) {
 		self.chain[queue_index].push_back(hash)
 	}
 
+	/// Push a number of hashes onto the back of the given queue.
 	pub fn push_back_n_at(&mut self, queue_index: usize, hashes: Vec<H256>) {
 		self.chain[queue_index].push_back_n(hashes)
 	}
 
+	/// Remove hash from given queue.
 	pub fn remove_at(&mut self, queue_index: usize, hash: &H256) -> HashPosition {
 		self.chain[queue_index].remove(hash)
 	}
 
+	/// Remove all items from given queue.
 	pub fn remove_all_at(&mut self, queue_index: usize) {
 		self.chain[queue_index].remove_all();
 	}
@@ -206,5 +277,43 @@ impl Index<usize> for HashQueueChain {
 		}
 
 		panic!("invalid index");
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use primitives::hash::H256;
+	use super::{HashQueue, HashQueueChain, HashPosition};
+
+	#[test]
+	fn hash_queue_empty() {
+		let queue = HashQueue::new();
+		assert_eq!(queue.len(), 1);
+		assert_eq!(queue.is_empty(), true);
+		assert_eq!(queue.front(), None);
+		assert_eq!(queue.back(), None);
+		assert_eq!(queue.pre_back(), None);
+		assert_eq!(queue.back_skip_n(), None);
+		assert_eq!(queue.contains("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), false);
+		assert_eq!(queue.pop_front(), None);
+		assert_eq!(queue.pop_front_n(100), vec![]);
+		assert_eq!(queue.remove("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), HashPosition::Missing);
+	}
+
+	#[test]
+	fn hash_queue_chain_empty() {
+		let chain = HashQueueChain::with_number_of_queues(3);
+		assert_eq!(chain.len(), 0);
+		assert_eq!(chain.len_of(0), 0);
+		assert_eq!(chain.is_empty_at(0), true);
+		assert_eq!(chain.front_at(0), None);
+		assert_eq!(chain.back_at(0), None);
+		assert_eq!(chain.pre_back_at(0), None);
+		assert_eq!(chain.back_skip_n_at(0, 100), None);
+		assert_eq!(chain.back(), None);
+		assert_eq!(chain.is_contained_in(0, &"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), false);
+		assert_eq!(chain.contains_in(&"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), None);
+		assert_eq!(chain.pop_front_n_at(0, 100), vec![]);
+		assert_eq!(chain.remove_at(0, &"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), HashPosition::Missing);
 	}
 }

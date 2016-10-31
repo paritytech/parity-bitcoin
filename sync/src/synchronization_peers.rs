@@ -77,13 +77,19 @@ impl Peers {
 
 	/// Blocks have been requested from peer.
 	pub fn on_blocks_requested(&mut self, peer_index: usize, blocks_hashes: &Vec<H256>) {
+		// blocks can only be requested from idle peers
+		assert_eq!(self.idle_peers.remove(&peer_index), true);
 		self.blocks_requests.entry(peer_index).or_insert(HashSet::new()).extend(blocks_hashes.iter().cloned());
-		self.idle_peers.remove(&peer_index);
 	}
 
 	/// Inventory has been requested from peer.
-	pub fn on_inventory_requested(&mut self, _peer_index: usize) {
-		// TODO
+	pub fn on_inventory_requested(&mut self, peer_index: usize) {
+		// inventory can only be requested from idle peers
+		assert_eq!(self.idle_peers.remove(&peer_index), true);
+
+		// peer is now out-of-synchronization process, because:
+		// 1) if it has new blocks, it will respond with `inventory` message && will be insrted back here
+		// 2) if it has no new blocks => either synchronization is completed, or it is behind us in sync
 	}
 
 	/// Reset peers state

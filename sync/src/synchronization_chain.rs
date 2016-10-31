@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::Arc;
 use parking_lot::RwLock;
 use chain::{Block, RepresentH256};
@@ -202,14 +203,14 @@ impl Chain {
 	/// Prepare best block locator hashes
 	pub fn best_block_locator_hashes(&self) -> Vec<H256> {
 		let mut result: Vec<H256> = Vec::with_capacity(4);
-		if let Some(best_block) = self.hash_chain.back_at(SCHEDULED_QUEUE) {
-			result.push(best_block);
+		if let Some(pre_best_block) = self.hash_chain.back_skip_n_at(SCHEDULED_QUEUE, 2) {
+			result.push(pre_best_block);
 		}
-		if let Some(best_block) = self.hash_chain.back_at(REQUESTED_QUEUE) {
-			result.push(best_block);
+		if let Some(pre_best_block) = self.hash_chain.back_skip_n_at(REQUESTED_QUEUE, 2) {
+			result.push(pre_best_block);
 		}
-		if let Some(best_block) = self.hash_chain.back_at(VERIFYING_QUEUE) {
-			result.push(best_block);
+		if let Some(pre_best_block) = self.hash_chain.back_skip_n_at(VERIFYING_QUEUE, 2) {
+			result.push(pre_best_block);
 		}
 		result.push(self.best_storage_block_hash.clone());
 		result
@@ -321,6 +322,33 @@ impl Chain {
 			}
 			index -= step;
 		}
+	}
+}
+
+impl fmt::Debug for Chain {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		try!(writeln!(f, "chain: ["));
+			let mut num = self.storage.best_block_number().unwrap() as usize;
+			try!(writeln!(f, "\tworse(stored): {} {:?}", 0, self.storage.block_hash(0)));
+			try!(writeln!(f, "\tbest(stored): {} {:?}", num, self.storage.block_hash(num as u32)));
+
+			let queues = vec![
+				("verifying", VERIFYING_QUEUE),
+				("requested", REQUESTED_QUEUE),
+				("scheduled", SCHEDULED_QUEUE),
+			];
+			for (state, queue) in queues {
+				let queue_len = self.hash_chain.len_of(queue);
+				if queue_len != 0 {
+					try!(writeln!(f, "\tworse({}): {} {:?}", state, num + 1, self.hash_chain.front_at(queue)));
+					num += 1 + queue_len;
+					if let Some(pre_best) = self.hash_chain.pre_back_at(queue) {
+						try!(writeln!(f, "\tpre-best({}): {} {:?}", state, num - 1, pre_best));
+					}
+					try!(writeln!(f, "\tbest({}): {} {:?}", state, num, self.hash_chain.back_at(queue)));
+				}
+			}
+		writeln!(f, "]")
 	}
 }
 
