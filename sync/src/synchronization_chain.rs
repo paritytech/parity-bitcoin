@@ -328,6 +328,7 @@ impl Chain {
 impl fmt::Debug for Chain {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		try!(writeln!(f, "chain: ["));
+		{
 			let mut num = self.storage.best_block_number().unwrap() as usize;
 			try!(writeln!(f, "\tworse(stored): {} {:?}", 0, self.storage.block_hash(0)));
 			try!(writeln!(f, "\tbest(stored): {} {:?}", num, self.storage.block_hash(num as u32)));
@@ -348,6 +349,7 @@ impl fmt::Debug for Chain {
 					try!(writeln!(f, "\tbest({}): {} {:?}", state, num, self.hash_chain.back_at(queue)));
 				}
 			}
+		}
 		writeln!(f, "]")
 	}
 }
