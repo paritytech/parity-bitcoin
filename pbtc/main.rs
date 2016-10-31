@@ -56,7 +56,7 @@ fn init_db(db: &Arc<db::Store>) {
 }
 
 fn import_blockchain(db_path: &str) {
-	for _block in import::open_blk_dir(db_path).expect("TODO") {
+	for (_i, _blk) in import::open_blk_dir(db_path).expect("TODO").enumerate() {
 		// import logic goes here
 	}
 }
@@ -68,6 +68,7 @@ fn run() -> Result<(), String> {
 
 	if let Some(ref import_path) = cfg.import_path {
 		import_blockchain(import_path);
+		return Ok(())
 	}
 
 	let mut el = event_loop();

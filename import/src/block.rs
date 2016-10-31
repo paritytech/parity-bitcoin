@@ -5,9 +5,9 @@ use chain;
 
 #[derive(Debug, PartialEq)]
 pub struct Block {
-	magic: H32,
-	block_size: u32,
-	block: chain::Block,
+	pub magic: H32,
+	pub block_size: u32,
+	pub block: chain::Block,
 }
 
 impl Deserializable for Block {
