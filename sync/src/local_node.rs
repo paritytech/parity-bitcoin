@@ -2,39 +2,40 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use parking_lot::Mutex;
 use db;
-use parking_lot::RwLock;
 use chain::RepresentH256;
 use p2p::OutboundSyncConnectionRef;
 use message::common::InventoryType;
 use message::types;
 use synchronization::{Synchronization, SynchronizationRef, Config as SynchronizationConfig, Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor};
-use synchronization_chain::{Chain, ChainRef};
-use synchronization_executor::LocalSynchronizationTaskExecutor;
+use synchronization_chain::ChainRef;
 
 /// Thread-safe reference to the `LocalNode`.
 /// Locks order:
 /// 1) sync Mutex
 /// 2) executor Mutex
 /// 2) chain RwLock
-pub type LocalNodeRef = Arc<LocalNode>;
+pub type LocalNodeRef<T> = Arc<LocalNode<T>>;
 
 /// Local synchronization node
-pub struct LocalNode {
+pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections + Send + 'static> {
 	/// Throughout counter of synchronization peers
 	peer_counter: AtomicUsize,
 	/// Synchronization chain
 	chain: ChainRef,
 	/// Synchronization executor
-	executor: Arc<Mutex<LocalSynchronizationTaskExecutor>>,
+	executor: Arc<Mutex<T>>,
 	/// Synchronization process
-	sync: SynchronizationRef<LocalSynchronizationTaskExecutor>,
+	sync: SynchronizationRef<T>,
 }
 
-impl LocalNode {
+/// Peers list
+pub trait PeersConnections {
+	fn add_peer_connection(&mut self, peer_index: usize, outbound_connection: OutboundSyncConnectionRef);
+}
+
+impl<T> LocalNode<T> where T: SynchronizationTaskExecutor + PeersConnections + Send + 'static {
 	/// New synchronization node with given storage
-	pub fn new(storage: Arc<db::Store>) -> LocalNodeRef {
-		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
-		let executor = LocalSynchronizationTaskExecutor::new(chain.clone());
+	pub fn new(chain: ChainRef, executor: Arc<Mutex<T>>) -> LocalNodeRef<T> {
 		let sync = Synchronization::new(SynchronizationConfig::default(), executor.clone(), chain.clone());
 		Arc::new(LocalNode {
 			peer_counter: AtomicUsize::new(0),
@@ -156,5 +157,60 @@ impl LocalNode {
 
 	pub fn on_peer_block_txn(&self, peer_index: usize, _message: types::BlockTxn) {
 		trace!(target: "sync", "Got `blocktxn` message from peer#{}", peer_index);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::sync::Arc;
+	use parking_lot::{Mutex, RwLock};
+	use synchronization::Task;
+	use synchronization::tests::DummyTaskExecutor;
+	use synchronization_chain::Chain;
+	use p2p::{OutboundSyncConnection, OutboundSyncConnectionRef};
+	use message::types;
+	use db;
+	use super::LocalNode;
+
+	struct DummyOutboundSyncConnection;
+
+	impl DummyOutboundSyncConnection {
+		pub fn new() -> OutboundSyncConnectionRef {
+			Box::new(DummyOutboundSyncConnection {})
+		}
+	}
+
+	impl OutboundSyncConnection for DummyOutboundSyncConnection {
+		fn send_inventory(&self, _message: &types::Inv) {}
+		fn send_getdata(&self, _message: &types::GetData) {}
+		fn send_getblocks(&self, _message: &types::GetBlocks) {}
+		fn send_getheaders(&self, _message: &types::GetHeaders) {}
+		fn send_transaction(&self, _message: &types::Tx) {}
+		fn send_block(&self, _message: &types::Block) {}
+		fn send_headers(&self, _message: &types::Headers) {}
+		fn send_mempool(&self, _message: &types::MemPool) {}
+		fn send_filterload(&self, _message: &types::FilterLoad) {}
+		fn send_filteradd(&self, _message: &types::FilterAdd) {}
+		fn send_filterclear(&self, _message: &types::FilterClear) {}
+		fn send_merkleblock(&self, _message: &types::MerkleBlock) {}
+		fn send_sendheaders(&self, _message: &types::SendHeaders) {}
+		fn send_feefilter(&self, _message: &types::FeeFilter) {}
+		fn send_send_compact(&self, _message: &types::SendCompact) {}
+		fn send_compact_block(&self, _message: &types::CompactBlock) {}
+		fn send_get_block_txn(&self, _message: &types::GetBlockTxn) {}
+		fn send_block_txn(&self, _message: &types::BlockTxn) {}
+	}
+
+	#[test]
+	fn local_node_request_inventory_on_sync_start() {
+		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
+		let executor = Arc::new(Mutex::new(DummyTaskExecutor::default()));
+		let local_node = LocalNode::new(chain, executor.clone());
+		let peer_index = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		local_node.start_sync_session(peer_index, 0);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks.len(), 1);
+		assert_eq!(tasks, vec![Task::RequestInventory(peer_index)]);
 	}
 }

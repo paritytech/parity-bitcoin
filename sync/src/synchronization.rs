@@ -487,17 +487,19 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
 	use std::sync::Arc;
 	use std::mem::replace;
 	use parking_lot::{Mutex, RwLock};
 	use chain::{Block, RepresentH256};
 	use super::{Synchronization, SynchronizationRef, Config, Task, TaskExecutor};
+	use local_node::PeersConnections;
 	use synchronization_chain::{Chain, ChainRef};
+	use p2p::OutboundSyncConnectionRef;
 	use db;
 
 	#[derive(Default)]
-	struct DummyTaskExecutor {
+	pub struct DummyTaskExecutor {
 		pub tasks: Vec<Task>,
 	}
 
@@ -505,6 +507,10 @@ mod tests {
 		pub fn take_tasks(&mut self) -> Vec<Task> {
 			replace(&mut self.tasks, Vec::new())
 		}
+	}
+
+	impl PeersConnections for DummyTaskExecutor {
+		fn add_peer_connection(&mut self, _: usize, _: OutboundSyncConnectionRef) {}
 	}
 
 	impl TaskExecutor for DummyTaskExecutor {
