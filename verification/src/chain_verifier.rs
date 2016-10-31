@@ -112,7 +112,7 @@ impl ContinueVerify for ChainVerifier {
 
 	fn continue_verify(&self, block: &chain::Block, state: usize) -> VerificationResult {
 		// verify transactions (except coinbase)
-		for (idx, transaction) in block.transactions().iter().skip(state).enumerate() {
+		for (idx, transaction) in block.transactions().iter().skip(state-1).enumerate() {
 			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
 		}
 
