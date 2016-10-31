@@ -17,6 +17,7 @@ script = { path = "script" }
 db = { path = "db" }
 verification = { path = "verification" }
 sync = { path = "sync" }
+import = { path = "import" }
 
 [[bin]]
 path = "pbtc/main.rs"

@@ -9,6 +9,7 @@ pub struct Config {
 	pub seednode: Option<String>,
 	pub print_to_console: bool,
 	pub use_disk_database: bool,
+	pub import_path: Option<String>,
 }
 
 pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
@@ -34,6 +35,11 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => None,
 	};
 
+	let import_path = match matches.value_of("import") {
+		Some(s) => Some(try!(s.parse().map_err(|_| "Invalid import path".to_owned()))),
+		None => None,
+	};
+
 	let config = Config {
 		print_to_console: print_to_console,
 		magic: magic,
@@ -41,6 +47,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		connect: connect,
 		seednode: seednode,
 		use_disk_database: use_disk_database,
+		import_path: import_path,
 	};
 
 	Ok(config)
