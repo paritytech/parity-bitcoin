@@ -86,3 +86,9 @@ pub type VerificationResult = Result<Chain, Error>;
 pub trait Verify : Send + Sync {
 	fn verify(&self, block: &chain::Block) -> VerificationResult;
 }
+
+/// Trait for verifier that can be interrupted and continue from the specific point
+pub trait ContinueVerify : Verify + Send + Sync {
+	type State;
+	fn continue_verify(&self, block: &chain::Block, state: Self::State) -> VerificationResult;
+}
