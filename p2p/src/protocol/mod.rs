@@ -23,6 +23,9 @@ pub trait Protocol: Send {
 	/// Handle the message.
 	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error>;
 
+	/// On disconnect.
+	fn on_close(&mut self) {}
+
 	/// Boxes the protocol.
 	fn boxed(self) -> Box<Protocol> where Self: Sized + 'static {
 		Box::new(self)

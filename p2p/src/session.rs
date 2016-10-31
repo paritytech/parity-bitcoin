@@ -59,5 +59,11 @@ impl Session {
 			.collect::<Result<Vec<_>, Error>>()
 			.map(|_| ())
 	}
+
+	pub fn on_close(&self) {
+		for protocol in self.protocols.lock().iter_mut() {
+			protocol.on_close();
+		}
+	}
 }
 

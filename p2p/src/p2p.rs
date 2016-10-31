@@ -251,6 +251,7 @@ impl Context {
 	/// Close channel with given peer info.
 	pub fn close_channel(&self, id: PeerId) {
 		if let Some(channel) = self.connections.remove(id) {
+			channel.session().on_close();
 			trace!("Disconnecting from {}", channel.peer_info().address);
 			channel.shutdown();
 		}
@@ -259,6 +260,7 @@ impl Context {
 	/// Close channel with given peer info.
 	pub fn close_channel_with_error(&self, id: PeerId, error: &error::Error) {
 		if let Some(channel) = self.connections.remove(id) {
+			channel.session().on_close();
 			let address = channel.peer_info().address;
 			trace!("Disconnecting from {} caused by {}", address, error.description());
 			channel.shutdown();
