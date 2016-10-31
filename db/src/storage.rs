@@ -6,7 +6,7 @@ use kvdb::{DBTransaction, Database, DatabaseConfig};
 use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
-use super::BlockRef;
+use super::{BlockRef, BestBlock};
 use serialization;
 use chain::{self, RepresentH256};
 use parking_lot::RwLock;
@@ -30,11 +30,8 @@ const DB_VERSION: u32 = 1;
 
 /// Blockchain storage interface
 pub trait Store : Send + Sync {
-	/// get best block number
-	fn best_block_number(&self) -> Option<u32>;
-
-	/// get best block hash
-	fn best_block_hash(&self) -> Option<H256>;
+	/// get best block
+	fn best_block(&self) -> Option<BestBlock>;
 
 	/// resolves hash by block number
 	fn block_hash(&self, number: u32) -> Option<H256>;
@@ -67,12 +64,6 @@ pub trait Store : Send + Sync {
 
 	/// get transaction metadata
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta>;
-}
-
-#[derive(Debug, Clone)]
-pub struct BestBlock {
-	pub number: u32,
-	pub hash: H256,
 }
 
 /// Blockchain storage with rocksdb database
@@ -149,7 +140,9 @@ impl Storage {
 		let best_number = storage.read_meta_u32(KEY_BEST_BLOCK_NUMBER);
 		let best_hash = storage.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val));
 
-		if best_number.is_some() && best_hash.is_some() {
+		// both values should be stored
+		assert!(best_number.is_some() == best_hash.is_some());
+		if best_number.is_some() {
 			*storage.best_block.write() = Some(
 				BestBlock {
 					number: best_number.expect("is_some() is checked above for block number"),
@@ -266,12 +259,8 @@ impl Storage {
 }
 
 impl Store for Storage {
-	fn best_block_number(&self) -> Option<u32> {
-		self.best_block.read().as_ref().map(|bb| bb.number)
-	}
-
-	fn best_block_hash(&self) -> Option<H256> {
-		self.best_block.read().as_ref().map(|h| h.hash.clone())
+	fn best_block(&self) -> Option<BestBlock> {
+		self.best_block.read().clone()
 	}
 
 	fn block_hash(&self, number: u32) -> Option<H256> {
@@ -423,7 +412,7 @@ mod tests {
 		let block: Block = test_data::genesis();
 		store.insert_block(&block).unwrap();
 
-		assert_eq!(store.best_block_number(), Some(0));
+		assert_eq!(store.best_block().expect("genesis block inserted").number, 0);
 		assert_eq!(store.block_hash(0), Some(block.hash()));
 	}
 
@@ -438,7 +427,7 @@ mod tests {
 		let block: Block = test_data::block_h1();
 		store.insert_block(&block).unwrap();
 
-		assert_eq!(store.best_block_number(), Some(1));
+		assert_eq!(store.best_block().expect("genesis block inserted").number, 1);
 	}
 
 	#[test]
@@ -453,9 +442,9 @@ mod tests {
 		store.insert_block(&another_block).unwrap();
 
 		// did not update because `another_block` is not child of `block`
-		assert_eq!(store.best_block_hash(), Some(block.hash()));
+		assert_eq!(store.best_block().expect("blocks inserted above").hash, block.hash());
 		// number should not be update also
-		assert_eq!(store.best_block_number(), Some(0));
+		assert_eq!(store.best_block().expect("blocks inserted above").number, 0);
 	}
 
 	#[test]
@@ -501,7 +490,7 @@ mod tests {
 		let genesis_meta = store.transaction_meta(&genesis_coinbase).unwrap();
 		assert!(genesis_meta.is_spent(0));
 
-		assert_eq!(store.best_block_number(), Some(1));
+		assert_eq!(store.best_block().expect("genesis block inserted").number, 1);
 	}
 
 	#[test]

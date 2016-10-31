@@ -67,15 +67,15 @@ use time;
 ///! TODO: check + optimize algorithm for Saturated state
 
 /// Approximate maximal number of blocks hashes in scheduled queue.
-const MAX_SCHEDULED_HASHES: u64 = 4 * 1024;
+const MAX_SCHEDULED_HASHES: u32 = 4 * 1024;
 /// Approximate maximal number of blocks hashes in requested queue.
-const MAX_REQUESTED_BLOCKS: u64 = 512;
+const MAX_REQUESTED_BLOCKS: u32 = 512;
 /// Approximate maximal number of blocks in verifying queue.
-const MAX_VERIFYING_BLOCKS: u64 = 512;
+const MAX_VERIFYING_BLOCKS: u32 = 512;
 /// Minimum number of blocks to request from peer
-const MIN_BLOCKS_IN_REQUEST: u64 = 32;
+const MIN_BLOCKS_IN_REQUEST: u32 = 32;
 /// Maximum number of blocks to request from peer
-const MAX_BLOCKS_IN_REQUEST: u64 = 512;
+const MAX_BLOCKS_IN_REQUEST: u32 = 512;
 
 /// Thread-safe reference to the `Synchronization`
 pub type SynchronizationRef<T> = Arc<Mutex<Synchronization<T>>>;
@@ -93,7 +93,7 @@ pub enum Task {
 
 #[derive(Debug, Clone, Copy)]
 pub enum State {
-	Synchronizing(f64, u64),
+	Synchronizing(f64, u32),
 	Saturated,
 }
 
@@ -237,7 +237,7 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 		// TODO: reset verification queue
 
 		let mut chain = self.chain.write();
-		self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().height);
+		self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
 		chain.remove_blocks_with_state(BlockState::Requested);
 		chain.remove_blocks_with_state(BlockState::Scheduled);
 		chain.remove_blocks_with_state(BlockState::Verifying);
@@ -263,7 +263,7 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 
 		// new block is scheduled => move to synchronizing state
 		if !self.state.is_synchronizing() {
-			self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().height);
+			self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
 		}
 
 		// when synchronization is idling
@@ -378,7 +378,7 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 	fn execute_synchronization_tasks(&mut self) {
 		let mut tasks: Vec<Task> = Vec::new();
 		let idle_peers = self.peers.idle_peers();
-		let idle_peers_len = idle_peers.len() as u64;
+		let idle_peers_len = idle_peers.len() as u32;
 
 		// prepare synchronization tasks
 		if idle_peers_len != 0 {
@@ -387,7 +387,7 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 			if let State::Synchronizing(timestamp, num_of_blocks) = self.state {
 				let new_timestamp = time::precise_time_s();
 				let timestamp_diff = new_timestamp - timestamp;
-				let new_num_of_blocks = chain.best_block().height;
+				let new_num_of_blocks = chain.best_block().number;
 				let blocks_diff = if new_num_of_blocks > num_of_blocks { new_num_of_blocks - num_of_blocks} else { 0 };
 				if timestamp_diff >= 60.0 || blocks_diff > 1000 {
 					self.state = State::Synchronizing(new_timestamp, new_num_of_blocks);

@@ -1,6 +1,6 @@
 //! Test storage
 
-use super::{BlockRef, Store, Error};
+use super::{BlockRef, Store, Error, BestBlock};
 use chain::{self, Block, RepresentH256};
 use primitives::hash::H256;
 use serialization;
@@ -18,9 +18,9 @@ pub struct TestStorage {
 
 #[derive(Default)]
 struct TestData {
-	best_block_number: Option<usize>,
+	best_block: Option<BestBlock>,
 	blocks: HashMap<H256, chain::Block>,
-	heights: HashMap<usize, H256>,
+	heights: HashMap<u32, H256>,
 }
 
 impl TestStorage {
@@ -37,11 +37,14 @@ impl TestStorage {
 		{
 			let mut data = storage.data.write();
 			if blocks_len != 0 {
-				data.best_block_number = Some(blocks_len - 1);
+				data.best_block = Some(BestBlock {
+					number: blocks_len as u32 - 1,
+					hash: blocks[blocks_len - 1].hash(),
+				});
 				for (idx, block) in blocks.iter().enumerate() {
 					let hash = block.hash();
 					data.blocks.insert(hash.clone(), block.clone());
-					data.heights.insert(idx, hash);
+					data.heights.insert(idx as u32, hash);
 				}
 			}
 		}
@@ -55,17 +58,13 @@ impl TestStorage {
 }
 
 impl Store for TestStorage {
-	fn best_block_number(&self) -> Option<u32> {
-		self.data.read().best_block_number.map(|b| b as u32)
-	}
-
-	fn best_block_hash(&self) -> Option<H256> {
-		unimplemented!()
+	fn best_block(&self) -> Option<BestBlock> {
+		self.data.read().best_block.clone()
 	}
 
 	fn block_hash(&self, number: u32) -> Option<H256> {
 		let data = self.data.read();
-		data.heights.get(&(number as usize)).cloned()
+		data.heights.get(&number).cloned()
 	}
 
 	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes> {
@@ -119,13 +118,19 @@ impl Store for TestStorage {
 				entry.insert(block.clone());
 			},
 		}
-		match data.best_block_number {
-			Some(best_block_number) => {
-				data.best_block_number = Some(best_block_number + 1);
+		match data.best_block {
+			Some(BestBlock { number: best_block_number, hash: _ }) => {
+				data.best_block = Some(BestBlock {
+					number: best_block_number + 1,
+					hash: hash.clone(),
+				});
 				data.heights.insert(best_block_number + 1, hash);
 			},
 			None => {
-				data.best_block_number = Some(0);
+				data.best_block = Some(BestBlock {
+					number: 0,
+					hash: hash.clone(),
+				});
 				data.heights.insert(0, hash);
 			},
 		}

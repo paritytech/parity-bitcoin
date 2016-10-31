@@ -10,7 +10,6 @@ use message::types;
 use synchronization::{Synchronization, SynchronizationRef, Config as SynchronizationConfig, Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor};
 use synchronization_chain::{Chain, ChainRef};
 use synchronization_executor::LocalSynchronizationTaskExecutor;
-use best_block::BestBlock;
 
 /// Thread-safe reference to the `LocalNode`.
 /// Locks order:
@@ -46,7 +45,7 @@ impl LocalNode {
 	}
 
 	/// Best block hash (including non-verified, requested && non-requested blocks)
-	pub fn best_block(&self) -> BestBlock {
+	pub fn best_block(&self) -> db::BestBlock {
 		self.chain.read().best_block()
 	}
 

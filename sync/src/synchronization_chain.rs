@@ -4,7 +4,6 @@ use parking_lot::RwLock;
 use chain::{Block, RepresentH256};
 use db;
 use primitives::hash::H256;
-use best_block::BestBlock;
 use hash_queue::{HashQueueChain, HashPosition};
 
 /// Thread-safe reference to `Chain`
@@ -38,13 +37,13 @@ pub enum BlockState {
 #[derive(Debug)]
 pub struct Information {
 	/// Number of blocks currently scheduled for requesting
-	pub scheduled: u64,
+	pub scheduled: u32,
 	/// Number of blocks currently requested from peers
-	pub requested: u64,
+	pub requested: u32,
 	/// Number of blocks currently verifying
-	pub verifying: u64,
+	pub verifying: u32,
 	/// Number of blocks in the storage
-	pub stored: u64,
+	pub stored: u32,
 }
 
 /// Blockchain from synchroniation point of view, consisting of:
@@ -89,14 +88,12 @@ impl Chain {
 		// we only work with storages with genesis block
 		let genesis_block_hash = storage.block_hash(0)
 			.expect("storage with genesis block is required");
-		let best_storage_block_number = storage.best_block_number()
+		let best_storage_block = storage.best_block()
 			.expect("non-empty storage is required");
-		let best_storage_block_hash = storage.block_hash(best_storage_block_number)
-			.expect("checked above");
 
 		Chain {
 			genesis_block_hash: genesis_block_hash,
-			best_storage_block_hash: best_storage_block_hash,
+			best_storage_block_hash: best_storage_block.hash,
 			storage: storage,
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
 		}
@@ -105,10 +102,10 @@ impl Chain {
 	/// Get information on current blockchain state
 	pub fn information(&self) -> Information {
 		Information {
-			scheduled: self.hash_chain.len_of(SCHEDULED_QUEUE) as u64,
-			requested: self.hash_chain.len_of(REQUESTED_QUEUE) as u64,
-			verifying: self.hash_chain.len_of(VERIFYING_QUEUE) as u64,
-			stored: self.storage.best_block_number().map_or(0, |number| number as u64 + 1),
+			scheduled: self.hash_chain.len_of(SCHEDULED_QUEUE),
+			requested: self.hash_chain.len_of(REQUESTED_QUEUE),
+			verifying: self.hash_chain.len_of(VERIFYING_QUEUE),
+			stored: self.storage.best_block().map_or(0, |block| block.number + 1),
 		}
 	}
 
@@ -118,8 +115,8 @@ impl Chain {
 	}
 
 	/// Get number of blocks in given state
-	pub fn length_of_state(&self, state: BlockState) -> u64 {
-		self.hash_chain.len_of(state.to_queue_index()) as u64
+	pub fn length_of_state(&self, state: BlockState) -> u32 {
+		self.hash_chain.len_of(state.to_queue_index())
 	}
 
 	/// Returns true if has blocks of given type
@@ -128,50 +125,46 @@ impl Chain {
 	}
 
 	/// Get best block
-	pub fn best_block(&self) -> BestBlock {
-		let storage_best_block_number = self.storage.best_block_number().expect("storage with genesis block is required");
+	pub fn best_block(&self) -> db::BestBlock {
+		let storage_best_block = self.storage.best_block().expect("storage with genesis block is required");
 		match self.hash_chain.back() {
-			Some(hash) => BestBlock {
-				height: storage_best_block_number as u64 + self.hash_chain.len() as u64,
+			Some(hash) => db::BestBlock {
+				number: storage_best_block.number + self.hash_chain.len(),
 				hash: hash.clone(),
 			},
-			None => BestBlock {
-				height: storage_best_block_number as u64,
-				hash: self.storage.block_hash(storage_best_block_number).expect("storage with genesis block is required"),
+			None => db::BestBlock {
+				number: storage_best_block.number,
+				hash: storage_best_block.hash,
 			}
 		}
 	}
 
 	/// Get best block of given state
-	pub fn best_block_of_state(&self, state: BlockState) -> Option<BestBlock> {
+	pub fn best_block_of_state(&self, state: BlockState) -> Option<db::BestBlock> {
 		match state {
 			BlockState::Scheduled => self.hash_chain.back_at(SCHEDULED_QUEUE)
-				.map(|hash| BestBlock {
+				.map(|hash| db::BestBlock {
 					hash: hash,
-					height: self.storage.best_block_number().expect("storage with genesis block is required") as u64 + 1
-						+ self.hash_chain.len_of(VERIFYING_QUEUE) as u64
-						+ self.hash_chain.len_of(REQUESTED_QUEUE) as u64
-						+ self.hash_chain.len_of(SCHEDULED_QUEUE) as u64
+					number: self.storage.best_block().expect("storage with genesis block is required").number + 1
+						+ self.hash_chain.len_of(VERIFYING_QUEUE)
+						+ self.hash_chain.len_of(REQUESTED_QUEUE)
+						+ self.hash_chain.len_of(SCHEDULED_QUEUE)
 				}),
 			BlockState::Requested => self.hash_chain.back_at(REQUESTED_QUEUE)
-				.map(|hash| BestBlock {
+				.map(|hash| db::BestBlock {
 					hash: hash,
-					height: self.storage.best_block_number().expect("storage with genesis block is required") as u64 + 1
-						+ self.hash_chain.len_of(VERIFYING_QUEUE) as u64
-						+ self.hash_chain.len_of(REQUESTED_QUEUE) as u64
+					number: self.storage.best_block().expect("storage with genesis block is required").number + 1
+						+ self.hash_chain.len_of(VERIFYING_QUEUE)
+						+ self.hash_chain.len_of(REQUESTED_QUEUE)
 				}),
 			BlockState::Verifying => self.hash_chain.back_at(VERIFYING_QUEUE)
-				.map(|hash| BestBlock {
+				.map(|hash| db::BestBlock {
 					hash: hash,
-					height: self.storage.best_block_number().expect("storage with genesis block is required") as u64 + 1
-						+ self.hash_chain.len_of(VERIFYING_QUEUE) as u64
+					number: self.storage.best_block().expect("storage with genesis block is required").number + 1
+						+ self.hash_chain.len_of(VERIFYING_QUEUE)
 				}),
 			BlockState::Stored => {
-					let storage_best_block_number = self.storage.best_block_number().expect("storage with genesis block is required");
-					Some(BestBlock {
-						height: storage_best_block_number as u64,
-						hash: self.storage.block_hash(storage_best_block_number).expect("storage with genesis block is required"),
-					})
+					self.storage.best_block()
 				},
 			_ => panic!("not supported"),
 		}
@@ -225,9 +218,9 @@ impl Chain {
 		let (local_index, step) = self.block_locator_hashes_for_queue(&mut block_locator_hashes);
 
 		// calculate for storage
-		let storage_best_block_number = self.storage.best_block_number().expect("storage with genesis block is required");
-		let storage_index = if (storage_best_block_number as u64) < local_index { 0 } else { (storage_best_block_number as u64) - local_index };
-		self.block_locator_hashes_for_storage(storage_index as u64, step, &mut block_locator_hashes);
+		let storage_best_block_number = self.storage.best_block().expect("storage with genesis block is required").number;
+		let storage_index = if storage_best_block_number < local_index { 0 } else { storage_best_block_number - local_index };
+		self.block_locator_hashes_for_storage(storage_index, step, &mut block_locator_hashes);
 		block_locator_hashes
 	}
 
@@ -237,8 +230,8 @@ impl Chain {
 	}
 
 	/// Moves n blocks from scheduled queue to requested queue
-	pub fn request_blocks_hashes(&mut self, n: u64) -> Vec<H256> {
-		let scheduled = self.hash_chain.pop_front_n_at(SCHEDULED_QUEUE, n as usize);
+	pub fn request_blocks_hashes(&mut self, n: u32) -> Vec<H256> {
+		let scheduled = self.hash_chain.pop_front_n_at(SCHEDULED_QUEUE, n);
 		self.hash_chain.push_back_n_at(REQUESTED_QUEUE, scheduled.clone());
 		scheduled
 	}
@@ -250,8 +243,8 @@ impl Chain {
 
 	/// Moves n blocks from requested queue to verifying queue
 	#[cfg(test)]
-	pub fn verify_blocks_hashes(&mut self, n: u64) -> Vec<H256> {
-		let requested = self.hash_chain.pop_front_n_at(REQUESTED_QUEUE, n as usize);
+	pub fn verify_blocks_hashes(&mut self, n: u32) -> Vec<H256> {
+		let requested = self.hash_chain.pop_front_n_at(REQUESTED_QUEUE, n);
 		self.hash_chain.push_back_n_at(VERIFYING_QUEUE, requested.clone());
 		requested
 	}
@@ -280,16 +273,16 @@ impl Chain {
 	}
 
 	/// Calculate block locator hashes for hash queue
-	fn block_locator_hashes_for_queue(&self, hashes: &mut Vec<H256>) -> (u64, u64) {
-		let queue_len = self.hash_chain.len() as u64;
+	fn block_locator_hashes_for_queue(&self, hashes: &mut Vec<H256>) -> (u32, u32) {
+		let queue_len = self.hash_chain.len();
 		if queue_len == 0 {
 			return (0, 1);
 		}
 
 		let mut index = queue_len - 1;
-		let mut step = 1u64;
+		let mut step = 1u32;
 		loop {
-			let block_hash = self.hash_chain[index as usize].clone();
+			let block_hash = self.hash_chain[index].clone();
 			hashes.push(block_hash);
 
 			if hashes.len() >= 10 {
@@ -303,9 +296,9 @@ impl Chain {
 	}
 
 	/// Calculate block locator hashes for storage
-	fn block_locator_hashes_for_storage(&self, mut index: u64, mut step: u64, hashes: &mut Vec<H256>) {
+	fn block_locator_hashes_for_storage(&self, mut index: u32, mut step: u32, hashes: &mut Vec<H256>) {
 		loop {
-			let block_hash = self.storage.block_hash(index as u32)
+			let block_hash = self.storage.block_hash(index)
 				.expect("private function; index calculated in `block_locator_hashes`; qed");
 			hashes.push(block_hash);
 
@@ -329,9 +322,9 @@ impl fmt::Debug for Chain {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		try!(writeln!(f, "chain: ["));
 		{
-			let mut num = self.storage.best_block_number().unwrap() as usize;
+			let mut num = self.storage.best_block().expect("Storage with genesis block is required").number;
 			try!(writeln!(f, "\tworse(stored): {} {:?}", 0, self.storage.block_hash(0)));
-			try!(writeln!(f, "\tbest(stored): {} {:?}", num, self.storage.block_hash(num as u32)));
+			try!(writeln!(f, "\tbest(stored): {} {:?}", num, self.storage.block_hash(num)));
 
 			let queues = vec![
 				("verifying", VERIFYING_QUEUE),
