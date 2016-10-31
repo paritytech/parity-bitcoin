@@ -10,6 +10,12 @@ pub struct BlockHashBuilder<F=Identity> {
 	block: Option<chain::Block>,
 }
 
+impl BlockHashBuilder {
+	pub fn new() -> Self {
+		BlockHashBuilder::with_callback(Identity)
+	}
+}
+
 impl<F> BlockHashBuilder<F> where F: Invoke<(H256, chain::Block)> {
 	pub fn with_callback(callback: F) -> Self {
 		BlockHashBuilder {
@@ -375,6 +381,7 @@ impl<F> TransactionOutputBuilder<F> where F: Invoke<chain::TransactionOutput> {
 }
 
 pub fn block_builder() -> BlockBuilder { BlockBuilder::new() }
+pub fn block_hash_builder() -> BlockHashBuilder { BlockHashBuilder::new() }
 
 #[test]
 fn example1() {
@@ -414,4 +421,16 @@ fn example4() {
 
 	assert_eq!(block.transactions().len(), 2);
 	assert_eq!(block.transactions()[1].inputs[0].previous_output.hash, H256::from(1));
+}
+
+#[test]
+fn example5() {
+	let (hash, block) = block_hash_builder()
+		.block()
+			.header().parent(H256::from(0)).build()
+			.build()
+		.build();
+
+	assert_eq!(hash, "9f54dbfe94217c473e9acd5f52303d85ce1ef5e563a7e55b378ad555089fdd4d".into());
+	assert_eq!(block.header().previous_header_hash, "0000000000000000000000000000000000000000000000000000000000000000".into());
 }
