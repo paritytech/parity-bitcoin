@@ -342,7 +342,7 @@ impl fmt::Debug for Chain {
 				let queue_len = self.hash_chain.len_of(queue);
 				if queue_len != 0 {
 					try!(writeln!(f, "\tworse({}): {} {:?}", state, num + 1, self.hash_chain.front_at(queue)));
-					num += 1 + queue_len;
+					num += queue_len;
 					if let Some(pre_best) = self.hash_chain.pre_back_at(queue) {
 						try!(writeln!(f, "\tpre-best({}): {} {:?}", state, num - 1, pre_best));
 					}
