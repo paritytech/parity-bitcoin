@@ -78,9 +78,7 @@ const MIN_BLOCKS_IN_REQUEST: u32 = 32;
 /// Maximum number of blocks to request from peer
 const MAX_BLOCKS_IN_REQUEST: u32 = 512;
 
-/// Thread-safe reference to the `Synchronization`
-pub type ClientRef<T> = Arc<Mutex<Client<T>>>;
-
+/// Synchronization state
 #[derive(Debug, Clone, Copy)]
 pub enum State {
 	Synchronizing(f64, u32),
@@ -109,15 +107,18 @@ enum VerificationTask {
 	Stop,
 }
 
-/// Synchronization config
-#[derive(Default)]
-pub struct Config {
-	/// Skip blocks verification
-	pub skip_block_verification: bool,
-} 
+/// Synchronization client trait
+pub trait Client {
+	fn on_new_blocks_inventory(&mut self, peer_index: usize, peer_hashes: Vec<H256>);
+	fn on_peer_block(&mut self, peer_index: usize, block: Block);
+	fn on_peer_disconnected(&mut self, peer_index: usize);
+	fn reset(&mut self, is_hard: bool);
+	fn on_block_verification_success(&mut self, block: Block);
+	fn on_block_verification_error(&mut self, err: &VerificationError, hash: &H256);
+}
 
-/// New blocks synchronization process.
-pub struct Client<T: TaskExecutor + Send + 'static> {
+/// Synchronization client.
+pub struct SynchronizationClient<T: TaskExecutor + Send + 'static> {
 	/// Synchronization state.
 	state: State,
 	/// Synchronization peers.
@@ -143,7 +144,7 @@ impl State {
 	}
 }
 
-impl<T> Drop for Client<T> where T: TaskExecutor + Send + 'static {
+impl<T> Drop for SynchronizationClient<T> where T: TaskExecutor + Send + 'static {
 	fn drop(&mut self) {
 		if let Some(join_handle) = self.verification_worker_thread.take() {
 			self.verification_work_sender
@@ -155,11 +156,86 @@ impl<T> Drop for Client<T> where T: TaskExecutor + Send + 'static {
 	}
 }
 
-impl<T> Client<T> where T: TaskExecutor + Send + 'static {
+impl<T> Client for SynchronizationClient<T> where T: TaskExecutor + Send + 'static {
+	/// Try to queue synchronization of unknown blocks when new inventory is received.
+	fn on_new_blocks_inventory(&mut self, peer_index: usize, peer_hashes: Vec<H256>) {
+		self.process_new_blocks_inventory(peer_index, peer_hashes);
+		self.execute_synchronization_tasks();
+	}
+
+	/// Process new block.
+	fn on_peer_block(&mut self, peer_index: usize, block: Block) {
+		let block_hash = block.hash();
+
+		// update peers to select next tasks
+		self.peers.on_block_received(peer_index, &block_hash);
+
+		self.process_peer_block(block_hash, block);
+		self.execute_synchronization_tasks();
+	}
+
+	/// Peer disconnected.
+	fn on_peer_disconnected(&mut self, peer_index: usize) {
+		self.peers.on_peer_disconnected(peer_index);
+
+		// when last peer is disconnected, reset, but let verifying blocks be verified
+		self.reset(false);
+	}
+
+	/// Reset synchronization process
+	fn reset(&mut self, is_hard: bool) {
+		self.peers.reset();
+		self.orphaned_blocks.clear();
+		// TODO: reset verification queue
+
+		let mut chain = self.chain.write();
+		chain.remove_blocks_with_state(BlockState::Requested);
+		chain.remove_blocks_with_state(BlockState::Scheduled);
+		if is_hard {
+			self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
+			chain.remove_blocks_with_state(BlockState::Verifying);
+			warn!(target: "sync", "Synchronization process restarting from block {:?}", chain.best_block());
+		}
+		else {
+			self.state = State::Saturated;
+		}
+	}
+
+	/// Process successful block verification
+	fn on_block_verification_success(&mut self, block: Block) {
+		{
+			let hash = block.hash();
+			let mut chain = self.chain.write();
+
+			// remove from verifying queue
+			assert_eq!(chain.remove_block_with_state(&hash, BlockState::Verifying), HashPosition::Front);
+
+			// insert to storage
+			chain.insert_best_block(block)
+				.expect("Error inserting to db.");
+		}
+
+		// continue with synchronization
+		self.execute_synchronization_tasks();
+	}
+
+	/// Process failed block verification
+	fn on_block_verification_error(&mut self, err: &VerificationError, hash: &H256) {
+		warn!(target: "sync", "Block {:?} verification failed with error {:?}", hash, err);
+
+		// reset synchronization process
+		self.reset(true);
+
+		// start new tasks
+		self.execute_synchronization_tasks();
+	}
+}
+
+impl<T> SynchronizationClient<T> where T: TaskExecutor + Send + 'static {
 	/// Create new synchronization window
-	pub fn new(config: Config, executor: Arc<Mutex<T>>, chain: ChainRef) -> ClientRef<T> {
-		let sync = ClientRef::new(Mutex::new(
-			Client {
+	pub fn new(executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
+		let sync = Arc::new(Mutex::new(
+			SynchronizationClient {
 				state: State::Saturated,
 				peers: Peers::new(),
 				executor: executor,
@@ -170,7 +246,7 @@ impl<T> Client<T> where T: TaskExecutor + Send + 'static {
 			}
 		));
 
-		if !config.skip_block_verification {
+		{
 			let (verification_work_sender, verification_work_receiver) = channel();
 			let csync = sync.clone();
 			let mut lsync = sync.lock();
@@ -179,7 +255,7 @@ impl<T> Client<T> where T: TaskExecutor + Send + 'static {
 			lsync.verification_worker_thread = Some(thread::Builder::new()
 				.name("Sync verification thread".to_string())
 				.spawn(move || {
-					Client::verification_worker_proc(csync, storage, verification_work_receiver)
+					SynchronizationClient::verification_worker_proc(csync, storage, verification_work_receiver)
 				})
 				.expect("Error creating verification thread"));
 		}
@@ -195,50 +271,6 @@ impl<T> Client<T> where T: TaskExecutor + Send + 'static {
 			peers: self.peers.information(),
 			chain: self.chain.read().information(),
 			orphaned: self.orphaned_blocks.len(),
-		}
-	}
-
-	/// Try to queue synchronization of unknown blocks when new inventory is received.
-	pub fn on_new_blocks_inventory(&mut self, peer_index: usize, peer_hashes: Vec<H256>) {
-		self.process_new_blocks_inventory(peer_index, peer_hashes);
-		self.execute_synchronization_tasks();
-	}
-
-	/// Process new block.
-	pub fn on_peer_block(&mut self, peer_index: usize, block: Block) {
-		let block_hash = block.hash();
-
-		// update peers to select next tasks
-		self.peers.on_block_received(peer_index, &block_hash);
-
-		self.process_peer_block(block_hash, block);
-		self.execute_synchronization_tasks();
-	}
-
-	/// Peer disconnected.
-	pub fn on_peer_disconnected(&mut self, peer_index: usize) {
-		self.peers.on_peer_disconnected(peer_index);
-
-		// when last peer is disconnected, reset, but let verifying blocks be verified
-		self.reset(false);
-	}
-
-	/// Reset synchronization process
-	pub fn reset(&mut self, is_hard: bool) {
-		self.peers.reset();
-		self.orphaned_blocks.clear();
-		// TODO: reset verification queue
-
-		let mut chain = self.chain.write();
-		chain.remove_blocks_with_state(BlockState::Requested);
-		chain.remove_blocks_with_state(BlockState::Scheduled);
-		if is_hard {
-			self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
-			chain.remove_blocks_with_state(BlockState::Verifying);
-			warn!(target: "sync", "Synchronization process restarting from block {:?}", chain.best_block());
-		}
-		else {
-			self.state = State::Saturated;
 		}
 	}
 
@@ -446,7 +478,7 @@ impl<T> Client<T> where T: TaskExecutor + Send + 'static {
 	}
 
 	/// Thread procedure for handling verification tasks
-	fn verification_worker_proc(sync: ClientRef<T>, storage: Arc<db::Store>, work_receiver: Receiver<VerificationTask>) {
+	fn verification_worker_proc(sync: Arc<Mutex<Self>>, storage: Arc<db::Store>, work_receiver: Receiver<VerificationTask>) {
 		let verifier = ChainVerifier::new(storage);
 		while let Ok(task) = work_receiver.recv() {
 			match task {
@@ -464,35 +496,6 @@ impl<T> Client<T> where T: TaskExecutor + Send + 'static {
 			}
 		}
 	}
-
-	/// Process successful block verification
-	fn on_block_verification_success(&mut self, block: Block) {
-		{
-			let hash = block.hash();
-			let mut chain = self.chain.write();
-
-			// remove from verifying queue
-			assert_eq!(chain.remove_block_with_state(&hash, BlockState::Verifying), HashPosition::Front);
-
-			// insert to storage
-			chain.insert_best_block(block)
-				.expect("Error inserting to db.");
-		}
-
-		// continue with synchronization
-		self.execute_synchronization_tasks();
-	}
-
-	/// Process failed block verification
-	fn on_block_verification_error(&mut self, err: &VerificationError, hash: &H256) {
-		warn!(target: "sync", "Block {:?} verification failed with error {:?}", hash, err);
-
-		// reset synchronization process
-		self.reset(true);
-
-		// start new tasks
-		self.execute_synchronization_tasks();
-	}
 }
 
 #[cfg(test)]
@@ -501,7 +504,7 @@ pub mod tests {
 	use std::mem::replace;
 	use parking_lot::{Mutex, RwLock};
 	use chain::{Block, RepresentH256};
-	use super::{Client, ClientRef, Config};
+	use super::{Client, SynchronizationClient};
 	use synchronization_executor::{Task, TaskExecutor};
 	use local_node::PeersConnections;
 	use synchronization_chain::{Chain, ChainRef};
@@ -531,13 +534,11 @@ pub mod tests {
 		}
 	}
 
-	fn create_sync() -> (Arc<Mutex<DummyTaskExecutor>>, ClientRef<DummyTaskExecutor>) {
+	fn create_sync() -> (Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<SynchronizationClient<DummyTaskExecutor>>>) {
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = Arc::new(Mutex::new(DummyTaskExecutor::default()));
-		(executor.clone(), Client::new(Config {
-			skip_block_verification: true,
-		}, executor, chain))
+		(executor.clone(), SynchronizationClient::new(executor, chain))
 	} 
 
 	#[test]

@@ -6,24 +6,22 @@ use chain::RepresentH256;
 use p2p::OutboundSyncConnectionRef;
 use message::common::InventoryType;
 use message::types;
-use synchronization_client::{Client, ClientRef, Config as SynchronizationConfig};
+use synchronization_client::{Client, SynchronizationClient};
 use synchronization_executor::{Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor, LocalSynchronizationTaskExecutor};
-use synchronization_chain::ChainRef;
 use synchronization_server::{Server, SynchronizationServer};
 
-pub type LocalNodeRef = Arc<LocalNode<LocalSynchronizationTaskExecutor, SynchronizationServer>>;
+pub type LocalNodeRef = Arc<LocalNode<LocalSynchronizationTaskExecutor, SynchronizationServer, SynchronizationClient<LocalSynchronizationTaskExecutor>>>;
 
 /// Local synchronization node
 pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections + Send + 'static,
-	U: Server + Send + 'static> {
+	U: Server + Send + 'static,
+	V: Client + Send + 'static> {
 	/// Throughout counter of synchronization peers
 	peer_counter: AtomicUsize,
-	/// Synchronization chain
-	chain: ChainRef,
 	/// Synchronization executor
 	executor: Arc<Mutex<T>>,
 	/// Synchronization process
-	sync: ClientRef<T>,
+	client: Arc<Mutex<V>>,
 	/// Synchronization server
 	server: Mutex<U>,
 }
@@ -34,23 +32,26 @@ pub trait PeersConnections {
 	fn remove_peer_connection(&mut self, peer_index: usize);
 }
 
-impl<T, U> LocalNode<T, U> where T: SynchronizationTaskExecutor + PeersConnections + Send + 'static,
-	U: Server + Send + 'static {
+impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersConnections + Send + 'static,
+	U: Server + Send + 'static,
+	V: Client + Send + 'static {
 	/// New synchronization node with given storage
-	pub fn new(chain: ChainRef, server: U, executor: Arc<Mutex<T>>) -> Self {
-		let sync = Client::new(SynchronizationConfig::default(), executor.clone(), chain.clone());
+	pub fn new(server: U, client: Arc<Mutex<V>>, executor: Arc<Mutex<T>>) -> Self {
 		LocalNode {
 			peer_counter: AtomicUsize::new(0),
-			chain: chain,
 			executor: executor,
-			sync: sync,
+			client: client,
 			server: Mutex::new(server),
 		}
 	}
 
 	/// Best block hash (including non-verified, requested && non-requested blocks)
 	pub fn best_block(&self) -> db::BestBlock {
-		self.chain.read().best_block()
+		// TODO: self.chain.read().best_block()
+		db::BestBlock {
+			number: 0,
+			hash: "0".into(),
+		}
 	}
 
 	pub fn create_sync_session(&self, _best_block_height: i32, outbound_connection: OutboundSyncConnectionRef) -> usize {
@@ -73,7 +74,7 @@ impl<T, U> LocalNode<T, U> where T: SynchronizationTaskExecutor + PeersConnectio
 		trace!(target: "sync", "Stopping sync session with peer#{}", peer_index);
 
 		self.executor.lock().remove_peer_connection(peer_index);
-		self.sync.lock().on_peer_disconnected(peer_index);
+		self.client.lock().on_peer_disconnected(peer_index);
 	}
 
 	pub fn on_peer_inventory(&self, peer_index: usize, message: types::Inv) {
@@ -92,7 +93,7 @@ impl<T, U> LocalNode<T, U> where T: SynchronizationTaskExecutor + PeersConnectio
 
 		// if there are unknown blocks => start synchronizing with peer
 		if !blocks_inventory.is_empty() {
-			self.sync.lock().on_new_blocks_inventory(peer_index, blocks_inventory);
+			self.client.lock().on_new_blocks_inventory(peer_index, blocks_inventory);
 		}
 
 		// TODO: process unknown transactions, etc...
@@ -122,7 +123,7 @@ impl<T, U> LocalNode<T, U> where T: SynchronizationTaskExecutor + PeersConnectio
 		trace!(target: "sync", "Got `block` message from peer#{}. Block hash: {}", peer_index, message.block.hash());
 
 		// try to process new block
-		self.sync.lock().on_peer_block(peer_index, message.block);
+		self.client.lock().on_peer_block(peer_index, message.block);
 	}
 
 	pub fn on_peer_headers(&self, peer_index: usize, _message: types::Headers) {
@@ -185,6 +186,7 @@ mod tests {
 	use chain::RepresentH256;
 	use synchronization_executor::Task;
 	use synchronization_client::tests::DummyTaskExecutor;
+	use synchronization_client::SynchronizationClient;
 	use synchronization_chain::Chain;
 	use p2p::{OutboundSyncConnection, OutboundSyncConnectionRef};
 	use message::types;
@@ -229,7 +231,8 @@ mod tests {
 		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
 		let executor = Arc::new(Mutex::new(DummyTaskExecutor::default()));
 		let server = DummyServer::new();
-		let local_node = LocalNode::new(chain, server, executor.clone());
+		let client = SynchronizationClient::new(executor.clone(), chain);
+		let local_node = LocalNode::new(server, client, executor.clone());
 		let peer_index = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
 		local_node.start_sync_session(peer_index, 0);
 
