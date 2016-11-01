@@ -15,6 +15,7 @@ use synchronization_chain::{ChainRef, BlockState};
 #[cfg(test)]
 use synchronization_chain::{Information as ChainInformation};
 use verification::{ChainVerifier, Error as VerificationError, Verify};
+use synchronization_executor::{Task, TaskExecutor};
 use time;
 
 ///! Blocks synchronization process:
@@ -80,17 +81,6 @@ const MAX_BLOCKS_IN_REQUEST: u32 = 512;
 /// Thread-safe reference to the `Synchronization`
 pub type SynchronizationRef<T> = Arc<Mutex<Synchronization<T>>>;
 
-/// Synchronization task for the peer.
-#[derive(Debug, Eq, PartialEq)]
-pub enum Task {
-	/// Request given blocks.
-	RequestBlocks(usize, Vec<H256>),
-	/// Request full inventory using block_locator_hashes.
-	RequestInventory(usize),
-	/// Request inventory using best block locator only.
-	RequestBestInventory(usize),
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum State {
 	Synchronizing(f64, u32),
@@ -109,11 +99,6 @@ pub struct Information {
 	pub chain: ChainInformation,
 	/// Number of currently orphaned blocks.
 	pub orphaned: usize,
-}
-
-/// Synchronization task executor
-pub trait TaskExecutor {
-	fn execute(&mut self, task: Task);
 }
 
 /// Verification thread tasks
@@ -273,54 +258,62 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 
 		let mut chain = self.chain.write();
 
-		// new block is scheduled => move to synchronizing state
-		if !self.state.is_synchronizing() {
-			self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
-		}
-
-		// when synchronization is idling
-		// => request full inventory
-		if !chain.has_blocks_of_state(BlockState::Scheduled)
-			&& !chain.has_blocks_of_state(BlockState::Requested) {
-			let unknown_blocks = peer_hashes.into_iter()
-				.filter(|hash| chain.block_has_state(&hash, BlockState::Unknown))
-				.collect();
-			chain.schedule_blocks_hashes(unknown_blocks);
-			self.peers.insert(peer_index);
-			return;
-		}
-
-		// cases: [2], [5], [6], [8]
-		// if last block from peer_hashes is in window { requested_hashes + queued_hashes }
-		// => no new blocks for synchronization, but we will use this peer in synchronization
-		let peer_hashes_len = peer_hashes.len();
-		if chain.block_has_state(&peer_hashes[peer_hashes_len - 1], BlockState::Scheduled)
-			|| chain.block_has_state(&peer_hashes[peer_hashes_len - 1], BlockState::Requested) {
-			self.peers.insert(peer_index);
-			return;
-		}
-
-		// cases: [1], [3], [4], [7], [9], [10]
-		// try to find new blocks for synchronization from inventory
-		let mut last_known_peer_hash_index = peer_hashes_len - 1;
 		loop {
-			if chain.block_state(&peer_hashes[last_known_peer_hash_index]) != BlockState::Unknown {
-				// we have found first block which is known to us
-				// => blocks in range [(last_known_peer_hash_index + 1)..peer_hashes_len] are unknown
-				//    && must be scheduled for request
-				let unknown_peer_hashes = peer_hashes.split_off(last_known_peer_hash_index + 1);
+			// when synchronization is idling
+			// => request full inventory
+			if !chain.has_blocks_of_state(BlockState::Scheduled)
+				&& !chain.has_blocks_of_state(BlockState::Requested) {
+				let unknown_blocks: Vec<_> = peer_hashes.into_iter()
+					.filter(|hash| chain.block_has_state(&hash, BlockState::Unknown))
+					.collect();
 
-				chain.schedule_blocks_hashes(unknown_peer_hashes);
+				// no new blocks => no need to switch to the synchronizing state
+				if unknown_blocks.is_empty() {
+					return;
+				}
+
+				chain.schedule_blocks_hashes(unknown_blocks);
+				self.peers.insert(peer_index);
+				break;
+			}
+
+			// cases: [2], [5], [6], [8]
+			// if last block from peer_hashes is in window { requested_hashes + queued_hashes }
+			// => no new blocks for synchronization, but we will use this peer in synchronization
+			let peer_hashes_len = peer_hashes.len();
+			if chain.block_has_state(&peer_hashes[peer_hashes_len - 1], BlockState::Scheduled)
+				|| chain.block_has_state(&peer_hashes[peer_hashes_len - 1], BlockState::Requested) {
 				self.peers.insert(peer_index);
 				return;
 			}
 
-			if last_known_peer_hash_index == 0 {
-				// either these are blocks from the future or blocks from the past
-				// => TODO: ignore this peer during synchronization
-				return;
+			// cases: [1], [3], [4], [7], [9], [10]
+			// try to find new blocks for synchronization from inventory
+			let mut last_known_peer_hash_index = peer_hashes_len - 1;
+			loop {
+				if chain.block_state(&peer_hashes[last_known_peer_hash_index]) != BlockState::Unknown {
+					// we have found first block which is known to us
+					// => blocks in range [(last_known_peer_hash_index + 1)..peer_hashes_len] are unknown
+					//    && must be scheduled for request
+					let unknown_peer_hashes = peer_hashes.split_off(last_known_peer_hash_index + 1);
+
+					chain.schedule_blocks_hashes(unknown_peer_hashes);
+					self.peers.insert(peer_index);
+					break;
+				}
+
+				if last_known_peer_hash_index == 0 {
+					// either these are blocks from the future or blocks from the past
+					// => TODO: ignore this peer during synchronization
+					return;
+				}
+				last_known_peer_hash_index -= 1;
 			}
-			last_known_peer_hash_index -= 1;
+		}
+
+		// move to synchronizing state
+		if !self.state.is_synchronizing() {
+			self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
 		}
 	}
 
@@ -508,9 +501,11 @@ pub mod tests {
 	use std::mem::replace;
 	use parking_lot::{Mutex, RwLock};
 	use chain::{Block, RepresentH256};
-	use super::{Synchronization, SynchronizationRef, Config, Task, TaskExecutor};
+	use super::{Synchronization, SynchronizationRef, Config};
+	use synchronization_executor::{Task, TaskExecutor};
 	use local_node::PeersConnections;
 	use synchronization_chain::{Chain, ChainRef};
+	use test_data;
 	use p2p::OutboundSyncConnectionRef;
 	use db;
 
@@ -682,5 +677,18 @@ pub mod tests {
 			sync.on_peer_disconnected(1);
 			assert!(!sync.information().state.is_synchronizing());
 		}
+	}
+
+	#[test]
+	fn synchronization_not_starting_when_receiving_known_blocks() {
+		let (executor, sync) = create_sync();
+		let mut sync = sync.lock();
+		// saturated => receive inventory with known blocks only
+		sync.on_new_blocks_inventory(1, vec![test_data::genesis().hash()]);
+		// => no need to start synchronization
+		assert!(!sync.information().state.is_synchronizing());
+		// => no synchronization tasks are scheduled
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![]);
 	}
 }

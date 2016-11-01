@@ -13,4 +13,5 @@ db = { path = "../db" }
 message = { path = "../message" }
 p2p = { path = "../p2p" }
 primitives = { path = "../primitives" }
+test-data = { path = "../test-data" }
 verification = { path = "../verification" }

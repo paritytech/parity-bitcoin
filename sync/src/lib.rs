@@ -6,6 +6,7 @@ extern crate message;
 extern crate p2p;
 extern crate parking_lot;
 extern crate primitives;
+extern crate test_data;
 extern crate time;
 extern crate verification;
 
@@ -17,6 +18,7 @@ mod synchronization;
 mod synchronization_chain;
 mod synchronization_executor;
 mod synchronization_peers;
+mod synchronization_server;
 
 use std::sync::Arc;
 use parking_lot::RwLock;
