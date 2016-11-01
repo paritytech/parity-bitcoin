@@ -33,6 +33,9 @@ pub trait Store : Send + Sync {
 	/// get best block
 	fn best_block(&self) -> Option<BestBlock>;
 
+	/// resolves number by block hash
+	fn block_number(&self, hash: &H256) -> Option<u32>;
+
 	/// resolves hash by block number
 	fn block_hash(&self, number: u32) -> Option<H256>;
 
@@ -261,6 +264,10 @@ impl Storage {
 impl Store for Storage {
 	fn best_block(&self) -> Option<BestBlock> {
 		self.best_block.read().clone()
+	}
+
+	fn block_number(&self, _hash: &H256) -> Option<u32> {
+		unimplemented!()
 	}
 
 	fn block_hash(&self, number: u32) -> Option<H256> {
