@@ -9,9 +9,17 @@ use db;
 use primitives::hash::H256;
 use synchronization_chain::ChainRef;
 use synchronization_executor::{Task, TaskExecutor};
+use message::types;
+
+/// Synchronization requests server trait
+pub trait Server {
+	fn serve_getdata(&mut self, peer_index: usize, message: types::GetData);
+	fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks);
+}
 
 /// Synchronization requests server
-pub struct Server {
+pub struct SynchronizationServer {
+	chain: ChainRef,
 	queue_ready: Arc<Condvar>,
 	queue: Arc<Mutex<ServerQueue>>,
 	worker_thread: Option<thread::JoinHandle<()>>,
@@ -24,43 +32,38 @@ struct ServerQueue {
 }
 
 enum ServerTask {
-	ServeData(Vec<InventoryVector>),
-	ServeNotFound(Vec<InventoryVector>),
-	ServeBlock(H256),
-	ServeBlocksInventory(db::BestBlock, H256),
+	ServeGetData(Vec<InventoryVector>),
+	ServeGetBlocks(db::BestBlock, H256),
+	ReturnNotFound(Vec<InventoryVector>),
+	ReturnBlock(H256),
 }
 
-impl Drop for Server {
-	fn drop(&mut self) {
-		if let Some(join_handle) = self.worker_thread.take() {
-			self.queue.lock().is_stopping.store(true, Ordering::SeqCst);
-			self.queue_ready.notify_one();
-			join_handle.join().expect("Clean shutdown.");
-		}
-	}
-}
-
-impl Server {
+impl SynchronizationServer {
 	pub fn new<T: TaskExecutor + Send + 'static>(chain: ChainRef, executor: Arc<Mutex<T>>) -> Self {
 		let queue_ready = Arc::new(Condvar::new());
 		let queue = Arc::new(Mutex::new(ServerQueue::new()));
-		let mut server = Server {
+		let mut server = SynchronizationServer {
+			chain: chain.clone(),
 			queue_ready: queue_ready.clone(),
 			queue: queue.clone(),
 			worker_thread: None,
 		};
 		server.worker_thread = Some(thread::spawn(move || {
-			Server::server_worker(queue_ready, queue, chain, executor);
+			SynchronizationServer::server_worker(queue_ready, queue, chain, executor);
 		}));
 		server
 	}
 
-	pub fn serve_data(&self, peer_index: usize, inventory: Vec<InventoryVector>) {
-		self.queue.lock().add_task(peer_index, ServerTask::ServeData(inventory));
-	}
- 
-	pub fn serve_blocks_inventory(&self, peer_index: usize, best_common_block: db::BestBlock, hash_stop: H256) {
-		self.queue.lock().add_task(peer_index, ServerTask::ServeBlocksInventory(best_common_block, hash_stop));
+	fn locate_known_block(&self, block_locator_hashes: Vec<H256>) -> Option<db::BestBlock> {
+		let chain = self.chain.read();
+		block_locator_hashes.into_iter()
+			.filter_map(|hash| chain
+				.storage_block_number(&hash)
+				.map(|number| db::BestBlock {
+					number: number,
+					hash: hash,
+				}))
+			.nth(0)
 	}
 
 	fn server_worker<T: TaskExecutor + Send + 'static>(queue_ready: Arc<Condvar>, queue: Arc<Mutex<ServerQueue>>, chain: ChainRef, executor: Arc<Mutex<T>>) {
@@ -81,14 +84,14 @@ impl Server {
 				// has new task
 				Some(server_task) => match server_task {
 					// `getdata` => `notfound` + `block` + ... 
-					(peer_index, ServerTask::ServeData(inventory)) => {
+					(peer_index, ServerTask::ServeGetData(inventory)) => {
 						let mut unknown_items: Vec<InventoryVector> = Vec::new();
 						let mut new_tasks: Vec<ServerTask> = Vec::new();
 						for item in inventory {
 							match item.inv_type {
 								InventoryType::MessageBlock => {
 									match chain.read().storage_block_number(&item.hash) {
-										Some(_) => new_tasks.push(ServerTask::ServeBlock(item.hash.clone())),
+										Some(_) => new_tasks.push(ServerTask::ReturnBlock(item.hash.clone())),
 										None => unknown_items.push(item),
 									}
 								},
@@ -97,25 +100,15 @@ impl Server {
 						}
 						// respond with `notfound` message for unknown data
 						if !unknown_items.is_empty() {
-							new_tasks.push(ServerTask::ServeNotFound(unknown_items));
+							new_tasks.push(ServerTask::ReturnNotFound(unknown_items));
 						}
 						// schedule data responses
 						if !new_tasks.is_empty() {
 							queue.lock().add_tasks(peer_index, new_tasks);
 						}
 					},
-					// `notfound`
-					(peer_index, ServerTask::ServeNotFound(inventory)) => {
-						executor.lock().execute(Task::SendNotFound(peer_index, inventory));
-					},
-					// `block`
-					(peer_index, ServerTask::ServeBlock(block_hash)) => {
-						if let Some(block) = chain.read().storage_block(&block_hash) {
-							executor.lock().execute(Task::SendBlock(peer_index, block));
-						}
-					},
 					// `inventory`
-					(peer_index, ServerTask::ServeBlocksInventory(best_block, hash_stop)) => {
+					(peer_index, ServerTask::ServeGetBlocks(best_block, hash_stop)) => {
 						if let Some(hash) = chain.read().storage_block_hash(best_block.number) {
 							// check that chain has not reorganized since task was queued
 							if hash == best_block.hash {
@@ -140,11 +133,43 @@ impl Server {
 								}
 							}
 						}
-					}
+					},
+					// `notfound`
+					(peer_index, ServerTask::ReturnNotFound(inventory)) => {
+						executor.lock().execute(Task::SendNotFound(peer_index, inventory));
+					},
+					// `block`
+					(peer_index, ServerTask::ReturnBlock(block_hash)) => {
+						if let Some(block) = chain.read().storage_block(&block_hash) {
+							executor.lock().execute(Task::SendBlock(peer_index, block));
+						}
+					},
 				},
 				// no tasks after wake-up => stopping
 				None => break,
 			}
+		}
+	}
+}
+
+impl Drop for SynchronizationServer {
+	fn drop(&mut self) {
+		if let Some(join_handle) = self.worker_thread.take() {
+			self.queue.lock().is_stopping.store(true, Ordering::SeqCst);
+			self.queue_ready.notify_one();
+			join_handle.join().expect("Clean shutdown.");
+		}
+	}
+}
+
+impl Server for SynchronizationServer {
+	fn serve_getdata(&mut self, peer_index: usize, message: types::GetData) {
+		self.queue.lock().add_task(peer_index, ServerTask::ServeGetData(message.inventory));
+	}
+ 
+	fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks) {
+		if let Some(best_common_block) = self.locate_known_block(message.block_locator_hashes) {
+			self.queue.lock().add_task(peer_index, ServerTask::ServeGetBlocks(best_common_block, message.hash_stop));
 		}
 	}
 }
@@ -203,6 +228,38 @@ impl ServerQueue {
 				entry.insert(new_tasks);
 				self.peers_queue.push_back(peer_index);
 			}
+		}
+	}
+}
+
+#[cfg(test)]
+pub mod tests {
+	use super::{Server, ServerTask};
+	use message::types;
+	use db;
+
+	pub struct DummyServer {
+		tasks: Vec<ServerTask>,
+	}
+
+	impl DummyServer {
+		pub fn new() -> Self {
+			DummyServer {
+				tasks: Vec::new(),
+			}
+		}
+	}
+
+	impl Server for DummyServer {
+		fn serve_getdata(&mut self, peer_index: usize, message: types::GetData) {
+			self.tasks.push(ServerTask::ServeGetData(message.inventory));
+		}
+
+		fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks) {
+			self.tasks.push(ServerTask::ServeGetBlocks(db::BestBlock {
+				number: 0,
+				hash: message.block_locator_hashes[0].clone(),
+			}, message.hash_stop));
 		}
 	}
 }

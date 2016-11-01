@@ -29,9 +29,11 @@ pub fn create_sync_connection_factory(db: Arc<db::Store>) -> p2p::LocalSyncNodeR
 	use synchronization_executor::LocalSynchronizationTaskExecutor as SyncExecutor;
 	use local_node::LocalNode as SyncNode;
 	use inbound_connection_factory::InboundConnectionFactory as SyncConnectionFactory;
+	use synchronization_server::SynchronizationServer;
 
 	let sync_chain = Arc::new(RwLock::new(SyncChain::new(db)));
 	let sync_executor = SyncExecutor::new(sync_chain.clone());
-	let sync_node = SyncNode::new(sync_chain, sync_executor);
+	let sync_server = SynchronizationServer::new(sync_chain.clone(), sync_executor.clone());
+	let sync_node = Arc::new(SyncNode::new(sync_chain, sync_server, sync_executor));
 	SyncConnectionFactory::with_local_node(sync_node)
 }

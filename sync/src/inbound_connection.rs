@@ -1,15 +1,14 @@
 use message::types;
 use p2p::{InboundSyncConnection, InboundSyncConnectionRef};
 use local_node::LocalNodeRef;
-use synchronization_executor::LocalSynchronizationTaskExecutor;
 
 pub struct InboundConnection {
-	local_node: LocalNodeRef<LocalSynchronizationTaskExecutor>,
+	local_node: LocalNodeRef,
 	peer_index: usize,
 }
 
 impl InboundConnection {
-	pub fn new(local_node: LocalNodeRef<LocalSynchronizationTaskExecutor>, peer_index: usize) -> InboundSyncConnectionRef {
+	pub fn new(local_node: LocalNodeRef, peer_index: usize) -> InboundSyncConnectionRef {
 		Box::new(InboundConnection {
 			local_node: local_node,
 			peer_index: peer_index,

@@ -6,21 +6,16 @@ use chain::RepresentH256;
 use p2p::OutboundSyncConnectionRef;
 use message::common::InventoryType;
 use message::types;
-use primitives::hash::H256;
 use synchronization_client::{Client, ClientRef, Config as SynchronizationConfig};
-use synchronization_executor::{Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor};
+use synchronization_executor::{Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor, LocalSynchronizationTaskExecutor};
 use synchronization_chain::ChainRef;
-use synchronization_server::Server;
+use synchronization_server::{Server, SynchronizationServer};
 
-/// Thread-safe reference to the `LocalNode`.
-/// Locks order:
-/// 1) sync Mutex
-/// 2) executor Mutex
-/// 2) chain RwLock
-pub type LocalNodeRef<T> = Arc<LocalNode<T>>;
+pub type LocalNodeRef = Arc<LocalNode<LocalSynchronizationTaskExecutor, SynchronizationServer>>;
 
 /// Local synchronization node
-pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections + Send + 'static> {
+pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections + Send + 'static,
+	U: Server + Send + 'static> {
 	/// Throughout counter of synchronization peers
 	peer_counter: AtomicUsize,
 	/// Synchronization chain
@@ -30,7 +25,7 @@ pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections + Send + 
 	/// Synchronization process
 	sync: ClientRef<T>,
 	/// Synchronization server
-	server: Server,
+	server: Mutex<U>,
 }
 
 /// Peers list
@@ -39,18 +34,18 @@ pub trait PeersConnections {
 	fn remove_peer_connection(&mut self, peer_index: usize);
 }
 
-impl<T> LocalNode<T> where T: SynchronizationTaskExecutor + PeersConnections + Send + 'static {
+impl<T, U> LocalNode<T, U> where T: SynchronizationTaskExecutor + PeersConnections + Send + 'static,
+	U: Server + Send + 'static {
 	/// New synchronization node with given storage
-	pub fn new(chain: ChainRef, executor: Arc<Mutex<T>>) -> LocalNodeRef<T> {
+	pub fn new(chain: ChainRef, server: U, executor: Arc<Mutex<T>>) -> Self {
 		let sync = Client::new(SynchronizationConfig::default(), executor.clone(), chain.clone());
-		let server = Server::new(chain.clone(), executor.clone());
-		Arc::new(LocalNode {
+		LocalNode {
 			peer_counter: AtomicUsize::new(0),
 			chain: chain,
 			executor: executor,
 			sync: sync,
-			server: server,
-		})
+			server: Mutex::new(server),
+		}
 	}
 
 	/// Best block hash (including non-verified, requested && non-requested blocks)
@@ -106,15 +101,13 @@ impl<T> LocalNode<T> where T: SynchronizationTaskExecutor + PeersConnections + S
 	pub fn on_peer_getdata(&self, peer_index: usize, message: types::GetData) {
 		trace!(target: "sync", "Got `getdata` message from peer#{}", peer_index);
 
-		self.server.serve_data(peer_index, message.inventory);
+		self.server.lock().serve_getdata(peer_index, message);
 	}
 
 	pub fn on_peer_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
 		trace!(target: "sync", "Got `getblocks` message from peer#{}", peer_index);
 
-		if let Some(best_block) = self.locate_known_block(message.block_locator_hashes) {
-			self.server.serve_blocks_inventory(peer_index, best_block, message.hash_stop);
-		}
+		self.server.lock().serve_getblocks(peer_index, message);
 	}
 
 	pub fn on_peer_getheaders(&self, peer_index: usize, _message: types::GetHeaders) {
@@ -183,18 +176,6 @@ impl<T> LocalNode<T> where T: SynchronizationTaskExecutor + PeersConnections + S
 	pub fn on_peer_notfound(&self, peer_index: usize, _message: types::NotFound) {
 		trace!(target: "sync", "Got `notfound` message from peer#{}", peer_index);
 	}
-
-	fn locate_known_block(&self, block_locator_hashes: Vec<H256>) -> Option<db::BestBlock> {
-		let chain = self.chain.read();
-		block_locator_hashes.into_iter()
-			.filter_map(|hash| chain
-				.storage_block_number(&hash)
-				.map(|number| db::BestBlock {
-					number: number,
-					hash: hash,
-				}))
-			.nth(0)
-	}
 }
 
 #[cfg(test)]
@@ -211,6 +192,7 @@ mod tests {
 	use db;
 	use super::LocalNode;
 	use test_data;
+	use synchronization_server::tests::DummyServer;
 
 	struct DummyOutboundSyncConnection;
 
@@ -246,7 +228,8 @@ mod tests {
 	fn local_node_request_inventory_on_sync_start() {
 		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
 		let executor = Arc::new(Mutex::new(DummyTaskExecutor::default()));
-		let local_node = LocalNode::new(chain, executor.clone());
+		let server = DummyServer::new();
+		let local_node = LocalNode::new(chain, server, executor.clone());
 		let peer_index = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
 		local_node.start_sync_session(peer_index, 0);
 
