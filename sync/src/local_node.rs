@@ -30,7 +30,7 @@ pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections + Send + 
 	/// Synchronization process
 	sync: SynchronizationRef<T>,
 	/// Synchronization server
-	server: Server<T>,
+	server: Server,
 }
 
 /// Peers list
@@ -106,27 +106,22 @@ impl<T> LocalNode<T> where T: SynchronizationTaskExecutor + PeersConnections + S
 	pub fn on_peer_getdata(&self, peer_index: usize, message: types::GetData) {
 		trace!(target: "sync", "Got `getdata` message from peer#{}", peer_index);
 
-		for item in message.inventory {
-			match item.inv_type {
-				InventoryType::MessageBlock => self.server.serve_block(peer_index, item.hash),
-				_ => (), // TODO
-			}
-		}
+		self.server.serve_data(peer_index, message.inventory);
 	}
 
 	pub fn on_peer_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
 		trace!(target: "sync", "Got `getblocks` message from peer#{}", peer_index);
 
-		if let Some(block_number) = self.locate_known_block(message.block_locator_hashes) {
-			self.server.serve_blocks_inventory(peer_index, block_number);
+		if let Some(best_block) = self.locate_known_block(message.block_locator_hashes) {
+			self.server.serve_blocks_inventory(peer_index, best_block);
 		}
 	}
 
 	pub fn on_peer_getheaders(&self, peer_index: usize, message: types::GetHeaders) {
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
 
-		if let Some(block_number) = self.locate_known_block(message.block_locator_hashes) {
-			self.server.serve_blocks_headers(peer_index, block_number);
+		if let Some(best_block) = self.locate_known_block(message.block_locator_hashes) {
+			self.server.serve_blocks_headers(peer_index, best_block);
 		}
 	}
 
@@ -187,6 +182,10 @@ impl<T> LocalNode<T> where T: SynchronizationTaskExecutor + PeersConnections + S
 
 	pub fn on_peer_block_txn(&self, peer_index: usize, _message: types::BlockTxn) {
 		trace!(target: "sync", "Got `blocktxn` message from peer#{}", peer_index);
+	}
+
+	pub fn on_peer_notfound(&self, peer_index: usize, _message: types::NotFound) {
+		trace!(target: "sync", "Got `notfound` message from peer#{}", peer_index);
 	}
 
 	fn locate_known_block(&self, block_locator_hashes: Vec<H256>) -> Option<db::BestBlock> {

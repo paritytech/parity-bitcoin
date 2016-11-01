@@ -27,6 +27,8 @@ pub enum Task {
 	RequestBestInventory(usize),
 	/// Send block.
 	SendBlock(usize, Block),
+	/// Send notfound
+	SendNotFound(usize, Vec<InventoryVector>),
 }
 
 /// Synchronization tasks executor
@@ -115,6 +117,17 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					connection.send_block(&block_message);
 				}
 			},
+			Task::SendNotFound(peer_index, unknown_inventory) => {
+				let notfound = types::NotFound {
+					inventory: unknown_inventory,
+				};
+
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					let connection = &mut *connection;
+					trace!(target: "sync", "Sending notfound to peer#{} with {} items", peer_index, notfound.inventory.len());
+					connection.send_notfound(&notfound);
+				}
+			}
 		}
 	}
 }
