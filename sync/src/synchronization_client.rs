@@ -79,7 +79,7 @@ const MIN_BLOCKS_IN_REQUEST: u32 = 32;
 const MAX_BLOCKS_IN_REQUEST: u32 = 512;
 
 /// Thread-safe reference to the `Synchronization`
-pub type SynchronizationRef<T> = Arc<Mutex<Synchronization<T>>>;
+pub type ClientRef<T> = Arc<Mutex<Client<T>>>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum State {
@@ -117,7 +117,7 @@ pub struct Config {
 } 
 
 /// New blocks synchronization process.
-pub struct Synchronization<T: TaskExecutor + Send + 'static> {
+pub struct Client<T: TaskExecutor + Send + 'static> {
 	/// Synchronization state.
 	state: State,
 	/// Synchronization peers.
@@ -143,7 +143,7 @@ impl State {
 	}
 }
 
-impl<T> Drop for Synchronization<T> where T: TaskExecutor + Send + 'static {
+impl<T> Drop for Client<T> where T: TaskExecutor + Send + 'static {
 	fn drop(&mut self) {
 		if let Some(join_handle) = self.verification_worker_thread.take() {
 			self.verification_work_sender
@@ -155,11 +155,11 @@ impl<T> Drop for Synchronization<T> where T: TaskExecutor + Send + 'static {
 	}
 }
 
-impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
+impl<T> Client<T> where T: TaskExecutor + Send + 'static {
 	/// Create new synchronization window
-	pub fn new(config: Config, executor: Arc<Mutex<T>>, chain: ChainRef) -> SynchronizationRef<T> {
-		let sync = SynchronizationRef::new(Mutex::new(
-			Synchronization {
+	pub fn new(config: Config, executor: Arc<Mutex<T>>, chain: ChainRef) -> ClientRef<T> {
+		let sync = ClientRef::new(Mutex::new(
+			Client {
 				state: State::Saturated,
 				peers: Peers::new(),
 				executor: executor,
@@ -179,7 +179,7 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 			lsync.verification_worker_thread = Some(thread::Builder::new()
 				.name("Sync verification thread".to_string())
 				.spawn(move || {
-					Synchronization::verification_worker_proc(csync, storage, verification_work_receiver)
+					Client::verification_worker_proc(csync, storage, verification_work_receiver)
 				})
 				.expect("Error creating verification thread"));
 		}
@@ -446,7 +446,7 @@ impl<T> Synchronization<T> where T: TaskExecutor + Send + 'static {
 	}
 
 	/// Thread procedure for handling verification tasks
-	fn verification_worker_proc(sync: SynchronizationRef<T>, storage: Arc<db::Store>, work_receiver: Receiver<VerificationTask>) {
+	fn verification_worker_proc(sync: ClientRef<T>, storage: Arc<db::Store>, work_receiver: Receiver<VerificationTask>) {
 		let verifier = ChainVerifier::new(storage);
 		while let Ok(task) = work_receiver.recv() {
 			match task {
@@ -501,7 +501,7 @@ pub mod tests {
 	use std::mem::replace;
 	use parking_lot::{Mutex, RwLock};
 	use chain::{Block, RepresentH256};
-	use super::{Synchronization, SynchronizationRef, Config};
+	use super::{Client, ClientRef, Config};
 	use synchronization_executor::{Task, TaskExecutor};
 	use local_node::PeersConnections;
 	use synchronization_chain::{Chain, ChainRef};
@@ -531,11 +531,11 @@ pub mod tests {
 		}
 	}
 
-	fn create_sync() -> (Arc<Mutex<DummyTaskExecutor>>, SynchronizationRef<DummyTaskExecutor>) {
+	fn create_sync() -> (Arc<Mutex<DummyTaskExecutor>>, ClientRef<DummyTaskExecutor>) {
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = Arc::new(Mutex::new(DummyTaskExecutor::default()));
-		(executor.clone(), Synchronization::new(Config {
+		(executor.clone(), Client::new(Config {
 			skip_block_verification: true,
 		}, executor, chain))
 	} 
