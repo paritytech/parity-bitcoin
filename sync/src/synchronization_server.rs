@@ -27,8 +27,7 @@ enum ServerTask {
 	ServeData(Vec<InventoryVector>),
 	ServeNotFound(Vec<InventoryVector>),
 	ServeBlock(H256),
-	//ServeBlocksInventory(db::BestBlock),
-	//ServeBlocksHeaders(db::BestBlock),
+	ServeBlocksInventory(db::BestBlock, H256),
 }
 
 impl Drop for Server {
@@ -60,12 +59,8 @@ impl Server {
 		self.queue.lock().add_task(peer_index, ServerTask::ServeData(inventory));
 	}
  
-	pub fn serve_blocks_inventory(&self, _peer_index: usize, _best_common_block: db::BestBlock) {
-		unimplemented!();
-	}
-
-	pub fn serve_blocks_headers(&self, _peer_index: usize, _best_common_block: db::BestBlock) {
-		unimplemented!();
+	pub fn serve_blocks_inventory(&self, peer_index: usize, best_common_block: db::BestBlock, hash_stop: H256) {
+		self.queue.lock().add_task(peer_index, ServerTask::ServeBlocksInventory(best_common_block, hash_stop));
 	}
 
 	fn server_worker<T: TaskExecutor + Send + 'static>(queue_ready: Arc<Condvar>, queue: Arc<Mutex<ServerQueue>>, chain: ChainRef, executor: Arc<Mutex<T>>) {
@@ -119,6 +114,33 @@ impl Server {
 							executor.lock().execute(Task::SendBlock(peer_index, block));
 						}
 					},
+					// `inventory`
+					(peer_index, ServerTask::ServeBlocksInventory(best_block, hash_stop)) => {
+						if let Some(hash) = chain.read().storage_block_hash(best_block.number) {
+							// check that chain has not reorganized since task was queued
+							if hash == best_block.hash {
+								let mut inventory: Vec<InventoryVector> = Vec::new();
+								let first_block_number = best_block.number + 1;
+								let last_block_number = best_block.number + 500;
+								// 500 hashes after best_block.number OR hash_stop OR blockchain end
+								for block_number in first_block_number..last_block_number {
+									match chain.read().storage_block_hash(block_number) {
+										Some(ref block_hash) if block_hash == &hash_stop => break,
+										None => break,
+										Some(block_hash) => {
+											inventory.push(InventoryVector {
+												inv_type: InventoryType::MessageBlock,
+												hash: block_hash,
+											});
+										},
+									}
+								}
+								if !inventory.is_empty() {
+									executor.lock().execute(Task::SendInventory(peer_index, inventory));
+								}
+							}
+						}
+					}
 				},
 				// no tasks after wake-up => stopping
 				None => break,

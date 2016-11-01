@@ -204,6 +204,11 @@ impl Chain {
 		self.storage.block_number(hash)
 	}
 
+	/// Get block hash from storage
+	pub fn storage_block_hash(&self, number: u32) -> Option<H256> {
+		self.storage.block_hash(number)
+	}
+
 	/// Get block from the storage
 	pub fn storage_block(&self, hash: &H256) -> Option<Block> {
 		self.storage.block(db::BlockRef::Hash(hash.clone()))

@@ -113,16 +113,12 @@ impl<T> LocalNode<T> where T: SynchronizationTaskExecutor + PeersConnections + S
 		trace!(target: "sync", "Got `getblocks` message from peer#{}", peer_index);
 
 		if let Some(best_block) = self.locate_known_block(message.block_locator_hashes) {
-			self.server.serve_blocks_inventory(peer_index, best_block);
+			self.server.serve_blocks_inventory(peer_index, best_block, message.hash_stop);
 		}
 	}
 
-	pub fn on_peer_getheaders(&self, peer_index: usize, message: types::GetHeaders) {
+	pub fn on_peer_getheaders(&self, peer_index: usize, _message: types::GetHeaders) {
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
-
-		if let Some(best_block) = self.locate_known_block(message.block_locator_hashes) {
-			self.server.serve_blocks_headers(peer_index, best_block);
-		}
 	}
 
 	pub fn on_peer_transaction(&self, peer_index: usize, message: types::Tx) {
@@ -243,6 +239,7 @@ mod tests {
 		fn send_compact_block(&self, _message: &types::CompactBlock) {}
 		fn send_get_block_txn(&self, _message: &types::GetBlockTxn) {}
 		fn send_block_txn(&self, _message: &types::BlockTxn) {}
+		fn send_notfound(&self, _message: &types::NotFound) {}
 	}
 
 	#[test]

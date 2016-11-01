@@ -29,6 +29,8 @@ pub enum Task {
 	SendBlock(usize, Block),
 	/// Send notfound
 	SendNotFound(usize, Vec<InventoryVector>),
+	/// Send inventory
+	SendInventory(usize, Vec<InventoryVector>),
 }
 
 /// Synchronization tasks executor
@@ -127,7 +129,18 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					trace!(target: "sync", "Sending notfound to peer#{} with {} items", peer_index, notfound.inventory.len());
 					connection.send_notfound(&notfound);
 				}
-			}
+			},
+			Task::SendInventory(peer_index, inventory) => {
+				let inventory = types::Inv {
+					inventory: inventory,
+				};
+
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					let connection = &mut *connection;
+					trace!(target: "sync", "Sending inventory to peer#{} with {} items", peer_index, inventory.inventory.len());
+					connection.send_inventory(&inventory);
+				}
+			},
 		}
 	}
 }
