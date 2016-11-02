@@ -117,6 +117,13 @@ pub trait Client {
 	fn on_block_verification_error(&mut self, err: &VerificationError, hash: &H256);
 }
 
+/// Synchronization client configuration options.
+#[derive(Default)]
+pub struct Config {
+	/// Do not verify incoming blocks before inserting to db.
+	pub skip_verification: bool,
+}
+
 /// Synchronization client.
 pub struct SynchronizationClient<T: TaskExecutor + Send + 'static> {
 	/// Synchronization state.
@@ -233,7 +240,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor + Send + 'stat
 
 impl<T> SynchronizationClient<T> where T: TaskExecutor + Send + 'static {
 	/// Create new synchronization window
-	pub fn new(executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
+	pub fn new(config: Config, executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
 		let sync = Arc::new(Mutex::new(
 			SynchronizationClient {
 				state: State::Saturated,
@@ -246,7 +253,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor + Send + 'static {
 			}
 		));
 
-		{
+		if !config.skip_verification {
 			let (verification_work_sender, verification_work_receiver) = channel();
 			let csync = sync.clone();
 			let mut lsync = sync.lock();
@@ -504,7 +511,7 @@ pub mod tests {
 	use std::mem::replace;
 	use parking_lot::{Mutex, RwLock};
 	use chain::{Block, RepresentH256};
-	use super::{Client, SynchronizationClient};
+	use super::{Client, Config, SynchronizationClient};
 	use synchronization_executor::{Task, TaskExecutor};
 	use local_node::PeersConnections;
 	use synchronization_chain::{Chain, ChainRef};
@@ -538,7 +545,8 @@ pub mod tests {
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = Arc::new(Mutex::new(DummyTaskExecutor::default()));
-		(executor.clone(), SynchronizationClient::new(executor, chain))
+		let config = Config { skip_verification: true };
+		(executor.clone(), SynchronizationClient::new(config, executor, chain))
 	} 
 
 	#[test]

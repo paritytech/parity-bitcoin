@@ -23,7 +23,7 @@ pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections + Send + 
 	/// Synchronization process
 	client: Arc<Mutex<V>>,
 	/// Synchronization server
-	server: Mutex<U>,
+	server: Arc<Mutex<U>>,
 }
 
 /// Peers list
@@ -36,12 +36,12 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 	U: Server + Send + 'static,
 	V: Client + Send + 'static {
 	/// New synchronization node with given storage
-	pub fn new(server: U, client: Arc<Mutex<V>>, executor: Arc<Mutex<T>>) -> Self {
+	pub fn new(server: Arc<Mutex<U>>, client: Arc<Mutex<V>>, executor: Arc<Mutex<T>>) -> Self {
 		LocalNode {
 			peer_counter: AtomicUsize::new(0),
 			executor: executor,
 			client: client,
-			server: Mutex::new(server),
+			server: server,
 		}
 	}
 
@@ -186,7 +186,7 @@ mod tests {
 	use chain::RepresentH256;
 	use synchronization_executor::Task;
 	use synchronization_client::tests::DummyTaskExecutor;
-	use synchronization_client::SynchronizationClient;
+	use synchronization_client::{Config, SynchronizationClient};
 	use synchronization_chain::Chain;
 	use p2p::{OutboundSyncConnection, OutboundSyncConnectionRef};
 	use message::types;
@@ -194,6 +194,7 @@ mod tests {
 	use db;
 	use super::LocalNode;
 	use test_data;
+	use synchronization_server::ServerTask;
 	use synchronization_server::tests::DummyServer;
 
 	struct DummyOutboundSyncConnection;
@@ -226,38 +227,44 @@ mod tests {
 		fn send_notfound(&self, _message: &types::NotFound) {}
 	}
 
-	#[test]
-	fn local_node_request_inventory_on_sync_start() {
+	fn create_local_node() -> (Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<DummyServer>>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor>>) {
 		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
 		let executor = Arc::new(Mutex::new(DummyTaskExecutor::default()));
-		let server = DummyServer::new();
-		let client = SynchronizationClient::new(executor.clone(), chain);
-		let local_node = LocalNode::new(server, client, executor.clone());
-		let peer_index = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
-		local_node.start_sync_session(peer_index, 0);
+		let server = Arc::new(Mutex::new(DummyServer::new()));
+		let config = Config { skip_verification: true };
+		let client = SynchronizationClient::new(config, executor.clone(), chain);
+		let local_node = LocalNode::new(server.clone(), client, executor.clone());
+		(executor, server, local_node)
+	}
 
+	#[test]
+	fn local_node_request_inventory_on_sync_start() {
+		let (executor, _, local_node) = create_local_node();
+		let peer_index = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		// start sync session
+		local_node.start_sync_session(peer_index, 0);
+		// => ask for inventory
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![Task::RequestInventory(peer_index)]);
 	}
 
-	/*#[test]
+	#[test]
 	fn local_node_serves_block() {
-		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
-		let executor = Arc::new(Mutex::new(DummyTaskExecutor::default()));
-		let local_node = LocalNode::new(chain, executor.clone());
+		let (_, server, local_node) = create_local_node();
 		let peer_index = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
-		// request genesis block
-		let genesis_block = test_data::genesis();
+		// peer requests genesis block
+		let genesis_block_hash = test_data::genesis().hash();
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageBlock,
+				hash: genesis_block_hash.clone(),
+			}
+		];
 		local_node.on_peer_getdata(peer_index, types::GetData {
-			inventory: vec![
-				InventoryVector {
-					inv_type: InventoryType::MessageBlock,
-					hash: genesis_block.hash(),
-				}
-			]
+			inventory: inventory.clone()
 		});
-		// => genesis block served
-		let tasks = executor.lock().take_tasks();
-		assert_eq!(tasks, vec![Task::SendBlock(peer_index, genesis_block)]);
-	}*/
+		// => `getdata` is served
+		let tasks = server.lock().take_tasks();
+		assert_eq!(tasks, vec![(peer_index, ServerTask::ServeGetData(inventory))]);
+	}
 }

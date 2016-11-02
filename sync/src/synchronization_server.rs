@@ -31,7 +31,8 @@ struct ServerQueue {
 	tasks_queue: HashMap<usize, VecDeque<ServerTask>>,
 }
 
-enum ServerTask {
+#[derive(Debug, PartialEq)]
+pub enum ServerTask {
 	ServeGetData(Vec<InventoryVector>),
 	ServeGetBlocks(db::BestBlock, H256),
 	ReturnNotFound(Vec<InventoryVector>),
@@ -237,9 +238,10 @@ pub mod tests {
 	use super::{Server, ServerTask};
 	use message::types;
 	use db;
+	use std::mem::replace;
 
 	pub struct DummyServer {
-		tasks: Vec<ServerTask>,
+		tasks: Vec<(usize, ServerTask)>,
 	}
 
 	impl DummyServer {
@@ -248,18 +250,22 @@ pub mod tests {
 				tasks: Vec::new(),
 			}
 		}
+
+		pub fn take_tasks(&mut self) -> Vec<(usize, ServerTask)> {
+			replace(&mut self.tasks, Vec::new())
+		}
 	}
 
 	impl Server for DummyServer {
 		fn serve_getdata(&mut self, peer_index: usize, message: types::GetData) {
-			self.tasks.push(ServerTask::ServeGetData(message.inventory));
+			self.tasks.push((peer_index, ServerTask::ServeGetData(message.inventory)));
 		}
 
 		fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks) {
-			self.tasks.push(ServerTask::ServeGetBlocks(db::BestBlock {
+			self.tasks.push((peer_index, ServerTask::ServeGetBlocks(db::BestBlock {
 				number: 0,
 				hash: message.block_locator_hashes[0].clone(),
-			}, message.hash_stop));
+			}, message.hash_stop)));
 		}
 	}
 }
