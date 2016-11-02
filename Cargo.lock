@@ -584,6 +584,7 @@ dependencies = [
  "p2p 0.1.0",
  "parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
+ "test-data 0.1.0",
  "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
  "verification 0.1.0",
 ]

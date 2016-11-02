@@ -1,15 +1,14 @@
 use message::types;
 use p2p::{InboundSyncConnection, InboundSyncConnectionRef};
 use local_node::LocalNodeRef;
-use synchronization_executor::LocalSynchronizationTaskExecutor;
 
 pub struct InboundConnection {
-	local_node: LocalNodeRef<LocalSynchronizationTaskExecutor>,
+	local_node: LocalNodeRef,
 	peer_index: usize,
 }
 
 impl InboundConnection {
-	pub fn new(local_node: LocalNodeRef<LocalSynchronizationTaskExecutor>, peer_index: usize) -> InboundSyncConnectionRef {
+	pub fn new(local_node: LocalNodeRef, peer_index: usize) -> InboundSyncConnectionRef {
 		Box::new(InboundConnection {
 			local_node: local_node,
 			peer_index: peer_index,
@@ -96,5 +95,9 @@ impl InboundSyncConnection for InboundConnection {
 
 	fn on_block_txn(&self, message: types::BlockTxn) {
 		self.local_node.on_peer_block_txn(self.peer_index, message);
+	}
+
+	fn on_notfound(&self, message: types::NotFound) {
+		self.local_node.on_peer_notfound(self.peer_index, message);
 	}
 }

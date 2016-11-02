@@ -27,3 +27,13 @@ impl Time for IncrementalTime {
 		result
 	}
 }
+
+#[derive(Default)]
+pub struct ZeroTime {
+}
+
+impl Time for ZeroTime {
+	fn get(&self) -> time::Timespec {
+		time::Timespec::new(0, 0)
+	}
+}

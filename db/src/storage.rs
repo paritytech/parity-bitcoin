@@ -20,7 +20,7 @@ const COL_BLOCK_HEADERS: u32 = 2;
 const COL_BLOCK_TRANSACTIONS: u32 = 3;
 const COL_TRANSACTIONS: u32 = 4;
 const COL_TRANSACTIONS_META: u32 = 5;
-const _COL_RESERVED2: u32 = 6;
+const COL_BLOCK_NUMBERS: u32 = 6;
 const _COL_RESERVED3: u32 = 7;
 const _COL_RESERVED4: u32 = 8;
 const _COL_RESERVED5: u32 = 9;
@@ -266,8 +266,9 @@ impl Store for Storage {
 		self.best_block.read().clone()
 	}
 
-	fn block_number(&self, _hash: &H256) -> Option<u32> {
-		unimplemented!()
+	fn block_number(&self, hash: &H256) -> Option<u32> {
+		self.get(COL_BLOCK_NUMBERS, &**hash)
+			.map(|val| LittleEndian::read_u32(&val))
 	}
 
 	fn block_hash(&self, number: u32) -> Option<H256> {
@@ -356,7 +357,8 @@ impl Store for Storage {
 			transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 
 			// updating main chain height reference
-			transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash))
+			transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash));
+			transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&block_hash), new_best_number);
 		}
 
 		transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
@@ -468,6 +470,18 @@ mod tests {
 
 		let loaded_transaction = store.transaction(&tx1).unwrap();
 		assert_eq!(loaded_transaction.hash(), block.transactions()[0].hash());
+	}
+
+	#[test]
+	fn stores_block_number() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let block: Block = test_data::block_h9();
+		store.insert_block(&block).unwrap();
+
+		let number = store.block_number(&block.hash()).unwrap();
+		assert_eq!(0, number);
 	}
 
 	#[test]
