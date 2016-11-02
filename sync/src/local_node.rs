@@ -13,9 +13,9 @@ use synchronization_server::{Server, SynchronizationServer};
 pub type LocalNodeRef = Arc<LocalNode<LocalSynchronizationTaskExecutor, SynchronizationServer, SynchronizationClient<LocalSynchronizationTaskExecutor>>>;
 
 /// Local synchronization node
-pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections + Send + 'static,
-	U: Server + Send + 'static,
-	V: Client + Send + 'static> {
+pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections,
+	U: Server,
+	V: Client> {
 	/// Throughout counter of synchronization peers
 	peer_counter: AtomicUsize,
 	/// Synchronization executor
@@ -32,9 +32,9 @@ pub trait PeersConnections {
 	fn remove_peer_connection(&mut self, peer_index: usize);
 }
 
-impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersConnections + Send + 'static,
-	U: Server + Send + 'static,
-	V: Client + Send + 'static {
+impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersConnections,
+	U: Server,
+	V: Client {
 	/// New synchronization node with given storage
 	pub fn new(server: Arc<Mutex<U>>, client: Arc<Mutex<V>>, executor: Arc<Mutex<T>>) -> Self {
 		LocalNode {
@@ -47,11 +47,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 
 	/// Best block hash (including non-verified, requested && non-requested blocks)
 	pub fn best_block(&self) -> db::BestBlock {
-		// TODO: self.chain.read().best_block()
-		db::BestBlock {
-			number: 0,
-			hash: "0".into(),
-		}
+		self.client.lock().best_block()
 	}
 
 	pub fn create_sync_session(&self, _best_block_height: i32, outbound_connection: OutboundSyncConnectionRef) -> usize {

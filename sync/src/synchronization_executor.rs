@@ -12,7 +12,7 @@ use local_node::PeersConnections;
 pub type LocalSynchronizationTaskExecutorRef = Arc<Mutex<LocalSynchronizationTaskExecutor>>;
 
 /// Synchronization task executor
-pub trait TaskExecutor {
+pub trait TaskExecutor : Send + 'static {
 	fn execute(&mut self, task: Task);
 }
 

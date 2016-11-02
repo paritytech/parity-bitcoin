@@ -108,7 +108,8 @@ enum VerificationTask {
 }
 
 /// Synchronization client trait
-pub trait Client {
+pub trait Client : Send + 'static {
+	fn best_block(&self) -> db::BestBlock;
 	fn on_new_blocks_inventory(&mut self, peer_index: usize, peer_hashes: Vec<H256>);
 	fn on_peer_block(&mut self, peer_index: usize, block: Block);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
@@ -125,7 +126,7 @@ pub struct Config {
 }
 
 /// Synchronization client.
-pub struct SynchronizationClient<T: TaskExecutor + Send + 'static> {
+pub struct SynchronizationClient<T: TaskExecutor> {
 	/// Synchronization state.
 	state: State,
 	/// Synchronization peers.
@@ -151,7 +152,7 @@ impl State {
 	}
 }
 
-impl<T> Drop for SynchronizationClient<T> where T: TaskExecutor + Send + 'static {
+impl<T> Drop for SynchronizationClient<T> where T: TaskExecutor {
 	fn drop(&mut self) {
 		if let Some(join_handle) = self.verification_worker_thread.take() {
 			self.verification_work_sender
@@ -163,7 +164,12 @@ impl<T> Drop for SynchronizationClient<T> where T: TaskExecutor + Send + 'static
 	}
 }
 
-impl<T> Client for SynchronizationClient<T> where T: TaskExecutor + Send + 'static {
+impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
+	/// Get best known block
+	fn best_block(&self) -> db::BestBlock {
+		self.chain.read().best_block()
+	}
+
 	/// Try to queue synchronization of unknown blocks when new inventory is received.
 	fn on_new_blocks_inventory(&mut self, peer_index: usize, peer_hashes: Vec<H256>) {
 		self.process_new_blocks_inventory(peer_index, peer_hashes);
@@ -238,7 +244,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor + Send + 'stat
 	}
 }
 
-impl<T> SynchronizationClient<T> where T: TaskExecutor + Send + 'static {
+impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	/// Create new synchronization window
 	pub fn new(config: Config, executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
 		let sync = Arc::new(Mutex::new(

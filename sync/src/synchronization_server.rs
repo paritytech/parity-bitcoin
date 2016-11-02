@@ -12,7 +12,7 @@ use synchronization_executor::{Task, TaskExecutor};
 use message::types;
 
 /// Synchronization requests server trait
-pub trait Server {
+pub trait Server : Send + 'static {
 	fn serve_getdata(&mut self, peer_index: usize, message: types::GetData);
 	fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks);
 }
@@ -41,7 +41,7 @@ pub enum ServerTask {
 }
 
 impl SynchronizationServer {
-	pub fn new<T: TaskExecutor + Send + 'static>(chain: ChainRef, executor: Arc<Mutex<T>>) -> Self {
+	pub fn new<T: TaskExecutor>(chain: ChainRef, executor: Arc<Mutex<T>>) -> Self {
 		let queue_ready = Arc::new(Condvar::new());
 		let queue = Arc::new(Mutex::new(ServerQueue::new(queue_ready.clone())));
 		let mut server = SynchronizationServer {
@@ -68,7 +68,7 @@ impl SynchronizationServer {
 			.nth(0)
 	}
 
-	fn server_worker<T: TaskExecutor + Send + 'static>(queue_ready: Arc<Condvar>, queue: Arc<Mutex<ServerQueue>>, chain: ChainRef, executor: Arc<Mutex<T>>) {
+	fn server_worker<T: TaskExecutor>(queue_ready: Arc<Condvar>, queue: Arc<Mutex<ServerQueue>>, chain: ChainRef, executor: Arc<Mutex<T>>) {
 		loop {
 			let server_task = {
 				let mut queue = queue.lock();
