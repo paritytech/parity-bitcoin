@@ -1,15 +1,37 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use parking_lot::Mutex;
+use chain::{Block, RepresentH256};
 use message::common::{InventoryVector, InventoryType};
 use message::types;
 use primitives::hash::H256;
 use p2p::OutboundSyncConnectionRef;
 use synchronization_chain::ChainRef;
-use synchronization::{Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor};
 use local_node::PeersConnections;
 
 pub type LocalSynchronizationTaskExecutorRef = Arc<Mutex<LocalSynchronizationTaskExecutor>>;
+
+/// Synchronization task executor
+pub trait TaskExecutor : Send + 'static {
+	fn execute(&mut self, task: Task);
+}
+
+/// Synchronization task for the peer.
+#[derive(Debug, PartialEq)]
+pub enum Task {
+	/// Request given blocks.
+	RequestBlocks(usize, Vec<H256>),
+	/// Request full inventory using block_locator_hashes.
+	RequestInventory(usize),
+	/// Request inventory using best block locator only.
+	RequestBestInventory(usize),
+	/// Send block.
+	SendBlock(usize, Block),
+	/// Send notfound
+	SendNotFound(usize, Vec<InventoryVector>),
+	/// Send inventory
+	SendInventory(usize, Vec<InventoryVector>),
+}
 
 /// Synchronization tasks executor
 pub struct LocalSynchronizationTaskExecutor {
@@ -38,12 +60,12 @@ impl PeersConnections for LocalSynchronizationTaskExecutor {
 	}
 }
 
-impl SynchronizationTaskExecutor for LocalSynchronizationTaskExecutor {
-	fn execute(&mut self, task: SynchronizationTask) {
+impl TaskExecutor for LocalSynchronizationTaskExecutor {
+	fn execute(&mut self, task: Task) {
 		// TODO: what is types::GetBlocks::version here? (@ PR#37)
 
 		match task {
-			SynchronizationTask::RequestBlocks(peer_index, blocks_hashes) => {
+			Task::RequestBlocks(peer_index, blocks_hashes) => {
 				let getdata = types::GetData {
 					inventory: blocks_hashes.into_iter()
 						.map(|hash| InventoryVector {
@@ -58,7 +80,7 @@ impl SynchronizationTaskExecutor for LocalSynchronizationTaskExecutor {
 					connection.send_getdata(&getdata);
 				}
 			}
-			SynchronizationTask::RequestInventory(peer_index) => {
+			Task::RequestInventory(peer_index) => {
 				let block_locator_hashes = self.chain.read().block_locator_hashes();
 				let getblocks = types::GetBlocks {
 					version: 0,
@@ -72,7 +94,7 @@ impl SynchronizationTaskExecutor for LocalSynchronizationTaskExecutor {
 					connection.send_getblocks(&getblocks);
 				}
 			},
-			SynchronizationTask::RequestBestInventory(peer_index) => {
+			Task::RequestBestInventory(peer_index) => {
 				let block_locator_hashes = self.chain.read().best_block_locator_hashes();
 				let getblocks = types::GetBlocks {
 					version: 0,
@@ -84,6 +106,39 @@ impl SynchronizationTaskExecutor for LocalSynchronizationTaskExecutor {
 					let connection = &mut *connection;
 					trace!(target: "sync", "Querying best inventory from peer#{}", peer_index);
 					connection.send_getblocks(&getblocks);
+				}
+			},
+			Task::SendBlock(peer_index, block) => {
+				let block_message = types::Block {
+					block: block,
+				};
+
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					let connection = &mut *connection;
+					trace!(target: "sync", "Sending block {:?} to peer#{}", block_message.block.hash(), peer_index);
+					connection.send_block(&block_message);
+				}
+			},
+			Task::SendNotFound(peer_index, unknown_inventory) => {
+				let notfound = types::NotFound {
+					inventory: unknown_inventory,
+				};
+
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					let connection = &mut *connection;
+					trace!(target: "sync", "Sending notfound to peer#{} with {} items", peer_index, notfound.inventory.len());
+					connection.send_notfound(&notfound);
+				}
+			},
+			Task::SendInventory(peer_index, inventory) => {
+				let inventory = types::Inv {
+					inventory: inventory,
+				};
+
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					let connection = &mut *connection;
+					trace!(target: "sync", "Sending inventory to peer#{} with {} items", peer_index, inventory.inventory.len());
+					connection.send_inventory(&inventory);
 				}
 			},
 		}
