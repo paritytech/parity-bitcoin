@@ -6,13 +6,13 @@ use futures::stream::Stream;
 use futures_cpupool::CpuPool;
 use tokio_core::io::IoFuture;
 use tokio_core::net::{TcpListener, TcpStream};
-use tokio_core::reactor::{Handle, Remote, Timeout};
+use tokio_core::reactor::{Handle, Remote, Timeout, Interval};
 use abstract_ns::Resolver;
 use ns_dns_tokio::DnsResolver;
 use message::{Payload, MessageResult};
-use protocol::Direction;
-use net::{connect, Connections, Channel, Config as NetConfig, accept_connection};
-use util::{NodeTable, Node};
+use message::common::Services;
+use net::{connect, Connections, Channel, Config as NetConfig, accept_connection, ConnectionCounter};
+use util::{NodeTable, Node, Direction};
 use session::{SessionFactory, SeednodeSessionFactory, NormalSessionFactory};
 use {Config, PeerId};
 use protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef};
@@ -24,6 +24,8 @@ pub type BoxedEmptyFuture = BoxFuture<(), ()>;
 pub struct Context {
 	/// Connections.
 	connections: Connections,
+	/// Connection counter.
+	connection_counter: ConnectionCounter,
 	/// Node Table.
 	node_table: RwLock<NodeTable>,
 	/// Thread pool handle.
@@ -36,9 +38,10 @@ pub struct Context {
 
 impl Context {
 	/// Creates new context with reference to local sync node, thread pool and event loop.
-	pub fn new(local_sync_node: LocalSyncNodeRef, pool_handle: CpuPool, remote: Remote) -> Self {
+	pub fn new(local_sync_node: LocalSyncNodeRef, pool_handle: CpuPool, remote: Remote, config: &Config) -> Self {
 		Context {
 			connections: Default::default(),
+			connection_counter: ConnectionCounter::new(config.inbound_connections, config.outbound_connections),
 			node_table: Default::default(),
 			pool: pool_handle,
 			remote: remote,
@@ -80,6 +83,36 @@ impl Context {
 		self.node_table.write().insert_many(nodes);
 	}
 
+	/// Every 10 seconds check if we have reached maximum number of outbound connections.
+	/// If not, connect to best peers.
+	pub fn autoconnect(context: Arc<Context>, handle: &Handle, config: NetConfig) {
+		let c = context.clone();
+		// every 10 seconds connect to new peers (if needed)
+		let interval: BoxedEmptyFuture = Interval::new(time::Duration::new(10, 0), handle).expect("Failed to create interval")
+			.and_then(move |_| {
+				let used_addresses = context.connections.addresses();
+				let max = context.connection_counter.max_outbound_connections() as usize;
+				let needed = context.connection_counter.outbound_connections_needed() as usize;
+				let peers = context.node_table.read().nodes_with_services(&Services::default(), max);
+				let addresses = peers.into_iter()
+					.map(|peer| peer.address())
+					.filter(|address| !used_addresses.contains(&address))
+					.take(needed)
+					.collect::<Vec<_>>();
+
+				trace!("connected to addresses: {:?}", used_addresses);
+				trace!("connecting to addresses: {:?}", addresses);
+				for address in addresses {
+					Context::connect::<NormalSessionFactory>(context.clone(), address, config.clone());
+				}
+				Ok(())
+			})
+			.for_each(|_| Ok(()))
+			.then(|_| finished(()))
+			.boxed();
+		c.spawn(interval);
+	}
+
 	/// Connect to socket using given context and handle.
 	fn connect_future<T>(context: Arc<Context>, socket: net::SocketAddr, handle: &Handle, config: &NetConfig) -> BoxedEmptyFuture where T: SessionFactory {
 		trace!("Trying to connect to: {}", socket);
@@ -90,28 +123,34 @@ impl Context {
 					// successfull hanshake
 					trace!("Connected to {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
-					let channel = context.connections.store::<T>(context.clone(), connection);
+					let channel = context.connections.store::<T>(context.clone(), connection, Direction::Outbound);
 
 					// initialize session and then start reading messages
-					channel.session().initialize(channel.clone(), Direction::Outbound);
+					channel.session().initialize(channel.clone());
 					Context::on_message(context, channel)
 				},
-				Ok(DeadlineStatus::Meet(Err(err))) => {
+				Ok(DeadlineStatus::Meet(Err(_))) => {
 					// protocol error
 					trace!("Handshake with {} failed", socket);
 					// TODO: close socket
-					finished(Err(err)).boxed()
+					context.node_table.write().note_failure(&socket);
+					context.connection_counter.note_close_inbound_connection();
+					finished(Ok(())).boxed()
 				},
 				Ok(DeadlineStatus::Timeout) => {
 					// connection time out
-					trace!("Handshake with {} timedout", socket);
+					trace!("Handshake with {} timed out", socket);
 					// TODO: close socket
+					context.node_table.write().note_failure(&socket);
+					context.connection_counter.note_close_inbound_connection();
 					finished(Ok(())).boxed()
 				},
-				Err(err) => {
+				Err(_) => {
 					// network error
 					trace!("Unable to connect to {}", socket);
-					failed(err).boxed()
+					context.node_table.write().note_failure(&socket);
+					context.connection_counter.note_close_inbound_connection();
+					finished(Ok(())).boxed()
 				}
 			}
 		})
@@ -121,6 +160,7 @@ impl Context {
 
 	/// Connect to socket using given context.
 	pub fn connect<T>(context: Arc<Context>, socket: net::SocketAddr, config: NetConfig) where T: SessionFactory {
+		context.connection_counter.note_new_outbound_connection();
 		context.remote.clone().spawn(move |handle| {
 			context.pool.clone().spawn(Context::connect_future::<T>(context, socket, handle, &config))
 		})
@@ -133,26 +173,32 @@ impl Context {
 					// successfull hanshake
 					trace!("Accepted connection from {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
-					let channel = context.connections.store::<NormalSessionFactory>(context.clone(), connection);
+					let channel = context.connections.store::<NormalSessionFactory>(context.clone(), connection, Direction::Inbound);
 
 					// initialize session and then start reading messages
-					channel.session().initialize(channel.clone(), Direction::Inbound);
+					channel.session().initialize(channel.clone());
 					Context::on_message(context.clone(), channel)
 				},
-				Ok(DeadlineStatus::Meet(Err(err))) => {
+				Ok(DeadlineStatus::Meet(Err(_))) => {
 					// protocol error
 					// TODO: close socket
-					finished(Err(err)).boxed()
+					context.node_table.write().note_failure(&socket);
+					context.connection_counter.note_close_outbound_connection();
+					finished(Ok(())).boxed()
 				},
 				Ok(DeadlineStatus::Timeout) => {
 					// connection time out
 					trace!("Handshake with {} timedout", socket);
 					// TODO: close socket
+					context.node_table.write().note_failure(&socket);
+					context.connection_counter.note_close_outbound_connection();
 					finished(Ok(())).boxed()
 				},
-				Err(err) => {
+				Err(_) => {
 					// network error
-					failed(err).boxed()
+					context.node_table.write().note_failure(&socket);
+					context.connection_counter.note_close_outbound_connection();
+					finished(Ok(())).boxed()
 				}
 			}
 		})
@@ -161,6 +207,7 @@ impl Context {
 	}
 
 	pub fn accept_connection(context: Arc<Context>, stream: TcpStream, socket: net::SocketAddr, config: NetConfig) {
+		context.connection_counter.note_new_inbound_connection();
 		context.remote.clone().spawn(move |handle| {
 			context.pool.clone().spawn(Context::accept_connection_future(context, stream, socket, handle, config))
 		})
@@ -172,7 +219,15 @@ impl Context {
 		let server = try!(TcpListener::bind(&config.local_address, handle));
 		let server = server.incoming()
 			.and_then(move |(stream, socket)| {
-				Context::accept_connection(context.clone(), stream, socket, config.clone());
+				// because we acquire atomic value twice,
+				// it may happen that accept slightly more connections than we need
+				// we don't mind
+				if context.connection_counter.inbound_connections_needed() > 0 {
+					Context::accept_connection(context.clone(), stream, socket, config.clone());
+				} else {
+					// ignore result
+					let _ = stream.shutdown(net::Shutdown::Both);
+				}
 				Ok(())
 			})
 			.for_each(|_| Ok(()))
@@ -210,6 +265,7 @@ impl Context {
 				},
 				Err(err) => {
 					// network error
+					// TODO: remote node was just turned off. should we mark it as not reliable?
 					context.close_channel_with_error(channel.peer_info().id, &err);
 					failed(err).boxed()
 				}
@@ -251,20 +307,29 @@ impl Context {
 	/// Close channel with given peer info.
 	pub fn close_channel(&self, id: PeerId) {
 		if let Some(channel) = self.connections.remove(id) {
+			let info = channel.peer_info();
 			channel.session().on_close();
-			trace!("Disconnecting from {}", channel.peer_info().address);
+			trace!("Disconnecting from {}", info.address);
 			channel.shutdown();
+			match info.direction {
+				Direction::Inbound => self.connection_counter.note_close_inbound_connection(),
+				Direction::Outbound => self.connection_counter.note_close_outbound_connection(),
+			}
 		}
 	}
 
 	/// Close channel with given peer info.
 	pub fn close_channel_with_error(&self, id: PeerId, error: &error::Error) {
 		if let Some(channel) = self.connections.remove(id) {
+			let info = channel.peer_info();
 			channel.session().on_close();
-			let address = channel.peer_info().address;
-			trace!("Disconnecting from {} caused by {}", address, error.description());
+			trace!("Disconnecting from {} caused by {}", info.address, error.description());
 			channel.shutdown();
-			self.node_table.write().note_failure(&address);
+			self.node_table.write().note_failure(&info.address);
+			match info.direction {
+				Direction::Inbound => self.connection_counter.note_close_inbound_connection(),
+				Direction::Outbound => self.connection_counter.note_close_outbound_connection(),
+			}
 		}
 	}
 
@@ -304,8 +369,8 @@ impl P2P {
 		P2P {
 			event_loop_handle: handle.clone(),
 			pool: pool.clone(),
+			context: Arc::new(Context::new(local_sync_node, pool, handle.remote().clone(), &config)),
 			config: config,
-			context: Arc::new(Context::new(local_sync_node, pool, handle.remote().clone())),
 		}
 	}
 
@@ -319,6 +384,7 @@ impl P2P {
 			self.connect_to_seednode(&resolver, seed);
 		}
 
+		Context::autoconnect(self.context.clone(), &self.event_loop_handle, self.config.connection.clone());
 		try!(self.listen());
 		Ok(())
 	}

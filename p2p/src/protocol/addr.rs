@@ -3,8 +3,9 @@ use std::time::Duration;
 use bytes::Bytes;
 use message::{Error, Command, deserialize_payload, Payload};
 use message::types::{GetAddr, Addr};
-use protocol::{Protocol, Direction};
+use protocol::Protocol;
 use p2p::Context;
+use util::Direction;
 use PeerId;
 
 pub struct AddrProtocol {

@@ -2,6 +2,7 @@ use message::{Payload, Magic, Message};
 use net::Connection;
 use session::Session;
 use io::{SharedTcpStream, WriteMessage, write_message, read_any_message, ReadAnyMessage};
+use util::Direction;
 use {PeerId, PeerInfo};
 
 pub struct Channel {
@@ -13,13 +14,14 @@ pub struct Channel {
 }
 
 impl Channel {
-	pub fn new(connection: Connection, peer_id: PeerId, session: Session) -> Self {
+	pub fn new(connection: Connection, peer_id: PeerId, session: Session, direction: Direction) -> Self {
 		Channel {
 			version: connection.version,
 			magic: connection.magic,
 			peer_info: PeerInfo {
 				address: connection.address,
 				id: peer_id,
+				direction: direction,
 			},
 			session: session,
 			stream: connection.stream,

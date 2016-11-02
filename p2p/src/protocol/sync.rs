@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use bytes::Bytes;
 use message::{Command, Error, Payload, types, deserialize_payload};
-use protocol::{Protocol, Direction};
+use protocol::Protocol;
+use util::Direction;
 use p2p::Context;
 use PeerId;
 

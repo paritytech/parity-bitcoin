@@ -4,7 +4,7 @@ use bytes::Bytes;
 use message::{Command, Error};
 use p2p::Context;
 use net::Channel;
-use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, SeednodeProtocol, Direction};
+use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, SeednodeProtocol};
 use PeerId;
 
 pub trait SessionFactory {
@@ -44,9 +44,9 @@ impl Session {
 		}
 	}
 
-	pub fn initialize(&self, channel: Arc<Channel>, direction: Direction) {
+	pub fn initialize(&self, channel: Arc<Channel>) {
 		for protocol in self.protocols.lock().iter_mut() {
-			protocol.initialize(direction, channel.version());
+			protocol.initialize(channel.peer_info().direction, channel.version());
 		}
 	}
 

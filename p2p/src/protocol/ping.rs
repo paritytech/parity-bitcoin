@@ -3,7 +3,8 @@ use bytes::Bytes;
 use message::{Error, Payload, deserialize_payload};
 use message::types::{Ping, Pong};
 use message::common::Command;
-use protocol::{Protocol, Direction};
+use protocol::Protocol;
+use util::Direction;
 use util::nonce::{NonceGenerator, RandomNonce};
 use p2p::Context;
 use PeerId;
@@ -73,8 +74,9 @@ mod tests {
 	use bytes::Bytes;
 	use message::{Payload, serialize_payload};
 	use message::types::{Ping, Pong};
+	use util::Direction;
 	use util::nonce::StaticNonce;
-	use protocol::{Protocol, Direction};
+	use protocol::Protocol;
 	use PeerId;
 	use super::{PingProtocol, PingContext};
 
