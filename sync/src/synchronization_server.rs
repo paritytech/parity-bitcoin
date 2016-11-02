@@ -27,6 +27,7 @@ pub struct SynchronizationServer {
 
 struct ServerQueue {
 	is_stopping: AtomicBool,
+	queue_ready: Arc<Condvar>,
 	peers_queue: VecDeque<usize>,
 	tasks_queue: HashMap<usize, VecDeque<ServerTask>>,
 }
@@ -42,7 +43,7 @@ pub enum ServerTask {
 impl SynchronizationServer {
 	pub fn new<T: TaskExecutor + Send + 'static>(chain: ChainRef, executor: Arc<Mutex<T>>) -> Self {
 		let queue_ready = Arc::new(Condvar::new());
-		let queue = Arc::new(Mutex::new(ServerQueue::new()));
+		let queue = Arc::new(Mutex::new(ServerQueue::new(queue_ready.clone())));
 		let mut server = SynchronizationServer {
 			chain: chain.clone(),
 			queue_ready: queue_ready.clone(),
@@ -101,10 +102,12 @@ impl SynchronizationServer {
 						}
 						// respond with `notfound` message for unknown data
 						if !unknown_items.is_empty() {
+							trace!(target: "sync", "Going to respond with notfound with {} items to peer#{}", unknown_items.len(), peer_index);
 							new_tasks.push(ServerTask::ReturnNotFound(unknown_items));
 						}
 						// schedule data responses
 						if !new_tasks.is_empty() {
+							trace!(target: "sync", "Going to respond with data with {} items to peer#{}", new_tasks.len(), peer_index);
 							queue.lock().add_tasks(peer_index, new_tasks);
 						}
 					},
@@ -130,6 +133,7 @@ impl SynchronizationServer {
 									}
 								}
 								if !inventory.is_empty() {
+									trace!(target: "sync", "Going to respond with inventory with {} items to peer#{}", inventory.len(), peer_index);
 									executor.lock().execute(Task::SendInventory(peer_index, inventory));
 								}
 							}
@@ -170,15 +174,20 @@ impl Server for SynchronizationServer {
  
 	fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks) {
 		if let Some(best_common_block) = self.locate_known_block(message.block_locator_hashes) {
+			trace!(target: "sync", "Best common block with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);
 			self.queue.lock().add_task(peer_index, ServerTask::ServeGetBlocks(best_common_block, message.hash_stop));
+		}
+		else {
+			trace!(target: "sync", "No common blocks with peer#{}", peer_index);
 		}
 	}
 }
 
 impl ServerQueue {
-	pub fn new() -> Self {
+	pub fn new(queue_ready: Arc<Condvar>) -> Self {
 		ServerQueue {
 			is_stopping: AtomicBool::new(false),
+			queue_ready: queue_ready,
 			peers_queue: VecDeque::new(),
 			tasks_queue: HashMap::new(),
 		}
@@ -216,6 +225,7 @@ impl ServerQueue {
 				self.peers_queue.push_back(peer_index);
 			}
 		}
+		self.queue_ready.notify_one();
 	}
 
 	pub fn add_tasks(&mut self, peer_index: usize, tasks: Vec<ServerTask>) {
@@ -230,6 +240,7 @@ impl ServerQueue {
 				self.peers_queue.push_back(peer_index);
 			}
 		}
+		self.queue_ready.notify_one();
 	}
 }
 

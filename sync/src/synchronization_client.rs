@@ -406,9 +406,9 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor + Send + 'static {
 
 				// proceed to the next orphaned block
 				if let Entry::Occupied(orphaned_block_entry) = self.orphaned_blocks.entry(current_block_hash) {
-					let (orphaned_parent_hash, orphaned_block) = orphaned_block_entry.remove_entry();
-					current_block_hash = orphaned_parent_hash;
+					let (_, orphaned_block) = orphaned_block_entry.remove_entry();
 					current_block = orphaned_block;
+					current_block_hash = current_block.hash();
 				}
 				else {
 					break;
@@ -662,7 +662,6 @@ pub mod tests {
 				&& sync.information().orphaned == 1);
 			// receive block from peer#1
 			sync.on_peer_block(1, block1);
-			println!("=== {:?}", sync.information().chain);
 			assert!(sync.information().chain.requested == 0
 				&& sync.information().orphaned == 0
 				&& sync.information().chain.stored == 3);
