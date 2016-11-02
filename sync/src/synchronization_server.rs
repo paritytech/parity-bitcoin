@@ -113,7 +113,8 @@ impl SynchronizationServer {
 					},
 					// `inventory`
 					(peer_index, ServerTask::ServeGetBlocks(best_block, hash_stop)) => {
-						if let Some(hash) = chain.read().storage_block_hash(best_block.number) {
+						let storage_block_hash = chain.read().storage_block_hash(best_block.number);
+						if let Some(hash) = storage_block_hash {
 							// check that chain has not reorganized since task was queued
 							if hash == best_block.hash {
 								let mut inventory: Vec<InventoryVector> = Vec::new();
@@ -145,8 +146,9 @@ impl SynchronizationServer {
 					},
 					// `block`
 					(peer_index, ServerTask::ReturnBlock(block_hash)) => {
-						if let Some(block) = chain.read().storage_block(&block_hash) {
-							executor.lock().execute(Task::SendBlock(peer_index, block));
+						let storage_block = chain.read().storage_block(&block_hash);
+						if let Some(storage_block) = storage_block {
+							executor.lock().execute(Task::SendBlock(peer_index, storage_block));
 						}
 					},
 				},
