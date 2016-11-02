@@ -5,7 +5,7 @@ use message::common::Magic;
 pub struct Config {
 	pub magic: Magic,
 	pub port: u16,
-	pub connect: Option<net::IpAddr>,
+	pub connect: Option<net::SocketAddr>,
 	pub seednode: Option<String>,
 	pub print_to_console: bool,
 	pub use_disk_database: bool,
@@ -26,7 +26,12 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	};
 
 	let connect = match matches.value_of("connect") {
-		Some(s) => Some(try!(s.parse().map_err(|_| "Invalid connect".to_owned()))),
+		Some(s) => Some(try!(match s.parse::<net::SocketAddr>() {
+			Err(_) => s.parse::<net::IpAddr>()
+				.map(|ip| net::SocketAddr::new(ip, magic.port()))
+				.map_err(|_| "Invalid connect".to_owned()),
+			Ok(a) => Ok(a),
+		})),
 		None => None,
 	};
 
