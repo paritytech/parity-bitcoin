@@ -5,7 +5,7 @@
 //! transactions.
 //! It also guarantees that ancestor-descendant relation won't break during ordered removal (ancestors always removed
 //! before descendants). Removal using remove_by_hash can break this rule.
-use hash::H256;
+use primitives::hash::H256;
 use chain::Transaction;
 use std::cmp::Ordering;
 use std::collections::HashMap;
