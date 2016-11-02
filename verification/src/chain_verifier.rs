@@ -98,11 +98,6 @@ impl Verify for ChainVerifier {
 			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
 		}
 
-		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
-			Some(b) => b,
-			None => { return Ok(Chain::Orphan); }
-		};
-
 		Ok(Chain::Main)
 	}
 }
