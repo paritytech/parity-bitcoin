@@ -54,7 +54,12 @@ impl From<Node> for NodeByScore {
 impl PartialOrd for NodeByScore {
 	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
 		if self.0.failures == other.0.failures {
-			other.0.time.partial_cmp(&self.0.time)
+			if other.0.time == self.0.time {
+				other.0.partial_cmp(&self.0)
+			}
+			else {
+				other.0.time.partial_cmp(&self.0.time)
+			}
 		} else {
 			self.0.failures.partial_cmp(&other.0.failures)
 		}
@@ -64,7 +69,12 @@ impl PartialOrd for NodeByScore {
 impl Ord for NodeByScore {
 	fn cmp(&self, other: &Self) -> Ordering {
 		if self.0.failures == other.0.failures {
-			other.0.time.cmp(&self.0.time)
+			if other.0.time == self.0.time {
+				other.0.cmp(&self.0)
+			}
+			else {
+				other.0.time.cmp(&self.0.time)
+			}
 		} else {
 			self.0.failures.cmp(&other.0.failures)
 		}
@@ -82,13 +92,63 @@ impl From<Node> for NodeByTime {
 
 impl PartialOrd for NodeByTime {
 	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-		other.0.time.partial_cmp(&self.0.time)
+		if other.0.time == self.0.time {
+			other.0.partial_cmp(&self.0)
+		}
+		else {
+			other.0.time.partial_cmp(&self.0.time)
+		}
 	}
 }
 
 impl Ord for NodeByTime {
 	fn cmp(&self, other: &Self) -> Ordering {
-		other.0.time.cmp(&self.0.time)
+		if other.0.time == self.0.time {
+			other.0.cmp(&self.0)
+		}
+		else {
+			other.0.time.cmp(&self.0.time)
+		}
+	}
+}
+
+impl Ord for Node {
+	fn cmp(&self, other: &Self) -> Ordering {
+		// some ordering using address as unique key
+		match self.addr {
+			SocketAddr::V4(self_addr) => match other.addr {
+				SocketAddr::V4(other_addr) => {
+					let self_port = self_addr.port();
+					let other_port = other_addr.port();
+					if self_port == other_port {
+						self_addr.ip().cmp(&other_addr.ip())
+					}
+					else {
+						self_port.cmp(&other_port)
+					}
+				},
+				SocketAddr::V6(_) => Ordering::Less,
+			},
+			SocketAddr::V6(self_addr) => match other.addr {
+				SocketAddr::V4(_) => Ordering::Greater,
+				SocketAddr::V6(other_addr) => {
+					let self_port = self_addr.port();
+					let other_port = other_addr.port();
+					if self_port == other_port {
+						self_addr.ip().cmp(&other_addr.ip())
+					}
+					else {
+						self_port.cmp(&other_port)
+					}
+				},
+			},
+		}
+	}
+}
+
+impl PartialOrd for Node {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		Some(self.cmp(other))
 	}
 }
 
@@ -218,7 +278,7 @@ impl<T> NodeTable<T> where T: Time {
 mod tests {
 	use std::net::SocketAddr;
 	use message::common::Services;
-	use util::time::IncrementalTime;
+	use util::time::{IncrementalTime, ZeroTime};
 	use super::NodeTable;
 
 	#[test]
@@ -305,4 +365,14 @@ mod tests {
 		assert_eq!(nodes[4].failures, 0);
 	}
 
+	#[test]
+	fn test_node_table_duplicates() {
+		let s0: SocketAddr = "127.0.0.1:8000".parse().unwrap();
+		let s1: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+		let mut table = NodeTable::<ZeroTime>::default();
+		table.insert(s0, Services::default());
+		table.insert(s1, Services::default());
+		table.note_failure(&s0);
+		table.note_failure(&s1);
+	}
 }
