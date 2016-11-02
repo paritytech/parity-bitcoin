@@ -278,7 +278,7 @@ impl<T> NodeTable<T> where T: Time {
 mod tests {
 	use std::net::SocketAddr;
 	use message::common::Services;
-	use util::time::IncrementalTime;
+	use util::time::{IncrementalTime, ZeroTime};
 	use super::NodeTable;
 
 	#[test]
@@ -365,4 +365,14 @@ mod tests {
 		assert_eq!(nodes[4].failures, 0);
 	}
 
+	#[test]
+	fn test_node_table_duplicates() {
+		let s0: SocketAddr = "127.0.0.1:8000".parse().unwrap();
+		let s1: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+		let mut table = NodeTable::<ZeroTime>::default();
+		table.insert(s0, Services::default());
+		table.insert(s1, Services::default());
+		table.note_failure(&s0);
+		table.note_failure(&s1);
+	}
 }
