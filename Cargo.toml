@@ -6,7 +6,9 @@ authors = ["Ethcore <admin@ethcore.io>"]
 description = "Parity bitcoin client."
 
 [dependencies]
+log = "0.3"
 env_logger = "0.3"
+app_dirs = "^1.1.1"
 clap = { version = "2", features = ["yaml"] }
 chain = { path = "chain" }
 keys = { path = "keys" }
