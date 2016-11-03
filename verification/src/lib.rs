@@ -9,18 +9,20 @@ extern crate linked_hash_map;
 extern crate byteorder;
 extern crate time;
 extern crate script;
-
-#[cfg(test)]
 extern crate ethcore_devtools as devtools;
+
 #[cfg(test)]
 extern crate test_data;
 
 mod queue;
 mod utils;
 mod chain_verifier;
+mod insert_verifier;
+mod block_writer;
 
 pub use queue::Queue;
 pub use chain_verifier::ChainVerifier;
+pub use block_writer::BlockWriter;
 
 use primitives::hash::H256;
 

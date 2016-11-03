@@ -13,7 +13,7 @@ use parking_lot::RwLock;
 use transaction_meta::TransactionMeta;
 use std::collections::HashMap;
 
-const COL_COUNT: u32 = 10;
+const COL_COUNT: u32 = 16;
 const COL_META: u32 = 0;
 const COL_BLOCK_HASHES: u32 = 1;
 const COL_BLOCK_HEADERS: u32 = 2;
@@ -21,10 +21,15 @@ const COL_BLOCK_TRANSACTIONS: u32 = 3;
 const COL_TRANSACTIONS: u32 = 4;
 const COL_TRANSACTIONS_META: u32 = 5;
 const COL_BLOCK_NUMBERS: u32 = 6;
-const _COL_RESERVED3: u32 = 7;
-const _COL_RESERVED4: u32 = 8;
-const _COL_RESERVED5: u32 = 9;
-const _COL_RESERVED6: u32 = 10;
+const _COL_RESERVED1: u32 = 7;
+const _COL_RESERVED2: u32 = 8;
+const _COL_RESERVED3: u32 = 9;
+const _COL_RESERVED4: u32 = 10;
+const _COL_RESERVED5: u32 = 11;
+const _COL_RESERVED6: u32 = 12;
+const _COL_RESERVED7: u32 = 13;
+const _COL_RESERVED8: u32 = 14;
+const _COL_RESERVED9: u32 = 15;
 
 const DB_VERSION: u32 = 1;
 

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use db::{self, BlockRef};
+use db;
 use chain::{self, RepresentH256};
 use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
 use utils;
@@ -110,12 +110,6 @@ impl ContinueVerify for ChainVerifier {
 		for (idx, transaction) in block.transactions().iter().skip(state-1).enumerate() {
 			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
 		}
-
-
-		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
-			Some(b) => b,
-			None => { return Ok(Chain::Orphan); }
-		};
 
 		Ok(Chain::Main)
 	}
