@@ -11,6 +11,7 @@ time = "0.1"
 chain = { path = "../chain" }
 db = { path = "../db" }
 message = { path = "../message" }
+miner = { path = "../miner" }
 p2p = { path = "../p2p" }
 primitives = { path = "../primitives" }
 test-data = { path = "../test-data" }

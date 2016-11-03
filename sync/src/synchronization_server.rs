@@ -15,6 +15,8 @@ use message::types;
 pub trait Server : Send + 'static {
 	fn serve_getdata(&mut self, peer_index: usize, message: types::GetData);
 	fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks);
+	fn serve_getheaders(&mut self, peer_index: usize, message: types::GetHeaders);
+	fn serve_mempool(&mut self, peer_index: usize);
 }
 
 /// Synchronization requests server
@@ -36,6 +38,8 @@ struct ServerQueue {
 pub enum ServerTask {
 	ServeGetData(Vec<InventoryVector>),
 	ServeGetBlocks(db::BestBlock, H256),
+	ServeGetHeaders(db::BestBlock, H256),
+	ServeMempool,
 	ReturnNotFound(Vec<InventoryVector>),
 	ReturnBlock(H256),
 }
@@ -111,33 +115,41 @@ impl SynchronizationServer {
 							queue.lock().add_tasks(peer_index, new_tasks);
 						}
 					},
-					// `inventory`
+					// `getblocks` => `inventory`
 					(peer_index, ServerTask::ServeGetBlocks(best_block, hash_stop)) => {
-						let storage_block_hash = chain.read().storage_block_hash(best_block.number);
-						if let Some(hash) = storage_block_hash {
-							// check that chain has not reorganized since task was queued
-							if hash == best_block.hash {
-								let mut inventory: Vec<InventoryVector> = Vec::new();
-								let first_block_number = best_block.number + 1;
-								let last_block_number = best_block.number + 500;
-								// 500 hashes after best_block.number OR hash_stop OR blockchain end
-								for block_number in first_block_number..last_block_number {
-									match chain.read().storage_block_hash(block_number) {
-										Some(ref block_hash) if block_hash == &hash_stop => break,
-										None => break,
-										Some(block_hash) => {
-											inventory.push(InventoryVector {
-												inv_type: InventoryType::MessageBlock,
-												hash: block_hash,
-											});
-										},
-									}
-								}
-								if !inventory.is_empty() {
-									trace!(target: "sync", "Going to respond with inventory with {} items to peer#{}", inventory.len(), peer_index);
-									executor.lock().execute(Task::SendInventory(peer_index, inventory));
-								}
-							}
+						let blocks_hashes = SynchronizationServer::blocks_hashes_after(&chain, &best_block, &hash_stop, 500);
+						if !blocks_hashes.is_empty() {
+							trace!(target: "sync", "Going to respond with inventory with {} items to peer#{}", blocks_hashes.len(), peer_index);
+							let inventory = blocks_hashes.into_iter().map(|hash| InventoryVector {
+								inv_type: InventoryType::MessageBlock,
+								hash: hash,
+							}).collect();
+							executor.lock().execute(Task::SendInventory(peer_index, inventory));
+						}
+					},
+					// `getheaders` => `headers`
+					(peer_index, ServerTask::ServeGetHeaders(best_block, hash_stop)) => {
+						let blocks_hashes = SynchronizationServer::blocks_hashes_after(&chain, &best_block, &hash_stop, 2000);
+						if !blocks_hashes.is_empty() {
+							trace!(target: "sync", "Going to respond with blocks headers with {} items to peer#{}", blocks_hashes.len(), peer_index);
+							let blocks_headers = blocks_hashes.into_iter().filter_map(|hash| chain.read().storage_block(&hash).map(|block| block.block_header)).collect();
+							executor.lock().execute(Task::SendHeaders(peer_index, blocks_headers));
+						}
+					},
+					// `mempool` => `inventory`
+					(peer_index, ServerTask::ServeMempool) => {
+						let inventory: Vec<_> = chain.read()
+							.memory_pool()
+							.get_transactions_ids()
+							.into_iter()
+							.map(|hash| InventoryVector {
+								inv_type: InventoryType::MessageTx,
+								hash: hash,
+							})
+							.collect();
+						if !inventory.is_empty() {
+							trace!(target: "sync", "Going to respond with {} memory-pool transactions ids to peer#{}", inventory.len(), peer_index);
+							executor.lock().execute(Task::SendInventory(peer_index, inventory));
 						}
 					},
 					// `notfound`
@@ -156,6 +168,29 @@ impl SynchronizationServer {
 				None => break,
 			}
 		}
+	}
+
+	fn blocks_hashes_after(chain: &ChainRef, best_block: &db::BestBlock, hash_stop: &H256, max_hashes: u32) -> Vec<H256> {
+		let mut hashes: Vec<H256> = Vec::new();
+		let storage_block_hash = chain.read().storage_block_hash(best_block.number);
+		if let Some(hash) = storage_block_hash {
+			// check that chain has not reorganized since task was queued
+			if hash == best_block.hash {
+				let first_block_number = best_block.number + 1;
+				let last_block_number = first_block_number + max_hashes;
+				// `max_hashes` hashes after best_block.number OR hash_stop OR blockchain end
+				for block_number in first_block_number..last_block_number {
+					match chain.read().storage_block_hash(block_number) {
+						Some(ref block_hash) if block_hash == hash_stop => break,
+						None => break,
+						Some(block_hash) => {
+							hashes.push(block_hash);
+						},
+					}
+				}
+			}
+		}
+		hashes
 	}
 }
 
@@ -182,6 +217,20 @@ impl Server for SynchronizationServer {
 		else {
 			trace!(target: "sync", "No common blocks with peer#{}", peer_index);
 		}
+	}
+
+	fn serve_getheaders(&mut self, peer_index: usize, message: types::GetHeaders) {
+		if let Some(best_common_block) = self.locate_known_block(message.block_locator_hashes) {
+			trace!(target: "sync", "Best common block header with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);
+			self.queue.lock().add_task(peer_index, ServerTask::ServeGetHeaders(best_common_block, message.hash_stop));
+		}
+		else {
+			trace!(target: "sync", "No common blocks headers with peer#{}", peer_index);
+		}
+	}
+
+	fn serve_mempool(&mut self, peer_index: usize) {
+		self.queue.lock().add_task(peer_index, ServerTask::ServeMempool);
 	}
 }
 
@@ -248,10 +297,19 @@ impl ServerQueue {
 
 #[cfg(test)]
 pub mod tests {
-	use super::{Server, ServerTask};
-	use message::types;
-	use db;
+	use std::sync::Arc;
 	use std::mem::replace;
+	use parking_lot::{Mutex, RwLock};
+	use db;
+	use test_data;
+	use primitives::hash::H256;
+	use chain::{Transaction, RepresentH256};
+	use message::types;
+	use message::common::{InventoryVector, InventoryType};
+	use synchronization_executor::Task;
+	use synchronization_executor::tests::DummyTaskExecutor;
+	use synchronization_chain::Chain;
+	use super::{Server, ServerTask, SynchronizationServer};
 
 	pub struct DummyServer {
 		tasks: Vec<(usize, ServerTask)>,
@@ -280,5 +338,154 @@ pub mod tests {
 				hash: message.block_locator_hashes[0].clone(),
 			}, message.hash_stop)));
 		}
+
+		fn serve_getheaders(&mut self, peer_index: usize, message: types::GetHeaders) {
+			self.tasks.push((peer_index, ServerTask::ServeGetHeaders(db::BestBlock {
+				number: 0,
+				hash: message.block_locator_hashes[0].clone(),
+			}, message.hash_stop)));
+		}
+
+		fn serve_mempool(&mut self, peer_index: usize) {
+			self.tasks.push((peer_index, ServerTask::ServeMempool));
+		}
+	}
+
+	fn create_synchronization_server() -> (Arc<RwLock<Chain>>, Arc<Mutex<DummyTaskExecutor>>, SynchronizationServer) {
+		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
+		let executor = DummyTaskExecutor::new();
+		let server = SynchronizationServer::new(chain.clone(), executor.clone());
+		(chain, executor, server)
+	}
+
+	#[test]
+	fn server_getdata_responds_notfound_when_block_not_found() {
+		let (_, executor, mut server) = create_synchronization_server();
+		// when asking for unknown block
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageBlock,
+				hash: H256::default(),
+			}
+		];
+		server.serve_getdata(0, types::GetData {
+			inventory: inventory.clone(),
+		});
+		// => respond with notfound
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendNotFound(0, inventory)]);
+	}
+
+	#[test]
+	fn server_getdata_responds_block_when_block_is_found() {
+		let (_, executor, mut server) = create_synchronization_server();
+		// when asking for known block
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageBlock,
+				hash: test_data::genesis().hash(),
+			}
+		];
+		server.serve_getdata(0, types::GetData {
+			inventory: inventory.clone(),
+		});
+		// => respond with block
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendBlock(0, test_data::genesis())]);
+	}
+
+	#[test]
+	fn server_getblocks_do_not_responds_inventory_when_synchronized() {
+		let (_, executor, mut server) = create_synchronization_server();
+		// when asking for blocks hashes
+		let genesis_block_hash = test_data::genesis().hash();
+		server.serve_getblocks(0, types::GetBlocks {
+			version: 0,
+			block_locator_hashes: vec![genesis_block_hash.clone()],
+			hash_stop: H256::default(),
+		});
+		// => no response
+		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
+		assert_eq!(tasks, vec![]);
+	}
+
+	#[test]
+	fn server_getblocks_responds_inventory_when_have_unknown_blocks() {
+		let (chain, executor, mut server) = create_synchronization_server();
+		chain.write().insert_best_block(test_data::block_h1()).expect("Db write error");
+		// when asking for blocks hashes
+		server.serve_getblocks(0, types::GetBlocks {
+			version: 0,
+			block_locator_hashes: vec![test_data::genesis().hash()],
+			hash_stop: H256::default(),
+		});
+		// => responds with inventory
+		let inventory = vec![InventoryVector {
+			inv_type: InventoryType::MessageBlock,
+			hash: test_data::block_h1().hash(),
+		}];
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendInventory(0, inventory)]);
+	}
+
+	#[test]
+	fn server_getheaders_do_not_responds_headers_when_synchronized() {
+		let (_, executor, mut server) = create_synchronization_server();
+		// when asking for blocks hashes
+		let genesis_block_hash = test_data::genesis().hash();
+		server.serve_getheaders(0, types::GetHeaders {
+			version: 0,
+			block_locator_hashes: vec![genesis_block_hash.clone()],
+			hash_stop: H256::default(),
+		});
+		// => no response
+		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
+		assert_eq!(tasks, vec![]);
+	}
+
+	#[test]
+	fn server_getheaders_responds_headers_when_have_unknown_blocks() {
+		let (chain, executor, mut server) = create_synchronization_server();
+		chain.write().insert_best_block(test_data::block_h1()).expect("Db write error");
+		// when asking for blocks hashes
+		server.serve_getheaders(0, types::GetHeaders {
+			version: 0,
+			block_locator_hashes: vec![test_data::genesis().hash()],
+			hash_stop: H256::default(),
+		});
+		// => responds with headers
+		let headers = vec![
+			test_data::block_h1().block_header,
+		];
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendHeaders(0, headers)]);
+	}
+
+	#[test]
+	fn server_mempool_do_not_responds_inventory_when_empty_memory_pool() {
+		let (_, executor, mut server) = create_synchronization_server();
+		// when asking for memory pool transactions ids
+		server.serve_mempool(0);
+		// => no response
+		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
+		assert_eq!(tasks, vec![]);
+	}
+
+	#[test]
+	fn server_mempool_responds_inventory_when_non_empty_memory_pool() {
+		let (chain, executor, mut server) = create_synchronization_server();
+		// when memory pool is non-empty
+		let transaction = Transaction::default();
+		let transaction_hash = transaction.hash();
+		chain.write().memory_pool_mut().insert_verified(transaction);
+		// when asking for memory pool transactions ids
+		server.serve_mempool(0);
+		// => respond with inventory
+		let inventory = vec![InventoryVector {
+			inv_type: InventoryType::MessageTx,
+			hash: transaction_hash,
+		}];
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendInventory(0, inventory)]);
 	}
 }

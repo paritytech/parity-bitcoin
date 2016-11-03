@@ -5,6 +5,7 @@ use chain::{Block, RepresentH256};
 use db;
 use primitives::hash::H256;
 use hash_queue::{HashQueueChain, HashPosition};
+use miner::MemoryPool;
 
 /// Thread-safe reference to `Chain`
 pub type ChainRef = Arc<RwLock<Chain>>;
@@ -60,6 +61,8 @@ pub struct Chain {
 	storage: Arc<db::Store>,
 	/// In-memory queue of blocks hashes
 	hash_chain: HashQueueChain,
+	/// Transactions memory pool
+	memory_pool: MemoryPool,
 }
 
 impl BlockState {
@@ -96,6 +99,7 @@ impl Chain {
 			best_storage_block: best_storage_block,
 			storage: storage,
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
+			memory_pool: MemoryPool::new(),
 		}
 	}
 
@@ -112,6 +116,17 @@ impl Chain {
 	/// Get storage
 	pub fn storage(&self) -> Arc<db::Store> {
 		self.storage.clone()
+	}
+
+	/// Get memory pool reference
+	pub fn memory_pool<'a>(&'a self) -> &'a MemoryPool {
+		&self.memory_pool
+	}
+
+	/// Get mutable memory pool reference
+	#[cfg(test)]
+	pub fn memory_pool_mut<'a>(&'a mut self) -> &'a mut MemoryPool {
+		&mut self.memory_pool
 	}
 
 	/// Get number of blocks in given state
@@ -372,10 +387,11 @@ impl fmt::Debug for Chain {
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
-	use chain::{Block, RepresentH256};
+	use chain::RepresentH256;
 	use hash_queue::HashPosition;
 	use super::{Chain, BlockState};
 	use db::{self, Store, BestBlock};
+	use test_data;
 
 	#[test]
 	fn chain_empty() {
@@ -455,8 +471,7 @@ mod tests {
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 1);
 		// insert new best block to the chain
-		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
-		chain.insert_best_block(block1).expect("Db error");
+		chain.insert_best_block(test_data::block_h1()).expect("Db error");
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 2);
 		assert_eq!(db.best_block().expect("storage with genesis block is required").number, 1);
@@ -468,13 +483,13 @@ mod tests {
 		let genesis_hash = chain.best_block().hash;
 		assert_eq!(chain.block_locator_hashes(), vec![genesis_hash.clone()]);
 
-		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
+		let block1 = test_data::block_h1();
 		let block1_hash = block1.hash();
 
 		chain.insert_best_block(block1).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block1_hash.clone(), genesis_hash.clone()]);
 
-		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
+		let block2 = test_data::block_h2();
 		let block2_hash = block2.hash();
 
 		chain.insert_best_block(block2).expect("Error inserting new block");

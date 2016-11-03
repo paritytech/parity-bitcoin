@@ -514,43 +514,19 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 #[cfg(test)]
 pub mod tests {
 	use std::sync::Arc;
-	use std::mem::replace;
 	use parking_lot::{Mutex, RwLock};
 	use chain::{Block, RepresentH256};
 	use super::{Client, Config, SynchronizationClient};
-	use synchronization_executor::{Task, TaskExecutor};
-	use local_node::PeersConnections;
+	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
+	use synchronization_executor::tests::DummyTaskExecutor;
 	use test_data;
-	use p2p::OutboundSyncConnectionRef;
 	use db;
-
-	#[derive(Default)]
-	pub struct DummyTaskExecutor {
-		pub tasks: Vec<Task>,
-	}
-
-	impl DummyTaskExecutor {
-		pub fn take_tasks(&mut self) -> Vec<Task> {
-			replace(&mut self.tasks, Vec::new())
-		}
-	}
-
-	impl PeersConnections for DummyTaskExecutor {
-		fn add_peer_connection(&mut self, _: usize, _: OutboundSyncConnectionRef) {}
-		fn remove_peer_connection(&mut self, _: usize) {}
-	}
-
-	impl TaskExecutor for DummyTaskExecutor {
-		fn execute(&mut self, task: Task) {
-			self.tasks.push(task);
-		}
-	}
 
 	fn create_sync() -> (Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<SynchronizationClient<DummyTaskExecutor>>>) {
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
-		let executor = Arc::new(Mutex::new(DummyTaskExecutor::default()));
+		let executor = DummyTaskExecutor::new();
 		let config = Config { skip_verification: true };
 		(executor.clone(), SynchronizationClient::new(config, executor, chain))
 	} 

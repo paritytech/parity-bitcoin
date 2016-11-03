@@ -581,6 +581,7 @@ dependencies = [
  "db 0.1.0",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "message 0.1.0",
+ "miner 0.1.0",
  "p2p 0.1.0",
  "parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",

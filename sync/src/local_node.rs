@@ -107,8 +107,10 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		self.server.lock().serve_getblocks(peer_index, message);
 	}
 
-	pub fn on_peer_getheaders(&self, peer_index: usize, _message: types::GetHeaders) {
+	pub fn on_peer_getheaders(&self, peer_index: usize, message: types::GetHeaders) {
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
+
+		self.server.lock().serve_getheaders(peer_index, message);
 	}
 
 	pub fn on_peer_transaction(&self, peer_index: usize, message: types::Tx) {
@@ -128,6 +130,8 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 
 	pub fn on_peer_mempool(&self, peer_index: usize, _message: types::MemPool) {
 		trace!(target: "sync", "Got `mempool` message from peer#{}", peer_index);
+
+		self.server.lock().serve_mempool(peer_index);
 	}
 
 	pub fn on_peer_filterload(&self, peer_index: usize, _message: types::FilterLoad) {
@@ -181,7 +185,7 @@ mod tests {
 	use parking_lot::{Mutex, RwLock};
 	use chain::RepresentH256;
 	use synchronization_executor::Task;
-	use synchronization_client::tests::DummyTaskExecutor;
+	use synchronization_executor::tests::DummyTaskExecutor;
 	use synchronization_client::{Config, SynchronizationClient};
 	use synchronization_chain::Chain;
 	use p2p::{OutboundSyncConnection, OutboundSyncConnectionRef};
@@ -225,7 +229,7 @@ mod tests {
 
 	fn create_local_node() -> (Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<DummyServer>>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor>>) {
 		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
-		let executor = Arc::new(Mutex::new(DummyTaskExecutor::default()));
+		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(Mutex::new(DummyServer::new()));
 		let config = Config { skip_verification: true };
 		let client = SynchronizationClient::new(config, executor.clone(), chain);
