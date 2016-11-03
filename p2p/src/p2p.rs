@@ -90,6 +90,12 @@ impl Context {
 		// every 10 seconds connect to new peers (if needed)
 		let interval: BoxedEmptyFuture = Interval::new(time::Duration::new(10, 0), handle).expect("Failed to create interval")
 			.and_then(move |_| {
+				// print traces
+				let ic = context.connection_counter.inbound_connections();
+				let oc = context.connection_counter.outbound_connections();
+				info!("Inbound connections: ({}/{})", ic.0, ic.1);
+				info!("Outbound connections: ({}/{})", oc.0, oc.1);
+
 				let used_addresses = context.connections.addresses();
 				let max = context.connection_counter.max_outbound_connections() as usize;
 				let needed = context.connection_counter.outbound_connections_needed() as usize;
@@ -100,11 +106,11 @@ impl Context {
 					.take(needed)
 					.collect::<Vec<_>>();
 
-				trace!("connected to addresses: {:?}", used_addresses);
-				trace!("connecting to addresses: {:?}", addresses);
+				trace!("Creating {} more outbound connections", addresses.len());
 				for address in addresses {
 					Context::connect::<NormalSessionFactory>(context.clone(), address, config.clone());
 				}
+
 				Ok(())
 			})
 			.for_each(|_| Ok(()))
@@ -134,7 +140,7 @@ impl Context {
 					trace!("Handshake with {} failed", socket);
 					// TODO: close socket
 					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_inbound_connection();
+					context.connection_counter.note_close_outbound_connection();
 					finished(Ok(())).boxed()
 				},
 				Ok(DeadlineStatus::Timeout) => {
@@ -142,14 +148,14 @@ impl Context {
 					trace!("Handshake with {} timed out", socket);
 					// TODO: close socket
 					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_inbound_connection();
+					context.connection_counter.note_close_outbound_connection();
 					finished(Ok(())).boxed()
 				},
 				Err(_) => {
 					// network error
 					trace!("Unable to connect to {}", socket);
 					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_inbound_connection();
+					context.connection_counter.note_close_outbound_connection();
 					finished(Ok(())).boxed()
 				}
 			}
@@ -183,7 +189,7 @@ impl Context {
 					// protocol error
 					// TODO: close socket
 					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_outbound_connection();
+					context.connection_counter.note_close_inbound_connection();
 					finished(Ok(())).boxed()
 				},
 				Ok(DeadlineStatus::Timeout) => {
@@ -191,13 +197,13 @@ impl Context {
 					trace!("Handshake with {} timedout", socket);
 					// TODO: close socket
 					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_outbound_connection();
+					context.connection_counter.note_close_inbound_connection();
 					finished(Ok(())).boxed()
 				},
 				Err(_) => {
 					// network error
 					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_outbound_connection();
+					context.connection_counter.note_close_inbound_connection();
 					finished(Ok(())).boxed()
 				}
 			}
