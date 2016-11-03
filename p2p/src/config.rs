@@ -10,9 +10,9 @@ pub struct Config {
 	/// Highest supported protocol version.
 	pub protocol_maximum: u32,
 	/// Number of inbound connections.
-	pub inbound_connections: usize,
+	pub inbound_connections: u32,
 	/// Number of outbound connections.
-	pub outbound_connections: usize,
+	pub outbound_connections: u32,
 	/// Configuration for every connection.
 	pub connection: NetConfig,
 	/// Connect only ot these nodes.

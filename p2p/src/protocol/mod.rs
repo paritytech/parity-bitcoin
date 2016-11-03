@@ -6,15 +6,10 @@ use bytes::Bytes;
 use message::Error;
 use message::common::Command;
 
+use util::Direction;
 pub use self::addr::{AddrProtocol, SeednodeProtocol};
 pub use self::ping::PingProtocol;
 pub use self::sync::{SyncProtocol, InboundSyncConnection, InboundSyncConnectionRef, OutboundSyncConnection, OutboundSyncConnectionRef, LocalSyncNode, LocalSyncNodeRef};
-
-#[derive(PartialEq, Clone, Copy)]
-pub enum Direction {
-	Inbound,
-	Outbound,
-}
 
 pub trait Protocol: Send {
 	/// Initialize the protocol.
