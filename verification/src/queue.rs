@@ -96,6 +96,7 @@ pub struct Queue {
 	processing: RwLock<HashSet<H256>>,
 }
 
+#[derive(PartialEq)]
 pub enum WorkStatus {
 	Continue,
 	Wait,
@@ -198,6 +199,17 @@ impl Queue {
 
 	pub fn pop_valid(&self) -> Option<(H256, VerifiedBlock)> {
 		self.verified.write().pop_front()
+	}
+
+	pub fn process_valid<F>(&self, f: F) -> WorkStatus where F: FnOnce(H256, VerifiedBlock) {
+		let mut verified_lock = self.verified.write();
+		if let Some((hash, block)) = verified_lock.pop_front() {
+			f(hash, block);
+			WorkStatus::Continue
+		}
+		else {
+			WorkStatus::Wait
+		}
 	}
 }
 
