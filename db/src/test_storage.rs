@@ -21,6 +21,7 @@ struct TestData {
 	best_block: Option<BestBlock>,
 	blocks: HashMap<H256, chain::Block>,
 	heights: HashMap<u32, H256>,
+	hashes: HashMap<H256, u32>,
 }
 
 impl TestStorage {
@@ -44,7 +45,8 @@ impl TestStorage {
 				for (idx, block) in blocks.iter().enumerate() {
 					let hash = block.hash();
 					data.blocks.insert(hash.clone(), block.clone());
-					data.heights.insert(idx as u32, hash);
+					data.heights.insert(idx as u32, hash.clone());
+					data.hashes.insert(hash, idx as u32);
 				}
 			}
 		}
@@ -60,6 +62,11 @@ impl TestStorage {
 impl Store for TestStorage {
 	fn best_block(&self) -> Option<BestBlock> {
 		self.data.read().best_block.clone()
+	}
+
+	fn block_number(&self, hash: &H256) -> Option<u32> {
+		let data = self.data.read();
+		data.hashes.get(hash).cloned()
 	}
 
 	fn block_hash(&self, number: u32) -> Option<H256> {
@@ -124,14 +131,16 @@ impl Store for TestStorage {
 					number: best_block_number + 1,
 					hash: hash.clone(),
 				});
-				data.heights.insert(best_block_number + 1, hash);
+				data.heights.insert(best_block_number + 1, hash.clone());
+				data.hashes.insert(hash, best_block_number + 1);
 			},
 			None => {
 				data.best_block = Some(BestBlock {
 					number: 0,
 					hash: hash.clone(),
 				});
-				data.heights.insert(0, hash);
+				data.heights.insert(0, hash.clone());
+				data.hashes.insert(hash, 0);
 			},
 		}
 

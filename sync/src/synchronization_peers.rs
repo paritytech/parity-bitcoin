@@ -58,13 +58,6 @@ impl Peers {
 		}
 	}
 
-	/// Remove synchronization peer.
-	#[cfg(test)]
-	pub fn remove(&mut self, peer_index: usize) {
-		self.idle_peers.remove(&peer_index);
-		self.blocks_requests.remove(&peer_index);
-	}
-
 	/// Block is received from peer.
 	pub fn on_block_received(&mut self, peer_index: usize, block_hash: &H256) {
 		if let Entry::Occupied(mut entry) = self.blocks_requests.entry(peer_index) {
@@ -74,6 +67,12 @@ impl Peers {
 				entry.remove_entry();
 			}
 		}
+	}
+
+	/// Peer has been disconnected
+	pub fn on_peer_disconnected(&mut self, peer_index: usize) {
+		self.idle_peers.remove(&peer_index);
+		self.blocks_requests.remove(&peer_index);
 	}
 
 	/// Blocks have been requested from peer.
@@ -158,14 +157,14 @@ mod tests {
 		assert!(peers.idle_peers()[0] == 0 || peers.idle_peers()[0] == 5);
 		assert!(peers.idle_peers()[1] == 0 || peers.idle_peers()[1] == 5);
 
-		peers.remove(7);
+		peers.on_peer_disconnected(7);
 		assert_eq!(peers.information().idle, 2);
 		assert_eq!(peers.information().active, 0);
 		assert!(peers.idle_peer() == Some(0) || peers.idle_peer() == Some(5));
 		assert!(peers.idle_peers()[0] == 0 || peers.idle_peers()[0] == 5);
 		assert!(peers.idle_peers()[1] == 0 || peers.idle_peers()[1] == 5);
 
-		peers.remove(0);
+		peers.on_peer_disconnected(0);
 		assert_eq!(peers.information().idle, 1);
 		assert_eq!(peers.information().active, 0);
 		assert_eq!(peers.idle_peer(), Some(5));

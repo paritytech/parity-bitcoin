@@ -1,4 +1,4 @@
-use std::net::IpAddr;
+use std::net::SocketAddr;
 use net::Config as NetConfig;
 
 #[derive(Debug)]
@@ -16,7 +16,7 @@ pub struct Config {
 	/// Configuration for every connection.
 	pub connection: NetConfig,
 	/// Connect only ot these nodes.
-	pub peers: Vec<IpAddr>,
+	pub peers: Vec<SocketAddr>,
 	/// Connect to these nodes to retrieve peer addresses, and disconnect.
 	pub seeds: Vec<String>,
 }

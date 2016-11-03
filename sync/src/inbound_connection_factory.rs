@@ -1,14 +1,13 @@
 use p2p::{LocalSyncNode, LocalSyncNodeRef, OutboundSyncConnectionRef, InboundSyncConnectionRef};
 use local_node::LocalNodeRef;
 use inbound_connection::InboundConnection;
-use synchronization_executor::LocalSynchronizationTaskExecutor;
 
 pub struct InboundConnectionFactory {
-	local_node: LocalNodeRef<LocalSynchronizationTaskExecutor>,
+	local_node: LocalNodeRef,
 }
 
 impl InboundConnectionFactory {
-	pub fn with_local_node(local_node: LocalNodeRef<LocalSynchronizationTaskExecutor>) -> LocalSyncNodeRef {
+	pub fn with_local_node(local_node: LocalNodeRef) -> LocalSyncNodeRef {
 		Box::new(
 			InboundConnectionFactory {
 				local_node: local_node,

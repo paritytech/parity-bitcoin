@@ -36,6 +36,7 @@ pub trait InboundSyncConnection : Send + Sync {
 	fn on_compact_block(&self, message: types::CompactBlock);
 	fn on_get_block_txn(&self, message: types::GetBlockTxn);
 	fn on_block_txn(&self, message: types::BlockTxn);
+	fn on_notfound(&self, message: types::NotFound);
 }
 
 pub trait OutboundSyncConnection : Send + Sync {
@@ -57,6 +58,7 @@ pub trait OutboundSyncConnection : Send + Sync {
 	fn send_compact_block(&self, message: &types::CompactBlock);
 	fn send_get_block_txn(&self, message: &types::GetBlockTxn);
 	fn send_block_txn(&self, message: &types::BlockTxn);
+	fn send_notfound(&self, message: &types::NotFound);
 }
 
 struct OutboundSync {
@@ -154,6 +156,10 @@ impl OutboundSyncConnection for OutboundSync {
 	fn send_block_txn(&self, message: &types::BlockTxn) {
 		self.send_message(message);
 	}
+
+	fn send_notfound(&self, message: &types::NotFound) {
+		self.send_message(message);
+	}
 }
 
 pub struct SyncProtocol {
@@ -247,6 +253,10 @@ impl Protocol for SyncProtocol {
 		else if command == &types::BlockTxn::command() {
 			let message: types::BlockTxn = try!(deserialize_payload(payload, version));
 			self.inbound_connection.on_block_txn(message);
+		}
+		else if command == &types::NotFound::command() {
+			let message: types::NotFound = try!(deserialize_payload(payload, version));
+			self.inbound_connection.on_notfound(message);
 		}
 		Ok(())
 	}

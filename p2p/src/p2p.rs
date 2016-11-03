@@ -323,9 +323,8 @@ impl P2P {
 		Ok(())
 	}
 
-	pub fn connect<T>(&self, ip: net::IpAddr) where T: SessionFactory {
-		let socket = net::SocketAddr::new(ip, self.config.connection.magic.port());
-		Context::connect::<T>(self.context.clone(), socket, self.config.connection.clone());
+	pub fn connect<T>(&self, addr: net::SocketAddr) where T: SessionFactory {
+		Context::connect::<T>(self.context.clone(), addr, self.config.connection.clone());
 	}
 
 	pub fn connect_to_seednode(&self, resolver: &Resolver, seednode: &str) {
