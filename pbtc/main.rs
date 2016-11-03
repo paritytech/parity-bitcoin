@@ -54,21 +54,27 @@ fn init_db(db: &Arc<db::Store>) {
 	}
 }
 
-fn import_blockchain(db_path: &str) {
-	for (_i, _blk) in import::open_blk_dir(db_path).expect("TODO").enumerate() {
-		// import logic goes here
-	}
-}
-
 fn run() -> Result<(), String> {
 	let yaml = load_yaml!("cli.yml");
 	let matches = clap::App::from_yaml(yaml).get_matches();
-	let cfg = try!(config::parse(&matches));
 
-	if let Some(ref import_path) = cfg.import_path {
-		import_blockchain(import_path);
-		return Ok(())
+	match matches.subcommand() {
+		("import", Some(import_matches)) => import_blockchain(import_matches),
+		_ => start_pbtc(&matches),
 	}
+}
+
+fn import_blockchain(matches: &clap::ArgMatches) -> Result<(), String> {
+	let db_path = matches.value_of("PATH").expect("PATH is required in cli.yml; qed");
+	let blk_dir = try!(import::open_blk_dir(db_path).map_err(|_| "Import directory does not exist".to_owned()));
+	for (_i, _blk) in blk_dir.enumerate() {
+		// import logic goes here
+	}
+	Ok(())
+}
+
+fn start_pbtc(matches: &clap::ArgMatches) -> Result<(), String> {
+	let cfg = try!(config::parse(matches));
 
 	let mut el = event_loop();
 
