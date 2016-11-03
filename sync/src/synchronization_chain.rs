@@ -5,6 +5,7 @@ use chain::{Block, RepresentH256};
 use db;
 use primitives::hash::H256;
 use hash_queue::{HashQueueChain, HashPosition};
+use miner::MemoryPool;
 
 /// Thread-safe reference to `Chain`
 pub type ChainRef = Arc<RwLock<Chain>>;
@@ -60,6 +61,8 @@ pub struct Chain {
 	storage: Arc<db::Store>,
 	/// In-memory queue of blocks hashes
 	hash_chain: HashQueueChain,
+	/// Transactions memory pool
+	memory_pool: MemoryPool,
 }
 
 impl BlockState {
@@ -96,6 +99,7 @@ impl Chain {
 			best_storage_block: best_storage_block,
 			storage: storage,
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
+			memory_pool: MemoryPool::new(),
 		}
 	}
 
@@ -112,6 +116,17 @@ impl Chain {
 	/// Get storage
 	pub fn storage(&self) -> Arc<db::Store> {
 		self.storage.clone()
+	}
+
+	/// Get memory pool reference
+	pub fn memory_pool<'a>(&'a self) -> &'a MemoryPool {
+		&self.memory_pool
+	}
+
+	/// Get mutable memory pool reference
+	#[cfg(test)]
+	pub fn memory_pool_mut<'a>(&'a mut self) -> &'a mut MemoryPool {
+		&mut self.memory_pool
 	}
 
 	/// Get number of blocks in given state

@@ -16,6 +16,7 @@ pub trait Server : Send + 'static {
 	fn serve_getdata(&mut self, peer_index: usize, message: types::GetData);
 	fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks);
 	fn serve_getheaders(&mut self, peer_index: usize, message: types::GetHeaders);
+	fn serve_mempool(&mut self, peer_index: usize);
 }
 
 /// Synchronization requests server
@@ -38,6 +39,7 @@ pub enum ServerTask {
 	ServeGetData(Vec<InventoryVector>),
 	ServeGetBlocks(db::BestBlock, H256),
 	ServeGetHeaders(db::BestBlock, H256),
+	ServeMempool,
 	ReturnNotFound(Vec<InventoryVector>),
 	ReturnBlock(H256),
 }
@@ -133,7 +135,23 @@ impl SynchronizationServer {
 							let blocks_headers = blocks_hashes.into_iter().filter_map(|hash| chain.read().storage_block(&hash).map(|block| block.block_header)).collect();
 							executor.lock().execute(Task::SendHeaders(peer_index, blocks_headers));
 						}
-					}
+					},
+					// `mempool` => `inventory`
+					(peer_index, ServerTask::ServeMempool) => {
+						let inventory: Vec<_> = chain.read()
+							.memory_pool()
+							.get_transactions_ids()
+							.into_iter()
+							.map(|hash| InventoryVector {
+								inv_type: InventoryType::MessageTx,
+								hash: hash,
+							})
+							.collect();
+						if !inventory.is_empty() {
+							trace!(target: "sync", "Going to respond with {} memory-pool transactions ids to peer#{}", inventory.len(), peer_index);
+							executor.lock().execute(Task::SendInventory(peer_index, inventory));
+						}
+					},
 					// `notfound`
 					(peer_index, ServerTask::ReturnNotFound(inventory)) => {
 						executor.lock().execute(Task::SendNotFound(peer_index, inventory));
@@ -210,6 +228,10 @@ impl Server for SynchronizationServer {
 			trace!(target: "sync", "No common blocks headers with peer#{}", peer_index);
 		}
 	}
+
+	fn serve_mempool(&mut self, peer_index: usize) {
+		self.queue.lock().add_task(peer_index, ServerTask::ServeMempool);
+	}
 }
 
 impl ServerQueue {
@@ -281,7 +303,7 @@ pub mod tests {
 	use db;
 	use test_data;
 	use primitives::hash::H256;
-	use chain::RepresentH256;
+	use chain::{Transaction, RepresentH256};
 	use message::types;
 	use message::common::{InventoryVector, InventoryType};
 	use synchronization_executor::Task;
@@ -323,6 +345,10 @@ pub mod tests {
 				hash: message.block_locator_hashes[0].clone(),
 			}, message.hash_stop)));
 		}
+
+		fn serve_mempool(&mut self, peer_index: usize) {
+			self.tasks.push((peer_index, ServerTask::ServeMempool));
+		}
 	}
 
 	fn create_synchronization_server() -> (Arc<RwLock<Chain>>, Arc<Mutex<DummyTaskExecutor>>, SynchronizationServer) {
@@ -363,7 +389,7 @@ pub mod tests {
 		server.serve_getdata(0, types::GetData {
 			inventory: inventory.clone(),
 		});
-		// => respond with notfound
+		// => respond with block
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![Task::SendBlock(0, test_data::genesis())]);
 	}
@@ -378,7 +404,7 @@ pub mod tests {
 			block_locator_hashes: vec![genesis_block_hash.clone()],
 			hash_stop: H256::default(),
 		});
-		// => respond with inventory
+		// => no response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
 		assert_eq!(tasks, vec![]);
 	}
@@ -393,7 +419,7 @@ pub mod tests {
 			block_locator_hashes: vec![test_data::genesis().hash()],
 			hash_stop: H256::default(),
 		});
-		// => respond with inventory
+		// => responds with inventory
 		let inventory = vec![InventoryVector {
 			inv_type: InventoryType::MessageBlock,
 			hash: test_data::block_h1().hash(),
@@ -412,7 +438,7 @@ pub mod tests {
 			block_locator_hashes: vec![genesis_block_hash.clone()],
 			hash_stop: H256::default(),
 		});
-		// => respond with inventory
+		// => no response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
 		assert_eq!(tasks, vec![]);
 	}
@@ -427,11 +453,39 @@ pub mod tests {
 			block_locator_hashes: vec![test_data::genesis().hash()],
 			hash_stop: H256::default(),
 		});
-		// => respond with inventory
+		// => responds with headers
 		let headers = vec![
 			test_data::block_h1().block_header,
 		];
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![Task::SendHeaders(0, headers)]);
+	}
+
+	#[test]
+	fn server_mempool_do_not_responds_inventory_when_empty_memory_pool() {
+		let (_, executor, mut server) = create_synchronization_server();
+		// when asking for memory pool transactions ids
+		server.serve_mempool(0);
+		// => no response
+		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
+		assert_eq!(tasks, vec![]);
+	}
+
+	#[test]
+	fn server_mempool_responds_inventory_when_non_empty_memory_pool() {
+		let (chain, executor, mut server) = create_synchronization_server();
+		// when memory pool is non-empty
+		let transaction = Transaction::default();
+		let transaction_hash = transaction.hash();
+		chain.write().memory_pool_mut().insert_verified(transaction);
+		// when asking for memory pool transactions ids
+		server.serve_mempool(0);
+		// => respond with inventory
+		let inventory = vec![InventoryVector {
+			inv_type: InventoryType::MessageTx,
+			hash: transaction_hash,
+		}];
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendInventory(0, inventory)]);
 	}
 }

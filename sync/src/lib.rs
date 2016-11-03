@@ -9,6 +9,7 @@ extern crate primitives;
 extern crate test_data;
 extern crate time;
 extern crate verification;
+extern crate miner;
 
 mod hash_queue;
 mod inbound_connection;

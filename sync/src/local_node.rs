@@ -130,6 +130,8 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 
 	pub fn on_peer_mempool(&self, peer_index: usize, _message: types::MemPool) {
 		trace!(target: "sync", "Got `mempool` message from peer#{}", peer_index);
+
+		self.server.lock().serve_mempool(peer_index);
 	}
 
 	pub fn on_peer_filterload(&self, peer_index: usize, _message: types::FilterLoad) {
