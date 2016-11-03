@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate log;
 extern crate primitives;
 extern crate serialization as ser;
 extern crate chain;

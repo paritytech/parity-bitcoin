@@ -1,6 +1,6 @@
 use std::net;
 use clap;
-use message::common::Magic;
+use message::Magic;
 
 pub struct Config {
 	pub magic: Magic,

@@ -4,6 +4,7 @@ use block::Block;
 use fs::read_blk_dir;
 
 pub fn open_blk_file<P>(path: P) -> Result<BlkFile, io::Error> where P: AsRef<path::Path> {
+	trace!("Opening blk file: {:?}", path.as_ref());
 	let file = try!(fs::File::open(path));
 	let blk_file = BlkFile {
 		reader: deserialize_iterator(file),
