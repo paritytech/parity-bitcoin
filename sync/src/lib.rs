@@ -11,6 +11,7 @@ extern crate time;
 extern crate verification;
 extern crate miner;
 
+mod blocks_writer;
 mod hash_queue;
 mod inbound_connection;
 mod inbound_connection_factory;
@@ -23,6 +24,22 @@ mod synchronization_server;
 
 use std::sync::Arc;
 use parking_lot::{Mutex, RwLock};
+
+/// Sync errors.
+#[derive(Debug)]
+pub enum Error {
+	/// Out of order block.
+	OutOfOrderBlock,
+	/// Database error.
+	Database(db::Error),
+	/// Block verification error.
+	Verification(verification::Error),
+}
+
+/// Create blocks writer.
+pub fn create_sync_blocks_writer(db: Arc<db::Store>) -> blocks_writer::BlocksWriter {
+	blocks_writer::BlocksWriter::new(db)
+}
 
 /// Create inbound synchronization connections factory for given `db`.
 pub fn create_sync_connection_factory(db: Arc<db::Store>) -> p2p::LocalSyncNodeRef {
