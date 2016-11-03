@@ -29,9 +29,10 @@ args:
     - diskdb:
         long: diskdb
         help: Use disk storage instead of in-memory one
+subcommands:
     - import:
-        long: import
-        value_name: PATH
-        help: Import blocks from bitcoin core database
-        takes_value: true
-
+        about: Import blocks from bitcoin core database
+        args:
+            - PATH:
+                required: true
+                help: Path of the bitcoin core database
