@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use parking_lot::Mutex;
-use chain::{Block, RepresentH256};
+use chain::{Block, BlockHeader, RepresentH256};
 use message::common::{InventoryVector, InventoryType};
 use message::types;
 use primitives::hash::H256;
@@ -31,6 +31,8 @@ pub enum Task {
 	SendNotFound(usize, Vec<InventoryVector>),
 	/// Send inventory
 	SendInventory(usize, Vec<InventoryVector>),
+	/// Send headers
+	SendHeaders(usize, Vec<BlockHeader>),
 }
 
 /// Synchronization tasks executor
@@ -141,6 +143,71 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					connection.send_inventory(&inventory);
 				}
 			},
+			Task::SendHeaders(peer_index, headers) => {
+				let headers = types::Headers {
+					headers: headers,
+				};
+
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					let connection = &mut *connection;
+					trace!(target: "sync", "Sending headers to peer#{} with {} items", peer_index, headers.headers.len());
+					connection.send_headers(&headers);
+				}
+			},
+		}
+	}
+}
+
+#[cfg(test)]
+pub mod tests {
+	use super::*;
+	use std::sync::Arc;
+	use std::mem::replace;
+	use std::time;
+	use parking_lot::{Mutex, Condvar};
+	use local_node::PeersConnections;
+	use p2p::OutboundSyncConnectionRef;
+
+	pub struct DummyTaskExecutor {
+		tasks: Vec<Task>,
+		waiter: Arc<Condvar>,
+	}
+
+	impl DummyTaskExecutor {
+		pub fn new() -> Arc<Mutex<Self>> {
+			Arc::new(Mutex::new(DummyTaskExecutor {
+				tasks: Vec::new(),
+				waiter: Arc::new(Condvar::new()),
+			}))
+		}
+
+		pub fn wait_tasks_for(executor: Arc<Mutex<Self>>, timeout_ms: u64) -> Vec<Task> {
+			let mut executor = executor.lock();
+			if executor.tasks.is_empty() {
+				let waiter = executor.waiter.clone();
+				waiter.wait_for(&mut executor, time::Duration::from_millis(timeout_ms)).timed_out();
+			}
+			executor.take_tasks()
+		}
+
+		pub fn wait_tasks(executor: Arc<Mutex<Self>>) -> Vec<Task> {
+			DummyTaskExecutor::wait_tasks_for(executor, 1000)
+		}
+
+		pub fn take_tasks(&mut self) -> Vec<Task> {
+			replace(&mut self.tasks, Vec::new())
+		}
+	}
+
+	impl PeersConnections for DummyTaskExecutor {
+		fn add_peer_connection(&mut self, _: usize, _: OutboundSyncConnectionRef) {}
+		fn remove_peer_connection(&mut self, _: usize) {}
+	}
+
+	impl TaskExecutor for DummyTaskExecutor {
+		fn execute(&mut self, task: Task) {
+			self.tasks.push(task);
+			self.waiter.notify_one();
 		}
 	}
 }
