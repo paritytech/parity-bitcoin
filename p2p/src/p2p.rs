@@ -97,7 +97,7 @@ impl Context {
 				info!("Outbound connections: ({}/{})", oc.0, oc.1);
 
 				let used_addresses = context.connections.addresses();
-				let max = context.connection_counter.max_outbound_connections() as usize;
+				let max = (ic.1 + oc.1) as usize;
 				let needed = context.connection_counter.outbound_connections_needed() as usize;
 				let peers = context.node_table.read().nodes_with_services(&Services::default(), max);
 				let addresses = peers.into_iter()
