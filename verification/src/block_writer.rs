@@ -81,7 +81,7 @@ impl BlockWriter {
 		&*self.queue
 	}
 
-	pub fn store(&self) -> &Arc<db::Store> {
-		&self.store
+	pub fn store(&self) -> &db::Store {
+		&*self.store
 	}
 }
