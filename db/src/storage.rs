@@ -28,6 +28,8 @@ const _COL_RESERVED6: u32 = 10;
 
 const DB_VERSION: u32 = 1;
 
+const MAX_FORK_ROUTE_PRESET: usize = 16;
+
 /// Blockchain storage interface
 pub trait Store : Send + Sync {
 	/// get best block
@@ -93,6 +95,8 @@ pub enum Error {
 	Unknown(H256),
 	/// Not the block from the main chain
 	NotMain(H256),
+	/// Fork too long
+	ForkTooLong,
 }
 
 impl From<String> for Error {
@@ -246,6 +250,15 @@ impl Storage {
 			.collect()
 	}
 
+	fn block_header_by_hash(&self, h: &H256) -> Option<chain::BlockHeader> {
+		self.get(COL_BLOCK_HEADERS, &**h).and_then(|val|
+			serialization::deserialize(val.as_ref()).map_err(
+				|e| self.db_error(format!("Error deserializing block header, possible db corruption ({:?})", e))
+			).ok()
+		)
+	}
+
+
 	/// update transactions metadata in the specified database transaction
 	fn update_transactions_meta(&self, db_transaction: &mut DBTransaction, number: u32, accepted_txs: &[chain::Transaction]) {
 		let mut meta_buf = HashMap::<H256, TransactionMeta>::new();
@@ -328,6 +341,41 @@ impl Storage {
 				}
 			}
 		}
+
+		Ok(())
+	}
+
+	/// Returns the height where the fork occurred and chain up to this place (not including last canonical hash)
+	fn fork_route(&self, max_route: usize, hash: &H256) -> Result<(u32, Vec<H256>), Error> {
+		let header = try!(self.block_header_by_hash(hash).ok_or(Error::Unknown(hash.clone())));
+
+		// only main chain blocks has block numbers
+		// so if it has, it is not a fork and we return empty route
+		if let Some(number) = self.block_number(hash) {
+			return Ok((number, Vec::new()));
+		}
+
+		let mut next_hash = header.previous_header_hash;
+		let mut result = Vec::new();
+
+		for _ in 0..max_route {
+			if let Some(number) = self.block_number(&next_hash) {
+				return Ok((number, result));
+			}
+			result.push(next_hash.clone());
+			next_hash = try!(self.block_header_by_hash(&next_hash).ok_or(Error::Unknown(hash.clone())))
+				.previous_header_hash;
+		}
+		Err(Error::ForkTooLong)
+	}
+
+	fn reorganize(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
+		let (at_height, route) = try!(self.fork_route(MAX_FORK_ROUTE_PRESET, hash));
+		if route.len() == 0 {
+			return Ok(());
+		}
+
+
 
 		Ok(())
 	}
@@ -789,10 +837,88 @@ mod tests {
 		let mut update_context = UpdateContext::new(&store.database);
 		store.decanonize_block(&mut update_context, &block.hash())
 			.expect("Decanonizing block #1 which was just inserted should not fail");
-		update_context.apply(&store.database);
+		update_context.apply(&store.database).unwrap();
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase)
 			.expect("Transaction meta for the genesis coinbase transaction should exist");
 		assert!(!genesis_meta.is_spent(0), "Genesis coinbase should be recorded as unspent because we retracted block #1");
+	}
+
+	#[test]
+	fn fork_route() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let (main_hash1, main_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(1)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&main_block1).expect("main block 1 should insert with no problems");
+
+		let (main_hash2, main_block2) = test_data::block_hash_builder()
+			.block()
+				.header().parent(main_hash1)
+					.nonce(2)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&main_block2).expect("main block 2 should insert with no problems");
+
+		let (main_hash3, main_block3) = test_data::block_hash_builder()
+			.block()
+				.header().parent(main_hash2)
+					.nonce(3)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&main_block3).expect("main block 3 should insert with no problems");
+
+		let (main_hash4, main_block4) = test_data::block_hash_builder()
+			.block()
+				.header().parent(main_hash3)
+					.nonce(4)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&main_block4).expect("main block 4 should insert with no problems");
+
+		let (side_hash1, side_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(5)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&side_block1).expect("side block 1 should insert with no problems");
+
+		let (side_hash2, side_block2) = test_data::block_hash_builder()
+			.block()
+				.header().parent(side_hash1.clone())
+					.nonce(6)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&side_block2).expect("side block 2 should insert with no problems");
+
+		let (side_hash3, side_block3) = test_data::block_hash_builder()
+			.block()
+				.header().parent(side_hash2.clone())
+					.nonce(7)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&side_block3).expect("side block 3 should insert with no problems");
+
+
+		let (h, route) = store.fork_route(16, &side_hash3).expect("Fork route should have been built");
+
+		assert_eq!(h, 0);
+		assert_eq!(route, vec![side_hash2, side_hash1]);
 	}
 }
