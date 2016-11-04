@@ -259,6 +259,9 @@ impl Storage {
 			db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.to_bytes());
 		}
 	}
+
+	fn decanonize_block(&self, block: &H256) {
+	}
 }
 
 impl Store for Storage {
@@ -590,5 +593,104 @@ mod tests {
 
 		assert!(!meta.is_spent(1), "Transaction #1 output #1 in the new block should be recorded as unspent");
 		assert!(!meta.is_spent(3), "Transaction #1 second #3 in the new block should be recorded as unspent");
+	}
+
+	#[test]
+	fn fork_smoky() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let (_main_hash1, main_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(1)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&main_block1).expect("main block 1 should insert with no problems");
+
+		let (side_hash1, side_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(2)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&side_block1).expect("side block 1 should insert with no problems");
+
+		let (side_hash2, side_block2) = test_data::block_hash_builder()
+			.block()
+				.header().parent(side_hash1)
+					.nonce(3)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&side_block2).expect("side block 2 should insert with no problems");
+
+		// store should reorganize to side hash 2, because it represents the longer chain
+		assert_eq!(store.best_block().unwrap().hash, side_hash2);
+	}
+
+
+	// test simulates when main chain and side chain are competing all along, each adding
+	// block one by one
+	#[test]
+	fn fork_competing() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let (main_hash1, main_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(1)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&main_block1).expect("main block 1 should insert with no problems");
+
+		let (side_hash1, side_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(2)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&side_block1).expect("side block 1 should insert with no problems");
+
+		let (main_hash2, main_block2) = test_data::block_hash_builder()
+			.block()
+				.header().parent(main_hash1)
+					.nonce(3)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&main_block2).expect("main block 2 should insert with no problems");
+
+		let (_side_hash2, side_block2) = test_data::block_hash_builder()
+			.block()
+				.header().parent(side_hash1)
+					.nonce(4)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&side_block2).expect("side block 2 should insert with no problems");
+
+		// store should not reorganize to side hash 2, because it competing chains are of the equal length
+		assert_eq!(store.best_block().unwrap().hash, main_hash2);
 	}
 }
