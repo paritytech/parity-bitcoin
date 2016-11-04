@@ -27,7 +27,8 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 	let db = open_db(cfg.use_disk_database);
 	init_db(&db);
 
-	let sync_connection_factory = create_sync_connection_factory(db);
+	let sync_handle = el.handle();
+	let sync_connection_factory = create_sync_connection_factory(&sync_handle, db);
 
 	let p2p = p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle());
 	try!(p2p.run().map_err(|_| "Failed to start p2p module"));

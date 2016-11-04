@@ -7,6 +7,10 @@ authors = ["Ethcore <admin@ethcore.io>"]
 parking_lot = "0.3"
 log = "0.3"
 time = "0.1"
+futures = "0.1"
+futures-cpupool = "0.1"
+tokio-core = { git = "https://github.com/debris/tokio-core" }
+linked-hash-map = "0.3"
 
 chain = { path = "../chain" }
 db = { path = "../db" }
