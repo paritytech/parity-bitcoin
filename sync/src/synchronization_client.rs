@@ -26,52 +26,95 @@ use std::time::Duration;
 
 ///! Blocks synchronization process:
 ///!
-///! TODO: Current assumptions:
-///! 1) unknown blocks in `inventory` messages are returned as a consequent range, sorted from oldest to newest
-///! 2) no forks support
-///!
 ///! When new peer is connected:
-///! 1) send `inventory` message with full block locator hashes
+///! 1) send `inventory` message with full block locator hashes (see `LocalNode`)
 ///!
-///! When `inventory` message is received from peer:
-///! 1) if synchronization queue is empty:
-///! 1.1) append all unknown blocks hashes to the `queued_hashes`
-///! 1.2) mark peer as 'useful' for current synchronization stage (TODO)
-///! 1.3) stop
-///! 2) if intersection(`queued_hashes`, unknown blocks) is not empty && there are new unknown blocks:
-///! 2.1) append new unknown blocks to the queued_hashes
-///! 2.2) mark peer as 'useful' for current synchronization stage (TODO)
-///! 2.3) stop
-///! 3) if intersection(`queued_hashes`, unknown blocks) is not empty && there are no new unknown blocks:
-///! 3.1) looks like peer is behind us in the blockchain (or these are blocks for the future)
-///! 3.2) mark peer as 'suspicious' for current synchronization stage (TODO)
-///! 3.3) stop
+///! on_new_blocks_inventory: When `inventory` message is received from peer:
+///! 1) queue_intersection = intersect(queue, inventory)
+///! 2) if !queue_intersection.is_empty(): ===> responded with blocks within sync window
+///! 2.1) remember peer as useful
+///! 2.2) inventory_rest = inventory - queue_intersection
+///! 2.3) if inventory_rest.is_empty(): ===> no new unknown blocks in inventory
+///! 2.3.1) stop (2.3)
+///! 2.4) if !inventory_rest.is_empty(): ===> has new unknown blocks in inventory
+///! 2.4.1) queue_rest = queue after intersection
+///! 2.4.2) if queue_rest.is_empty(): ===> has new unknown blocks in inventory, no fork
+///! 2.4.3.1) scheduled_blocks.append(inventory_rest)
+///! 2.4.3.2) stop (2.4.3)
+///! 2.4.4) if !queue_rest.is_empty(): ===> has new unknown blocks in inventory, fork
+///! 2.4.4.1) scheduled_blocks.append(inventory_rest)
+///! 2.4.4.2) stop (2.4.4)
+///! 2.4.5) stop (2.4)
+///! 2.5) stop (2)
+///! 3) if queue_intersection.is_empty(): ===> responded with out-of-sync-window blocks
+///! 3.1) last_known_block = inventory.last(b => b.is_known())
+///! 3.2) if last_known_block == None: ===> we know nothing about these blocks & we haven't asked for these
+///! 3.2.1) peer will be excluded later by management thread
+///! 3.2.2) stop (3.2)
+///! 3.3) if last_known_block == last(inventory): ===> responded with all-known-blocks
+///! 3.3.1) remember peer as useful (possibly had failures before && have been excluded from sync)
+///! 3.3.2) stop (3.3)
+///! 3.4) if last_known_block in the middle of inventory: ===> responded with forked blocks
+///! 3.4.1) remember peer as useful
+///! 3.4.2) inventory_rest = inventory after last_known_block
+///! 3.4.3) scheduled_blocks.append(inventory_rest)
+///! 3.4.4) stop (3.4)
+///! 3.5) stop (3)
 ///!
-///! After receiving `block` message:
-///! 1) if any basic verification is failed (TODO):
-///! 1.1) penalize peer
-///! 1.2) stop
-///! 1) if not(remove block) [i.e. block was not requested]:
-///! 1.1) ignore it (TODO: try to append to the chain)
-///! 1.2) stop
-///! 2) if this block is first block in the `requested_hashes`:
-///! 2.1) append to the verification queue (+ append to `verifying_hashes`) (TODO)
-///! 2.2) for all children (from `orphaned_blocks`): append to the verification queue (TODO)
-///! 2.3) stop
-///! 3) remember in `orphaned_blocks`
+///! on_peer_block: After receiving `block` message:
+///! 1) if block_state(block) in (Scheduled, Verifying, Stored): ===> late delivery
+///! 1.1) remember peer as useful
+///! 1.2) stop (1)
+///! 2) if block_state(block) == Requested: ===> on-time delivery
+///! 2.1) remember peer as useful
+///! 2.2) move block from requested to verifying queue
+///! 2.2) queue verification().and_then(insert).or_else(reset_sync)
+///! 2.3) stop (2)
+///! 3) if block_state(block) == Unknown: ===> maybe we are on-top of chain && new block is announced?
+///! 3.1) if block_state(block.parent_hash) == Unknown: ===> we do not know parent
+///! 3.1.1) ignore this block
+///! 3.1.2) stop (3.1)
+///! 3.2) if block_state(block.parent_hash) != Unknown: ===> fork found
+///! 3.2.1) ask peer for best inventory (after this block)
+///! 3.2.2) append block to verifying queue
+///! 3.2.3) queue verification().and_then(insert).or_else(reset_sync)
+///! 3.2.4) stop (3.2)
+///! 2.3) stop (2)
 ///!
-///! After receiving `inventory` message OR receiving `block` message:
-///! 1) if there are blocks hashes in `queued_hashes`:
+///! execute_synchronization_tasks: After receiving `inventory` message OR receiving `block` message OR when management thread schedules tasks:
+///! 1) if there are blocks in `scheduled` queue AND we can fit more blocks into memory: ===> ask for blocks
 ///! 1.1) select idle peers
-///! 1.2) for each idle peer: query blocks from `queued_hashes`
-///! 1.3) move requested blocks hashes from `queued_hashes` to `requested_hashes`
+///! 1.2) for each idle peer: query chunk of blocks from `scheduled` queue
+///! 1.3) move requested blocks from `scheduled` to `requested` queue
 ///! 1.4) mark idle peers as active
-///! 2) if `queued_hashes` queue is not yet saturated:
+///! 1.5) stop (1)
+///! 2) if `scheduled` queue is not yet saturated: ===> ask for new blocks hashes
 ///! 2.1) for each idle peer: send shortened `getblocks` message
-///! 2.2) 'forget' idle peers (mark them as not useful for synchronization) (TODO)
+///! 2.2) 'forget' idle peers => they will be added again if respond with inventory
+///! 2.3) stop (2)
 ///!
-///! TODO: spawn management thread [watch for not-stalling sync]
-///! TODO: check + optimize algorithm for Saturated state
+///! manage_synchronization_peers: When management thread awakes:
+///! 1) for peer in active_peers.where(p => now() - p.last_request_time() > failure_interval):
+///! 1.1) return all peer' tasks to the tasks pool (TODO: not implemented currently!!!)
+///! 1.2) increase # of failures for this peer
+///! 1.3) if # of failures > max_failures: ===> super-bad peer
+///! 1.3.1) forget peer
+///! 1.3.3) stop (1.3)
+///! 1.4) if # of failures <= max_failures: ===> bad peer
+///! 1.4.1) move peer to idle pool
+///! 1.4.2) stop (1.4)
+///! 2) schedule tasks from pool (if any)
+///!
+///! on_block_verification_success: When verification completes scuccessfully:
+///! 1) if block_state(block) != Verifying: ===> parent verification failed
+///! 1.1) stop (1)
+///! 2) remove from verifying queue
+///! 3) insert to the db
+///!
+///! on_block_verification_error: When verification completes with an error:
+///! 1) remove block from verification queue
+///! 2) remove all known children from all queues [so that new `block` messages will be ignored in on_peer_block.3.1.1]
+///!
 
 /// Approximate maximal number of blocks hashes in scheduled queue.
 const MAX_SCHEDULED_HASHES: u32 = 4 * 1024;
