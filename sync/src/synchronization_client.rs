@@ -1,7 +1,7 @@
 use std::thread;
 use std::sync::Arc;
 use std::cmp::{min, max};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use parking_lot::Mutex;
@@ -63,24 +63,39 @@ use std::time::Duration;
 ///! 3.5) stop (3)
 ///!
 ///! on_peer_block: After receiving `block` message:
-///! 1) if block_state(block) in (Scheduled, Verifying, Stored): ===> late delivery
+///! 1) if block_state(block) in (Verifying, Stored): ===> late delivery
 ///! 1.1) remember peer as useful
 ///! 1.2) stop (1)
-///! 2) if block_state(block) == Requested: ===> on-time delivery
+///! 2) if block_state(block) in (Scheduled, Requested): ===> future/on-time delivery
 ///! 2.1) remember peer as useful
-///! 2.2) move block from requested to verifying queue
-///! 2.2) queue verification().and_then(insert).or_else(reset_sync)
-///! 2.3) stop (2)
+///! 2.2) if block_state(block.parent) in (Verifying, Stored): ===> we can proceed with verification
+///! 2.2.1) remove block from current queue (Verifying || Stored)
+///! 2.2.2) append block to the verification queue
+///! 2.2.3) queue verification().and_then(insert).or_else(reset_sync)
+///! 2.2.4) try to verify orphan blocks
+///! 2.2.5) stop (2.2)
+///! 2.3) if block_state(block.parent) in (Requested, Scheduled): ===> we have found an orphan block
+///! 2.3.1) remove block from current queue (Verifying || Stored)
+///! 2.3.2) append block to the orphans
+///! 2.3.3) stop (2.3)
+///! 2.4) if block_state(block.parent) == Unknown: ===> bad block found
+///! 2.4.1) remove block from current queue (Verifying || Stored)
+///! 2.4.2) stop (2.4)
+///! 2.5) stop (2)
 ///! 3) if block_state(block) == Unknown: ===> maybe we are on-top of chain && new block is announced?
 ///! 3.1) if block_state(block.parent_hash) == Unknown: ===> we do not know parent
 ///! 3.1.1) ignore this block
 ///! 3.1.2) stop (3.1)
-///! 3.2) if block_state(block.parent_hash) != Unknown: ===> fork found
+///! 3.2) if block_state(block.parent_hash) in (Verifying, Stored): ===> fork found, can verify
 ///! 3.2.1) ask peer for best inventory (after this block)
 ///! 3.2.2) append block to verifying queue
 ///! 3.2.3) queue verification().and_then(insert).or_else(reset_sync)
 ///! 3.2.4) stop (3.2)
-///! 2.3) stop (2)
+///! 3.3) if block_state(block.parent_hash) in (Requested, Scheduled): ===> fork found, add as orphan
+///! 3.3.1) ask peer for best inventory (after this block)
+///! 3.3.2) append block to orphan
+///! 3.3.3) stop (3.3)
+///! 3.4) stop (2)
 ///!
 ///! execute_synchronization_tasks: After receiving `inventory` message OR receiving `block` message OR when management thread schedules tasks:
 ///! 1) if there are blocks in `scheduled` queue AND we can fit more blocks into memory: ===> ask for blocks
@@ -191,7 +206,7 @@ pub struct SynchronizationClient<T: TaskExecutor> {
 	/// Chain reference.
 	chain: ChainRef,
 	/// Blocks from requested_hashes, but received out-of-order.
-	orphaned_blocks: HashMap<H256, Block>,
+	orphaned_blocks: HashMap<H256, Vec<(H256, Block)>>,
 	/// Verification work transmission channel.
 	verification_work_sender: Option<Sender<VerificationTask>>,
 	/// Verification thread.
@@ -247,7 +262,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 		// update peers to select next tasks
 		self.peers.on_block_received(peer_index, &block_hash);
 
-		self.process_peer_block(block_hash, block);
+		self.process_peer_block(peer_index, block_hash, block);
 		self.execute_synchronization_tasks();
 	}
 
@@ -409,12 +424,58 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	}
 
 	/// Process new peer block
-	fn process_peer_block(&mut self, block_hash: H256, block: Block) {
-		// this block is not requested for synchronization
+	fn process_peer_block(&mut self, peer_index: usize, block_hash: H256, block: Block) {
 		let mut chain = self.chain.write();
-		let block_position = chain.remove_block_with_state(&block_hash, BlockState::Requested);
-		if block_position == HashPosition::Missing {
-			return;
+		match chain.block_state(&block_hash) {
+			BlockState::Verifying | BlockState::Stored => {
+				// remember peer as useful
+				self.peers.insert(peer_index);
+			},
+			BlockState::Unknown | BlockState::Scheduled | BlockState::Requested => {
+				// remove block from current queue
+				chain.remove_block(&block_hash);
+				// check parent block state
+				match chain.block_state(&block.block_header.previous_header_hash) {
+					BlockState::Unknown => (),
+					BlockState::Verifying | BlockState::Stored => {
+						// remember peer as useful
+						self.peers.insert(peer_index);
+						// schedule verification
+						let mut blocks: VecDeque<(H256, Block)> = VecDeque::new();
+						blocks.push_back((block_hash, block));
+						while let Some((block_hash, block)) = blocks.pop_front() {
+							// queue block for verification
+							chain.remove_block(&block_hash);
+
+							match self.verification_work_sender {
+								Some(ref verification_work_sender) => {
+									chain.verify_block_hash(block_hash.clone());
+									verification_work_sender
+										.send(VerificationTask::VerifyBlock(block))
+										.expect("Verification thread have the same lifetime as `Synchronization`")
+								},
+								None => chain.insert_best_block(block)
+									.expect("Error inserting to db."),
+							}
+
+							// process orphan blocks
+							if let Entry::Occupied(entry) = self.orphaned_blocks.entry(block_hash) {
+								let (_, orphaned) = entry.remove_entry();
+								blocks.extend(orphaned);
+							}
+						}
+					},
+					BlockState::Requested | BlockState::Scheduled => {
+						// remember peer as useful
+						self.peers.insert(peer_index);
+						// remember as orphan block
+						self.orphaned_blocks
+							.entry(block.block_header.previous_header_hash.clone())
+							.or_insert(Vec::new())
+							.push((block_hash, block))
+					}
+				}
+			},
 		}
 
 		// requested block is received => move to saturated state if there are no more blocks
@@ -423,55 +484,6 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			&& !chain.has_blocks_of_state(BlockState::Verifying) {
 			self.state = State::Saturated;
 		}
-
-		// check if this block is next block in the blockchain
-		if block_position == HashPosition::Front {
-			// check if this parent of this block is current best_block
-			let expecting_previous_header_hash = chain.best_block_of_state(BlockState::Verifying)
-				.unwrap_or_else(|| {
-					chain.best_block_of_state(BlockState::Stored)
-						.expect("storage with genesis block is required")
-				}).hash;
-			if block.block_header.previous_header_hash != expecting_previous_header_hash {
-				// TODO: penalize peer
-				warn!(target: "sync", "Out-of-order block {:?} was dropped. Expecting block with parent hash {:?}", block_hash, expecting_previous_header_hash);
-				return;
-			}
-
-			// this is next block in the blockchain => queue for verification
-			// also unwrap all dependent orphan blocks
-			let mut current_block = block;
-			let mut current_block_hash = block_hash;
-			loop {
-				match self.verification_work_sender {
-					Some(ref verification_work_sender) => {
-						chain.verify_block_hash(current_block_hash.clone());
-						verification_work_sender
-							.send(VerificationTask::VerifyBlock(current_block))
-							.expect("Verification thread have the same lifetime as `Synchronization`");
-					},
-					None => {
-						chain.insert_best_block(current_block)
-							.expect("Error inserting to db.");
-					}
-				};
-
-				// proceed to the next orphaned block
-				if let Entry::Occupied(orphaned_block_entry) = self.orphaned_blocks.entry(current_block_hash) {
-					let (_, orphaned_block) = orphaned_block_entry.remove_entry();
-					current_block = orphaned_block;
-					current_block_hash = current_block.hash();
-				}
-				else {
-					break;
-				}
-			}
-
-			return;
-		}
-
-		// this block is not the next one => mark it as orphaned
-		self.orphaned_blocks.insert(block.block_header.previous_header_hash.clone(), block);
 	}
 
 	/// Schedule new synchronization tasks, if any.
@@ -612,23 +624,23 @@ pub mod tests {
 		assert_eq!(sync.information().peers.idle, 0);
 		assert_eq!(sync.information().peers.active, 1);
 
-		// push unknown block => nothing should change
+		// push unknown block => will be queued as orphan
 		sync.on_peer_block(5, block2);
 		assert!(sync.information().state.is_synchronizing());
-		assert_eq!(sync.information().orphaned, 0);
+		assert_eq!(sync.information().orphaned, 1);
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 1);
 		assert_eq!(sync.information().chain.stored, 1);
 		assert_eq!(sync.information().peers.idle, 0);
 		assert_eq!(sync.information().peers.active, 1);
 
-		// push requested block => should be moved to the test storage
+		// push requested block => should be moved to the test storage && orphan should be moved
 		sync.on_peer_block(5, block1);
 		assert!(!sync.information().state.is_synchronizing());
 		assert_eq!(sync.information().orphaned, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 0);
-		assert_eq!(sync.information().chain.stored, 2);
+		assert_eq!(sync.information().chain.stored, 3);
 		// we have just requested new `inventory` from the peer => peer is forgotten
 		assert_eq!(sync.information().peers.idle, 0);
 		assert_eq!(sync.information().peers.active, 0);
@@ -639,7 +651,7 @@ pub mod tests {
 		let (_, _, _, sync) = create_sync();
 		let mut sync = sync.lock();
 
-		let block2: Block = test_data::block_h2();
+		let block2: Block = test_data::block_h169();
 
 		sync.on_new_blocks_inventory(5, vec![block2.hash()]);
 		sync.on_peer_block(5, block2);

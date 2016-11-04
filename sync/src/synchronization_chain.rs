@@ -317,6 +317,13 @@ impl Chain {
 		self.storage.insert_block(&block)
 	}
 
+	/// Remove block
+	pub fn remove_block(&mut self, hash: &H256) {
+		self.hash_chain.remove_at(SCHEDULED_QUEUE, hash);
+		self.hash_chain.remove_at(REQUESTED_QUEUE, hash);
+		self.hash_chain.remove_at(VERIFYING_QUEUE, hash);
+	}
+
 	/// Remove block by hash if it is currently in given state
 	pub fn remove_block_with_state(&mut self, hash: &H256, state: BlockState) -> HashPosition {
 		self.hash_chain.remove_at(state.to_queue_index(), hash)
