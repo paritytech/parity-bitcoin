@@ -39,12 +39,12 @@ use std::time::Duration;
 ///! 2.4) if !inventory_rest.is_empty(): ===> has new unknown blocks in inventory
 ///! 2.4.1) queue_rest = queue after intersection
 ///! 2.4.2) if queue_rest.is_empty(): ===> has new unknown blocks in inventory, no fork
+///! 2.4.2.1) scheduled_blocks.append(inventory_rest)
+///! 2.4.2.2) stop (2.4.2)
+///! 2.4.3) if !queue_rest.is_empty(): ===> has new unknown blocks in inventory, fork
 ///! 2.4.3.1) scheduled_blocks.append(inventory_rest)
 ///! 2.4.3.2) stop (2.4.3)
-///! 2.4.4) if !queue_rest.is_empty(): ===> has new unknown blocks in inventory, fork
-///! 2.4.4.1) scheduled_blocks.append(inventory_rest)
-///! 2.4.4.2) stop (2.4.4)
-///! 2.4.5) stop (2.4)
+///! 2.4.3) stop (2.4)
 ///! 2.5) stop (2)
 ///! 3) if queue_intersection.is_empty(): ===> responded with out-of-sync-window blocks
 ///! 3.1) last_known_block = inventory.last(b => b.is_known())
@@ -388,7 +388,6 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 		//  ---+---------+---           [8] +
 		//            ---+--------+---  [9] +
 		//  ---+---------+--------+---  [10]
-
 		let mut chain = self.chain.write();
 
 		'outer: loop {

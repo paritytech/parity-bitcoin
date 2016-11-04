@@ -47,6 +47,23 @@ pub struct Information {
 	pub stored: u32,
 }
 
+/// Result of intersecting chain && inventory
+#[derive(Debug, PartialEq)]
+pub enum InventoryIntersection {
+	/// 3.2: No intersection with in-memory queue && no intersection with db
+	NoKnownBlocks,
+	/// 2.3: Inventory has no new blocks && some of blocks in inventory are in in-memory queue
+	InMemoryNoNewBlocks,
+	/// 2.4.2: Inventory has new blocks && these blocks are right after chain' best block
+	InMemoryMainNewBlocks(usize),
+	/// 2.4.3: Inventory has new blocks && these blocks are forked from our chain' best block
+	InMemoryForkNewBlocks(usize),
+	/// 3.3: No intersection with in-memory queue && has intersection with db && all blocks are already stored in db
+	DbAllBlocksKnown,
+	/// 3.4: No intersection with in-memory queue && has intersection with db && some blocks are not yet stored in db
+	DbForkNewBlocks(usize),
+}
+
 /// Blockchain from synchroniation point of view, consisting of:
 /// 1) all blocks from the `storage` [oldest blocks]
 /// 2) all blocks currently verifying by `verification_queue`
@@ -309,6 +326,57 @@ impl Chain {
 		self.hash_chain.remove_all_at(state.to_queue_index());
 	}
 
+	/// Intersect chain with inventory
+	pub fn intersect_with_inventory(&self, inventory: &Vec<H256>) -> InventoryIntersection {
+		let inventory_len = inventory.len();
+		assert!(inventory_len != 0);
+
+		// giving that blocks in inventory are ordered
+		match self.block_state(&inventory[0]) {
+			// if first block of inventory is unknown => all other blocks are also unknown 
+			BlockState::Unknown => {
+				InventoryIntersection::NoKnownBlocks
+			},
+			// else if first block is known
+			first_block_state @ _ => match self.block_state(&inventory[inventory_len - 1]) {
+				// if last block is known to be in db => all inventory blocks are also in db
+				BlockState::Stored => {
+					InventoryIntersection::DbAllBlocksKnown 
+				},
+				// if first block is known && last block is unknown => intersection with queue or with db
+				BlockState::Unknown => {
+					// find last known block
+					let mut previous_state = first_block_state;
+					for index in 1..inventory_len {
+						let state = self.block_state(&inventory[index]);
+						if state == BlockState::Unknown {
+							// previous block is stored => fork from stored block
+							if previous_state == BlockState::Stored {
+								return InventoryIntersection::DbForkNewBlocks(index);
+							}
+							// previous block is best block => no fork
+							else if &self.best_block().hash == &inventory[index - 1] {
+								return InventoryIntersection::InMemoryMainNewBlocks(index);
+							}
+							// previous block is not a best block => fork
+							else {
+								return InventoryIntersection::InMemoryForkNewBlocks(index);
+							}
+						}
+						previous_state = state;
+					}
+
+					// unreachable because last block is unknown && in above loop we search for unknown blocks
+					unreachable!();
+				},
+				// if first block is known && last block is also known && is in queue => queue intersection with no new block
+				_ => {
+					InventoryIntersection::InMemoryNoNewBlocks
+				}
+			}
+		}
+	}
+
 	/// Calculate block locator hashes for hash queue
 	fn block_locator_hashes_for_queue(&self, hashes: &mut Vec<H256>) -> (u32, u32) {
 		let queue_len = self.hash_chain.len();
@@ -389,7 +457,7 @@ mod tests {
 	use std::sync::Arc;
 	use chain::RepresentH256;
 	use hash_queue::HashPosition;
-	use super::{Chain, BlockState};
+	use super::{Chain, BlockState, InventoryIntersection};
 	use db::{self, Store, BestBlock};
 	use test_data;
 
@@ -576,5 +644,72 @@ mod tests {
 			"0000000000000000000000000000000000000000000000000000000000000004".into(),
 			genesis_hash.clone(),
 		]);
+	}
+
+	#[test]
+	fn chain_intersect_with_inventory() {
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
+		// append 2 db blocks
+		chain.insert_best_block(test_data::block_h1()).expect("Error inserting new block");
+		chain.insert_best_block(test_data::block_h2()).expect("Error inserting new block");
+		// append 3 verifying blocks
+		chain.schedule_blocks_hashes(vec![
+			"0000000000000000000000000000000000000000000000000000000000000000".into(),
+			"0000000000000000000000000000000000000000000000000000000000000001".into(),
+			"0000000000000000000000000000000000000000000000000000000000000002".into(),
+		]);
+		chain.request_blocks_hashes(3);
+		chain.verify_blocks_hashes(3);
+		// append 3 requested blocks
+		chain.schedule_blocks_hashes(vec![
+			"0000000000000000000000000000000000000000000000000000000000000010".into(),
+			"0000000000000000000000000000000000000000000000000000000000000011".into(),
+			"0000000000000000000000000000000000000000000000000000000000000012".into(),
+		]);
+		chain.request_blocks_hashes(10);
+		// append 3 scheduled blocks
+		chain.schedule_blocks_hashes(vec![
+			"0000000000000000000000000000000000000000000000000000000000000020".into(),
+			"0000000000000000000000000000000000000000000000000000000000000021".into(),
+			"0000000000000000000000000000000000000000000000000000000000000022".into(),
+		]);
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			"0000000000000000000000000000000000000000000000000000000000000030".into(),
+			"0000000000000000000000000000000000000000000000000000000000000031".into(),
+		]), InventoryIntersection::NoKnownBlocks);
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			"0000000000000000000000000000000000000000000000000000000000000002".into(),
+			"0000000000000000000000000000000000000000000000000000000000000010".into(),
+			"0000000000000000000000000000000000000000000000000000000000000011".into(),
+			"0000000000000000000000000000000000000000000000000000000000000012".into(),
+			"0000000000000000000000000000000000000000000000000000000000000020".into(),
+		]), InventoryIntersection::InMemoryNoNewBlocks);
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			"0000000000000000000000000000000000000000000000000000000000000021".into(),
+			"0000000000000000000000000000000000000000000000000000000000000022".into(),
+			"0000000000000000000000000000000000000000000000000000000000000030".into(),
+			"0000000000000000000000000000000000000000000000000000000000000031".into(),
+		]), InventoryIntersection::InMemoryMainNewBlocks(2));
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			"0000000000000000000000000000000000000000000000000000000000000020".into(),
+			"0000000000000000000000000000000000000000000000000000000000000021".into(),
+			"0000000000000000000000000000000000000000000000000000000000000030".into(),
+			"0000000000000000000000000000000000000000000000000000000000000031".into(),
+		]), InventoryIntersection::InMemoryForkNewBlocks(2));
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			test_data::block_h1().hash(),
+			test_data::block_h2().hash(),
+		]), InventoryIntersection::DbAllBlocksKnown);
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			test_data::block_h2().hash(),
+			"0000000000000000000000000000000000000000000000000000000000000030".into(),
+			"0000000000000000000000000000000000000000000000000000000000000031".into(),
+		]), InventoryIntersection::DbForkNewBlocks(1));
 	}
 }
