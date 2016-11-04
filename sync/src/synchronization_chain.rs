@@ -51,7 +51,7 @@ pub struct Information {
 #[derive(Debug, PartialEq)]
 pub enum InventoryIntersection {
 	/// 3.2: No intersection with in-memory queue && no intersection with db
-	NoKnownBlocks,
+	NoKnownBlocks(usize),
 	/// 2.3: Inventory has no new blocks && some of blocks in inventory are in in-memory queue
 	InMemoryNoNewBlocks,
 	/// 2.4.2: Inventory has new blocks && these blocks are right after chain' best block
@@ -336,7 +336,7 @@ impl Chain {
 		match self.block_state(&inventory[0]) {
 			// if first block of inventory is unknown => all other blocks are also unknown 
 			BlockState::Unknown => {
-				InventoryIntersection::NoKnownBlocks
+				InventoryIntersection::NoKnownBlocks(0)
 			},
 			// else if first block is known
 			first_block_state @ _ => match self.block_state(&inventory[inventory_len - 1]) {
@@ -678,7 +678,7 @@ mod tests {
 		assert_eq!(chain.intersect_with_inventory(&vec![
 			"0000000000000000000000000000000000000000000000000000000000000030".into(),
 			"0000000000000000000000000000000000000000000000000000000000000031".into(),
-		]), InventoryIntersection::NoKnownBlocks);
+		]), InventoryIntersection::NoKnownBlocks(0));
 
 		assert_eq!(chain.intersect_with_inventory(&vec![
 			"0000000000000000000000000000000000000000000000000000000000000002".into(),

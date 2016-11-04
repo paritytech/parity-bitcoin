@@ -49,7 +49,8 @@ use std::time::Duration;
 ///! 3) if queue_intersection.is_empty(): ===> responded with out-of-sync-window blocks
 ///! 3.1) last_known_block = inventory.last(b => b.is_known())
 ///! 3.2) if last_known_block == None: ===> we know nothing about these blocks & we haven't asked for these
-///! 3.2.1) peer will be excluded later by management thread
+///! 3.2.1) if !synchronizing => remember peer as useful + ask for blocks
+///! 3.2.1) if synchronizing => peer will be excluded later by management thread
 ///! 3.2.2) stop (3.2)
 ///! 3.3) if last_known_block == last(inventory): ===> responded with all-known-blocks
 ///! 3.3.1) if syncing, remember peer as useful (possibly had failures before && have been excluded from sync)
@@ -379,7 +380,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	fn process_new_blocks_inventory(&mut self, peer_index: usize, mut inventory: Vec<H256>) {
 		let mut chain = self.chain.write();
 		match chain.intersect_with_inventory(&inventory) {
-			InventoryIntersection::NoKnownBlocks => (),
+			InventoryIntersection::NoKnownBlocks(_) if self.state.is_synchronizing() => (),
 			InventoryIntersection::DbAllBlocksKnown => {
 				if self.state.is_synchronizing() {
 					// remember peer as useful
@@ -392,7 +393,8 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			},
 			InventoryIntersection::InMemoryMainNewBlocks(new_block_index)
 				| InventoryIntersection::InMemoryForkNewBlocks(new_block_index)
-				| InventoryIntersection::DbForkNewBlocks(new_block_index) => {
+				| InventoryIntersection::DbForkNewBlocks(new_block_index)
+				| InventoryIntersection::NoKnownBlocks(new_block_index) => {
 				// schedule new blocks
 				let new_blocks_hashes = inventory.split_off(new_block_index);
 				chain.schedule_blocks_hashes(new_blocks_hashes);
@@ -594,11 +596,10 @@ pub mod tests {
 		let (_, _, executor, sync) = create_sync();
 
 		let mut sync = sync.lock();
-		let genesis = test_data::genesis();
 		let block1: Block = test_data::block_h1();
 		let block2: Block = test_data::block_h2();
 
-		sync.on_new_blocks_inventory(5, vec![genesis.hash(), block1.hash()]);
+		sync.on_new_blocks_inventory(5, vec![block1.hash()]);
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks.len(), 2);
 		assert_eq!(tasks[0], Task::RequestBestInventory(5));
@@ -659,7 +660,6 @@ pub mod tests {
 	fn synchronization_parallel_peers() {
 		let (_, _, executor, sync) = create_sync();
 
-		let genesis: Block = test_data::genesis();
 		let block1: Block = test_data::block_h1();
 		let block2: Block = test_data::block_h2();
 
@@ -668,7 +668,7 @@ pub mod tests {
 			// not synchronizing after start
 			assert!(!sync.information().state.is_synchronizing());
 			// receive inventory from new peer#1
-			sync.on_new_blocks_inventory(1, vec![genesis.hash(), block1.hash()]);
+			sync.on_new_blocks_inventory(1, vec![block1.hash()]);
 			assert_eq!(sync.information().chain.requested, 1);
 			// synchronization has started && new blocks have been requested
 			let tasks = executor.lock().take_tasks();
@@ -704,12 +704,11 @@ pub mod tests {
 	#[test]
 	fn synchronization_reset_when_peer_is_disconnected() {
 		let (_, _, _, sync) = create_sync();
-		let genesis = test_data::genesis();
 
 		// request new blocks
 		{
 			let mut sync = sync.lock();
-			sync.on_new_blocks_inventory(1, vec![genesis.hash(), "0000000000000000000000000000000000000000000000000000000000000000".into()]);
+			sync.on_new_blocks_inventory(1, vec!["0000000000000000000000000000000000000000000000000000000000000000".into()]);
 			assert!(sync.information().state.is_synchronizing());
 		}
 
