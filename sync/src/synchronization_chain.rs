@@ -209,6 +209,7 @@ impl Chain {
 	}
 
 	/// Check if block has given state
+	#[cfg(test)]
 	pub fn block_has_state(&self, hash: &H256, state: BlockState) -> bool {
 		match state {
 			BlockState::Scheduled => self.hash_chain.is_contained_in(SCHEDULED_QUEUE, hash),

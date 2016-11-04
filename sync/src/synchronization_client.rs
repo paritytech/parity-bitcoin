@@ -15,7 +15,7 @@ use primitives::hash::H256;
 use hash_queue::HashPosition;
 use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers::{Information as PeersInformation};
-use synchronization_chain::{ChainRef, BlockState};
+use synchronization_chain::{ChainRef, BlockState, InventoryIntersection};
 #[cfg(test)]
 use synchronization_chain::{Information as ChainInformation};
 use verification::{ChainVerifier, Error as VerificationError, Verify};
@@ -52,7 +52,7 @@ use std::time::Duration;
 ///! 3.2.1) peer will be excluded later by management thread
 ///! 3.2.2) stop (3.2)
 ///! 3.3) if last_known_block == last(inventory): ===> responded with all-known-blocks
-///! 3.3.1) remember peer as useful (possibly had failures before && have been excluded from sync)
+///! 3.3.1) if syncing, remember peer as useful (possibly had failures before && have been excluded from sync)
 ///! 3.3.2) stop (3.3)
 ///! 3.4) if last_known_block in the middle of inventory: ===> responded with forked blocks
 ///! 3.4.1) remember peer as useful
@@ -376,76 +376,33 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	}
 
 	/// Process new blocks inventory
-	fn process_new_blocks_inventory(&mut self, peer_index: usize, mut peer_hashes: Vec<H256>) {
-		//     | requested | QUEUED |
-		// ---                          [1]
-		//         ---                  [2] +
-		//                   ---        [3] +
-		//                          --- [4]
-		//    -+-                       [5] +
-		//              -+-             [6] +
-		//                       -+-    [7] +
-		//  ---+---------+---           [8] +
-		//            ---+--------+---  [9] +
-		//  ---+---------+--------+---  [10]
+	fn process_new_blocks_inventory(&mut self, peer_index: usize, mut inventory: Vec<H256>) {
 		let mut chain = self.chain.write();
-
-		'outer: loop {
-			// when synchronization is idling
-			// => request full inventory
-			if !chain.has_blocks_of_state(BlockState::Scheduled)
-				&& !chain.has_blocks_of_state(BlockState::Requested) {
-				let unknown_blocks: Vec<_> = peer_hashes.into_iter()
-					.filter(|hash| chain.block_has_state(&hash, BlockState::Unknown))
-					.collect();
-
-				// no new blocks => no need to switch to the synchronizing state
-				if unknown_blocks.is_empty() {
-					return;
-				}
-
-				chain.schedule_blocks_hashes(unknown_blocks);
-				self.peers.insert(peer_index);
-				break;
-			}
-
-			// cases: [2], [5], [6], [8]
-			// if last block from peer_hashes is in window { requested_hashes + queued_hashes }
-			// => no new blocks for synchronization, but we will use this peer in synchronization
-			let peer_hashes_len = peer_hashes.len();
-			if chain.block_has_state(&peer_hashes[peer_hashes_len - 1], BlockState::Scheduled)
-				|| chain.block_has_state(&peer_hashes[peer_hashes_len - 1], BlockState::Requested) {
-				self.peers.insert(peer_index);
-				return;
-			}
-
-			// cases: [1], [3], [4], [7], [9], [10]
-			// try to find new blocks for synchronization from inventory
-			let mut last_known_peer_hash_index = peer_hashes_len - 1;
-			loop {
-				if chain.block_state(&peer_hashes[last_known_peer_hash_index]) != BlockState::Unknown {
-					// we have found first block which is known to us
-					// => blocks in range [(last_known_peer_hash_index + 1)..peer_hashes_len] are unknown
-					//    && must be scheduled for request
-					let unknown_peer_hashes = peer_hashes.split_off(last_known_peer_hash_index + 1);
-
-					chain.schedule_blocks_hashes(unknown_peer_hashes);
+		match chain.intersect_with_inventory(&inventory) {
+			InventoryIntersection::NoKnownBlocks => (),
+			InventoryIntersection::DbAllBlocksKnown => {
+				if self.state.is_synchronizing() {
+					// remember peer as useful
 					self.peers.insert(peer_index);
-					break 'outer;
 				}
-
-				if last_known_peer_hash_index == 0 {
-					// either these are blocks from the future or blocks from the past
-					// => TODO: ignore this peer during synchronization
-					return;
+			},
+			InventoryIntersection::InMemoryNoNewBlocks => {
+				// remember peer as useful
+				self.peers.insert(peer_index);
+			},
+			InventoryIntersection::InMemoryMainNewBlocks(new_block_index)
+				| InventoryIntersection::InMemoryForkNewBlocks(new_block_index)
+				| InventoryIntersection::DbForkNewBlocks(new_block_index) => {
+				// schedule new blocks
+				let new_blocks_hashes = inventory.split_off(new_block_index);
+				chain.schedule_blocks_hashes(new_blocks_hashes);
+				// remember peer as useful
+				self.peers.insert(peer_index);
+				// switch to synchronization state
+				if !self.state.is_synchronizing() {
+					self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
 				}
-				last_known_peer_hash_index -= 1;
 			}
-		}
-
-		// move to synchronizing state
-		if !self.state.is_synchronizing() {
-			self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
 		}
 	}
 
@@ -637,10 +594,11 @@ pub mod tests {
 		let (_, _, executor, sync) = create_sync();
 
 		let mut sync = sync.lock();
-		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
-		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
+		let genesis = test_data::genesis();
+		let block1: Block = test_data::block_h1();
+		let block2: Block = test_data::block_h2();
 
-		sync.on_new_blocks_inventory(5, vec![block1.hash()]);
+		sync.on_new_blocks_inventory(5, vec![genesis.hash(), block1.hash()]);
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks.len(), 2);
 		assert_eq!(tasks[0], Task::RequestBestInventory(5));
@@ -680,7 +638,7 @@ pub mod tests {
 		let (_, _, _, sync) = create_sync();
 		let mut sync = sync.lock();
 
-		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
+		let block2: Block = test_data::block_h2();
 
 		sync.on_new_blocks_inventory(5, vec![block2.hash()]);
 		sync.on_peer_block(5, block2);
@@ -701,15 +659,16 @@ pub mod tests {
 	fn synchronization_parallel_peers() {
 		let (_, _, executor, sync) = create_sync();
 
-		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
-		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
+		let genesis: Block = test_data::genesis();
+		let block1: Block = test_data::block_h1();
+		let block2: Block = test_data::block_h2();
 
 		{
 			let mut sync = sync.lock();
 			// not synchronizing after start
 			assert!(!sync.information().state.is_synchronizing());
 			// receive inventory from new peer#1
-			sync.on_new_blocks_inventory(1, vec![block1.hash()]);
+			sync.on_new_blocks_inventory(1, vec![genesis.hash(), block1.hash()]);
 			assert_eq!(sync.information().chain.requested, 1);
 			// synchronization has started && new blocks have been requested
 			let tasks = executor.lock().take_tasks();
@@ -745,11 +704,12 @@ pub mod tests {
 	#[test]
 	fn synchronization_reset_when_peer_is_disconnected() {
 		let (_, _, _, sync) = create_sync();
+		let genesis = test_data::genesis();
 
 		// request new blocks
 		{
 			let mut sync = sync.lock();
-			sync.on_new_blocks_inventory(1, vec!["0000000000000000000000000000000000000000000000000000000000000000".into()]);
+			sync.on_new_blocks_inventory(1, vec![genesis.hash(), "0000000000000000000000000000000000000000000000000000000000000000".into()]);
 			assert!(sync.information().state.is_synchronizing());
 		}
 

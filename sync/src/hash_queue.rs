@@ -223,6 +223,7 @@ impl HashQueueChain {
 	}
 
 	/// Checks if hash is contained in given queue.
+	#[cfg(test)]
 	pub fn is_contained_in(&self, queue_index: usize, hash: &H256) -> bool {
 		self.chain[queue_index].contains(hash)
 	}
