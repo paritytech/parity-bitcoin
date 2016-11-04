@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use sync::create_sync_connection_factory;
-use util::{open_db, init_db};
+use util::{open_db, init_db, node_table_path};
 use {config, p2p};
 
 pub fn start(cfg: config::Config) -> Result<(), String> {
@@ -22,6 +22,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 		},
 		peers: cfg.connect.map_or_else(|| vec![], |x| vec![x]),
 		seeds: cfg.seednode.map_or_else(|| vec![], |x| vec![x]),
+		node_table_path: node_table_path(),
 	};
 
 	let db = open_db(cfg.use_disk_database);
@@ -29,7 +30,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 
 	let sync_connection_factory = create_sync_connection_factory(db);
 
-	let p2p = p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle());
+	let p2p = try!(p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle()).map_err(|x| x.to_string()));
 	try!(p2p.run().map_err(|_| "Failed to start p2p module"));
 	el.run(p2p::forever()).unwrap();
 	Ok(())

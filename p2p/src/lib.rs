@@ -9,6 +9,7 @@ extern crate parking_lot;
 extern crate log;
 extern crate abstract_ns;
 extern crate ns_dns_tokio;
+extern crate csv;
 
 extern crate bitcrypto as crypto;
 extern crate message;

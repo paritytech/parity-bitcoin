@@ -1,4 +1,4 @@
-use std::{io, net, error, time};
+use std::{io, net, error, time, path};
 use std::sync::Arc;
 use parking_lot::RwLock;
 use futures::{Future, finished, failed, BoxFuture};
@@ -34,19 +34,24 @@ pub struct Context {
 	remote: Remote,
 	/// Local synchronization node.
 	local_sync_node: LocalSyncNodeRef,
+	/// Node table path.
+	node_table_path: path::PathBuf,
 }
 
 impl Context {
 	/// Creates new context with reference to local sync node, thread pool and event loop.
-	pub fn new(local_sync_node: LocalSyncNodeRef, pool_handle: CpuPool, remote: Remote, config: &Config) -> Self {
-		Context {
+	pub fn new(local_sync_node: LocalSyncNodeRef, pool_handle: CpuPool, remote: Remote, config: &Config) -> Result<Self, Box<error::Error>> {
+		let context = Context {
 			connections: Default::default(),
 			connection_counter: ConnectionCounter::new(config.inbound_connections, config.outbound_connections),
-			node_table: Default::default(),
+			node_table: RwLock::new(try!(NodeTable::from_file(&config.node_table_path))),
 			pool: pool_handle,
 			remote: remote,
 			local_sync_node: local_sync_node,
-		}
+			node_table_path: config.node_table_path.clone(),
+		};
+
+		Ok(context)
 	}
 
 	/// Spawns a future using thread pool and schedules execution of it with event loop handle.
@@ -109,6 +114,10 @@ impl Context {
 				trace!("Creating {} more outbound connections", addresses.len());
 				for address in addresses {
 					Context::connect::<NormalSessionFactory>(context.clone(), address, config.clone());
+				}
+
+				if let Err(_err) = context.node_table.read().save_to_file(&context.node_table_path) {
+					error!("Saving node table to disk failed");
 				}
 
 				Ok(())
@@ -369,15 +378,19 @@ impl Drop for P2P {
 }
 
 impl P2P {
-	pub fn new(config: Config, local_sync_node: LocalSyncNodeRef, handle: Handle) -> Self {
+	pub fn new(config: Config, local_sync_node: LocalSyncNodeRef, handle: Handle) -> Result<Self, Box<error::Error>> {
 		let pool = CpuPool::new(config.threads);
 
-		P2P {
+		let context = try!(Context::new(local_sync_node, pool.clone(), handle.remote().clone(), &config));
+
+		let p2p = P2P {
 			event_loop_handle: handle.clone(),
-			pool: pool.clone(),
-			context: Arc::new(Context::new(local_sync_node, pool, handle.remote().clone(), &config)),
+			pool: pool,
+			context: Arc::new(context),
 			config: config,
-		}
+		};
+
+		Ok(p2p)
 	}
 
 	pub fn run(&self) -> Result<(), Box<error::Error>> {
