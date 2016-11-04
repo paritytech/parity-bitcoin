@@ -188,7 +188,7 @@ mod tests {
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use synchronization_client::{Config, SynchronizationClient};
 	use synchronization_chain::Chain;
-	use p2p::{OutboundSyncConnection, OutboundSyncConnectionRef};
+	use p2p::{event_loop, OutboundSyncConnection, OutboundSyncConnectionRef};
 	use message::types;
 	use message::common::{InventoryVector, InventoryType};
 	use db;
@@ -196,6 +196,7 @@ mod tests {
 	use test_data;
 	use synchronization_server::ServerTask;
 	use synchronization_server::tests::DummyServer;
+	use tokio_core::reactor::{Core, Handle};
 
 	struct DummyOutboundSyncConnection;
 
@@ -227,19 +228,21 @@ mod tests {
 		fn send_notfound(&self, _message: &types::NotFound) {}
 	}
 
-	fn create_local_node() -> (Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<DummyServer>>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor>>) {
+	fn create_local_node() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<DummyServer>>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor>>) {
+		let event_loop = event_loop();
+		let handle = event_loop.handle();
 		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(Mutex::new(DummyServer::new()));
-		let config = Config { skip_verification: true };
-		let client = SynchronizationClient::new(config, executor.clone(), chain);
+		let config = Config { threads_num: 1, skip_verification: true };
+		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain);
 		let local_node = LocalNode::new(server.clone(), client, executor.clone());
-		(executor, server, local_node)
+		(event_loop, handle, executor, server, local_node)
 	}
 
 	#[test]
 	fn local_node_request_inventory_on_sync_start() {
-		let (executor, _, local_node) = create_local_node();
+		let (_, _, executor, _, local_node) = create_local_node();
 		let peer_index = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
 		// start sync session
 		local_node.start_sync_session(peer_index, 0);
@@ -250,7 +253,7 @@ mod tests {
 
 	#[test]
 	fn local_node_serves_block() {
-		let (_, server, local_node) = create_local_node();
+		let (_, _, _, server, local_node) = create_local_node();
 		let peer_index = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
 		// peer requests genesis block
 		let genesis_block_hash = test_data::genesis().hash();

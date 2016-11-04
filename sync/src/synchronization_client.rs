@@ -5,6 +5,10 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use parking_lot::Mutex;
+use futures::{BoxFuture, Future, finished};
+use futures::stream::Stream;
+use tokio_core::reactor::{Handle, Interval};
+use futures_cpupool::CpuPool;
 use db;
 use chain::{Block, RepresentH256};
 use primitives::hash::H256;
@@ -16,7 +20,9 @@ use synchronization_chain::{ChainRef, BlockState};
 use synchronization_chain::{Information as ChainInformation};
 use verification::{ChainVerifier, Error as VerificationError, Verify};
 use synchronization_executor::{Task, TaskExecutor};
+use synchronization_manager::{manage_synchronization_peers, MANAGEMENT_INTERVAL_MS};
 use time;
+use std::time::Duration;
 
 ///! Blocks synchronization process:
 ///!
@@ -70,13 +76,13 @@ use time;
 /// Approximate maximal number of blocks hashes in scheduled queue.
 const MAX_SCHEDULED_HASHES: u32 = 4 * 1024;
 /// Approximate maximal number of blocks hashes in requested queue.
-const MAX_REQUESTED_BLOCKS: u32 = 512;
+const MAX_REQUESTED_BLOCKS: u32 = 256;
 /// Approximate maximal number of blocks in verifying queue.
-const MAX_VERIFYING_BLOCKS: u32 = 512;
+const MAX_VERIFYING_BLOCKS: u32 = 256;
 /// Minimum number of blocks to request from peer
 const MIN_BLOCKS_IN_REQUEST: u32 = 32;
 /// Maximum number of blocks to request from peer
-const MAX_BLOCKS_IN_REQUEST: u32 = 512;
+const MAX_BLOCKS_IN_REQUEST: u32 = 128;
 
 /// Synchronization state
 #[derive(Debug, Clone, Copy)]
@@ -119,8 +125,9 @@ pub trait Client : Send + 'static {
 }
 
 /// Synchronization client configuration options.
-#[derive(Default)]
 pub struct Config {
+	/// Number of threads to allocate in synchronization CpuPool.
+	pub threads_num: usize,
 	/// Do not verify incoming blocks before inserting to db.
 	pub skip_verification: bool,
 }
@@ -129,6 +136,10 @@ pub struct Config {
 pub struct SynchronizationClient<T: TaskExecutor> {
 	/// Synchronization state.
 	state: State,
+	/// Cpu pool.
+	pool: CpuPool,
+	/// Sync management worker.
+	management_worker: Option<BoxFuture<(), ()>>,
 	/// Synchronization peers.
 	peers: Peers,
 	/// Task executor.
@@ -141,6 +152,15 @@ pub struct SynchronizationClient<T: TaskExecutor> {
 	verification_work_sender: Option<Sender<VerificationTask>>,
 	/// Verification thread.
 	verification_worker_thread: Option<thread::JoinHandle<()>>,
+}
+
+impl Default for Config {
+	fn default() -> Self {
+		Config {
+			threads_num: 4,
+			skip_verification: false,
+		}
+	}
 }
 
 impl State {
@@ -246,11 +266,13 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 
 impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	/// Create new synchronization window
-	pub fn new(config: Config, executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
+	pub fn new(config: Config, handle: &Handle, executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
 		let sync = Arc::new(Mutex::new(
 			SynchronizationClient {
 				state: State::Saturated,
 				peers: Peers::new(),
+				pool: CpuPool::new(config.threads_num),
+				management_worker: None,
 				executor: executor,
 				chain: chain.clone(),
 				orphaned_blocks: HashMap::new(),
@@ -271,6 +293,29 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 					SynchronizationClient::verification_worker_proc(csync, storage, verification_work_receiver)
 				})
 				.expect("Error creating verification thread"));
+		}
+
+		// TODO: start management worker only when synchronization is started
+		//       currently impossible because there is no way to call Interval::new with Remote && Handle is not-Send
+		{
+			let csync = Arc::downgrade(&sync);
+			let mut sync = sync.lock();
+			let management_worker = Interval::new(Duration::from_millis(MANAGEMENT_INTERVAL_MS), handle)
+				.expect("Failed to create interval")
+				.and_then(move |_| {
+					let client = match csync.upgrade() {
+						Some(client) => client,
+						None => return Ok(()),
+					};
+					let mut client = client.lock();
+					manage_synchronization_peers(&mut client.peers);
+					client.execute_synchronization_tasks();
+					Ok(())
+				})
+				.for_each(|_| Ok(()))
+				.then(|_| finished::<(), ()>(()))
+				.boxed();
+			sync.management_worker = Some(sync.pool.spawn(management_worker).boxed());
 		}
 
 		sync
@@ -303,7 +348,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 
 		let mut chain = self.chain.write();
 
-		loop {
+		'outer: loop {
 			// when synchronization is idling
 			// => request full inventory
 			if !chain.has_blocks_of_state(BlockState::Scheduled)
@@ -344,7 +389,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 
 					chain.schedule_blocks_hashes(unknown_peer_hashes);
 					self.peers.insert(peer_index);
-					break;
+					break 'outer;
 				}
 
 				if last_known_peer_hash_index == 0 {
@@ -444,7 +489,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 				let new_num_of_blocks = chain.best_block().number;
 				let blocks_diff = if new_num_of_blocks > num_of_blocks { new_num_of_blocks - num_of_blocks} else { 0 };
 				if timestamp_diff >= 60.0 || blocks_diff > 1000 {
-					self.state = State::Synchronizing(new_timestamp, new_num_of_blocks);
+					self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
 
 					info!(target: "sync", "Processed {} blocks in {} seconds. Chain information: {:?}"
 						, blocks_diff, timestamp_diff
@@ -515,25 +560,30 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 pub mod tests {
 	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
+	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, RepresentH256};
 	use super::{Client, Config, SynchronizationClient};
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
 	use synchronization_executor::tests::DummyTaskExecutor;
+	use p2p::event_loop;
 	use test_data;
 	use db;
 
-	fn create_sync() -> (Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<SynchronizationClient<DummyTaskExecutor>>>) {
+	fn create_sync() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<SynchronizationClient<DummyTaskExecutor>>>) {
+		let event_loop = event_loop();
+		let handle = event_loop.handle();
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = DummyTaskExecutor::new();
-		let config = Config { skip_verification: true };
-		(executor.clone(), SynchronizationClient::new(config, executor, chain))
+		let config = Config { threads_num: 1, skip_verification: true };
+		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain);
+		(event_loop, handle, executor, client)
 	} 
 
 	#[test]
 	fn synchronization_saturated_on_start() {
-		let (_, sync) = create_sync();
+		let (_, _, _, sync) = create_sync();
 		let sync = sync.lock();
 		let info = sync.information();
 		assert!(!info.state.is_synchronizing());
@@ -542,7 +592,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_in_order_block_path() {
-		let (executor, sync) = create_sync();
+		let (_, _, executor, sync) = create_sync();
 
 		let mut sync = sync.lock();
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
@@ -585,7 +635,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_out_of_order_block_path() {
-		let (_, sync) = create_sync();
+		let (_, _, _, sync) = create_sync();
 		let mut sync = sync.lock();
 
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
@@ -607,7 +657,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_parallel_peers() {
-		let (executor, sync) = create_sync();
+		let (_, _, executor, sync) = create_sync();
 
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
@@ -652,7 +702,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_reset_when_peer_is_disconnected() {
-		let (_, sync) = create_sync();
+		let (_, _, _, sync) = create_sync();
 
 		// request new blocks
 		{
@@ -671,7 +721,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_not_starting_when_receiving_known_blocks() {
-		let (executor, sync) = create_sync();
+		let (_, _, executor, sync) = create_sync();
 		let mut sync = sync.lock();
 		// saturated => receive inventory with known blocks only
 		sync.on_new_blocks_inventory(1, vec![test_data::genesis().hash()]);

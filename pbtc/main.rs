@@ -43,5 +43,3 @@ fn run() -> Result<(), String> {
 		_ => commands::start(cfg),
 	}
 }
-
-
