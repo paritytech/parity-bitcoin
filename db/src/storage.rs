@@ -295,19 +295,16 @@ impl Storage {
 	fn decanonize_block(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
 		let block_height = try!(self.block_number(hash).ok_or(Error::NotMain(hash.clone())));
 
-		let mut meta_buf = HashMap::<H256, TransactionMeta>::new();
-
 		let tx_hashes = self.block_transaction_hashes_by_hash(hash);
 		for (tx_hash_num, tx_hash) in tx_hashes.iter().enumerate() {
 			let tx = self.transaction(tx_hash)
 				.expect("Transaction in the saved block should exist as a separate entity indefinitely");
 
 			// remove meta
-
-			context.db_transaction.delete(Some(COL_META), &**tx_hash);
-			if tx_hash_num == 0 { continue; } // coinbase transaction does not have inputs
+			context.db_transaction.delete(Some(COL_TRANSACTIONS_META), &**tx_hash);
 
 			// denote outputs used
+			if tx_hash_num == 0 { continue; } // coinbase transaction does not have inputs
 			for input in tx.inputs.iter() {
 				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
@@ -325,7 +322,7 @@ impl Storage {
 
 					meta.denote_used(input.previous_output.index as usize);
 
-					meta_buf.insert(
+					context.meta.insert(
 						input.previous_output.hash.clone(),
 						meta);
 				}
@@ -796,6 +793,6 @@ mod tests {
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase)
 			.expect("Transaction meta for the genesis coinbase transaction should exist");
-		assert!(!genesis_meta.is_spent(0), "Genesis coinbase should be recorded as not spend because we retracted block #1");
+		assert!(!genesis_meta.is_spent(0), "Genesis coinbase should be recorded as unspent because we retracted block #1");
 	}
 }
