@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::path::PathBuf;
 use app_dirs::{app_dir, AppDataType};
 use chain::Block;
 use {db, APP_INFO};
@@ -13,6 +14,12 @@ pub fn open_db(use_disk_database: bool) -> Arc<db::Store> {
 			Arc::new(db::TestStorage::default())
 		}
 	}
+}
+
+pub fn node_table_path() -> PathBuf {
+	let mut node_table = app_dir(AppDataType::UserData, &APP_INFO, "p2p").expect("Failed to get app dir");
+	node_table.push("nodes.csv");
+	node_table
 }
 
 pub fn init_db(db: &Arc<db::Store>) {
