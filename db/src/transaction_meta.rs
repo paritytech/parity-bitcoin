@@ -29,6 +29,12 @@ impl TransactionMeta {
 		self.spent.set(index, true);
 	}
 
+
+	/// note that particular output has been used
+	pub fn denote_used(&mut self, index: usize) {
+		self.spent.set(index, false);
+	}
+
 	pub fn to_bytes(self) -> Vec<u8> {
 		let mut result = vec![0u8; 4];
 		LittleEndian::write_u32(&mut result[0..4], self.block_height);

@@ -89,6 +89,10 @@ pub enum Error {
 	Io(std::io::Error),
 	/// Invalid meta info
 	Meta(MetaError),
+	/// Unknown hash
+	Unknown(H256),
+	/// Not the block from the main chain
+	NotMain(H256),
 }
 
 impl From<String> for Error {
@@ -112,6 +116,30 @@ fn u32_key(num: u32) -> [u8; 4] {
 const KEY_VERSION: &'static[u8] = b"version";
 const KEY_BEST_BLOCK_NUMBER: &'static[u8] = b"best_block_number";
 const KEY_BEST_BLOCK_HASH: &'static[u8] = b"best_block_hash";
+
+struct UpdateContext {
+	pub meta: HashMap<H256, TransactionMeta>,
+	pub db_transaction: DBTransaction,
+}
+
+impl UpdateContext {
+	pub fn new(db: &Database) -> Self {
+		UpdateContext {
+			meta: HashMap::new(),
+			db_transaction: db.transaction(),
+		}
+	}
+
+	pub fn apply(mut self, db: &Database) -> Result<(), Error> {
+		// actually saving meta
+		for (hash, meta) in self.meta.drain() {
+			self.db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.to_bytes());
+		}
+
+		try!(db.write(self.db_transaction));
+		Ok(())
+	}
+}
 
 impl Storage {
 
@@ -260,7 +288,51 @@ impl Storage {
 		}
 	}
 
-	fn decanonize_block(&self, block: &H256) {
+	/// block decanonization
+	///   all transaction outputs used are marked as not used
+	///   all transaction meta is removed
+	///   DOES NOT update best block
+	fn decanonize_block(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
+		let block_height = try!(self.block_number(hash).ok_or(Error::NotMain(hash.clone())));
+
+		let mut meta_buf = HashMap::<H256, TransactionMeta>::new();
+
+		let tx_hashes = self.block_transaction_hashes_by_hash(hash);
+		for (tx_hash_num, tx_hash) in tx_hashes.iter().enumerate() {
+			let tx = self.transaction(tx_hash)
+				.expect("Transaction in the saved block should exist as a separate entity indefinitely");
+
+			// remove meta
+
+			context.db_transaction.delete(Some(COL_META), &**tx_hash);
+			if tx_hash_num == 0 { continue; } // coinbase transaction does not have inputs
+
+			// denote outputs used
+			for input in tx.inputs.iter() {
+				if !match context.meta.get_mut(&input.previous_output.hash) {
+					Some(ref mut meta) => {
+						meta.denote_used(input.previous_output.index as usize);
+						true
+					},
+					None => false,
+				} {
+					let mut meta =
+						self.transaction_meta(&input.previous_output.hash)
+							.unwrap_or_else(|| panic!(
+								"No transaction metadata for {}! Corrupted DB? Reindex?",
+								&input.previous_output.hash
+							));
+
+					meta.denote_used(input.previous_output.index as usize);
+
+					meta_buf.insert(
+						input.previous_output.hash.clone(),
+						meta);
+				}
+			}
+		}
+
+		Ok(())
 	}
 }
 
@@ -391,7 +463,7 @@ impl Store for Storage {
 #[cfg(test)]
 mod tests {
 
-	use super::{Storage, Store};
+	use super::{Storage, Store, UpdateContext};
 	use devtools::RandomTempPath;
 	use chain::{Block, RepresentH256};
 	use super::super::BlockRef;
@@ -692,5 +764,38 @@ mod tests {
 
 		// store should not reorganize to side hash 2, because it competing chains are of the equal length
 		assert_eq!(store.best_block().unwrap().hash, main_hash2);
+	}
+
+	#[test]
+	fn decanonize() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let block = test_data::block_builder()
+			.header().parent(genesis.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase.clone()).build()
+				.build()
+			.build();
+
+		store.insert_block(&block).expect("inserting first block in the decanonize test should not fail");
+
+		let genesis_meta = store.transaction_meta(&genesis_coinbase)
+			.expect("Transaction meta for the genesis coinbase transaction should exist");
+		assert!(genesis_meta.is_spent(0), "Genesis coinbase should be recorded as spent because block#1 transaction spends it");
+
+		let mut update_context = UpdateContext::new(&store.database);
+		store.decanonize_block(&mut update_context, &block.hash())
+			.expect("Decanonizing block #1 which was just inserted should not fail");
+		update_context.apply(&store.database);
+
+		let genesis_meta = store.transaction_meta(&genesis_coinbase)
+			.expect("Transaction meta for the genesis coinbase transaction should exist");
+		assert!(!genesis_meta.is_spent(0), "Genesis coinbase should be recorded as not spend because we retracted block #1");
 	}
 }
