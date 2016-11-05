@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 use parking_lot::RwLock;
-use chain::{Block, RepresentH256};
+use chain::Block;
 use db;
 use primitives::hash::H256;
 use hash_queue::{HashQueueChain, HashPosition};
@@ -164,59 +164,12 @@ impl Chain {
 
 	/// Get best block
 	pub fn best_block(&self) -> db::BestBlock {
-		let storage_best_block = self.storage.best_block().expect("storage with genesis block is required");
 		match self.hash_chain.back() {
 			Some(hash) => db::BestBlock {
-				number: storage_best_block.number + self.hash_chain.len(),
+				number: self.best_storage_block.number + self.hash_chain.len(),
 				hash: hash.clone(),
 			},
-			None => db::BestBlock {
-				number: storage_best_block.number,
-				hash: storage_best_block.hash,
-			}
-		}
-	}
-
-	/// Get best block of given state
-	pub fn best_block_of_state(&self, state: BlockState) -> Option<db::BestBlock> {
-		match state {
-			BlockState::Scheduled => self.hash_chain.back_at(SCHEDULED_QUEUE)
-				.map(|hash| db::BestBlock {
-					hash: hash,
-					number: self.storage.best_block().expect("storage with genesis block is required").number + 1
-						+ self.hash_chain.len_of(VERIFYING_QUEUE)
-						+ self.hash_chain.len_of(REQUESTED_QUEUE)
-						+ self.hash_chain.len_of(SCHEDULED_QUEUE)
-				}),
-			BlockState::Requested => self.hash_chain.back_at(REQUESTED_QUEUE)
-				.map(|hash| db::BestBlock {
-					hash: hash,
-					number: self.storage.best_block().expect("storage with genesis block is required").number + 1
-						+ self.hash_chain.len_of(VERIFYING_QUEUE)
-						+ self.hash_chain.len_of(REQUESTED_QUEUE)
-				}),
-			BlockState::Verifying => self.hash_chain.back_at(VERIFYING_QUEUE)
-				.map(|hash| db::BestBlock {
-					hash: hash,
-					number: self.storage.best_block().expect("storage with genesis block is required").number + 1
-						+ self.hash_chain.len_of(VERIFYING_QUEUE)
-				}),
-			BlockState::Stored => {
-					self.storage.best_block()
-				},
-			_ => panic!("not supported"),
-		}
-	}
-
-	/// Check if block has given state
-	#[cfg(test)]
-	pub fn block_has_state(&self, hash: &H256, state: BlockState) -> bool {
-		match state {
-			BlockState::Scheduled => self.hash_chain.is_contained_in(SCHEDULED_QUEUE, hash),
-			BlockState::Requested => self.hash_chain.is_contained_in(REQUESTED_QUEUE, hash),
-			BlockState::Verifying => self.hash_chain.is_contained_in(VERIFYING_QUEUE, hash),
-			BlockState::Stored => self.storage.contains_block(db::BlockRef::Hash(hash.clone())),
-			BlockState::Unknown => self.block_state(hash) == BlockState::Unknown,
+			None => self.best_storage_block.clone(),
 		}
 	}
 
@@ -305,23 +258,21 @@ impl Chain {
 
 	/// Insert new best block to storage
 	pub fn insert_best_block(&mut self, block: Block) -> Result<(), db::Error> {
-		if block.block_header.previous_header_hash != self.best_storage_block.hash {
-			return Err(db::Error::DB("Trying to insert out-of-order block".into()));
-		}
+		// insert to storage
+		try!(self.storage.insert_block(&block));
 
 		// remember new best block hash
-		self.best_storage_block.number += 1;
-		self.best_storage_block.hash = block.hash();
+		self.best_storage_block = self.storage.best_block().expect("Inserted block above");
 
-		// insert to storage
-		self.storage.insert_block(&block)
+		Ok(())
 	}
 
 	/// Remove block
 	pub fn remove_block(&mut self, hash: &H256) {
-		self.hash_chain.remove_at(SCHEDULED_QUEUE, hash);
-		self.hash_chain.remove_at(REQUESTED_QUEUE, hash);
-		self.hash_chain.remove_at(VERIFYING_QUEUE, hash);
+		if self.hash_chain.remove_at(SCHEDULED_QUEUE, hash) == HashPosition::Missing
+			&& self.hash_chain.remove_at(REQUESTED_QUEUE, hash) == HashPosition::Missing {
+			self.hash_chain.remove_at(VERIFYING_QUEUE, hash);
+		}
 	}
 
 	/// Remove block by hash if it is currently in given state
@@ -487,12 +438,6 @@ mod tests {
 		assert_eq!(chain.has_blocks_of_state(BlockState::Verifying), false);
 		assert_eq!(chain.has_blocks_of_state(BlockState::Stored), true);
 		assert_eq!(&chain.best_block(), &db_best_block);
-		assert_eq!(chain.best_block_of_state(BlockState::Scheduled), None);
-		assert_eq!(chain.best_block_of_state(BlockState::Requested), None);
-		assert_eq!(chain.best_block_of_state(BlockState::Verifying), None);
-		assert_eq!(chain.best_block_of_state(BlockState::Stored), Some(db_best_block.clone()));
-		assert_eq!(chain.block_has_state(&db_best_block.hash, BlockState::Requested), false);
-		assert_eq!(chain.block_has_state(&db_best_block.hash, BlockState::Stored), true);
 		assert_eq!(chain.block_state(&db_best_block.hash), BlockState::Stored);
 		assert_eq!(chain.block_state(&"0000000000000000000000000000000000000000000000000000000000000000".into()), BlockState::Unknown);
 	}

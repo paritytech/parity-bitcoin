@@ -12,7 +12,6 @@ use futures_cpupool::CpuPool;
 use db;
 use chain::{Block, RepresentH256};
 use primitives::hash::H256;
-use hash_queue::HashPosition;
 use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers::{Information as PeersInformation};
 use synchronization_chain::{ChainRef, BlockState, InventoryIntersection};
@@ -71,7 +70,7 @@ use std::time::Duration;
 ///! 2.2) if block_state(block.parent) in (Verifying, Stored): ===> we can proceed with verification
 ///! 2.2.1) remove block from current queue (Verifying || Stored)
 ///! 2.2.2) append block to the verification queue
-///! 2.2.3) queue verification().and_then(insert).or_else(reset_sync)
+///! 2.2.3) queue verification().and_then(on_block_verification_success).or_else(on_block_verification_error)
 ///! 2.2.4) try to verify orphan blocks
 ///! 2.2.5) stop (2.2)
 ///! 2.3) if block_state(block.parent) in (Requested, Scheduled): ===> we have found an orphan block
@@ -89,7 +88,7 @@ use std::time::Duration;
 ///! 3.2) if block_state(block.parent_hash) in (Verifying, Stored): ===> fork found, can verify
 ///! 3.2.1) ask peer for best inventory (after this block)
 ///! 3.2.2) append block to verifying queue
-///! 3.2.3) queue verification().and_then(insert).or_else(reset_sync)
+///! 3.2.3) queue verification().and_then(on_block_verification_success).or_else(on_block_verification_error)
 ///! 3.2.4) stop (3.2)
 ///! 3.3) if block_state(block.parent_hash) in (Requested, Scheduled): ===> fork found, add as orphan
 ///! 3.3.1) ask peer for best inventory (after this block)
@@ -129,7 +128,7 @@ use std::time::Duration;
 ///!
 ///! on_block_verification_error: When verification completes with an error:
 ///! 1) remove block from verification queue
-///! 2) remove all known children from all queues [so that new `block` messages will be ignored in on_peer_block.3.1.1]
+///! 2) remove all known children from all queues [so that new `block` messages will be ignored in on_peer_block.3.1.1] (TODO: not implemented currently!!!)
 ///!
 
 /// Approximate maximal number of blocks hashes in scheduled queue.
@@ -178,7 +177,6 @@ pub trait Client : Send + 'static {
 	fn on_new_blocks_inventory(&mut self, peer_index: usize, peer_hashes: Vec<H256>);
 	fn on_peer_block(&mut self, peer_index: usize, block: Block);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
-	fn reset(&mut self, is_hard: bool);
 	fn on_block_verification_success(&mut self, block: Block);
 	fn on_block_verification_error(&mut self, err: &VerificationError, hash: &H256);
 }
@@ -234,10 +232,11 @@ impl State {
 impl<T> Drop for SynchronizationClient<T> where T: TaskExecutor {
 	fn drop(&mut self) {
 		if let Some(join_handle) = self.verification_worker_thread.take() {
-			self.verification_work_sender
+			// ignore send error here <= destructing anyway
+			let _ = self.verification_work_sender
 				.take()
 				.expect("Some(join_handle) => Some(verification_work_sender)")
-				.send(VerificationTask::Stop).expect("TODO");
+				.send(VerificationTask::Stop);
 			join_handle.join().expect("Clean shutdown.");
 		}
 	}
@@ -268,39 +267,25 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 
 	/// Peer disconnected.
 	fn on_peer_disconnected(&mut self, peer_index: usize) {
-		self.peers.on_peer_disconnected(peer_index);
-
 		// when last peer is disconnected, reset, but let verifying blocks be verified
-		self.reset(false);
-	}
-
-	/// Reset synchronization process
-	fn reset(&mut self, is_hard: bool) {
-		self.peers.reset();
-		self.orphaned_blocks.clear();
-		// TODO: reset verification queue
-
-		let mut chain = self.chain.write();
-		chain.remove_blocks_with_state(BlockState::Requested);
-		chain.remove_blocks_with_state(BlockState::Scheduled);
-		if is_hard {
-			self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
-			chain.remove_blocks_with_state(BlockState::Verifying);
-			warn!(target: "sync", "Synchronization process restarting from block {:?}", chain.best_block());
-		}
-		else {
+		if self.peers.on_peer_disconnected(peer_index) {
 			self.state = State::Saturated;
+			self.orphaned_blocks.clear();
+			self.peers.reset();
+
+			let mut chain = self.chain.write();
+			chain.remove_blocks_with_state(BlockState::Requested);
+			chain.remove_blocks_with_state(BlockState::Scheduled);
 		}
 	}
 
 	/// Process successful block verification
 	fn on_block_verification_success(&mut self, block: Block) {
 		{
-			let hash = block.hash();
 			let mut chain = self.chain.write();
 
-			// remove from verifying queue
-			assert_eq!(chain.remove_block_with_state(&hash, BlockState::Verifying), HashPosition::Front);
+			// remove block from verification queue
+			chain.remove_block_with_state(&block.hash(), BlockState::Verifying);
 
 			// insert to storage
 			chain.insert_best_block(block)
@@ -315,8 +300,12 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 	fn on_block_verification_error(&mut self, err: &VerificationError, hash: &H256) {
 		warn!(target: "sync", "Block {:?} verification failed with error {:?}", hash, err);
 
-		// reset synchronization process
-		self.reset(true);
+		{
+			let mut chain = self.chain.write();
+
+			// remove block from verification queue
+			chain.remove_block_with_state(&hash, BlockState::Verifying);
+		}
 
 		// start new tasks
 		self.execute_synchronization_tasks();
@@ -510,7 +499,6 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 				}
 			}
 
-			// TODO: instead of issuing duplicated inventory requests, wait until enough new blocks are verified, then issue
 			// check if we can query some blocks hashes
 			let scheduled_hashes_len = chain.length_of_state(BlockState::Scheduled);
 			if scheduled_hashes_len < MAX_SCHEDULED_HASHES {
