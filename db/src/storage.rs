@@ -97,6 +97,8 @@ pub enum Error {
 	NotMain(H256),
 	/// Fork too long
 	ForkTooLong,
+	/// Main chain block transaction attempts to double-spend
+	DoubleSpend(H256),
 }
 
 impl From<String> for Error {
@@ -260,20 +262,24 @@ impl Storage {
 
 
 	/// update transactions metadata in the specified database transaction
-	fn update_transactions_meta(&self, db_transaction: &mut DBTransaction, number: u32, accepted_txs: &[chain::Transaction]) {
-		let mut meta_buf = HashMap::<H256, TransactionMeta>::new();
-
+	fn update_transactions_meta(&self, context: &mut UpdateContext, number: u32, accepted_txs: &[chain::Transaction])
+		-> Result<(), Error>
+	{
 		// inserting new meta for coinbase transaction
 		for accepted_tx in accepted_txs.iter() {
 			// adding unspent transaction meta
-			meta_buf.insert(accepted_tx.hash(), TransactionMeta::new(number, accepted_tx.outputs.len()));
+			context.meta.insert(accepted_tx.hash(), TransactionMeta::new(number, accepted_tx.outputs.len()));
 		}
 
 		// another iteration skipping coinbase transaction
 		for accepted_tx in accepted_txs.iter().skip(1) {
 			for input in accepted_tx.inputs.iter() {
-				if !match meta_buf.get_mut(&input.previous_output.hash) {
+				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
+						if meta.is_spent(input.previous_output.index as usize) {
+							return Err(Error::DoubleSpend(input.previous_output.hash.clone()));
+						}
+
 						meta.note_used(input.previous_output.index as usize);
 						true
 					},
@@ -286,19 +292,20 @@ impl Storage {
 								&input.previous_output.hash
 							));
 
+					if meta.is_spent(input.previous_output.index as usize) {
+						return Err(Error::DoubleSpend(input.previous_output.hash.clone()));
+					}
+
 					meta.note_used(input.previous_output.index as usize);
 
-					meta_buf.insert(
+					context.meta.insert(
 						input.previous_output.hash.clone(),
 						meta);
 				}
 			}
 		}
 
-		// actually saving meta
-		for (hash, meta) in meta_buf.drain() {
-			db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.to_bytes());
-		}
+		Ok(())
 	}
 
 	/// block decanonization
@@ -369,13 +376,21 @@ impl Storage {
 		Err(Error::ForkTooLong)
 	}
 
-	fn reorganize(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
+	fn read_best_number(&self) -> Option<u32> {
+		self.read_meta_u32(KEY_BEST_BLOCK_NUMBER)
+	}
+
+	fn canonize_block(&self, context: &mut UpdateContext, at_height: u32, hash: &H256) -> Result<(), Error> {
+		let transactions = self.block_transactions_by_hash(hash);
+		try!(self.update_transactions_meta(context, at_height, &transactions));
+		Ok(())
+	}
+
+	fn maybe_reorganize(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
 		let (at_height, route) = try!(self.fork_route(MAX_FORK_ROUTE_PRESET, hash));
-		if route.len() == 0 {
+		if (route.len() as i32) < (self.read_best_number().unwrap_or(0) as i32 - at_height as i32) {
 			return Ok(());
 		}
-
-
 
 		Ok(())
 	}
@@ -436,6 +451,8 @@ impl Store for Storage {
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error> {
 		let mut best_block = self.best_block.write();
 
+		let mut context = UpdateContext::new(&self.database);
+
 		let block_hash = block.hash();
 
 		let new_best_hash = match best_block.as_ref().map(|bb| &bb.hash) {
@@ -451,39 +468,36 @@ impl Store for Storage {
 			None => 0,
 		};
 
-		let mut transaction = self.database.transaction();
-
 		let tx_space = block.transactions().len() * 32;
 		let mut tx_refs = Vec::with_capacity(tx_space);
 		for tx in block.transactions() {
 			let tx_hash = tx.hash();
 			tx_refs.extend(&*tx_hash);
-			transaction.put(
+			context.db_transaction.put(
 				Some(COL_TRANSACTIONS),
 				&*tx_hash,
 				&serialization::serialize(tx),
 			);
 		}
-		transaction.put(Some(COL_BLOCK_TRANSACTIONS), &*block_hash, &tx_refs);
+		context.db_transaction.put(Some(COL_BLOCK_TRANSACTIONS), &*block_hash, &tx_refs);
 
-		transaction.put(
+		context.db_transaction.put(
 			Some(COL_BLOCK_HEADERS),
 			&*block_hash,
 			&serialization::serialize(block.header())
 		);
 
 		if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
-			self.update_transactions_meta(&mut transaction, new_best_number, block.transactions());
-			transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
+			try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
+			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 
 			// updating main chain height reference
-			transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash));
-			transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&block_hash), new_best_number);
+			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash));
+			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&block_hash), new_best_number);
 		}
+		context.db_transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
 
-		transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
-
-		try!(self.database.write(transaction));
+		context.apply(&self.database);
 
 		*best_block = Some(BestBlock { hash: new_best_hash, number: new_best_number });
 
