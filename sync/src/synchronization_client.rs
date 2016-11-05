@@ -356,8 +356,10 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 						None => return Ok(()),
 					};
 					let mut client = client.lock();
-					manage_synchronization_peers(&mut client.peers);
-					client.execute_synchronization_tasks();
+					if client.state.is_synchronizing() {
+						manage_synchronization_peers(&mut client.peers);
+						client.execute_synchronization_tasks();
+					}
 					Ok(())
 				})
 				.for_each(|_| Ok(()))
@@ -468,9 +470,9 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 		}
 
 		// requested block is received => move to saturated state if there are no more blocks
-		if !chain.has_blocks_of_state(BlockState::Scheduled)
-			&& !chain.has_blocks_of_state(BlockState::Requested)
-			&& !chain.has_blocks_of_state(BlockState::Verifying) {
+		if chain.length_of_state(BlockState::Scheduled) == 0
+			&& chain.length_of_state(BlockState::Requested) == 0
+			&& chain.length_of_state(BlockState::Verifying) == 0 {
 			self.state = State::Saturated;
 		}
 	}

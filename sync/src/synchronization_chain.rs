@@ -154,14 +154,6 @@ impl Chain {
 		}
 	}
 
-	/// Returns true if has blocks of given type
-	pub fn has_blocks_of_state(&self, state: BlockState) -> bool {
-		match state {
-			BlockState::Stored => true, // storage with genesis block is required
-			_ => !self.hash_chain.is_empty_at(state.to_queue_index()),
-		}
-	}
-
 	/// Get best block
 	pub fn best_block(&self) -> db::BestBlock {
 		match self.hash_chain.back() {
@@ -418,10 +410,6 @@ mod tests {
 		assert_eq!(chain.length_of_state(BlockState::Requested), 0);
 		assert_eq!(chain.length_of_state(BlockState::Verifying), 0);
 		assert_eq!(chain.length_of_state(BlockState::Stored), 1);
-		assert_eq!(chain.has_blocks_of_state(BlockState::Scheduled), false);
-		assert_eq!(chain.has_blocks_of_state(BlockState::Requested), false);
-		assert_eq!(chain.has_blocks_of_state(BlockState::Verifying), false);
-		assert_eq!(chain.has_blocks_of_state(BlockState::Stored), true);
 		assert_eq!(&chain.best_block(), &db_best_block);
 		assert_eq!(chain.block_state(&db_best_block.hash), BlockState::Stored);
 		assert_eq!(chain.block_state(&"0000000000000000000000000000000000000000000000000000000000000000".into()), BlockState::Unknown);

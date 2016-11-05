@@ -39,11 +39,6 @@ impl HashQueue {
 		self.queue.len() as u32
 	}
 
-	/// Returns true if queue is empty.
-	pub fn is_empty(&self) -> bool {
-		self.queue.is_empty()
-	}
-
 	/// Returns front element from the given queue.
 	pub fn front(&self) -> Option<H256> {
 		self.queue.front().cloned()
@@ -175,11 +170,6 @@ impl HashQueueChain {
 		self.chain[queue_index].len()
 	}
 
-	/// Returns true if given queue is empty.
-	pub fn is_empty_at(&self, queue_index: usize) -> bool {
-		self.chain[queue_index].is_empty()
-	}
-
 	/// Returns element at the front of the given queue.
 	pub fn front_at(&self, queue_index: usize) -> Option<H256> {
 		let ref queue = self.chain[queue_index];
@@ -289,7 +279,6 @@ mod tests {
 	fn hash_queue_empty() {
 		let mut queue = HashQueue::new();
 		assert_eq!(queue.len(), 0);
-		assert_eq!(queue.is_empty(), true);
 		assert_eq!(queue.front(), None);
 		assert_eq!(queue.back(), None);
 		assert_eq!(queue.pre_back(), None);
@@ -305,7 +294,6 @@ mod tests {
 		let mut chain = HashQueueChain::with_number_of_queues(3);
 		assert_eq!(chain.len(), 0);
 		assert_eq!(chain.len_of(0), 0);
-		assert_eq!(chain.is_empty_at(0), true);
 		assert_eq!(chain.front_at(0), None);
 		assert_eq!(chain.back_at(0), None);
 		assert_eq!(chain.pre_back_at(0), None);
@@ -338,10 +326,6 @@ mod tests {
 		assert_eq!(chain.len_of(1), 2);
 		assert_eq!(chain.len_of(2), 1);
 		assert_eq!(chain.len_of(3), 0);
-		assert_eq!(chain.is_empty_at(0), false);
-		assert_eq!(chain.is_empty_at(1), false);
-		assert_eq!(chain.is_empty_at(2), false);
-		assert_eq!(chain.is_empty_at(3), true);
 		assert_eq!(chain.front_at(0), Some("0000000000000000000000000000000000000000000000000000000000000000".into()));
 		assert_eq!(chain.front_at(1), Some("0000000000000000000000000000000000000000000000000000000000000003".into()));
 		assert_eq!(chain.front_at(2), Some("0000000000000000000000000000000000000000000000000000000000000005".into()));
