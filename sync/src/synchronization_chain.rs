@@ -126,7 +126,7 @@ impl Chain {
 			scheduled: self.hash_chain.len_of(SCHEDULED_QUEUE),
 			requested: self.hash_chain.len_of(REQUESTED_QUEUE),
 			verifying: self.hash_chain.len_of(VERIFYING_QUEUE),
-			stored: self.storage.best_block().map_or(0, |block| block.number + 1),
+			stored: self.best_storage_block.number + 1,
 		}
 	}
 
@@ -177,22 +177,6 @@ impl Chain {
 		}
 	}
 
-	/// Prepare best block locator hashes
-	pub fn best_block_locator_hashes(&self) -> Vec<H256> {
-		let mut result: Vec<H256> = Vec::with_capacity(4);
-		if let Some(pre_best_block) = self.hash_chain.back_skip_n_at(SCHEDULED_QUEUE, 2) {
-			result.push(pre_best_block);
-		}
-		if let Some(pre_best_block) = self.hash_chain.back_skip_n_at(REQUESTED_QUEUE, 2) {
-			result.push(pre_best_block);
-		}
-		if let Some(pre_best_block) = self.hash_chain.back_skip_n_at(VERIFYING_QUEUE, 2) {
-			result.push(pre_best_block);
-		}
-		result.push(self.best_storage_block.hash.clone());
-		result
-	}
-
 	/// Prepare block locator hashes, as described in protocol documentation:
 	/// https://en.bitcoin.it/wiki/Protocol_documentation#getblocks
 	pub fn block_locator_hashes(&self) -> Vec<H256> {
@@ -202,8 +186,7 @@ impl Chain {
 		let (local_index, step) = self.block_locator_hashes_for_queue(&mut block_locator_hashes);
 
 		// calculate for storage
-		let storage_best_block_number = self.storage.best_block().expect("storage with genesis block is required").number;
-		let storage_index = if storage_best_block_number < local_index { 0 } else { storage_best_block_number - local_index };
+		let storage_index = if self.best_storage_block.number < local_index { 0 } else { self.best_storage_block.number - local_index };
 		self.block_locator_hashes_for_storage(storage_index, step, &mut block_locator_hashes);
 		block_locator_hashes
 	}
@@ -363,7 +346,7 @@ impl fmt::Debug for Chain {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		try!(writeln!(f, "chain: ["));
 		{
-			let mut num = self.storage.best_block().expect("Storage with genesis block is required").number;
+			let mut num = self.best_storage_block.number;
 			try!(writeln!(f, "\tworse(stored): {} {:?}", 0, self.storage.block_hash(0)));
 			try!(writeln!(f, "\tbest(stored): {} {:?}", num, self.storage.block_hash(num)));
 
@@ -505,7 +488,6 @@ mod tests {
 		chain.request_blocks_hashes(10);
 		chain.verify_blocks_hashes(10);
 
-		assert_eq!(chain.best_block_locator_hashes()[0], "0000000000000000000000000000000000000000000000000000000000000010".into());
 		assert_eq!(chain.block_locator_hashes(), vec![
 			"0000000000000000000000000000000000000000000000000000000000000010".into(),
 			"0000000000000000000000000000000000000000000000000000000000000009".into(),
@@ -531,7 +513,6 @@ mod tests {
 		]);
 		chain.request_blocks_hashes(10);
 
-		assert_eq!(chain.best_block_locator_hashes()[0], "0000000000000000000000000000000000000000000000000000000000000014".into());
 		assert_eq!(chain.block_locator_hashes(), vec![
 			"0000000000000000000000000000000000000000000000000000000000000016".into(),
 			"0000000000000000000000000000000000000000000000000000000000000015".into(),
@@ -554,7 +535,6 @@ mod tests {
 			"0000000000000000000000000000000000000000000000000000000000000022".into(),
 		]);
 
-		assert_eq!(chain.best_block_locator_hashes()[0], "0000000000000000000000000000000000000000000000000000000000000020".into());
 		assert_eq!(chain.block_locator_hashes(), vec![
 			"0000000000000000000000000000000000000000000000000000000000000022".into(),
 			"0000000000000000000000000000000000000000000000000000000000000021".into(),

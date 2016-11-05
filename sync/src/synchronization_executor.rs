@@ -23,8 +23,6 @@ pub enum Task {
 	RequestBlocks(usize, Vec<H256>),
 	/// Request full inventory using block_locator_hashes.
 	RequestInventory(usize),
-	/// Request inventory using best block locator only.
-	RequestBestInventory(usize),
 	/// Send block.
 	SendBlock(usize, Block),
 	/// Send notfound
@@ -93,20 +91,6 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
 					let connection = &mut *connection;
 					trace!(target: "sync", "Querying full inventory from peer#{}", peer_index);
-					connection.send_getblocks(&getblocks);
-				}
-			},
-			Task::RequestBestInventory(peer_index) => {
-				let block_locator_hashes = self.chain.read().best_block_locator_hashes();
-				let getblocks = types::GetBlocks {
-					version: 0,
-					block_locator_hashes: block_locator_hashes,
-					hash_stop: H256::default(),
-				};
-
-				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					let connection = &mut *connection;
-					trace!(target: "sync", "Querying best inventory from peer#{}", peer_index);
 					connection.send_getblocks(&getblocks);
 				}
 			},

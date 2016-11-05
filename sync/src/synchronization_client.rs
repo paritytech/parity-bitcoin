@@ -504,14 +504,8 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			// check if we can query some blocks hashes
 			let scheduled_hashes_len = chain.length_of_state(BlockState::Scheduled);
 			if scheduled_hashes_len < MAX_SCHEDULED_HASHES {
-				if self.state.is_synchronizing() {
-					tasks.push(Task::RequestBestInventory(idle_peers[0]));
-					self.peers.on_inventory_requested(idle_peers[0]);
-				}
-				else {
-					tasks.push(Task::RequestInventory(idle_peers[0]));
-					self.peers.on_inventory_requested(idle_peers[0]);
-				}
+				tasks.push(Task::RequestInventory(idle_peers[0]));
+				self.peers.on_inventory_requested(idle_peers[0]);
 			}
 
 			// check if we can move some blocks from scheduled to requested queue
@@ -604,7 +598,7 @@ pub mod tests {
 		sync.on_new_blocks_inventory(5, vec![block1.hash()]);
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks.len(), 2);
-		assert_eq!(tasks[0], Task::RequestBestInventory(5));
+		assert_eq!(tasks[0], Task::RequestInventory(5));
 		assert_eq!(tasks[1], Task::RequestBlocks(5, vec![block1.hash()]));
 		assert!(sync.information().state.is_synchronizing());
 		assert_eq!(sync.information().orphaned, 0);
@@ -675,7 +669,7 @@ pub mod tests {
 			// synchronization has started && new blocks have been requested
 			let tasks = executor.lock().take_tasks();
 			assert!(sync.information().state.is_synchronizing());
-			assert_eq!(tasks, vec![Task::RequestBestInventory(1), Task::RequestBlocks(1, vec![block1.hash()])]);
+			assert_eq!(tasks, vec![Task::RequestInventory(1), Task::RequestBlocks(1, vec![block1.hash()])]);
 		}
 
 		{
@@ -686,7 +680,7 @@ pub mod tests {
 			// synchronization has started && new blocks have been requested
 			let tasks = executor.lock().take_tasks();
 			assert!(sync.information().state.is_synchronizing());
-			assert_eq!(tasks, vec![Task::RequestBestInventory(2), Task::RequestBlocks(2, vec![block2.hash()])]);
+			assert_eq!(tasks, vec![Task::RequestInventory(2), Task::RequestBlocks(2, vec![block2.hash()])]);
 		}
 
 		{
