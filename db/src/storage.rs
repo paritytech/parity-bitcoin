@@ -99,6 +99,8 @@ pub enum Error {
 	ForkTooLong,
 	/// Main chain block transaction attempts to double-spend
 	DoubleSpend(H256),
+	/// Main chain block transaction attempts to double-spend
+	NoBestBlock,
 }
 
 impl From<String> for Error {
@@ -376,23 +378,55 @@ impl Storage {
 		Err(Error::ForkTooLong)
 	}
 
-	fn read_best_number(&self) -> Option<u32> {
+	fn best_number(&self) -> Option<u32> {
 		self.read_meta_u32(KEY_BEST_BLOCK_NUMBER)
+	}
+
+	fn best_hash(&self) -> Option<H256> {
+		self.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val))
 	}
 
 	fn canonize_block(&self, context: &mut UpdateContext, at_height: u32, hash: &H256) -> Result<(), Error> {
 		let transactions = self.block_transactions_by_hash(hash);
 		try!(self.update_transactions_meta(context, at_height, &transactions));
+
+		// only canonical blocks are allowed to wield a number
+		context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(at_height), std::ops::Deref::deref(hash));
+		context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(hash), at_height);
+
 		Ok(())
 	}
 
-	fn maybe_reorganize(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
+	// maybe reorganize to the _known_ block
+	// it will actually reorganize only when side chain is at least the same length as main
+	fn maybe_reorganize(&self, context: &mut UpdateContext, hash: &H256) -> Result<Option<(u32, H256)>, Error> {
 		let (at_height, route) = try!(self.fork_route(MAX_FORK_ROUTE_PRESET, hash));
-		if (route.len() as i32) < (self.read_best_number().unwrap_or(0) as i32 - at_height as i32) {
-			return Ok(());
+		if (route.len() as i32) <= (self.best_number().unwrap_or(0) as i32 - at_height as i32) {
+			return Ok(None);
 		}
 
-		Ok(())
+		let mut now_best = try!(self.best_number().ok_or(Error::NoBestBlock));
+
+		// decanonizing main chain to the split point
+		loop {
+			let next_to_decanonize = try!(self.best_hash().ok_or(Error::NoBestBlock));
+			self.decanonize_block(context, &next_to_decanonize);
+
+			now_best -= 1;
+
+			if now_best == at_height { break; }
+		}
+
+		// canonizing all route from the split point
+		for new_canonical_hash in route.iter() {
+			now_best += 1;
+			try!(self.canonize_block(context, now_best, &new_canonical_hash));
+		}
+
+		// finaly canonizing the top block
+		try!(self.canonize_block(context, now_best + 1, hash));
+
+		Ok(Some((now_best+1, hash.clone())))
 	}
 }
 
@@ -455,12 +489,12 @@ impl Store for Storage {
 
 		let block_hash = block.hash();
 
-		let new_best_hash = match best_block.as_ref().map(|bb| &bb.hash) {
+		let mut new_best_hash = match best_block.as_ref().map(|bb| &bb.hash) {
 			Some(best_hash) if &block.header().previous_header_hash != best_hash => best_hash.clone(),
 			_ => block_hash.clone(),
 		};
 
-		let new_best_number = match best_block.as_ref().map(|b| b.number) {
+		let mut new_best_number = match best_block.as_ref().map(|b| b.number) {
 			Some(best_number) => {
 				if block.hash() == new_best_hash { best_number + 1 }
 				else { best_number }
@@ -495,6 +529,19 @@ impl Store for Storage {
 			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash));
 			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&block_hash), new_best_number);
 		}
+		// this can canonize the block parent if block parent + this block is longer than the main chain
+		else if let Some((reorg_number, reorg_hash)) = self.maybe_reorganize(&mut context, &block.header().previous_header_hash).unwrap_or(None) {
+			// if so, we have new best main chain block
+			new_best_number = reorg_number;
+			new_best_hash = new_best_hash;
+
+			// and we canonize it also by provisioning transactions
+			try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
+			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
+			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash));
+			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&block_hash), new_best_number);
+		}
+
 		context.db_transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
 
 		context.apply(&self.database);
