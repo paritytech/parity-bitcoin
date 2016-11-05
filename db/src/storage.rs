@@ -361,6 +361,7 @@ impl Storage {
 		// only main chain blocks has block numbers
 		// so if it has, it is not a fork and we return empty route
 		if let Some(number) = self.block_number(hash) {
+			println!("route to: {}, returning early", hash);
 			return Ok((number, Vec::new()));
 		}
 
@@ -400,8 +401,13 @@ impl Storage {
 	// maybe reorganize to the _known_ block
 	// it will actually reorganize only when side chain is at least the same length as main
 	fn maybe_reorganize(&self, context: &mut UpdateContext, hash: &H256) -> Result<Option<(u32, H256)>, Error> {
+		if self.block_number(hash).is_some() {
+			return Ok(None); // cannot reorganize to canonical block
+		}
+
 		let (at_height, route) = try!(self.fork_route(MAX_FORK_ROUTE_PRESET, hash));
-		if (route.len() as i32) <= (self.best_number().unwrap_or(0) as i32 - at_height as i32) {
+		if (route.len() as i32 + 1) < (self.best_number().unwrap_or(0) as i32 - at_height as i32) {
+			println!("route len is {}, returning", route.len());
 			return Ok(None);
 		}
 
@@ -413,6 +419,7 @@ impl Storage {
 			self.decanonize_block(context, &next_to_decanonize);
 
 			now_best -= 1;
+			println!("best is now {}, going to put it down to {}", now_best, at_height);
 
 			if now_best == at_height { break; }
 		}
@@ -533,7 +540,7 @@ impl Store for Storage {
 		else if let Some((reorg_number, reorg_hash)) = self.maybe_reorganize(&mut context, &block.header().previous_header_hash).unwrap_or(None) {
 			// if so, we have new best main chain block
 			new_best_number = reorg_number;
-			new_best_hash = new_best_hash;
+			new_best_hash = reorg_hash;
 
 			// and we canonize it also by provisioning transactions
 			try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
@@ -773,6 +780,37 @@ mod tests {
 		assert!(!meta.is_spent(3), "Transaction #1 second #3 in the new block should be recorded as unspent");
 	}
 
+	fn reorganize_simple() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let (main_hash1, main_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(1)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&main_block1).expect("main block 1 should insert with no problems");
+
+		let (side_hash1, side_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(2)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&side_block1).expect("side block 1 should insert with no problems");
+
+		// chain should not reorganize to side_block1
+		assert_eq!(store.best_block().unwrap().hash, main_hash1);
+	}
+
 	#[test]
 	fn fork_smoky() {
 
@@ -782,7 +820,7 @@ mod tests {
 		let genesis = test_data::genesis();
 		store.insert_block(&genesis).unwrap();
 
-		let (_main_hash1, main_block1) = test_data::block_hash_builder()
+		let (main_hash1, main_block1) = test_data::block_hash_builder()
 			.block()
 				.header().parent(genesis.hash())
 					.nonce(1)
