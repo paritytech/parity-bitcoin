@@ -95,6 +95,7 @@ use std::time::Duration;
 ///! 3.3.2) append block to orphan
 ///! 3.3.3) stop (3.3)
 ///! 3.4) stop (2)
+///! + if no blocks left in scheduled + requested queue => we are saturated => ask all peers for inventory & forget
 ///!
 ///! execute_synchronization_tasks: After receiving `inventory` message OR receiving `block` message OR when management thread schedules tasks:
 ///! 1) if there are blocks in `scheduled` queue AND we can fit more blocks into memory: ===> ask for blocks
@@ -129,6 +130,7 @@ use std::time::Duration;
 ///! on_block_verification_error: When verification completes with an error:
 ///! 1) remove block from verification queue
 ///! 2) remove all known children from all queues [so that new `block` messages will be ignored in on_peer_block.3.1.1] (TODO: not implemented currently!!!)
+///!
 ///!
 
 /// Approximate maximal number of blocks hashes in scheduled queue.
@@ -269,13 +271,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 	fn on_peer_disconnected(&mut self, peer_index: usize) {
 		// when last peer is disconnected, reset, but let verifying blocks be verified
 		if self.peers.on_peer_disconnected(peer_index) {
-			self.state = State::Saturated;
-			self.orphaned_blocks.clear();
-			self.peers.reset();
-
-			let mut chain = self.chain.write();
-			chain.remove_blocks_with_state(BlockState::Requested);
-			chain.remove_blocks_with_state(BlockState::Scheduled);
+			self.switch_to_saturated_state(false);
 		}
 	}
 
@@ -416,64 +412,67 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 
 	/// Process new peer block
 	fn process_peer_block(&mut self, peer_index: usize, block_hash: H256, block: Block) {
-		let mut chain = self.chain.write();
-		match chain.block_state(&block_hash) {
-			BlockState::Verifying | BlockState::Stored => {
-				// remember peer as useful
-				self.peers.insert(peer_index);
-			},
-			BlockState::Unknown | BlockState::Scheduled | BlockState::Requested => {
-				// remove block from current queue
-				chain.remove_block(&block_hash);
-				// check parent block state
-				match chain.block_state(&block.block_header.previous_header_hash) {
-					BlockState::Unknown => (),
-					BlockState::Verifying | BlockState::Stored => {
-						// remember peer as useful
-						self.peers.insert(peer_index);
-						// schedule verification
-						let mut blocks: VecDeque<(H256, Block)> = VecDeque::new();
-						blocks.push_back((block_hash, block));
-						while let Some((block_hash, block)) = blocks.pop_front() {
-							// queue block for verification
-							chain.remove_block(&block_hash);
+		let switch_to_saturated = {
+			let mut chain = self.chain.write();
+			match chain.block_state(&block_hash) {
+				BlockState::Verifying | BlockState::Stored => {
+					// remember peer as useful
+					self.peers.insert(peer_index);
+				},
+				BlockState::Unknown | BlockState::Scheduled | BlockState::Requested => {
+					// remove block from current queue
+					chain.remove_block(&block_hash);
+					// check parent block state
+					match chain.block_state(&block.block_header.previous_header_hash) {
+						BlockState::Unknown => (),
+						BlockState::Verifying | BlockState::Stored => {
+							// remember peer as useful
+							self.peers.insert(peer_index);
+							// schedule verification
+							let mut blocks: VecDeque<(H256, Block)> = VecDeque::new();
+							blocks.push_back((block_hash, block));
+							while let Some((block_hash, block)) = blocks.pop_front() {
+								// queue block for verification
+								chain.remove_block(&block_hash);
 
-							match self.verification_work_sender {
-								Some(ref verification_work_sender) => {
-									chain.verify_block_hash(block_hash.clone());
-									verification_work_sender
-										.send(VerificationTask::VerifyBlock(block))
-										.expect("Verification thread have the same lifetime as `Synchronization`")
-								},
-								None => chain.insert_best_block(block)
-									.expect("Error inserting to db."),
-							}
+								match self.verification_work_sender {
+									Some(ref verification_work_sender) => {
+										chain.verify_block_hash(block_hash.clone());
+										verification_work_sender
+											.send(VerificationTask::VerifyBlock(block))
+											.expect("Verification thread have the same lifetime as `Synchronization`")
+									},
+									None => chain.insert_best_block(block)
+										.expect("Error inserting to db."),
+								}
 
-							// process orphan blocks
-							if let Entry::Occupied(entry) = self.orphaned_blocks.entry(block_hash) {
-								let (_, orphaned) = entry.remove_entry();
-								blocks.extend(orphaned);
+								// process orphan blocks
+								if let Entry::Occupied(entry) = self.orphaned_blocks.entry(block_hash) {
+									let (_, orphaned) = entry.remove_entry();
+									blocks.extend(orphaned);
+								}
 							}
+						},
+						BlockState::Requested | BlockState::Scheduled => {
+							// remember peer as useful
+							self.peers.insert(peer_index);
+							// remember as orphan block
+							self.orphaned_blocks
+								.entry(block.block_header.previous_header_hash.clone())
+								.or_insert(Vec::new())
+								.push((block_hash, block))
 						}
-					},
-					BlockState::Requested | BlockState::Scheduled => {
-						// remember peer as useful
-						self.peers.insert(peer_index);
-						// remember as orphan block
-						self.orphaned_blocks
-							.entry(block.block_header.previous_header_hash.clone())
-							.or_insert(Vec::new())
-							.push((block_hash, block))
 					}
-				}
-			},
-		}
+				},
+			}
 
-		// requested block is received => move to saturated state if there are no more blocks
-		if chain.length_of_state(BlockState::Scheduled) == 0
-			&& chain.length_of_state(BlockState::Requested) == 0
-			&& chain.length_of_state(BlockState::Verifying) == 0 {
-			self.state = State::Saturated;
+			// requested block is received => move to saturated state if there are no more blocks
+			chain.length_of_state(BlockState::Scheduled) == 0
+				&& chain.length_of_state(BlockState::Requested) == 0
+		};
+
+		if switch_to_saturated {
+			self.switch_to_saturated_state(true);
 		}
 	}
 
@@ -529,6 +528,27 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 		// execute synchronization tasks
 		for task in tasks {
 			self.executor.lock().execute(task);
+		}
+	}
+
+	/// Switch to saturated state
+	fn switch_to_saturated_state(&mut self, ask_for_inventory: bool) {
+		self.state = State::Saturated;
+		self.orphaned_blocks.clear();
+		self.peers.reset();
+
+		{
+			let mut chain = self.chain.write();
+			chain.remove_blocks_with_state(BlockState::Requested);
+			chain.remove_blocks_with_state(BlockState::Scheduled);
+		}
+
+		if ask_for_inventory {
+			let mut executor = self.executor.lock();
+			for idle_peer in self.peers.idle_peers() {
+				self.peers.on_inventory_requested(idle_peer);
+				executor.execute(Task::RequestInventory(idle_peer));
+			}
 		}
 	}
 
@@ -727,5 +747,19 @@ pub mod tests {
 		// => no synchronization tasks are scheduled
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![]);
+	}
+
+	#[test]
+	fn synchronization_asks_for_inventory_after_saturating() {
+		let (_, _, executor, sync) = create_sync();
+		let mut sync = sync.lock();
+		let block = test_data::block_h1();
+		let block_hash = block.hash();
+		sync.on_new_blocks_inventory(1, vec![block_hash.clone()]);
+		sync.on_new_blocks_inventory(2, vec![block_hash.clone()]);
+		executor.lock().take_tasks();
+		sync.on_peer_block(2, block);
+
+		assert_eq!(executor.lock().take_tasks(), vec![Task::RequestInventory(2), Task::RequestInventory(1)]);
 	}
 }

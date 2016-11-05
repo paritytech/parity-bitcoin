@@ -179,6 +179,10 @@ impl Chain {
 
 	/// Prepare block locator hashes, as described in protocol documentation:
 	/// https://en.bitcoin.it/wiki/Protocol_documentation#getblocks
+	/// When there are forked blocks in the queue, this method can result in
+	/// mixed block locator hashes ([0 - from fork1, 1 - from fork2, 2 - from fork1]).
+	/// Peer will respond with blocks of fork1 || fork2 => we could end up in some side fork
+	/// To resolve this, after switching to saturated state, we will also ask all peers for inventory.
 	pub fn block_locator_hashes(&self) -> Vec<H256> {
 		let mut block_locator_hashes: Vec<H256> = Vec::new();
 
