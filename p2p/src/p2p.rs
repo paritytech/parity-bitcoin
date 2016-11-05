@@ -194,8 +194,9 @@ impl Context {
 					channel.session().initialize(channel.clone());
 					Context::on_message(context.clone(), channel)
 				},
-				Ok(DeadlineStatus::Meet(Err(_))) => {
+				Ok(DeadlineStatus::Meet(Err(err))) => {
 					// protocol error
+					trace!("Accepting handshake from {} failed with error: {}", socket, err);
 					// TODO: close socket
 					context.node_table.write().note_failure(&socket);
 					context.connection_counter.note_close_inbound_connection();
@@ -203,7 +204,7 @@ impl Context {
 				},
 				Ok(DeadlineStatus::Timeout) => {
 					// connection time out
-					trace!("Handshake with {} timedout", socket);
+					trace!("Accepting handshake from {} timed out", socket);
 					// TODO: close socket
 					context.node_table.write().note_failure(&socket);
 					context.connection_counter.note_close_inbound_connection();
@@ -211,6 +212,7 @@ impl Context {
 				},
 				Err(_) => {
 					// network error
+					trace!("Accepting handshake from {} failed with network error", socket);
 					context.node_table.write().note_failure(&socket);
 					context.connection_counter.note_close_inbound_connection();
 					finished(Ok(())).boxed()

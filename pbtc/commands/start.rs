@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use sync::create_sync_connection_factory;
+use message::Services;
 use util::{open_db, init_db, node_table_path};
 use {config, p2p};
 
@@ -15,7 +16,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 		connection: p2p::NetConfig {
 			magic: cfg.magic,
 			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
-			services: Default::default(),
+			services: Services::default().with_network(true),
 			user_agent: "pbtc".into(),
 			start_height: 0,
 			relay: false,
