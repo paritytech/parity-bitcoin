@@ -99,7 +99,7 @@ pub enum Error {
 	ForkTooLong,
 	/// Main chain block transaction attempts to double-spend
 	DoubleSpend(H256),
-	/// Main chain block transaction attempts to double-spend
+	/// Chain has no best block
 	NoBestBlock,
 }
 
