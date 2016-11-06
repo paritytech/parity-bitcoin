@@ -14,9 +14,11 @@ pub struct Config {
 pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	let print_to_console = matches.is_present("printtoconsole");
 	let use_disk_database = matches.is_present("diskdb");
-	let magic = match matches.is_present("testnet") {
-		true => Magic::Testnet,
-		false => Magic::Mainnet,
+	let magic = match (matches.is_present("testnet"), matches.is_present("regtest")) {
+		(true, false) => Magic::Testnet,
+		(false, true) => Magic::Regtest,
+		(false, false) => Magic::Mainnet,
+		(true, true) => return Err("Only one testnet option can be used".into()),
 	};
 
 	let port = match matches.value_of("port") {

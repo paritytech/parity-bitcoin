@@ -9,6 +9,7 @@ extern crate parking_lot;
 extern crate log;
 extern crate abstract_ns;
 extern crate ns_dns_tokio;
+extern crate csv;
 
 extern crate bitcrypto as crypto;
 extern crate message;
@@ -24,7 +25,7 @@ mod config;
 mod event_loop;
 mod p2p;
 
-pub const VERSION: u32 = 70_001;
+pub const VERSION: u32 = 70_014;
 pub const USER_AGENT: &'static str = "pbtc";
 
 pub use primitives::{hash, bytes};

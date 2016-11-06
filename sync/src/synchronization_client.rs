@@ -5,6 +5,10 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use parking_lot::Mutex;
+use futures::{BoxFuture, Future, finished};
+use futures::stream::Stream;
+use tokio_core::reactor::{Handle, Interval};
+use futures_cpupool::CpuPool;
 use db;
 use chain::{Block, RepresentH256};
 use primitives::hash::H256;
@@ -16,67 +20,112 @@ use synchronization_chain::{ChainRef, BlockState};
 use synchronization_chain::{Information as ChainInformation};
 use verification::{ChainVerifier, Error as VerificationError, Verify};
 use synchronization_executor::{Task, TaskExecutor};
+use synchronization_manager::{manage_synchronization_peers, MANAGEMENT_INTERVAL_MS};
 use time;
+use std::time::Duration;
 
 ///! Blocks synchronization process:
 ///!
-///! TODO: Current assumptions:
-///! 1) unknown blocks in `inventory` messages are returned as a consequent range, sorted from oldest to newest
-///! 2) no forks support
-///!
 ///! When new peer is connected:
-///! 1) send `inventory` message with full block locator hashes
+///! 1) send `inventory` message with full block locator hashes (see `LocalNode`)
 ///!
-///! When `inventory` message is received from peer:
-///! 1) if synchronization queue is empty:
-///! 1.1) append all unknown blocks hashes to the `queued_hashes`
-///! 1.2) mark peer as 'useful' for current synchronization stage (TODO)
-///! 1.3) stop
-///! 2) if intersection(`queued_hashes`, unknown blocks) is not empty && there are new unknown blocks:
-///! 2.1) append new unknown blocks to the queued_hashes
-///! 2.2) mark peer as 'useful' for current synchronization stage (TODO)
-///! 2.3) stop
-///! 3) if intersection(`queued_hashes`, unknown blocks) is not empty && there are no new unknown blocks:
-///! 3.1) looks like peer is behind us in the blockchain (or these are blocks for the future)
-///! 3.2) mark peer as 'suspicious' for current synchronization stage (TODO)
-///! 3.3) stop
+///! on_new_blocks_inventory: When `inventory` message is received from peer:
+///! 1) queue_intersection = intersect(queue, inventory)
+///! 2) if !queue_intersection.is_empty(): ===> responded with blocks within sync window
+///! 2.1) remember peer as useful
+///! 2.2) inventory_rest = inventory - queue_intersection
+///! 2.3) if inventory_rest.is_empty(): ===> no new unknown blocks in inventory
+///! 2.3.1) stop (2.3)
+///! 2.4) if !inventory_rest.is_empty(): ===> has new unknown blocks in inventory
+///! 2.4.1) queue_rest = queue after intersection
+///! 2.4.2) if queue_rest.is_empty(): ===> has new unknown blocks in inventory, no fork
+///! 2.4.3.1) scheduled_blocks.append(inventory_rest)
+///! 2.4.3.2) stop (2.4.3)
+///! 2.4.4) if !queue_rest.is_empty(): ===> has new unknown blocks in inventory, fork
+///! 2.4.4.1) scheduled_blocks.append(inventory_rest)
+///! 2.4.4.2) stop (2.4.4)
+///! 2.4.5) stop (2.4)
+///! 2.5) stop (2)
+///! 3) if queue_intersection.is_empty(): ===> responded with out-of-sync-window blocks
+///! 3.1) last_known_block = inventory.last(b => b.is_known())
+///! 3.2) if last_known_block == None: ===> we know nothing about these blocks & we haven't asked for these
+///! 3.2.1) peer will be excluded later by management thread
+///! 3.2.2) stop (3.2)
+///! 3.3) if last_known_block == last(inventory): ===> responded with all-known-blocks
+///! 3.3.1) remember peer as useful (possibly had failures before && have been excluded from sync)
+///! 3.3.2) stop (3.3)
+///! 3.4) if last_known_block in the middle of inventory: ===> responded with forked blocks
+///! 3.4.1) remember peer as useful
+///! 3.4.2) inventory_rest = inventory after last_known_block
+///! 3.4.3) scheduled_blocks.append(inventory_rest)
+///! 3.4.4) stop (3.4)
+///! 3.5) stop (3)
 ///!
-///! After receiving `block` message:
-///! 1) if any basic verification is failed (TODO):
-///! 1.1) penalize peer
-///! 1.2) stop
-///! 1) if not(remove block) [i.e. block was not requested]:
-///! 1.1) ignore it (TODO: try to append to the chain)
-///! 1.2) stop
-///! 2) if this block is first block in the `requested_hashes`:
-///! 2.1) append to the verification queue (+ append to `verifying_hashes`) (TODO)
-///! 2.2) for all children (from `orphaned_blocks`): append to the verification queue (TODO)
-///! 2.3) stop
-///! 3) remember in `orphaned_blocks`
+///! on_peer_block: After receiving `block` message:
+///! 1) if block_state(block) in (Scheduled, Verifying, Stored): ===> late delivery
+///! 1.1) remember peer as useful
+///! 1.2) stop (1)
+///! 2) if block_state(block) == Requested: ===> on-time delivery
+///! 2.1) remember peer as useful
+///! 2.2) move block from requested to verifying queue
+///! 2.2) queue verification().and_then(insert).or_else(reset_sync)
+///! 2.3) stop (2)
+///! 3) if block_state(block) == Unknown: ===> maybe we are on-top of chain && new block is announced?
+///! 3.1) if block_state(block.parent_hash) == Unknown: ===> we do not know parent
+///! 3.1.1) ignore this block
+///! 3.1.2) stop (3.1)
+///! 3.2) if block_state(block.parent_hash) != Unknown: ===> fork found
+///! 3.2.1) ask peer for best inventory (after this block)
+///! 3.2.2) append block to verifying queue
+///! 3.2.3) queue verification().and_then(insert).or_else(reset_sync)
+///! 3.2.4) stop (3.2)
+///! 2.3) stop (2)
 ///!
-///! After receiving `inventory` message OR receiving `block` message:
-///! 1) if there are blocks hashes in `queued_hashes`:
+///! execute_synchronization_tasks: After receiving `inventory` message OR receiving `block` message OR when management thread schedules tasks:
+///! 1) if there are blocks in `scheduled` queue AND we can fit more blocks into memory: ===> ask for blocks
 ///! 1.1) select idle peers
-///! 1.2) for each idle peer: query blocks from `queued_hashes`
-///! 1.3) move requested blocks hashes from `queued_hashes` to `requested_hashes`
+///! 1.2) for each idle peer: query chunk of blocks from `scheduled` queue
+///! 1.3) move requested blocks from `scheduled` to `requested` queue
 ///! 1.4) mark idle peers as active
-///! 2) if `queued_hashes` queue is not yet saturated:
+///! 1.5) stop (1)
+///! 2) if `scheduled` queue is not yet saturated: ===> ask for new blocks hashes
 ///! 2.1) for each idle peer: send shortened `getblocks` message
-///! 2.2) 'forget' idle peers (mark them as not useful for synchronization) (TODO)
+///! 2.2) 'forget' idle peers => they will be added again if respond with inventory
+///! 2.3) stop (2)
 ///!
-///! TODO: spawn management thread [watch for not-stalling sync]
-///! TODO: check + optimize algorithm for Saturated state
+///! manage_synchronization_peers: When management thread awakes:
+///! 1) for peer in active_peers.where(p => now() - p.last_request_time() > failure_interval):
+///! 1.1) return all peer' tasks to the tasks pool (TODO: not implemented currently!!!)
+///! 1.2) increase # of failures for this peer
+///! 1.3) if # of failures > max_failures: ===> super-bad peer
+///! 1.3.1) forget peer
+///! 1.3.3) stop (1.3)
+///! 1.4) if # of failures <= max_failures: ===> bad peer
+///! 1.4.1) move peer to idle pool
+///! 1.4.2) stop (1.4)
+///! 2) schedule tasks from pool (if any)
+///!
+///! on_block_verification_success: When verification completes scuccessfully:
+///! 1) if block_state(block) != Verifying: ===> parent verification failed
+///! 1.1) stop (1)
+///! 2) remove from verifying queue
+///! 3) insert to the db
+///!
+///! on_block_verification_error: When verification completes with an error:
+///! 1) remove block from verification queue
+///! 2) remove all known children from all queues [so that new `block` messages will be ignored in on_peer_block.3.1.1]
+///!
 
 /// Approximate maximal number of blocks hashes in scheduled queue.
 const MAX_SCHEDULED_HASHES: u32 = 4 * 1024;
 /// Approximate maximal number of blocks hashes in requested queue.
-const MAX_REQUESTED_BLOCKS: u32 = 512;
+const MAX_REQUESTED_BLOCKS: u32 = 256;
 /// Approximate maximal number of blocks in verifying queue.
-const MAX_VERIFYING_BLOCKS: u32 = 512;
+const MAX_VERIFYING_BLOCKS: u32 = 256;
 /// Minimum number of blocks to request from peer
 const MIN_BLOCKS_IN_REQUEST: u32 = 32;
 /// Maximum number of blocks to request from peer
-const MAX_BLOCKS_IN_REQUEST: u32 = 512;
+const MAX_BLOCKS_IN_REQUEST: u32 = 128;
 
 /// Synchronization state
 #[derive(Debug, Clone, Copy)]
@@ -119,8 +168,9 @@ pub trait Client : Send + 'static {
 }
 
 /// Synchronization client configuration options.
-#[derive(Default)]
 pub struct Config {
+	/// Number of threads to allocate in synchronization CpuPool.
+	pub threads_num: usize,
 	/// Do not verify incoming blocks before inserting to db.
 	pub skip_verification: bool,
 }
@@ -129,6 +179,10 @@ pub struct Config {
 pub struct SynchronizationClient<T: TaskExecutor> {
 	/// Synchronization state.
 	state: State,
+	/// Cpu pool.
+	pool: CpuPool,
+	/// Sync management worker.
+	management_worker: Option<BoxFuture<(), ()>>,
 	/// Synchronization peers.
 	peers: Peers,
 	/// Task executor.
@@ -141,6 +195,15 @@ pub struct SynchronizationClient<T: TaskExecutor> {
 	verification_work_sender: Option<Sender<VerificationTask>>,
 	/// Verification thread.
 	verification_worker_thread: Option<thread::JoinHandle<()>>,
+}
+
+impl Default for Config {
+	fn default() -> Self {
+		Config {
+			threads_num: 4,
+			skip_verification: false,
+		}
+	}
 }
 
 impl State {
@@ -246,11 +309,13 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 
 impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	/// Create new synchronization window
-	pub fn new(config: Config, executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
+	pub fn new(config: Config, handle: &Handle, executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
 		let sync = Arc::new(Mutex::new(
 			SynchronizationClient {
 				state: State::Saturated,
 				peers: Peers::new(),
+				pool: CpuPool::new(config.threads_num),
+				management_worker: None,
 				executor: executor,
 				chain: chain.clone(),
 				orphaned_blocks: HashMap::new(),
@@ -271,6 +336,29 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 					SynchronizationClient::verification_worker_proc(csync, storage, verification_work_receiver)
 				})
 				.expect("Error creating verification thread"));
+		}
+
+		// TODO: start management worker only when synchronization is started
+		//       currently impossible because there is no way to call Interval::new with Remote && Handle is not-Send
+		{
+			let csync = Arc::downgrade(&sync);
+			let mut sync = sync.lock();
+			let management_worker = Interval::new(Duration::from_millis(MANAGEMENT_INTERVAL_MS), handle)
+				.expect("Failed to create interval")
+				.and_then(move |_| {
+					let client = match csync.upgrade() {
+						Some(client) => client,
+						None => return Ok(()),
+					};
+					let mut client = client.lock();
+					manage_synchronization_peers(&mut client.peers);
+					client.execute_synchronization_tasks();
+					Ok(())
+				})
+				.for_each(|_| Ok(()))
+				.then(|_| finished::<(), ()>(()))
+				.boxed();
+			sync.management_worker = Some(sync.pool.spawn(management_worker).boxed());
 		}
 
 		sync
@@ -303,7 +391,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 
 		let mut chain = self.chain.write();
 
-		loop {
+		'outer: loop {
 			// when synchronization is idling
 			// => request full inventory
 			if !chain.has_blocks_of_state(BlockState::Scheduled)
@@ -344,7 +432,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 
 					chain.schedule_blocks_hashes(unknown_peer_hashes);
 					self.peers.insert(peer_index);
-					break;
+					break 'outer;
 				}
 
 				if last_known_peer_hash_index == 0 {
@@ -444,7 +532,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 				let new_num_of_blocks = chain.best_block().number;
 				let blocks_diff = if new_num_of_blocks > num_of_blocks { new_num_of_blocks - num_of_blocks} else { 0 };
 				if timestamp_diff >= 60.0 || blocks_diff > 1000 {
-					self.state = State::Synchronizing(new_timestamp, new_num_of_blocks);
+					self.state = State::Synchronizing(time::precise_time_s(), chain.best_block().number);
 
 					info!(target: "sync", "Processed {} blocks in {} seconds. Chain information: {:?}"
 						, blocks_diff, timestamp_diff
@@ -515,25 +603,30 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 pub mod tests {
 	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
+	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, RepresentH256};
 	use super::{Client, Config, SynchronizationClient};
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
 	use synchronization_executor::tests::DummyTaskExecutor;
+	use p2p::event_loop;
 	use test_data;
 	use db;
 
-	fn create_sync() -> (Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<SynchronizationClient<DummyTaskExecutor>>>) {
+	fn create_sync() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<SynchronizationClient<DummyTaskExecutor>>>) {
+		let event_loop = event_loop();
+		let handle = event_loop.handle();
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = DummyTaskExecutor::new();
-		let config = Config { skip_verification: true };
-		(executor.clone(), SynchronizationClient::new(config, executor, chain))
+		let config = Config { threads_num: 1, skip_verification: true };
+		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain);
+		(event_loop, handle, executor, client)
 	} 
 
 	#[test]
 	fn synchronization_saturated_on_start() {
-		let (_, sync) = create_sync();
+		let (_, _, _, sync) = create_sync();
 		let sync = sync.lock();
 		let info = sync.information();
 		assert!(!info.state.is_synchronizing());
@@ -542,7 +635,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_in_order_block_path() {
-		let (executor, sync) = create_sync();
+		let (_, _, executor, sync) = create_sync();
 
 		let mut sync = sync.lock();
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
@@ -585,7 +678,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_out_of_order_block_path() {
-		let (_, sync) = create_sync();
+		let (_, _, _, sync) = create_sync();
 		let mut sync = sync.lock();
 
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
@@ -607,7 +700,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_parallel_peers() {
-		let (executor, sync) = create_sync();
+		let (_, _, executor, sync) = create_sync();
 
 		let block1: Block = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e362990101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000".into();
 		let block2: Block = "010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000".into();
@@ -652,7 +745,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_reset_when_peer_is_disconnected() {
-		let (_, sync) = create_sync();
+		let (_, _, _, sync) = create_sync();
 
 		// request new blocks
 		{
@@ -671,7 +764,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_not_starting_when_receiving_known_blocks() {
-		let (executor, sync) = create_sync();
+		let (_, _, executor, sync) = create_sync();
 		let mut sync = sync.lock();
 		// saturated => receive inventory with known blocks only
 		sync.on_new_blocks_inventory(1, vec![test_data::genesis().hash()]);

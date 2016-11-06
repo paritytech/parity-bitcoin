@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use net::Config as NetConfig;
 
 #[derive(Debug)]
@@ -19,4 +20,6 @@ pub struct Config {
 	pub peers: Vec<SocketAddr>,
 	/// Connect to these nodes to retrieve peer addresses, and disconnect.
 	pub seeds: Vec<String>,
+	/// p2p module cache directory.
+	pub node_table_path: PathBuf,
 }

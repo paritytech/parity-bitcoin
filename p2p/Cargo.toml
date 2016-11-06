@@ -13,6 +13,7 @@ rand = "0.3"
 log = "0.3"
 abstract-ns = "0.2.1"
 ns-dns-tokio = { git = "https://github.com/debris/abstract-ns", path = "ns-dns-tokio" }
+csv = "0.14.7"
 
 primitives = { path = "../primitives"}
 bitcrypto = { path = "../crypto" }

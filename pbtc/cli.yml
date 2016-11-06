@@ -5,7 +5,10 @@ about: Parity bitcoin client
 args:
     - testnet:
         long: testnet
-        help: Use the test chain
+        help: Use the test network
+    - regtest:
+        long: regtest
+        help: Use private network for regtest
     - connect:
         short: c
         long: connect

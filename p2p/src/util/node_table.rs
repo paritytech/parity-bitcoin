@@ -1,12 +1,14 @@
+use std::{io, path, fs};
 use std::collections::{HashMap, BTreeSet};
 use std::collections::hash_map::Entry;
 use std::net::SocketAddr;
 use std::cmp::{PartialOrd, Ord, Ordering};
+use csv;
 use message::common::{Services, NetAddress};
 use message::types::addr::AddressEntry;
 use util::time::{Time, RealTime};
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Node {
 	/// Node address.
 	addr: SocketAddr,
@@ -48,7 +50,7 @@ impl From<Node> for AddressEntry {
 	}
 }
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 struct NodeByScore(Node);
 
 impl From<Node> for NodeByScore {
@@ -87,7 +89,7 @@ impl Ord for NodeByScore {
 	}
 }
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 struct NodeByTime(Node);
 
 impl From<Node> for NodeByTime {
@@ -158,7 +160,7 @@ impl PartialOrd for Node {
 	}
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct NodeTable<T = RealTime> where T: Time {
 	/// Time source.
 	time: T,
@@ -168,6 +170,25 @@ pub struct NodeTable<T = RealTime> where T: Time {
 	by_score: BTreeSet<NodeByScore>,
 	/// Nodes sorted by time.
 	by_time: BTreeSet<NodeByTime>,
+}
+
+impl NodeTable {
+	/// Opens a file loads node_table from it.
+	pub fn from_file<P>(path: P) -> Result<Self, io::Error> where P: AsRef<path::Path> {
+		let res = fs::OpenOptions::new()
+			.create(true)
+			.read(true)
+			// without opening for write, mac os returns os error 22
+			.write(true)
+			.open(path)
+			.and_then(Self::load);
+		res
+	}
+
+	/// Saves node table to file
+	pub fn save_to_file<P>(&self, path: P) -> Result<(), io::Error> where P: AsRef<path::Path> {
+		fs::File::create(path).and_then(|file| self.save(file))
+	}
 }
 
 impl<T> NodeTable<T> where T: Time {
@@ -278,6 +299,52 @@ impl<T> NodeTable<T> where T: Time {
 			self.by_time.insert(node.clone().into());
 		}
 	}
+
+	/// Save node table in csv format.
+	pub fn save<W>(&self, write: W) -> Result<(), io::Error> where W: io::Write {
+		let mut writer = csv::Writer::from_writer(write)
+			.delimiter(b' ');
+		let iter = self.by_score.iter()
+			.map(|node| &node.0)
+			.take(1000);
+
+		let err = || io::Error::new(io::ErrorKind::Other, "Write csv error");
+
+		for n in iter {
+			let record = (n.addr.to_string(), n.time, u64::from(n.services), n.failures);
+			try!(writer.encode(record).map_err(|_| err()));
+		}
+
+		Ok(())
+	}
+
+	/// Loads table in from a csv source.
+	pub fn load<R>(read: R) -> Result<Self, io::Error> where R: io::Read, T: Default {
+		let mut rdr = csv::Reader::from_reader(read)
+			.has_headers(false)
+			.delimiter(b' ');
+
+		let mut node_table = NodeTable::default();
+
+		let err = || io::Error::new(io::ErrorKind::Other, "Load csv error");
+
+		for row in rdr.decode() {
+			let (addr, time, services, failures): (String, i64, u64, u32) = try!(row.map_err(|_| err()));
+
+			let node = Node {
+				addr: try!(addr.parse().map_err(|_| err())),
+				time: time,
+				services: services.into(),
+				failures: failures,
+			};
+
+			node_table.by_score.insert(node.clone().into());
+			node_table.by_time.insert(node.clone().into());
+			node_table.by_addr.insert(node.addr, node);
+		}
+
+		Ok(node_table)
+	}
 }
 
 #[cfg(test)]
@@ -380,5 +447,41 @@ mod tests {
 		table.insert(s1, Services::default());
 		table.note_failure(&s0);
 		table.note_failure(&s1);
+	}
+
+	#[test]
+	fn test_save_and_load() {
+		let s0: SocketAddr = "127.0.0.1:8000".parse().unwrap();
+		let s1: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+		let s2: SocketAddr = "127.0.0.1:8002".parse().unwrap();
+		let s3: SocketAddr = "127.0.0.1:8003".parse().unwrap();
+		let s4: SocketAddr = "127.0.0.1:8004".parse().unwrap();
+		let mut table = NodeTable::<IncrementalTime>::default();
+		table.insert(s0, Services::default());
+		table.insert(s1, Services::default());
+		table.insert(s2, Services::default());
+		table.insert(s3, Services::default());
+		table.insert(s4, Services::default());
+		table.note_used(&s2);
+		table.note_used(&s4);
+		table.note_used(&s1);
+		table.note_failure(&s2);
+		table.note_failure(&s3);
+
+		let mut db = Vec::new();
+		assert_eq!(table.save(&mut db).unwrap(), ());
+		let loaded_table = NodeTable::<IncrementalTime>::load(&db as &[u8]).unwrap();
+		assert_eq!(table.by_addr, loaded_table.by_addr);
+		assert_eq!(table.by_score, loaded_table.by_score);
+		assert_eq!(table.by_time, loaded_table.by_time);
+
+		let s = String::from_utf8(db).unwrap();
+		assert_eq!(
+"127.0.0.1:8001 7 0 0
+127.0.0.1:8004 6 0 0
+127.0.0.1:8000 0 0 0
+127.0.0.1:8002 5 0 1
+127.0.0.1:8003 3 0 1
+".to_string(), s);
 	}
 }
