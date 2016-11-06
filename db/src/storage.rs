@@ -315,8 +315,10 @@ impl Storage {
 	///   all transaction meta is removed
 	///   DOES NOT update best block
 	fn decanonize_block(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
-		let block_height = try!(self.block_number(hash).ok_or(Error::NotMain(hash.clone())));
+		// ensure that block is of the main chain
+		try!(self.block_number(hash).ok_or(Error::NotMain(hash.clone())));
 
+		// transaction de-provisioning
 		let tx_hashes = self.block_transaction_hashes_by_hash(hash);
 		for (tx_hash_num, tx_hash) in tx_hashes.iter().enumerate() {
 			let tx = self.transaction(tx_hash)
@@ -361,7 +363,6 @@ impl Storage {
 		// only main chain blocks has block numbers
 		// so if it has, it is not a fork and we return empty route
 		if let Some(number) = self.block_number(hash) {
-			println!("route to: {}, returning early", hash);
 			return Ok((number, Vec::new()));
 		}
 
@@ -405,9 +406,11 @@ impl Storage {
 			return Ok(None); // cannot reorganize to canonical block
 		}
 
+		// find the route of the block with hash `hash` to the main chain
 		let (at_height, route) = try!(self.fork_route(MAX_FORK_ROUTE_PRESET, hash));
+
+		// reorganization is performed only if length of side chain is at least the same as main chain
 		if (route.len() as i32 + 1) < (self.best_number().unwrap_or(0) as i32 - at_height as i32) {
-			println!("route len is {}, returning", route.len());
 			return Ok(None);
 		}
 
@@ -416,10 +419,9 @@ impl Storage {
 		// decanonizing main chain to the split point
 		loop {
 			let next_to_decanonize = try!(self.best_hash().ok_or(Error::NoBestBlock));
-			self.decanonize_block(context, &next_to_decanonize);
+			try!(self.decanonize_block(context, &next_to_decanonize));
 
 			now_best -= 1;
-			println!("best is now {}, going to put it down to {}", now_best, at_height);
 
 			if now_best == at_height { break; }
 		}
@@ -430,7 +432,7 @@ impl Storage {
 			try!(self.canonize_block(context, now_best, &new_canonical_hash));
 		}
 
-		// finaly canonizing the top block
+		// finaly canonizing the top block we are reorganizing to
 		try!(self.canonize_block(context, now_best + 1, hash));
 
 		Ok(Some((now_best+1, hash.clone())))
@@ -490,6 +492,8 @@ impl Store for Storage {
 	}
 
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error> {
+
+		// ! lock will be held during the entire insert routine
 		let mut best_block = self.best_block.write();
 
 		let mut context = UpdateContext::new(&self.database);
@@ -528,6 +532,7 @@ impl Store for Storage {
 			&serialization::serialize(block.header())
 		);
 
+		// the block is continuing the main chain
 		if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
 			try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
 			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
@@ -536,23 +541,29 @@ impl Store for Storage {
 			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash));
 			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&block_hash), new_best_number);
 		}
+
+		// the block does not continue the main chain
+		// but can cause reorganization here
 		// this can canonize the block parent if block parent + this block is longer than the main chain
-		else if let Some((reorg_number, reorg_hash)) = self.maybe_reorganize(&mut context, &block.header().previous_header_hash).unwrap_or(None) {
+		else if let Some((reorg_number, _)) = self.maybe_reorganize(&mut context, &block.header().previous_header_hash).unwrap_or(None) {
 			// if so, we have new best main chain block
-			new_best_number = reorg_number;
-			new_best_hash = reorg_hash;
+			new_best_number = reorg_number + 1;
+			new_best_hash = block_hash;
 
 			// and we canonize it also by provisioning transactions
 			try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
 			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
-			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash));
-			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&block_hash), new_best_number);
+			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&new_best_hash));
+			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&new_best_hash), new_best_number);
 		}
 
+		// we always update best hash even if it is not changed
 		context.db_transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
 
-		context.apply(&self.database);
+		// write accumulated transactions meta
+		try!(context.apply(&self.database));
 
+		// updating locked best block
 		*best_block = Some(BestBlock { hash: new_best_hash, number: new_best_number });
 
 		Ok(())
@@ -780,6 +791,7 @@ mod tests {
 		assert!(!meta.is_spent(3), "Transaction #1 second #3 in the new block should be recorded as unspent");
 	}
 
+	#[test]
 	fn reorganize_simple() {
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
@@ -797,7 +809,7 @@ mod tests {
 
 		store.insert_block(&main_block1).expect("main block 1 should insert with no problems");
 
-		let (side_hash1, side_block1) = test_data::block_hash_builder()
+		let (_, side_block1) = test_data::block_hash_builder()
 			.block()
 				.header().parent(genesis.hash())
 					.nonce(2)
@@ -820,7 +832,7 @@ mod tests {
 		let genesis = test_data::genesis();
 		store.insert_block(&genesis).unwrap();
 
-		let (main_hash1, main_block1) = test_data::block_hash_builder()
+		let (_, main_block1) = test_data::block_hash_builder()
 			.block()
 				.header().parent(genesis.hash())
 					.nonce(1)
@@ -978,7 +990,7 @@ mod tests {
 			.build();
 		store.insert_block(&main_block3).expect("main block 3 should insert with no problems");
 
-		let (main_hash4, main_block4) = test_data::block_hash_builder()
+		let (_, main_block4) = test_data::block_hash_builder()
 			.block()
 				.header().parent(main_hash3)
 					.nonce(4)
