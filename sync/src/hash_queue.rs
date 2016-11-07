@@ -254,6 +254,7 @@ impl Index<u32> for HashQueueChain {
 #[cfg(test)]
 mod tests {
 	use super::{HashQueue, HashQueueChain, HashPosition};
+	use primitives::hash::H256;
 
 	#[test]
 	fn hash_queue_empty() {
@@ -287,16 +288,16 @@ mod tests {
 	fn hash_queue_chain_not_empty() {
 		let mut chain = HashQueueChain::with_number_of_queues(4);
 		chain.push_back_n_at(0, vec![
-			"0000000000000000000000000000000000000000000000000000000000000000".into(),
-			"0000000000000000000000000000000000000000000000000000000000000001".into(),
-			"0000000000000000000000000000000000000000000000000000000000000002".into(),
+			H256::from(0),
+			H256::from(1),
+			H256::from(2),
 		]);
 		chain.push_back_n_at(1, vec![
-			"0000000000000000000000000000000000000000000000000000000000000003".into(),
-			"0000000000000000000000000000000000000000000000000000000000000004".into(),
+			H256::from(3),
+			H256::from(4),
 		]);
 		chain.push_back_n_at(2, vec![
-			"0000000000000000000000000000000000000000000000000000000000000005".into(),
+			H256::from(5),
 		]);
 
 		assert_eq!(chain.len(), 6);
@@ -304,25 +305,25 @@ mod tests {
 		assert_eq!(chain.len_of(1), 2);
 		assert_eq!(chain.len_of(2), 1);
 		assert_eq!(chain.len_of(3), 0);
-		assert_eq!(chain.front_at(0), Some("0000000000000000000000000000000000000000000000000000000000000000".into()));
-		assert_eq!(chain.front_at(1), Some("0000000000000000000000000000000000000000000000000000000000000003".into()));
-		assert_eq!(chain.front_at(2), Some("0000000000000000000000000000000000000000000000000000000000000005".into()));
+		assert_eq!(chain.front_at(0), Some(H256::from(0)));
+		assert_eq!(chain.front_at(1), Some(H256::from(3)));
+		assert_eq!(chain.front_at(2), Some(H256::from(5)));
 		assert_eq!(chain.front_at(3), None);
-		assert_eq!(chain.back_at(0), Some("0000000000000000000000000000000000000000000000000000000000000002".into()));
-		assert_eq!(chain.back_at(1), Some("0000000000000000000000000000000000000000000000000000000000000004".into()));
-		assert_eq!(chain.back_at(2), Some("0000000000000000000000000000000000000000000000000000000000000005".into()));
+		assert_eq!(chain.back_at(0), Some(H256::from(2)));
+		assert_eq!(chain.back_at(1), Some(H256::from(4)));
+		assert_eq!(chain.back_at(2), Some(H256::from(5)));
 		assert_eq!(chain.back_at(3), None);
-		assert_eq!(chain.pre_back_at(0), Some("0000000000000000000000000000000000000000000000000000000000000001".into()));
-		assert_eq!(chain.pre_back_at(1), Some("0000000000000000000000000000000000000000000000000000000000000003".into()));
+		assert_eq!(chain.pre_back_at(0), Some(H256::from(1)));
+		assert_eq!(chain.pre_back_at(1), Some(H256::from(3)));
 		assert_eq!(chain.pre_back_at(2), None);
 		assert_eq!(chain.pre_back_at(3), None);
-		assert_eq!(chain.back(), Some("0000000000000000000000000000000000000000000000000000000000000005".into()));
-		assert_eq!(chain.is_contained_in(0, &"0000000000000000000000000000000000000000000000000000000000000002".into()), true);
-		assert_eq!(chain.is_contained_in(1, &"0000000000000000000000000000000000000000000000000000000000000002".into()), false);
-		assert_eq!(chain.is_contained_in(2, &"0000000000000000000000000000000000000000000000000000000000000002".into()), false);
-		assert_eq!(chain.is_contained_in(3, &"0000000000000000000000000000000000000000000000000000000000000002".into()), false);
-		assert_eq!(chain.contains_in(&"0000000000000000000000000000000000000000000000000000000000000002".into()), Some(0));
-		assert_eq!(chain.contains_in(&"0000000000000000000000000000000000000000000000000000000000000005".into()), Some(2));
-		assert_eq!(chain.contains_in(&"0000000000000000000000000000000000000000000000000000000000000009".into()), None);
+		assert_eq!(chain.back(), Some(H256::from(5)));
+		assert_eq!(chain.is_contained_in(0, &H256::from(2)), true);
+		assert_eq!(chain.is_contained_in(1, &H256::from(2)), false);
+		assert_eq!(chain.is_contained_in(2, &H256::from(2)), false);
+		assert_eq!(chain.is_contained_in(3, &H256::from(2)), false);
+		assert_eq!(chain.contains_in(&H256::from(2)), Some(0));
+		assert_eq!(chain.contains_in(&H256::from(5)), Some(2));
+		assert_eq!(chain.contains_in(&H256::from(9)), None);
 	}
 }

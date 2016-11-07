@@ -586,6 +586,7 @@ pub mod tests {
 	use p2p::event_loop;
 	use test_data;
 	use db;
+	use primitives::hash::H256;
 
 	fn create_sync() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<SynchronizationClient<DummyTaskExecutor>>>) {
 		let event_loop = event_loop();
@@ -724,7 +725,7 @@ pub mod tests {
 		// request new blocks
 		{
 			let mut sync = sync.lock();
-			sync.on_new_blocks_inventory(1, vec!["0000000000000000000000000000000000000000000000000000000000000000".into()]);
+			sync.on_new_blocks_inventory(1, vec![H256::from(0)]);
 			assert!(sync.information().state.is_synchronizing());
 		}
 
@@ -760,6 +761,9 @@ pub mod tests {
 		executor.lock().take_tasks();
 		sync.on_peer_block(2, block);
 
-		assert_eq!(executor.lock().take_tasks(), vec![Task::RequestInventory(2), Task::RequestInventory(1)]);
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks.len(), 2);
+		assert!(tasks.iter().any(|t| t == &Task::RequestInventory(1)));
+		assert!(tasks.iter().any(|t| t == &Task::RequestInventory(2)));
 	}
 }
