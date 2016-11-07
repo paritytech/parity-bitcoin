@@ -133,6 +133,8 @@ impl SynchronizationServer {
 					},
 					// `getheaders` => `headers`
 					(peer_index, ServerTask::ServeGetHeaders(best_block, hash_stop)) => {
+						// What if we have no common blocks with peer at all? Maybe drop connection or penalize peer?
+						// https://github.com/ethcore/parity-bitcoin/pull/91#discussion_r86734568
 						let blocks_hashes = SynchronizationServer::blocks_hashes_after(&chain, &best_block, &hash_stop, 2000);
 						if !blocks_hashes.is_empty() {
 							trace!(target: "sync", "Going to respond with blocks headers with {} items to peer#{}", blocks_hashes.len(), peer_index);
@@ -167,9 +169,9 @@ impl SynchronizationServer {
 					},
 					// `block`
 					(peer_index, ServerTask::ReturnBlock(block_hash)) => {
-						if let Some(storage_block) = chain.read().storage().block(db::BlockRef::Hash(block_hash)) {
-							executor.lock().execute(Task::SendBlock(peer_index, storage_block));
-						}
+						let block = chain.read().storage().block(db::BlockRef::Hash(block_hash))
+							.expect("we have checked that block exists in ServeGetData; db is append-only; qed");
+						executor.lock().execute(Task::SendBlock(peer_index, block));
 					},
 				},
 				// no tasks after wake-up => stopping
