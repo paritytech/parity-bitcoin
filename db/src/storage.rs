@@ -410,6 +410,7 @@ impl Storage {
 		let (at_height, route) = try!(self.fork_route(MAX_FORK_ROUTE_PRESET, hash));
 
 		// reorganization is performed only if length of side chain is at least the same as main chain
+		// todo: shorter chain may actualy become canonical during difficulty updates, though with rather low probability
 		if (route.len() as i32 + 1) < (self.best_number().unwrap_or(0) as i32 - at_height as i32) {
 			return Ok(None);
 		}
