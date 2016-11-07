@@ -73,11 +73,12 @@ impl Peers {
 	}
 
 	/// Peer has been disconnected
-	pub fn on_peer_disconnected(&mut self, peer_index: usize) {
+	pub fn on_peer_disconnected(&mut self, peer_index: usize) -> bool {
 		self.idle.remove(&peer_index);
 		self.requests.remove(&peer_index);
 		self.failures.remove(&peer_index);
 		self.times.remove(&peer_index);
+		(self.idle.len() + self.requests.len()) == 0
 	}
 
 	/// Block is received from peer.

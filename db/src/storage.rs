@@ -389,7 +389,7 @@ impl Storage {
 		self.read_meta_u32(KEY_BEST_BLOCK_NUMBER)
 	}
 
-	fn best_hash(&self) -> Option<H256> {
+	fn _best_hash(&self) -> Option<H256> {
 		self.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val))
 	}
 
