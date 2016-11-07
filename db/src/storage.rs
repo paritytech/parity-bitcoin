@@ -28,6 +28,8 @@ const _COL_RESERVED6: u32 = 10;
 
 const DB_VERSION: u32 = 1;
 
+const MAX_FORK_ROUTE_PRESET: usize = 128;
+
 /// Blockchain storage interface
 pub trait Store : Send + Sync {
 	/// get best block
@@ -89,6 +91,16 @@ pub enum Error {
 	Io(std::io::Error),
 	/// Invalid meta info
 	Meta(MetaError),
+	/// Unknown hash
+	Unknown(H256),
+	/// Not the block from the main chain
+	NotMain(H256),
+	/// Fork too long
+	ForkTooLong,
+	/// Main chain block transaction attempts to double-spend
+	DoubleSpend(H256),
+	/// Chain has no best block
+	NoBestBlock,
 }
 
 impl From<String> for Error {
@@ -112,6 +124,30 @@ fn u32_key(num: u32) -> [u8; 4] {
 const KEY_VERSION: &'static[u8] = b"version";
 const KEY_BEST_BLOCK_NUMBER: &'static[u8] = b"best_block_number";
 const KEY_BEST_BLOCK_HASH: &'static[u8] = b"best_block_hash";
+
+struct UpdateContext {
+	pub meta: HashMap<H256, TransactionMeta>,
+	pub db_transaction: DBTransaction,
+}
+
+impl UpdateContext {
+	pub fn new(db: &Database) -> Self {
+		UpdateContext {
+			meta: HashMap::new(),
+			db_transaction: db.transaction(),
+		}
+	}
+
+	pub fn apply(mut self, db: &Database) -> Result<(), Error> {
+		// actually saving meta
+		for (hash, meta) in self.meta.drain() {
+			self.db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.to_bytes());
+		}
+
+		try!(db.write(self.db_transaction));
+		Ok(())
+	}
+}
 
 impl Storage {
 
@@ -218,21 +254,34 @@ impl Storage {
 			.collect()
 	}
 
-	/// update transactions metadata in the specified database transaction
-	fn update_transactions_meta(&self, db_transaction: &mut DBTransaction, number: u32, accepted_txs: &[chain::Transaction]) {
-		let mut meta_buf = HashMap::<H256, TransactionMeta>::new();
+	fn block_header_by_hash(&self, h: &H256) -> Option<chain::BlockHeader> {
+		self.get(COL_BLOCK_HEADERS, &**h).and_then(|val|
+			serialization::deserialize(val.as_ref()).map_err(
+				|e| self.db_error(format!("Error deserializing block header, possible db corruption ({:?})", e))
+			).ok()
+		)
+	}
 
+
+	/// update transactions metadata in the specified database transaction
+	fn update_transactions_meta(&self, context: &mut UpdateContext, number: u32, accepted_txs: &[chain::Transaction])
+		-> Result<(), Error>
+	{
 		// inserting new meta for coinbase transaction
 		for accepted_tx in accepted_txs.iter() {
 			// adding unspent transaction meta
-			meta_buf.insert(accepted_tx.hash(), TransactionMeta::new(number, accepted_tx.outputs.len()));
+			context.meta.insert(accepted_tx.hash(), TransactionMeta::new(number, accepted_tx.outputs.len()));
 		}
 
 		// another iteration skipping coinbase transaction
 		for accepted_tx in accepted_txs.iter().skip(1) {
 			for input in accepted_tx.inputs.iter() {
-				if !match meta_buf.get_mut(&input.previous_output.hash) {
+				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
+						if meta.is_spent(input.previous_output.index as usize) {
+							return Err(Error::DoubleSpend(input.previous_output.hash.clone()));
+						}
+
 						meta.note_used(input.previous_output.index as usize);
 						true
 					},
@@ -245,19 +294,149 @@ impl Storage {
 								&input.previous_output.hash
 							));
 
+					if meta.is_spent(input.previous_output.index as usize) {
+						return Err(Error::DoubleSpend(input.previous_output.hash.clone()));
+					}
+
 					meta.note_used(input.previous_output.index as usize);
 
-					meta_buf.insert(
+					context.meta.insert(
 						input.previous_output.hash.clone(),
 						meta);
 				}
 			}
 		}
 
-		// actually saving meta
-		for (hash, meta) in meta_buf.drain() {
-			db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.to_bytes());
+		Ok(())
+	}
+
+	/// block decanonization
+	///   all transaction outputs used are marked as not used
+	///   all transaction meta is removed
+	///   DOES NOT update best block
+	fn decanonize_block(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
+		// ensure that block is of the main chain
+		try!(self.block_number(hash).ok_or(Error::NotMain(hash.clone())));
+
+		// transaction de-provisioning
+		let tx_hashes = self.block_transaction_hashes_by_hash(hash);
+		for (tx_hash_num, tx_hash) in tx_hashes.iter().enumerate() {
+			let tx = self.transaction(tx_hash)
+				.expect("Transaction in the saved block should exist as a separate entity indefinitely");
+
+			// remove meta
+			context.db_transaction.delete(Some(COL_TRANSACTIONS_META), &**tx_hash);
+
+			// denote outputs used
+			if tx_hash_num == 0 { continue; } // coinbase transaction does not have inputs
+			for input in tx.inputs.iter() {
+				if !match context.meta.get_mut(&input.previous_output.hash) {
+					Some(ref mut meta) => {
+						meta.denote_used(input.previous_output.index as usize);
+						true
+					},
+					None => false,
+				} {
+					let mut meta =
+						self.transaction_meta(&input.previous_output.hash)
+							.unwrap_or_else(|| panic!(
+								"No transaction metadata for {}! Corrupted DB? Reindex?",
+								&input.previous_output.hash
+							));
+
+					meta.denote_used(input.previous_output.index as usize);
+
+					context.meta.insert(
+						input.previous_output.hash.clone(),
+						meta);
+				}
+			}
 		}
+
+		Ok(())
+	}
+
+	/// Returns the height where the fork occurred and chain up to this place (not including last canonical hash)
+	fn fork_route(&self, max_route: usize, hash: &H256) -> Result<(u32, Vec<H256>), Error> {
+		let header = try!(self.block_header_by_hash(hash).ok_or(Error::Unknown(hash.clone())));
+
+		// only main chain blocks has block numbers
+		// so if it has, it is not a fork and we return empty route
+		if let Some(number) = self.block_number(hash) {
+			return Ok((number, Vec::new()));
+		}
+
+		let mut next_hash = header.previous_header_hash;
+		let mut result = Vec::new();
+
+		for _ in 0..max_route {
+			if let Some(number) = self.block_number(&next_hash) {
+				return Ok((number, result));
+			}
+			result.push(next_hash.clone());
+			next_hash = try!(self.block_header_by_hash(&next_hash).ok_or(Error::Unknown(hash.clone())))
+				.previous_header_hash;
+		}
+		Err(Error::ForkTooLong)
+	}
+
+	fn best_number(&self) -> Option<u32> {
+		self.read_meta_u32(KEY_BEST_BLOCK_NUMBER)
+	}
+
+	fn best_hash(&self) -> Option<H256> {
+		self.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val))
+	}
+
+	fn canonize_block(&self, context: &mut UpdateContext, at_height: u32, hash: &H256) -> Result<(), Error> {
+		let transactions = self.block_transactions_by_hash(hash);
+		try!(self.update_transactions_meta(context, at_height, &transactions));
+
+		// only canonical blocks are allowed to wield a number
+		context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(at_height), std::ops::Deref::deref(hash));
+		context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(hash), at_height);
+
+		Ok(())
+	}
+
+	// maybe reorganize to the _known_ block
+	// it will actually reorganize only when side chain is at least the same length as main
+	fn maybe_reorganize(&self, context: &mut UpdateContext, hash: &H256) -> Result<Option<(u32, H256)>, Error> {
+		if self.block_number(hash).is_some() {
+			return Ok(None); // cannot reorganize to canonical block
+		}
+
+		// find the route of the block with hash `hash` to the main chain
+		let (at_height, route) = try!(self.fork_route(MAX_FORK_ROUTE_PRESET, hash));
+
+		// reorganization is performed only if length of side chain is at least the same as main chain
+		// todo: shorter chain may actualy become canonical during difficulty updates, though with rather low probability
+		if (route.len() as i32 + 1) < (self.best_number().unwrap_or(0) as i32 - at_height as i32) {
+			return Ok(None);
+		}
+
+		let mut now_best = try!(self.best_number().ok_or(Error::NoBestBlock));
+
+		// decanonizing main chain to the split point
+		loop {
+			let next_to_decanonize = try!(self.best_hash().ok_or(Error::NoBestBlock));
+			try!(self.decanonize_block(context, &next_to_decanonize));
+
+			now_best -= 1;
+
+			if now_best == at_height { break; }
+		}
+
+		// canonizing all route from the split point
+		for new_canonical_hash in route.iter() {
+			now_best += 1;
+			try!(self.canonize_block(context, now_best, &new_canonical_hash));
+		}
+
+		// finaly canonizing the top block we are reorganizing to
+		try!(self.canonize_block(context, now_best + 1, hash));
+
+		Ok(Some((now_best+1, hash.clone())))
 	}
 }
 
@@ -314,16 +493,20 @@ impl Store for Storage {
 	}
 
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error> {
+
+		// ! lock will be held during the entire insert routine
 		let mut best_block = self.best_block.write();
+
+		let mut context = UpdateContext::new(&self.database);
 
 		let block_hash = block.hash();
 
-		let new_best_hash = match best_block.as_ref().map(|bb| &bb.hash) {
+		let mut new_best_hash = match best_block.as_ref().map(|bb| &bb.hash) {
 			Some(best_hash) if &block.header().previous_header_hash != best_hash => best_hash.clone(),
 			_ => block_hash.clone(),
 		};
 
-		let new_best_number = match best_block.as_ref().map(|b| b.number) {
+		let mut new_best_number = match best_block.as_ref().map(|b| b.number) {
 			Some(best_number) => {
 				if block.hash() == new_best_hash { best_number + 1 }
 				else { best_number }
@@ -331,40 +514,57 @@ impl Store for Storage {
 			None => 0,
 		};
 
-		let mut transaction = self.database.transaction();
-
 		let tx_space = block.transactions().len() * 32;
 		let mut tx_refs = Vec::with_capacity(tx_space);
 		for tx in block.transactions() {
 			let tx_hash = tx.hash();
 			tx_refs.extend(&*tx_hash);
-			transaction.put(
+			context.db_transaction.put(
 				Some(COL_TRANSACTIONS),
 				&*tx_hash,
 				&serialization::serialize(tx),
 			);
 		}
-		transaction.put(Some(COL_BLOCK_TRANSACTIONS), &*block_hash, &tx_refs);
+		context.db_transaction.put(Some(COL_BLOCK_TRANSACTIONS), &*block_hash, &tx_refs);
 
-		transaction.put(
+		context.db_transaction.put(
 			Some(COL_BLOCK_HEADERS),
 			&*block_hash,
 			&serialization::serialize(block.header())
 		);
 
+		// the block is continuing the main chain
 		if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
-			self.update_transactions_meta(&mut transaction, new_best_number, block.transactions());
-			transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
+			try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
+			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 
 			// updating main chain height reference
-			transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash));
-			transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&block_hash), new_best_number);
+			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash));
+			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&block_hash), new_best_number);
 		}
 
-		transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
+		// the block does not continue the main chain
+		// but can cause reorganization here
+		// this can canonize the block parent if block parent + this block is longer than the main chain
+		else if let Some((reorg_number, _)) = self.maybe_reorganize(&mut context, &block.header().previous_header_hash).unwrap_or(None) {
+			// if so, we have new best main chain block
+			new_best_number = reorg_number + 1;
+			new_best_hash = block_hash;
 
-		try!(self.database.write(transaction));
+			// and we canonize it also by provisioning transactions
+			try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
+			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
+			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&new_best_hash));
+			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&new_best_hash), new_best_number);
+		}
 
+		// we always update best hash even if it is not changed
+		context.db_transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
+
+		// write accumulated transactions meta
+		try!(context.apply(&self.database));
+
+		// updating locked best block
 		*best_block = Some(BestBlock { hash: new_best_hash, number: new_best_number });
 
 		Ok(())
@@ -388,7 +588,7 @@ impl Store for Storage {
 #[cfg(test)]
 mod tests {
 
-	use super::{Storage, Store};
+	use super::{Storage, Store, UpdateContext};
 	use devtools::RandomTempPath;
 	use chain::{Block, RepresentH256};
 	use super::super::BlockRef;
@@ -590,5 +790,294 @@ mod tests {
 
 		assert!(!meta.is_spent(1), "Transaction #1 output #1 in the new block should be recorded as unspent");
 		assert!(!meta.is_spent(3), "Transaction #1 second #3 in the new block should be recorded as unspent");
+	}
+
+	#[test]
+	fn reorganize_simple() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let (main_hash1, main_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(1)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&main_block1).expect("main block 1 should insert with no problems");
+
+		let (_, side_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(2)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&side_block1).expect("side block 1 should insert with no problems");
+
+		// chain should not reorganize to side_block1
+		assert_eq!(store.best_block().unwrap().hash, main_hash1);
+	}
+
+	#[test]
+	fn fork_smoky() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let (_, main_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(1)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&main_block1).expect("main block 1 should insert with no problems");
+
+		let (side_hash1, side_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(2)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&side_block1).expect("side block 1 should insert with no problems");
+
+		let (side_hash2, side_block2) = test_data::block_hash_builder()
+			.block()
+				.header().parent(side_hash1)
+					.nonce(3)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&side_block2).expect("side block 2 should insert with no problems");
+
+		// store should reorganize to side hash 2, because it represents the longer chain
+		assert_eq!(store.best_block().unwrap().hash, side_hash2);
+	}
+
+	#[test]
+	fn fork_long() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let mut last_main_block_hash = genesis.hash();
+		let mut last_side_block_hash = genesis.hash();
+
+		for n in 0..32 {
+			let (new_main_hash, main_block) = test_data::block_hash_builder()
+				.block()
+					.header().parent(last_main_block_hash)
+						.nonce(n*2)
+						.build()
+					.build()
+				.build();
+			store.insert_block(&main_block).expect(&format!("main block {} should insert with no problems", n));
+			last_main_block_hash = new_main_hash;
+
+			let (new_side_hash, side_block) = test_data::block_hash_builder()
+				.block()
+					.header().parent(last_side_block_hash)
+						.nonce(n*2 + 1)
+						.build()
+					.build()
+				.build();
+			store.insert_block(&side_block).expect(&format!("side block {} should insert with no problems", n));
+			last_side_block_hash = new_side_hash;
+		}
+
+
+		let (reorg_side_hash, reorg_side_block) = test_data::block_hash_builder()
+			.block()
+				.header().parent(last_side_block_hash)
+					.nonce(3)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&reorg_side_block).expect("last side block should insert with no problems");
+
+		// store should reorganize to side hash 2, because it represents the longer chain
+		assert_eq!(store.best_block().unwrap().hash, reorg_side_hash);
+	}
+
+	// test simulates when main chain and side chain are competing all along, each adding
+	// block one by one
+	#[test]
+	fn fork_competing() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let (main_hash1, main_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(1)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&main_block1).expect("main block 1 should insert with no problems");
+
+		let (side_hash1, side_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(2)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&side_block1).expect("side block 1 should insert with no problems");
+
+		let (main_hash2, main_block2) = test_data::block_hash_builder()
+			.block()
+				.header().parent(main_hash1)
+					.nonce(3)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&main_block2).expect("main block 2 should insert with no problems");
+
+		let (_side_hash2, side_block2) = test_data::block_hash_builder()
+			.block()
+				.header().parent(side_hash1)
+					.nonce(4)
+					.build()
+				.build()
+			.build();
+
+		store.insert_block(&side_block2).expect("side block 2 should insert with no problems");
+
+		// store should not reorganize to side hash 2, because it competing chains are of the equal length
+		assert_eq!(store.best_block().unwrap().hash, main_hash2);
+	}
+
+	#[test]
+	fn decanonize() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let block = test_data::block_builder()
+			.header().parent(genesis.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase.clone()).build()
+				.build()
+			.build();
+
+		store.insert_block(&block).expect("inserting first block in the decanonize test should not fail");
+
+		let genesis_meta = store.transaction_meta(&genesis_coinbase)
+			.expect("Transaction meta for the genesis coinbase transaction should exist");
+		assert!(genesis_meta.is_spent(0), "Genesis coinbase should be recorded as spent because block#1 transaction spends it");
+
+		let mut update_context = UpdateContext::new(&store.database);
+		store.decanonize_block(&mut update_context, &block.hash())
+			.expect("Decanonizing block #1 which was just inserted should not fail");
+		update_context.apply(&store.database).unwrap();
+
+		let genesis_meta = store.transaction_meta(&genesis_coinbase)
+			.expect("Transaction meta for the genesis coinbase transaction should exist");
+		assert!(!genesis_meta.is_spent(0), "Genesis coinbase should be recorded as unspent because we retracted block #1");
+	}
+
+	#[test]
+	fn fork_route() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let (main_hash1, main_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(1)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&main_block1).expect("main block 1 should insert with no problems");
+
+		let (main_hash2, main_block2) = test_data::block_hash_builder()
+			.block()
+				.header().parent(main_hash1)
+					.nonce(2)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&main_block2).expect("main block 2 should insert with no problems");
+
+		let (main_hash3, main_block3) = test_data::block_hash_builder()
+			.block()
+				.header().parent(main_hash2)
+					.nonce(3)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&main_block3).expect("main block 3 should insert with no problems");
+
+		let (_, main_block4) = test_data::block_hash_builder()
+			.block()
+				.header().parent(main_hash3)
+					.nonce(4)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&main_block4).expect("main block 4 should insert with no problems");
+
+		let (side_hash1, side_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(5)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&side_block1).expect("side block 1 should insert with no problems");
+
+		let (side_hash2, side_block2) = test_data::block_hash_builder()
+			.block()
+				.header().parent(side_hash1.clone())
+					.nonce(6)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&side_block2).expect("side block 2 should insert with no problems");
+
+		let (side_hash3, side_block3) = test_data::block_hash_builder()
+			.block()
+				.header().parent(side_hash2.clone())
+					.nonce(7)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&side_block3).expect("side block 3 should insert with no problems");
+
+
+		let (h, route) = store.fork_route(16, &side_hash3).expect("Fork route should have been built");
+
+		assert_eq!(h, 0);
+		assert_eq!(route, vec![side_hash2, side_hash1]);
 	}
 }
