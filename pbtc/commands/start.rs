@@ -8,7 +8,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 	let mut el = p2p::event_loop();
 
 	let db = open_db(&cfg);
-	init_db(&cfg, &db);
+	try!(init_db(&cfg, &db));
 
 	let p2p_cfg = p2p::Config {
 		threads: 4,
