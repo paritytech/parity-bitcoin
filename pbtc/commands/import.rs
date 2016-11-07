@@ -6,7 +6,7 @@ use util::{open_db, init_db};
 pub fn import(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 	let db = open_db(&cfg);
 	// TODO: this might be unnecessary here!
-	init_db(&cfg, &db);
+	try!(init_db(&cfg, &db));
 
 	let mut writer = create_sync_blocks_writer(db);
 

@@ -23,13 +23,15 @@ pub fn node_table_path() -> PathBuf {
 	node_table
 }
 
-pub fn init_db(cfg: &Config, db: &Arc<db::Store>) {
+pub fn init_db(cfg: &Config, db: &Arc<db::Store>) -> Result<(), String> {
 	// insert genesis block if db is empty
 	let genesis_block = cfg.magic.genesis_block();
 	match db.block_hash(0) {
-		Some(ref db_genesis_block_hash) if db_genesis_block_hash != &genesis_block.hash() => panic!("Trying to open database with incompatible genesis block"),
-		Some(_) => (),
-		None => db.insert_block(&genesis_block)
-			.expect("Failed to insert genesis block to the database"),
+		Some(ref db_genesis_block_hash) if db_genesis_block_hash != &genesis_block.hash() => Err("Trying to open database with incompatible genesis block".into()),
+		Some(_) => Ok(()),
+		None => {
+			db.insert_block(&genesis_block).expect("Failed to insert genesis block to the database");
+			Ok(())
+		}
 	}
 }
