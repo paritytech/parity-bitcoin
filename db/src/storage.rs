@@ -28,7 +28,7 @@ const _COL_RESERVED6: u32 = 10;
 
 const DB_VERSION: u32 = 1;
 
-const MAX_FORK_ROUTE_PRESET: usize = 16;
+const MAX_FORK_ROUTE_PRESET: usize = 128;
 
 /// Blockchain storage interface
 pub trait Store : Send + Sync {
@@ -866,6 +866,53 @@ mod tests {
 		assert_eq!(store.best_block().unwrap().hash, side_hash2);
 	}
 
+	#[test]
+	fn fork_long() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let mut last_main_block_hash = genesis.hash();
+		let mut last_side_block_hash = genesis.hash();
+
+		for n in 0..32 {
+			let (new_main_hash, main_block) = test_data::block_hash_builder()
+				.block()
+					.header().parent(last_main_block_hash)
+						.nonce(n*2)
+						.build()
+					.build()
+				.build();
+			store.insert_block(&main_block).expect(&format!("main block {} should insert with no problems", n));
+			last_main_block_hash = new_main_hash;
+
+			let (new_side_hash, side_block) = test_data::block_hash_builder()
+				.block()
+					.header().parent(last_side_block_hash)
+						.nonce(n*2 + 1)
+						.build()
+					.build()
+				.build();
+			store.insert_block(&side_block).expect(&format!("side block {} should insert with no problems", n));
+			last_side_block_hash = new_side_hash;
+		}
+
+
+		let (reorg_side_hash, reorg_side_block) = test_data::block_hash_builder()
+			.block()
+				.header().parent(last_side_block_hash)
+					.nonce(3)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&reorg_side_block).expect("last side block should insert with no problems");
+
+		// store should reorganize to side hash 2, because it represents the longer chain
+		assert_eq!(store.best_block().unwrap().hash, reorg_side_hash);
+	}
 
 	// test simulates when main chain and side chain are competing all along, each adding
 	// block one by one
