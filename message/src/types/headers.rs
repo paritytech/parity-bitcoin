@@ -11,8 +11,26 @@ pub struct Headers {
 
 #[derive(Debug, PartialEq)]
 struct HeaderWithTxnCount {
-	pub header: BlockHeader,
-	pub txn_count: u64,
+	header: BlockHeader,
+}
+
+impl From<HeaderWithTxnCount> for BlockHeader {
+	fn from(header: HeaderWithTxnCount) -> BlockHeader {
+		header.header
+	}
+}
+
+#[derive(Debug, PartialEq)]
+struct HeaderWithTxnCountRef<'a> {
+	header: &'a BlockHeader,
+}
+
+impl<'a> From<&'a BlockHeader> for HeaderWithTxnCountRef<'a> {
+	fn from(header: &'a BlockHeader) -> Self {
+		HeaderWithTxnCountRef {
+			header: header,
+		}
+	}
 }
 
 impl Payload for Headers {
@@ -27,23 +45,23 @@ impl Payload for Headers {
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let headers_with_txn_count: Vec<HeaderWithTxnCount> = try!(reader.read_list());
 		let headers = Headers {
-			headers: headers_with_txn_count.into_iter().map(|h| h.header).collect(),
+			headers: headers_with_txn_count.into_iter().map(Into::into).collect(),
 		};
 
 		Ok(headers)
 	}
 
 	fn serialize_payload(&self, stream: &mut Stream, _version: u32) -> MessageResult<()> {
-		let headers_with_txn_count: Vec<_> = self.headers.iter().map(|h| HeaderWithTxnCount { header: h.clone(), txn_count: 0 }).collect();
+		let headers_with_txn_count: Vec<HeaderWithTxnCountRef> = self.headers.iter().map(Into::into).collect();
 		stream.append_list(&headers_with_txn_count);
 		Ok(())
 	}
 }
 
-impl Serializable for HeaderWithTxnCount {
+impl<'a> Serializable for HeaderWithTxnCountRef<'a> {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
-			.append(&self.header)
+			.append(self.header)
 			.append(&CompactInteger::from(0u32));
 	}
 }
@@ -52,8 +70,12 @@ impl Deserializable for HeaderWithTxnCount {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let header = HeaderWithTxnCount {
 			header: try!(reader.read()),
-			txn_count: try!(reader.read::<CompactInteger>()).into(),
 		};
+
+		let txn_count: CompactInteger = try!(reader.read());
+		if txn_count != 0u32.into() {
+			return Err(ReaderError::MalformedData);
+		}
 
 		Ok(header)
 	}
