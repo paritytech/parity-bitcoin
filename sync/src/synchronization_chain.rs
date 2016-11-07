@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 use parking_lot::RwLock;
-use chain::{Block, RepresentH256};
+use chain::Block;
 use db;
 use primitives::hash::H256;
 use hash_queue::{HashQueueChain, HashPosition};
@@ -45,6 +45,23 @@ pub struct Information {
 	pub verifying: u32,
 	/// Number of blocks in the storage
 	pub stored: u32,
+}
+
+/// Result of intersecting chain && inventory
+#[derive(Debug, PartialEq)]
+pub enum InventoryIntersection {
+	/// 3.2: No intersection with in-memory queue && no intersection with db
+	NoKnownBlocks(usize),
+	/// 2.3: Inventory has no new blocks && some of blocks in inventory are in in-memory queue
+	InMemoryNoNewBlocks,
+	/// 2.4.2: Inventory has new blocks && these blocks are right after chain' best block
+	InMemoryMainNewBlocks(usize),
+	/// 2.4.3: Inventory has new blocks && these blocks are forked from our chain' best block
+	InMemoryForkNewBlocks(usize),
+	/// 3.3: No intersection with in-memory queue && has intersection with db && all blocks are already stored in db
+	DbAllBlocksKnown,
+	/// 3.4: No intersection with in-memory queue && has intersection with db && some blocks are not yet stored in db
+	DbForkNewBlocks(usize),
 }
 
 /// Blockchain from synchroniation point of view, consisting of:
@@ -109,7 +126,7 @@ impl Chain {
 			scheduled: self.hash_chain.len_of(SCHEDULED_QUEUE),
 			requested: self.hash_chain.len_of(REQUESTED_QUEUE),
 			verifying: self.hash_chain.len_of(VERIFYING_QUEUE),
-			stored: self.storage.best_block().map_or(0, |block| block.number + 1),
+			stored: self.best_storage_block.number + 1,
 		}
 	}
 
@@ -137,68 +154,14 @@ impl Chain {
 		}
 	}
 
-	/// Returns true if has blocks of given type
-	pub fn has_blocks_of_state(&self, state: BlockState) -> bool {
-		match state {
-			BlockState::Stored => true, // storage with genesis block is required
-			_ => !self.hash_chain.is_empty_at(state.to_queue_index()),
-		}
-	}
-
 	/// Get best block
 	pub fn best_block(&self) -> db::BestBlock {
-		let storage_best_block = self.storage.best_block().expect("storage with genesis block is required");
 		match self.hash_chain.back() {
 			Some(hash) => db::BestBlock {
-				number: storage_best_block.number + self.hash_chain.len(),
+				number: self.best_storage_block.number + self.hash_chain.len(),
 				hash: hash.clone(),
 			},
-			None => db::BestBlock {
-				number: storage_best_block.number,
-				hash: storage_best_block.hash,
-			}
-		}
-	}
-
-	/// Get best block of given state
-	pub fn best_block_of_state(&self, state: BlockState) -> Option<db::BestBlock> {
-		match state {
-			BlockState::Scheduled => self.hash_chain.back_at(SCHEDULED_QUEUE)
-				.map(|hash| db::BestBlock {
-					hash: hash,
-					number: self.storage.best_block().expect("storage with genesis block is required").number + 1
-						+ self.hash_chain.len_of(VERIFYING_QUEUE)
-						+ self.hash_chain.len_of(REQUESTED_QUEUE)
-						+ self.hash_chain.len_of(SCHEDULED_QUEUE)
-				}),
-			BlockState::Requested => self.hash_chain.back_at(REQUESTED_QUEUE)
-				.map(|hash| db::BestBlock {
-					hash: hash,
-					number: self.storage.best_block().expect("storage with genesis block is required").number + 1
-						+ self.hash_chain.len_of(VERIFYING_QUEUE)
-						+ self.hash_chain.len_of(REQUESTED_QUEUE)
-				}),
-			BlockState::Verifying => self.hash_chain.back_at(VERIFYING_QUEUE)
-				.map(|hash| db::BestBlock {
-					hash: hash,
-					number: self.storage.best_block().expect("storage with genesis block is required").number + 1
-						+ self.hash_chain.len_of(VERIFYING_QUEUE)
-				}),
-			BlockState::Stored => {
-					self.storage.best_block()
-				},
-			_ => panic!("not supported"),
-		}
-	}
-
-	/// Check if block has given state
-	pub fn block_has_state(&self, hash: &H256, state: BlockState) -> bool {
-		match state {
-			BlockState::Scheduled => self.hash_chain.is_contained_in(SCHEDULED_QUEUE, hash),
-			BlockState::Requested => self.hash_chain.is_contained_in(REQUESTED_QUEUE, hash),
-			BlockState::Verifying => self.hash_chain.is_contained_in(VERIFYING_QUEUE, hash),
-			BlockState::Stored => self.storage.contains_block(db::BlockRef::Hash(hash.clone())),
-			BlockState::Unknown => self.block_state(hash) == BlockState::Unknown,
+			None => self.best_storage_block.clone(),
 		}
 	}
 
@@ -214,39 +177,12 @@ impl Chain {
 		}
 	}
 
-	/// Get block number from storage
-	pub fn storage_block_number(&self, hash: &H256) -> Option<u32> {
-		self.storage.block_number(hash)
-	}
-
-	/// Get block hash from storage
-	pub fn storage_block_hash(&self, number: u32) -> Option<H256> {
-		self.storage.block_hash(number)
-	}
-
-	/// Get block from the storage
-	pub fn storage_block(&self, hash: &H256) -> Option<Block> {
-		self.storage.block(db::BlockRef::Hash(hash.clone()))
-	}
-
-	/// Prepare best block locator hashes
-	pub fn best_block_locator_hashes(&self) -> Vec<H256> {
-		let mut result: Vec<H256> = Vec::with_capacity(4);
-		if let Some(pre_best_block) = self.hash_chain.back_skip_n_at(SCHEDULED_QUEUE, 2) {
-			result.push(pre_best_block);
-		}
-		if let Some(pre_best_block) = self.hash_chain.back_skip_n_at(REQUESTED_QUEUE, 2) {
-			result.push(pre_best_block);
-		}
-		if let Some(pre_best_block) = self.hash_chain.back_skip_n_at(VERIFYING_QUEUE, 2) {
-			result.push(pre_best_block);
-		}
-		result.push(self.best_storage_block.hash.clone());
-		result
-	}
-
 	/// Prepare block locator hashes, as described in protocol documentation:
 	/// https://en.bitcoin.it/wiki/Protocol_documentation#getblocks
+	/// When there are forked blocks in the queue, this method can result in
+	/// mixed block locator hashes ([0 - from fork1, 1 - from fork2, 2 - from fork1]).
+	/// Peer will respond with blocks of fork1 || fork2 => we could end up in some side fork
+	/// To resolve this, after switching to saturated state, we will also ask all peers for inventory.
 	pub fn block_locator_hashes(&self) -> Vec<H256> {
 		let mut block_locator_hashes: Vec<H256> = Vec::new();
 
@@ -254,8 +190,7 @@ impl Chain {
 		let (local_index, step) = self.block_locator_hashes_for_queue(&mut block_locator_hashes);
 
 		// calculate for storage
-		let storage_best_block_number = self.storage.best_block().expect("storage with genesis block is required").number;
-		let storage_index = if storage_best_block_number < local_index { 0 } else { storage_best_block_number - local_index };
+		let storage_index = if self.best_storage_block.number < local_index { 0 } else { self.best_storage_block.number - local_index };
 		self.block_locator_hashes_for_storage(storage_index, step, &mut block_locator_hashes);
 		block_locator_hashes
 	}
@@ -287,16 +222,21 @@ impl Chain {
 
 	/// Insert new best block to storage
 	pub fn insert_best_block(&mut self, block: Block) -> Result<(), db::Error> {
-		if block.block_header.previous_header_hash != self.best_storage_block.hash {
-			return Err(db::Error::DB("Trying to insert out-of-order block".into()));
-		}
+		// insert to storage
+		try!(self.storage.insert_block(&block));
 
 		// remember new best block hash
-		self.best_storage_block.number += 1;
-		self.best_storage_block.hash = block.hash();
+		self.best_storage_block = self.storage.best_block().expect("Inserted block above");
 
-		// insert to storage
-		self.storage.insert_block(&block)
+		Ok(())
+	}
+
+	/// Remove block
+	pub fn remove_block(&mut self, hash: &H256) {
+		if self.hash_chain.remove_at(SCHEDULED_QUEUE, hash) == HashPosition::Missing
+			&& self.hash_chain.remove_at(REQUESTED_QUEUE, hash) == HashPosition::Missing {
+			self.hash_chain.remove_at(VERIFYING_QUEUE, hash);
+		}
 	}
 
 	/// Remove block by hash if it is currently in given state
@@ -307,6 +247,57 @@ impl Chain {
 	/// Remove all blocks with given state
 	pub fn remove_blocks_with_state(&mut self, state: BlockState) {
 		self.hash_chain.remove_all_at(state.to_queue_index());
+	}
+
+	/// Intersect chain with inventory
+	pub fn intersect_with_inventory(&self, inventory: &Vec<H256>) -> InventoryIntersection {
+		let inventory_len = inventory.len();
+		assert!(inventory_len != 0);
+
+		// giving that blocks in inventory are ordered
+		match self.block_state(&inventory[0]) {
+			// if first block of inventory is unknown => all other blocks are also unknown 
+			BlockState::Unknown => {
+				InventoryIntersection::NoKnownBlocks(0)
+			},
+			// else if first block is known
+			first_block_state @ _ => match self.block_state(&inventory[inventory_len - 1]) {
+				// if last block is known to be in db => all inventory blocks are also in db
+				BlockState::Stored => {
+					InventoryIntersection::DbAllBlocksKnown 
+				},
+				// if first block is known && last block is unknown => intersection with queue or with db
+				BlockState::Unknown => {
+					// find last known block
+					let mut previous_state = first_block_state;
+					for index in 1..inventory_len {
+						let state = self.block_state(&inventory[index]);
+						if state == BlockState::Unknown {
+							// previous block is stored => fork from stored block
+							if previous_state == BlockState::Stored {
+								return InventoryIntersection::DbForkNewBlocks(index);
+							}
+							// previous block is best block => no fork
+							else if &self.best_block().hash == &inventory[index - 1] {
+								return InventoryIntersection::InMemoryMainNewBlocks(index);
+							}
+							// previous block is not a best block => fork
+							else {
+								return InventoryIntersection::InMemoryForkNewBlocks(index);
+							}
+						}
+						previous_state = state;
+					}
+
+					// unreachable because last block is unknown && in above loop we search for unknown blocks
+					unreachable!();
+				},
+				// if first block is known && last block is also known && is in queue => queue intersection with no new block
+				_ => {
+					InventoryIntersection::InMemoryNoNewBlocks
+				}
+			}
+		}
 	}
 
 	/// Calculate block locator hashes for hash queue
@@ -359,7 +350,7 @@ impl fmt::Debug for Chain {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		try!(writeln!(f, "chain: ["));
 		{
-			let mut num = self.storage.best_block().expect("Storage with genesis block is required").number;
+			let mut num = self.best_storage_block.number;
 			try!(writeln!(f, "\tworse(stored): {} {:?}", 0, self.storage.block_hash(0)));
 			try!(writeln!(f, "\tbest(stored): {} {:?}", num, self.storage.block_hash(num)));
 
@@ -389,8 +380,9 @@ mod tests {
 	use std::sync::Arc;
 	use chain::RepresentH256;
 	use hash_queue::HashPosition;
-	use super::{Chain, BlockState};
+	use super::{Chain, BlockState, InventoryIntersection};
 	use db::{self, Store, BestBlock};
+	use primitives::hash::H256;
 	use test_data;
 
 	#[test]
@@ -406,19 +398,9 @@ mod tests {
 		assert_eq!(chain.length_of_state(BlockState::Requested), 0);
 		assert_eq!(chain.length_of_state(BlockState::Verifying), 0);
 		assert_eq!(chain.length_of_state(BlockState::Stored), 1);
-		assert_eq!(chain.has_blocks_of_state(BlockState::Scheduled), false);
-		assert_eq!(chain.has_blocks_of_state(BlockState::Requested), false);
-		assert_eq!(chain.has_blocks_of_state(BlockState::Verifying), false);
-		assert_eq!(chain.has_blocks_of_state(BlockState::Stored), true);
 		assert_eq!(&chain.best_block(), &db_best_block);
-		assert_eq!(chain.best_block_of_state(BlockState::Scheduled), None);
-		assert_eq!(chain.best_block_of_state(BlockState::Requested), None);
-		assert_eq!(chain.best_block_of_state(BlockState::Verifying), None);
-		assert_eq!(chain.best_block_of_state(BlockState::Stored), Some(db_best_block.clone()));
-		assert_eq!(chain.block_has_state(&db_best_block.hash, BlockState::Requested), false);
-		assert_eq!(chain.block_has_state(&db_best_block.hash, BlockState::Stored), true);
 		assert_eq!(chain.block_state(&db_best_block.hash), BlockState::Stored);
-		assert_eq!(chain.block_state(&"0000000000000000000000000000000000000000000000000000000000000000".into()), BlockState::Unknown);
+		assert_eq!(chain.block_state(&H256::from(0)), BlockState::Unknown);
 	}
 
 	#[test]
@@ -428,12 +410,12 @@ mod tests {
 
 		// add 6 blocks to scheduled queue
 		chain.schedule_blocks_hashes(vec![
-			"0000000000000000000000000000000000000000000000000000000000000000".into(),
-			"0000000000000000000000000000000000000000000000000000000000000001".into(),
-			"0000000000000000000000000000000000000000000000000000000000000002".into(),
-			"0000000000000000000000000000000000000000000000000000000000000003".into(),
-			"0000000000000000000000000000000000000000000000000000000000000004".into(),
-			"0000000000000000000000000000000000000000000000000000000000000005".into(),
+			H256::from(0),
+			H256::from(1),
+			H256::from(2),
+			H256::from(3),
+			H256::from(4),
+			H256::from(5),
 		]);
 		assert!(chain.information().scheduled == 6 && chain.information().requested == 0
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
@@ -452,22 +434,22 @@ mod tests {
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 
 		// try to remove block 0 from scheduled queue => missing
-		assert_eq!(chain.remove_block_with_state(&"0000000000000000000000000000000000000000000000000000000000000000".into(), BlockState::Scheduled), HashPosition::Missing);
+		assert_eq!(chain.remove_block_with_state(&H256::from(0), BlockState::Scheduled), HashPosition::Missing);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 3
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 		// remove blocks 0 & 1 from requested queue
-		assert_eq!(chain.remove_block_with_state(&"0000000000000000000000000000000000000000000000000000000000000001".into(), BlockState::Requested), HashPosition::Inside);
-		assert_eq!(chain.remove_block_with_state(&"0000000000000000000000000000000000000000000000000000000000000000".into(), BlockState::Requested), HashPosition::Front);
+		assert_eq!(chain.remove_block_with_state(&H256::from(1), BlockState::Requested), HashPosition::Inside);
+		assert_eq!(chain.remove_block_with_state(&H256::from(0), BlockState::Requested), HashPosition::Front);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 		// mark 0 & 1 as verifying
-		chain.verify_block_hash("0000000000000000000000000000000000000000000000000000000000000001".into());
-		chain.verify_block_hash("0000000000000000000000000000000000000000000000000000000000000002".into());
+		chain.verify_block_hash(H256::from(1));
+		chain.verify_block_hash(H256::from(2));
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 2 && chain.information().stored == 1);
 
 		// mark block 0 as verified
-		assert_eq!(chain.remove_block_with_state(&"0000000000000000000000000000000000000000000000000000000000000001".into(), BlockState::Verifying), HashPosition::Front);
+		assert_eq!(chain.remove_block_with_state(&H256::from(1), BlockState::Verifying), HashPosition::Front);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 1);
 		// insert new best block to the chain
@@ -496,85 +478,149 @@ mod tests {
 		assert_eq!(chain.block_locator_hashes(), vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
 
 		chain.schedule_blocks_hashes(vec![
-			"0000000000000000000000000000000000000000000000000000000000000000".into(),
-			"0000000000000000000000000000000000000000000000000000000000000001".into(),
-			"0000000000000000000000000000000000000000000000000000000000000002".into(),
-			"0000000000000000000000000000000000000000000000000000000000000003".into(),
-			"0000000000000000000000000000000000000000000000000000000000000004".into(),
-			"0000000000000000000000000000000000000000000000000000000000000005".into(),
-			"0000000000000000000000000000000000000000000000000000000000000006".into(),
-			"0000000000000000000000000000000000000000000000000000000000000007".into(),
-			"0000000000000000000000000000000000000000000000000000000000000008".into(),
-			"0000000000000000000000000000000000000000000000000000000000000009".into(),
-			"0000000000000000000000000000000000000000000000000000000000000010".into(),
+			H256::from(0),
+			H256::from(1),
+			H256::from(2),
+			H256::from(3),
+			H256::from(4),
+			H256::from(5),
+			H256::from(6),
+			H256::from(7),
+			H256::from(8),
+			H256::from(9),
+			H256::from(10),
 		]);
 		chain.request_blocks_hashes(10);
 		chain.verify_blocks_hashes(10);
 
-		assert_eq!(chain.best_block_locator_hashes()[0], "0000000000000000000000000000000000000000000000000000000000000010".into());
 		assert_eq!(chain.block_locator_hashes(), vec![
-			"0000000000000000000000000000000000000000000000000000000000000010".into(),
-			"0000000000000000000000000000000000000000000000000000000000000009".into(),
-			"0000000000000000000000000000000000000000000000000000000000000008".into(),
-			"0000000000000000000000000000000000000000000000000000000000000007".into(),
-			"0000000000000000000000000000000000000000000000000000000000000006".into(),
-			"0000000000000000000000000000000000000000000000000000000000000005".into(),
-			"0000000000000000000000000000000000000000000000000000000000000004".into(),
-			"0000000000000000000000000000000000000000000000000000000000000003".into(),
-			"0000000000000000000000000000000000000000000000000000000000000002".into(),
-			"0000000000000000000000000000000000000000000000000000000000000001".into(),
+			H256::from(10),
+			H256::from(9),
+			H256::from(8),
+			H256::from(7),
+			H256::from(6),
+			H256::from(5),
+			H256::from(4),
+			H256::from(3),
+			H256::from(2),
+			H256::from(1),
 			block2_hash.clone(),
 			genesis_hash.clone(),
 		]);
 
 		chain.schedule_blocks_hashes(vec![
-			"0000000000000000000000000000000000000000000000000000000000000011".into(),
-			"0000000000000000000000000000000000000000000000000000000000000012".into(),
-			"0000000000000000000000000000000000000000000000000000000000000013".into(),
-			"0000000000000000000000000000000000000000000000000000000000000014".into(),
-			"0000000000000000000000000000000000000000000000000000000000000015".into(),
-			"0000000000000000000000000000000000000000000000000000000000000016".into(),
+			H256::from(11),
+			H256::from(12),
+			H256::from(13),
+			H256::from(14),
+			H256::from(15),
+			H256::from(16),
 		]);
 		chain.request_blocks_hashes(10);
 
-		assert_eq!(chain.best_block_locator_hashes()[0], "0000000000000000000000000000000000000000000000000000000000000014".into());
 		assert_eq!(chain.block_locator_hashes(), vec![
-			"0000000000000000000000000000000000000000000000000000000000000016".into(),
-			"0000000000000000000000000000000000000000000000000000000000000015".into(),
-			"0000000000000000000000000000000000000000000000000000000000000014".into(),
-			"0000000000000000000000000000000000000000000000000000000000000013".into(),
-			"0000000000000000000000000000000000000000000000000000000000000012".into(),
-			"0000000000000000000000000000000000000000000000000000000000000011".into(),
-			"0000000000000000000000000000000000000000000000000000000000000010".into(),
-			"0000000000000000000000000000000000000000000000000000000000000009".into(),
-			"0000000000000000000000000000000000000000000000000000000000000008".into(),
-			"0000000000000000000000000000000000000000000000000000000000000007".into(),
-			"0000000000000000000000000000000000000000000000000000000000000005".into(),
-			"0000000000000000000000000000000000000000000000000000000000000001".into(),
+			H256::from(16),
+			H256::from(15),
+			H256::from(14),
+			H256::from(13),
+			H256::from(12),
+			H256::from(11),
+			H256::from(10),
+			H256::from(9),
+			H256::from(8),
+			H256::from(7),
+			H256::from(5),
+			H256::from(1),
 			genesis_hash.clone(),
 		]);
 
 		chain.schedule_blocks_hashes(vec![
-			"0000000000000000000000000000000000000000000000000000000000000020".into(),
-			"0000000000000000000000000000000000000000000000000000000000000021".into(),
-			"0000000000000000000000000000000000000000000000000000000000000022".into(),
+			H256::from(20),
+			H256::from(21),
+			H256::from(22),
 		]);
 
-		assert_eq!(chain.best_block_locator_hashes()[0], "0000000000000000000000000000000000000000000000000000000000000020".into());
 		assert_eq!(chain.block_locator_hashes(), vec![
-			"0000000000000000000000000000000000000000000000000000000000000022".into(),
-			"0000000000000000000000000000000000000000000000000000000000000021".into(),
-			"0000000000000000000000000000000000000000000000000000000000000020".into(),
-			"0000000000000000000000000000000000000000000000000000000000000016".into(),
-			"0000000000000000000000000000000000000000000000000000000000000015".into(),
-			"0000000000000000000000000000000000000000000000000000000000000014".into(),
-			"0000000000000000000000000000000000000000000000000000000000000013".into(),
-			"0000000000000000000000000000000000000000000000000000000000000012".into(),
-			"0000000000000000000000000000000000000000000000000000000000000011".into(),
-			"0000000000000000000000000000000000000000000000000000000000000010".into(),
-			"0000000000000000000000000000000000000000000000000000000000000008".into(),
-			"0000000000000000000000000000000000000000000000000000000000000004".into(),
+			H256::from(22),
+			H256::from(21),
+			H256::from(20),
+			H256::from(16),
+			H256::from(15),
+			H256::from(14),
+			H256::from(13),
+			H256::from(12),
+			H256::from(11),
+			H256::from(10),
+			H256::from(8),
+			H256::from(4),
 			genesis_hash.clone(),
 		]);
+	}
+
+	#[test]
+	fn chain_intersect_with_inventory() {
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
+		// append 2 db blocks
+		chain.insert_best_block(test_data::block_h1()).expect("Error inserting new block");
+		chain.insert_best_block(test_data::block_h2()).expect("Error inserting new block");
+		// append 3 verifying blocks
+		chain.schedule_blocks_hashes(vec![
+			H256::from(0),
+			H256::from(1),
+			H256::from(2),
+		]);
+		chain.request_blocks_hashes(3);
+		chain.verify_blocks_hashes(3);
+		// append 3 requested blocks
+		chain.schedule_blocks_hashes(vec![
+			H256::from(10),
+			H256::from(11),
+			H256::from(12),
+		]);
+		chain.request_blocks_hashes(10);
+		// append 3 scheduled blocks
+		chain.schedule_blocks_hashes(vec![
+			H256::from(20),
+			H256::from(21),
+			H256::from(22),
+		]);
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			H256::from(30),
+			H256::from(31),
+		]), InventoryIntersection::NoKnownBlocks(0));
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			H256::from(2),
+			H256::from(10),
+			H256::from(11),
+			H256::from(12),
+			H256::from(20),
+		]), InventoryIntersection::InMemoryNoNewBlocks);
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			H256::from(21),
+			H256::from(22),
+			H256::from(30),
+			H256::from(31),
+		]), InventoryIntersection::InMemoryMainNewBlocks(2));
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			H256::from(20),
+			H256::from(21),
+			H256::from(30),
+			H256::from(31),
+		]), InventoryIntersection::InMemoryForkNewBlocks(2));
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			test_data::block_h1().hash(),
+			test_data::block_h2().hash(),
+		]), InventoryIntersection::DbAllBlocksKnown);
+
+		assert_eq!(chain.intersect_with_inventory(&vec![
+			test_data::block_h2().hash(),
+			H256::from(30),
+			H256::from(31),
+		]), InventoryIntersection::DbForkNewBlocks(1));
 	}
 }

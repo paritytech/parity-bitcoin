@@ -62,9 +62,9 @@ impl SynchronizationServer {
 
 	fn locate_known_block(&self, block_locator_hashes: Vec<H256>) -> Option<db::BestBlock> {
 		let chain = self.chain.read();
+		let storage = chain.storage();
 		block_locator_hashes.into_iter()
-			.filter_map(|hash| chain
-				.storage_block_number(&hash)
+			.filter_map(|hash| storage.block_number(&hash)
 				.map(|number| db::BestBlock {
 					number: number,
 					hash: hash,
@@ -93,15 +93,19 @@ impl SynchronizationServer {
 					(peer_index, ServerTask::ServeGetData(inventory)) => {
 						let mut unknown_items: Vec<InventoryVector> = Vec::new();
 						let mut new_tasks: Vec<ServerTask> = Vec::new();
-						for item in inventory {
-							match item.inv_type {
-								InventoryType::MessageBlock => {
-									match chain.read().storage_block_number(&item.hash) {
-										Some(_) => new_tasks.push(ServerTask::ReturnBlock(item.hash.clone())),
-										None => unknown_items.push(item),
-									}
-								},
-								_ => (), // TODO: process other inventory types
+						{
+							let chain = chain.read();
+							let storage = chain.storage();
+							for item in inventory {
+								match item.inv_type {
+									InventoryType::MessageBlock => {
+										match storage.block_number(&item.hash) {
+											Some(_) => new_tasks.push(ServerTask::ReturnBlock(item.hash.clone())),
+											None => unknown_items.push(item),
+										}
+									},
+									_ => (), // TODO: process other inventory types
+								}
 							}
 						}
 						// respond with `notfound` message for unknown data
@@ -132,7 +136,12 @@ impl SynchronizationServer {
 						let blocks_hashes = SynchronizationServer::blocks_hashes_after(&chain, &best_block, &hash_stop, 2000);
 						if !blocks_hashes.is_empty() {
 							trace!(target: "sync", "Going to respond with blocks headers with {} items to peer#{}", blocks_hashes.len(), peer_index);
-							let blocks_headers = blocks_hashes.into_iter().filter_map(|hash| chain.read().storage_block(&hash).map(|block| block.block_header)).collect();
+							let chain = chain.read();
+							let storage = chain.storage();
+							// TODO: read block_header only
+							let blocks_headers = blocks_hashes.into_iter()
+								.filter_map(|hash| storage.block(db::BlockRef::Hash(hash)).map(|block| block.block_header))
+								.collect();
 							executor.lock().execute(Task::SendHeaders(peer_index, blocks_headers));
 						}
 					},
@@ -158,8 +167,7 @@ impl SynchronizationServer {
 					},
 					// `block`
 					(peer_index, ServerTask::ReturnBlock(block_hash)) => {
-						let storage_block = chain.read().storage_block(&block_hash);
-						if let Some(storage_block) = storage_block {
+						if let Some(storage_block) = chain.read().storage().block(db::BlockRef::Hash(block_hash)) {
 							executor.lock().execute(Task::SendBlock(peer_index, storage_block));
 						}
 					},
@@ -172,7 +180,9 @@ impl SynchronizationServer {
 
 	fn blocks_hashes_after(chain: &ChainRef, best_block: &db::BestBlock, hash_stop: &H256, max_hashes: u32) -> Vec<H256> {
 		let mut hashes: Vec<H256> = Vec::new();
-		let storage_block_hash = chain.read().storage_block_hash(best_block.number);
+		let chain = chain.read();
+		let storage = chain.storage();
+		let storage_block_hash = storage.block_hash(best_block.number);
 		if let Some(hash) = storage_block_hash {
 			// check that chain has not reorganized since task was queued
 			if hash == best_block.hash {
@@ -180,7 +190,7 @@ impl SynchronizationServer {
 				let last_block_number = first_block_number + max_hashes;
 				// `max_hashes` hashes after best_block.number OR hash_stop OR blockchain end
 				for block_number in first_block_number..last_block_number {
-					match chain.read().storage_block_hash(block_number) {
+					match storage.block_hash(block_number) {
 						Some(ref block_hash) if block_hash == hash_stop => break,
 						None => break,
 						Some(block_hash) => {

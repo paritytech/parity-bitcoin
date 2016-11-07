@@ -39,11 +39,6 @@ impl HashQueue {
 		self.queue.len() as u32
 	}
 
-	/// Returns true if queue is empty.
-	pub fn is_empty(&self) -> bool {
-		self.queue.is_empty()
-	}
-
 	/// Returns front element from the given queue.
 	pub fn front(&self) -> Option<H256> {
 		self.queue.front().cloned()
@@ -61,19 +56,6 @@ impl HashQueue {
 			return None;
 		}
 		Some(self.queue[queue_len - 2].clone())
-	}
-
-	/// Returns n-th element (n is starting from 0), starting from the back-element in the queue.
-	/// If there are no n-th element - returns (n-1) element & etc.
-	pub fn back_skip_n(&self, n: usize) -> Option<H256> {
-		let queue_len = self.queue.len();
-		if queue_len == 0 {
-			return None;
-		}
-		if n + 1 > queue_len {
-			return Some(self.queue[0].clone())
-		}
-		return Some(self.queue[queue_len - n - 1].clone())
 	}
 
 	/// Returns true if queue contains element.
@@ -175,11 +157,6 @@ impl HashQueueChain {
 		self.chain[queue_index].len()
 	}
 
-	/// Returns true if given queue is empty.
-	pub fn is_empty_at(&self, queue_index: usize) -> bool {
-		self.chain[queue_index].is_empty()
-	}
-
 	/// Returns element at the front of the given queue.
 	pub fn front_at(&self, queue_index: usize) -> Option<H256> {
 		let ref queue = self.chain[queue_index];
@@ -196,13 +173,6 @@ impl HashQueueChain {
 	pub fn pre_back_at(&self, chain_index: usize) -> Option<H256> {
 		let ref queue = self.chain[chain_index];
 		queue.pre_back()
-	}
-
-	/// Returns n-th element (n is starting from 0), starting from the back-element in given queue.
-	/// If there are no n-th element - returns (n-1) element & etc.
-	pub fn back_skip_n_at(&self, chain_index: usize, n: usize) -> Option<H256> {
-		let ref queue = self.chain[chain_index];
-		queue.back_skip_n(n)
 	}
 
 	/// Returns the back of the whole chain.
@@ -223,6 +193,7 @@ impl HashQueueChain {
 	}
 
 	/// Checks if hash is contained in given queue.
+	#[cfg(test)]
 	pub fn is_contained_in(&self, queue_index: usize, hash: &H256) -> bool {
 		self.chain[queue_index].contains(hash)
 	}
@@ -283,16 +254,15 @@ impl Index<u32> for HashQueueChain {
 #[cfg(test)]
 mod tests {
 	use super::{HashQueue, HashQueueChain, HashPosition};
+	use primitives::hash::H256;
 
 	#[test]
 	fn hash_queue_empty() {
 		let mut queue = HashQueue::new();
 		assert_eq!(queue.len(), 0);
-		assert_eq!(queue.is_empty(), true);
 		assert_eq!(queue.front(), None);
 		assert_eq!(queue.back(), None);
 		assert_eq!(queue.pre_back(), None);
-		assert_eq!(queue.back_skip_n(100), None);
 		assert_eq!(queue.contains(&"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), false);
 		assert_eq!(queue.pop_front(), None);
 		assert_eq!(queue.pop_front_n(100), vec![]);
@@ -304,11 +274,9 @@ mod tests {
 		let mut chain = HashQueueChain::with_number_of_queues(3);
 		assert_eq!(chain.len(), 0);
 		assert_eq!(chain.len_of(0), 0);
-		assert_eq!(chain.is_empty_at(0), true);
 		assert_eq!(chain.front_at(0), None);
 		assert_eq!(chain.back_at(0), None);
 		assert_eq!(chain.pre_back_at(0), None);
-		assert_eq!(chain.back_skip_n_at(0, 100), None);
 		assert_eq!(chain.back(), None);
 		assert_eq!(chain.is_contained_in(0, &"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), false);
 		assert_eq!(chain.contains_in(&"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f".into()), None);
@@ -320,16 +288,16 @@ mod tests {
 	fn hash_queue_chain_not_empty() {
 		let mut chain = HashQueueChain::with_number_of_queues(4);
 		chain.push_back_n_at(0, vec![
-			"0000000000000000000000000000000000000000000000000000000000000000".into(),
-			"0000000000000000000000000000000000000000000000000000000000000001".into(),
-			"0000000000000000000000000000000000000000000000000000000000000002".into(),
+			H256::from(0),
+			H256::from(1),
+			H256::from(2),
 		]);
 		chain.push_back_n_at(1, vec![
-			"0000000000000000000000000000000000000000000000000000000000000003".into(),
-			"0000000000000000000000000000000000000000000000000000000000000004".into(),
+			H256::from(3),
+			H256::from(4),
 		]);
 		chain.push_back_n_at(2, vec![
-			"0000000000000000000000000000000000000000000000000000000000000005".into(),
+			H256::from(5),
 		]);
 
 		assert_eq!(chain.len(), 6);
@@ -337,42 +305,25 @@ mod tests {
 		assert_eq!(chain.len_of(1), 2);
 		assert_eq!(chain.len_of(2), 1);
 		assert_eq!(chain.len_of(3), 0);
-		assert_eq!(chain.is_empty_at(0), false);
-		assert_eq!(chain.is_empty_at(1), false);
-		assert_eq!(chain.is_empty_at(2), false);
-		assert_eq!(chain.is_empty_at(3), true);
-		assert_eq!(chain.front_at(0), Some("0000000000000000000000000000000000000000000000000000000000000000".into()));
-		assert_eq!(chain.front_at(1), Some("0000000000000000000000000000000000000000000000000000000000000003".into()));
-		assert_eq!(chain.front_at(2), Some("0000000000000000000000000000000000000000000000000000000000000005".into()));
+		assert_eq!(chain.front_at(0), Some(H256::from(0)));
+		assert_eq!(chain.front_at(1), Some(H256::from(3)));
+		assert_eq!(chain.front_at(2), Some(H256::from(5)));
 		assert_eq!(chain.front_at(3), None);
-		assert_eq!(chain.back_at(0), Some("0000000000000000000000000000000000000000000000000000000000000002".into()));
-		assert_eq!(chain.back_at(1), Some("0000000000000000000000000000000000000000000000000000000000000004".into()));
-		assert_eq!(chain.back_at(2), Some("0000000000000000000000000000000000000000000000000000000000000005".into()));
+		assert_eq!(chain.back_at(0), Some(H256::from(2)));
+		assert_eq!(chain.back_at(1), Some(H256::from(4)));
+		assert_eq!(chain.back_at(2), Some(H256::from(5)));
 		assert_eq!(chain.back_at(3), None);
-		assert_eq!(chain.pre_back_at(0), Some("0000000000000000000000000000000000000000000000000000000000000001".into()));
-		assert_eq!(chain.pre_back_at(1), Some("0000000000000000000000000000000000000000000000000000000000000003".into()));
+		assert_eq!(chain.pre_back_at(0), Some(H256::from(1)));
+		assert_eq!(chain.pre_back_at(1), Some(H256::from(3)));
 		assert_eq!(chain.pre_back_at(2), None);
 		assert_eq!(chain.pre_back_at(3), None);
-		assert_eq!(chain.back(), Some("0000000000000000000000000000000000000000000000000000000000000005".into()));
-		assert_eq!(chain.is_contained_in(0, &"0000000000000000000000000000000000000000000000000000000000000002".into()), true);
-		assert_eq!(chain.is_contained_in(1, &"0000000000000000000000000000000000000000000000000000000000000002".into()), false);
-		assert_eq!(chain.is_contained_in(2, &"0000000000000000000000000000000000000000000000000000000000000002".into()), false);
-		assert_eq!(chain.is_contained_in(3, &"0000000000000000000000000000000000000000000000000000000000000002".into()), false);
-		assert_eq!(chain.contains_in(&"0000000000000000000000000000000000000000000000000000000000000002".into()), Some(0));
-		assert_eq!(chain.contains_in(&"0000000000000000000000000000000000000000000000000000000000000005".into()), Some(2));
-		assert_eq!(chain.contains_in(&"0000000000000000000000000000000000000000000000000000000000000009".into()), None);
-
-		assert_eq!(chain.back_skip_n_at(0, 0), Some("0000000000000000000000000000000000000000000000000000000000000002".into()));
-		assert_eq!(chain.back_skip_n_at(1, 0), Some("0000000000000000000000000000000000000000000000000000000000000004".into()));
-		assert_eq!(chain.back_skip_n_at(2, 0), Some("0000000000000000000000000000000000000000000000000000000000000005".into()));
-		assert_eq!(chain.back_skip_n_at(3, 0), None);
-		assert_eq!(chain.back_skip_n_at(0, 1), Some("0000000000000000000000000000000000000000000000000000000000000001".into()));
-		assert_eq!(chain.back_skip_n_at(1, 1), Some("0000000000000000000000000000000000000000000000000000000000000003".into()));
-		assert_eq!(chain.back_skip_n_at(2, 1), Some("0000000000000000000000000000000000000000000000000000000000000005".into()));
-		assert_eq!(chain.back_skip_n_at(3, 1), None);
-		assert_eq!(chain.back_skip_n_at(0, 2), Some("0000000000000000000000000000000000000000000000000000000000000000".into()));
-		assert_eq!(chain.back_skip_n_at(1, 2), Some("0000000000000000000000000000000000000000000000000000000000000003".into()));
-		assert_eq!(chain.back_skip_n_at(2, 2), Some("0000000000000000000000000000000000000000000000000000000000000005".into()));
-		assert_eq!(chain.back_skip_n_at(3, 2), None);
+		assert_eq!(chain.back(), Some(H256::from(5)));
+		assert_eq!(chain.is_contained_in(0, &H256::from(2)), true);
+		assert_eq!(chain.is_contained_in(1, &H256::from(2)), false);
+		assert_eq!(chain.is_contained_in(2, &H256::from(2)), false);
+		assert_eq!(chain.is_contained_in(3, &H256::from(2)), false);
+		assert_eq!(chain.contains_in(&H256::from(2)), Some(0));
+		assert_eq!(chain.contains_in(&H256::from(5)), Some(2));
+		assert_eq!(chain.contains_in(&H256::from(9)), None);
 	}
 }
