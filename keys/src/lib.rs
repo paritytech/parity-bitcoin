@@ -4,7 +4,7 @@
 //! `Public` - 65 bytes (TODO: make it optionally compressed)
 //! `Private` - secret with additional network identifier (and compressed flag?)
 //! `AddressHash` - 20 bytes derived from public
-//! `Address` - address_hash with network identifier and format type
+//! `Address` - addressh ash with network identifier and format type
 
 extern crate rand;
 extern crate rustc_serialize;

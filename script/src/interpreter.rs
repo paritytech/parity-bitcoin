@@ -222,11 +222,7 @@ fn cast_to_bool(data: &[u8]) -> bool {
 	}
 
 	let last = data[data.len() - 1];
-	if last == 0 || last == 0x80 {
-		false
-	} else {
-		true
-	}
+	!(last == 0 || last == 0x80)
 }
 
 pub fn verify_script(
@@ -290,6 +286,7 @@ pub fn verify_script(
 	Ok(())
 }
 
+#[cfg_attr(feature="cargo-clippy", allow(match_same_arms))]
 pub fn eval_script(
 	stack: &mut Stack<Bytes>,
 	script: &Script,
@@ -450,10 +447,8 @@ pub fn eval_script(
 			},
 			Opcode::OP_NOP => break,
 			Opcode::OP_CHECKLOCKTIMEVERIFY => {
-				if !flags.verify_clocktimeverify {
-					if flags.verify_discourage_upgradable_nops {
-						return Err(Error::DiscourageUpgradableNops);
-					}
+				if !flags.verify_clocktimeverify && flags.verify_discourage_upgradable_nops {
+					return Err(Error::DiscourageUpgradableNops);
 				}
 
 				// Note that elsewhere numeric opcodes are limited to
@@ -484,10 +479,8 @@ pub fn eval_script(
 				}
 			},
 			Opcode::OP_CHECKSEQUENCEVERIFY => {
-				if !flags.verify_chechsequenceverify {
-					if flags.verify_discourage_upgradable_nops {
-						return Err(Error::DiscourageUpgradableNops);
-					}
+				if !flags.verify_chechsequenceverify && flags.verify_discourage_upgradable_nops {
+					return Err(Error::DiscourageUpgradableNops);
 				}
 
 				let sequence = try!(Num::from_slice(try!(stack.last()), flags.verify_minimaldata, 5));
@@ -496,10 +489,8 @@ pub fn eval_script(
 					return Err(Error::NegativeLocktime);
 				}
 
-				if (sequence & (SEQUENCE_LOCKTIME_DISABLE_FLAG as i64).into()).is_zero() {
-					if !checker.check_sequence(sequence) {
-						return Err(Error::UnsatisfiedLocktime);
-					}
+				if (sequence & (SEQUENCE_LOCKTIME_DISABLE_FLAG as i64).into()).is_zero() && !checker.check_sequence(sequence) {
+					return Err(Error::UnsatisfiedLocktime);
 				}
 			},
 			Opcode::OP_NOP1 |
@@ -528,8 +519,9 @@ pub fn eval_script(
 				if exec_stack.is_empty() {
 					return Err(Error::UnbalancedConditional);
 				}
-				let last = exec_stack[exec_stack.len() - 1];
-				exec_stack[exec_stack.len() - 1] == !last;
+				let last_index = exec_stack.len() - 1;
+				let last = exec_stack[last_index];
+				exec_stack[last_index] = !last;
 			},
 			Opcode::OP_ENDIF => {
 				if exec_stack.is_empty() {
@@ -620,11 +612,11 @@ pub fn eval_script(
 			Opcode::OP_EQUAL => {
 				let v1 = try!(stack.pop());
 				let v2 = try!(stack.pop());
-				let to_push = match v1 == v2 {
-					true => vec![1],
-					false => vec![0],
-				};
-				stack.push(to_push.into());
+				if v1 == v2 {
+					stack.push(vec![1].into());
+				} else {
+					stack.push(vec![0].into());
+				}
 			},
 			Opcode::OP_EQUALVERIFY => {
 				let equal = try!(stack.pop()) == try!(stack.pop());
@@ -737,11 +729,11 @@ pub fn eval_script(
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v3 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let to_push = match v2 <= v3 && v3 <= v1 {
-					true => vec![1],
-					false => vec![0],
-				};
-				stack.push(to_push.into());
+				if v2 <= v3 && v3 <= v1 {
+					stack.push(vec![1].into());
+				} else {
+					stack.push(vec![0].into());
+				}
 			},
 			Opcode::OP_RIPEMD160 => {
 				let v = ripemd160(&try!(stack.pop()));
@@ -771,7 +763,7 @@ pub fn eval_script(
 				let signature = try!(stack.pop());
 				let mut subscript = script.subscript(begincode);
 				if version == SignatureVersion::Base {
-					subscript = script.find_and_delete(&signature);
+					subscript = subscript.find_and_delete(&signature);
 				}
 
 				try!(check_signature_encoding(&signature, flags));
@@ -780,11 +772,11 @@ pub fn eval_script(
 				let success = check_signature(checker, signature.into(), pubkey.into(), &subscript, version);
 				match opcode {
 					Opcode::OP_CHECKSIG => {
-						let to_push = match success {
-							true => vec![1],
-							false => vec![0],
-						};
-						stack.push(to_push.into());
+						if success {
+							stack.push(vec![1].into());
+						} else {
+							stack.push(vec![0].into());
+						}
 					},
 					Opcode::OP_CHECKSIGVERIFY if !success => {
 						return Err(Error::CheckSigVerify);
@@ -843,11 +835,11 @@ pub fn eval_script(
 
 				match opcode {
 					Opcode::OP_CHECKMULTISIG => {
-						let to_push = match success {
-							true => vec![1],
-							false => vec![0],
-						};
-						stack.push(to_push.into());
+						if success {
+							stack.push(vec![1].into());
+						} else {
+							stack.push(vec![0].into());
+						}
 					},
 					Opcode::OP_CHECKMULTISIGVERIFY if !success => {
 						return Err(Error::CheckSigVerify);

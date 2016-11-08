@@ -35,7 +35,7 @@ impl TransactionMeta {
 		self.spent.set(index, false);
 	}
 
-	pub fn to_bytes(self) -> Vec<u8> {
+	pub fn into_bytes(self) -> Vec<u8> {
 		let mut result = vec![0u8; 4];
 		LittleEndian::write_u32(&mut result[0..4], self.block_height);
 		result.extend(self.spent.to_bytes());

@@ -13,11 +13,11 @@ impl Builder {
 	}
 
 	pub fn push_bool(mut self, value: bool) -> Self {
-		let opcode = match value {
-			true => Opcode::OP_1,
-			false => Opcode::OP_0,
-		};
-		self.data.push(opcode as u8);
+		if value {
+			self.data.push(Opcode::OP_1 as u8);
+		} else {
+			self.data.push(Opcode::OP_0 as u8);
+		}
 		self
 	}
 
