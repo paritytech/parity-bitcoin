@@ -10,11 +10,3 @@ bitcrypto = { path = "../crypto" }
 chain = { path = "../chain" }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
-
-[dependencies.clippy]
-optional = true
-version = "0.0.97"
-
-[features]
-default = []
-dev = ["clippy", "primitives/dev", "serialization/dev"]
