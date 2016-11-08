@@ -33,6 +33,10 @@ impl Command {
 		self.0.len() - trailing_zeros
 	}
 
+	pub fn is_empty(&self) -> bool {
+		self.0.is_zero()
+	}
+
 	fn as_string(&self) -> String {
 		String::from_utf8_lossy(&self.0[..self.len()]).to_ascii_lowercase()
 	}

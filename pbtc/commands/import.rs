@@ -27,7 +27,7 @@ pub fn import(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 			Err(Error::OutOfOrderBlock) => {
 				skipped += 1;
 			},
-			Err(_) => return Err(format!("Cannot append block")),
+			Err(_) => return Err("Cannot append block".into()),
 		}
 	}
 

@@ -26,9 +26,8 @@ pub const APP_INFO: AppInfo = AppInfo { name: "pbtc", author: "Parity" };
 
 fn main() {
 	env_logger::init().unwrap();
-	match run() {
-		Err(err) => println!("{}", err),
-		Ok(_) => (),
+	if let Err(err) = run() {
+		println!("{}", err);
 	}
 }
 
