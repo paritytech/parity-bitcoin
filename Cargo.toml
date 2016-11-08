@@ -24,3 +24,5 @@ import = { path = "import" }
 [[bin]]
 path = "pbtc/main.rs"
 name = "pbtc"
+
+[workspace]
