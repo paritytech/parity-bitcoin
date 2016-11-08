@@ -3,10 +3,10 @@ use std::ops;
 use bytes::Bytes;
 use Error;
 
-/// Numeric opcodes (OP_1ADD, etc) are restricted to operating on 4-byte integers.
+/// Numeric opcodes (`OP_1ADD`, etc) are restricted to operating on 4-byte integers.
 /// The semantics are subtle, though: operands must be in the range [-2^31 +1...2^31 -1],
 /// but results may overflow (and are valid as long as they are not used in a subsequent
-/// numeric operation). CScriptNum enforces those semantics by storing results as
+/// numeric operation). `CScriptNum` enforces those semantics by storing results as
 /// an int64 and allowing out-of-range values to be returned as a vector of bytes but
 /// throwing an exception if arithmetic is done or the result is interpreted as an integer.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -16,10 +16,7 @@ pub struct Num {
 
 impl From<bool> for Num {
 	fn from(i: bool) -> Self {
-		let v = match i {
-			true => 1,
-			false => 0,
-		};
+		let v = if i { 1 } else { 0 };
 		Num {
 			value: v
 		}
@@ -86,23 +83,21 @@ impl Num {
 			return Ok(0u8.into());
 		}
 
-		if require_minimal {
-			// Check that the number is encoded with the minimum possible
-			// number of bytes.
-			//
-			// If the most-significant-byte - excluding the sign bit - is zero
-			// then we're not minimal. Note how this test also rejects the
-			// negative-zero encoding, 0x80.
-			if (data.last().unwrap() & 0x7f) == 0 {
-				if data.len() <= 1 || (data[data.len() - 2] & 0x80) == 0 {
-					return Err(Error::NumberNotMinimallyEncoded)
-				}
-			}
+		// Check that the number is encoded with the minimum possible
+		// number of bytes.
+		//
+		// If the most-significant-byte - excluding the sign bit - is zero
+		// then we're not minimal. Note how this test also rejects the
+		// negative-zero encoding, 0x80.
+		if require_minimal &&
+			(data.last().unwrap() & 0x7f) == 0 &&
+			(data.len() <= 1 || (data[data.len() - 2] & 0x80) == 0) {
+			return Err(Error::NumberNotMinimallyEncoded)
 		}
 
 		let mut result = 0i64;
-		for i in 0..data.len() {
-			result |= (data[i] as i64) << (8 * i);
+		for (i, item) in data.iter().enumerate() {
+			result |= (*item as i64) << (8 * i);
 		}
 
 		// If the input vector's most significant byte is 0x80, remove it from
@@ -121,9 +116,10 @@ impl Num {
 
 		let mut result = vec![];
 		let negative = self.value < 0;
-		let mut absvalue = match negative {
-			true => (-self.value) as u64,
-			false => self.value as u64,
+		let mut absvalue = if negative {
+			(-self.value) as u64
+		} else {
+			self.value as u64
 		};
 
 		while absvalue > 0 {
@@ -142,9 +138,10 @@ impl Num {
 		//    converting to an integral.
 
 		if result[result.len() - 1] & 0x80 != 0 {
-			match negative {
-				true => result.push(0x80),
-				false => result.push(0),
+			if negative {
+				result.push(0x80);
+			} else {
+				result.push(0);
 			}
 		} else if negative {
 			let rlen = result.len();

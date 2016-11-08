@@ -26,6 +26,7 @@ impl From<SighashBase> for u32 {
 	}
 }
 
+#[cfg_attr(feature="cargo-clippy", allow(doc_markdown))]
 /// Documentation
 /// https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -37,9 +38,10 @@ pub struct Sighash {
 impl From<Sighash> for u32 {
 	fn from(s: Sighash) -> Self {
 		let base = s.base as u32;
-		match s.anyone_can_pay {
-			true => base | 0x80,
-			false => base,
+		if s.anyone_can_pay {
+			base | 0x80
+		} else {
+			base
 		}
 	}
 }
@@ -48,7 +50,6 @@ impl From<u32> for Sighash {
 	fn from(u: u32) -> Self {
 		// use 0x9f istead of 0x1f to catch 0x80
 		match u & 0x9f {
-			1 => Sighash::new(SighashBase::All, false),
 			2 => Sighash::new(SighashBase::None, false),
 			3 => Sighash::new(SighashBase::Single, false),
 			0x81 => Sighash::new(SighashBase::All, true),
@@ -56,7 +57,7 @@ impl From<u32> for Sighash {
 			0x83 => Sighash::new(SighashBase::Single, true),
 			x if x & 0x80 == 0x80 => Sighash::new(SighashBase::All, true),
 			// 0 is handled like all...
-			_ => Sighash::new(SighashBase::All, false),
+			1 | _ => Sighash::new(SighashBase::All, false),
 		}
 	}
 }
@@ -155,9 +156,10 @@ impl TransactionInputSigner {
 				.enumerate()
 				.map(|(n, input)| TransactionInput {
 					previous_output: input.previous_output.clone(),
-					script_sig: match n == input_index {
-						true => script_pubkey.to_bytes(),
-						false => Bytes::default(),
+					script_sig: if n == input_index {
+						script_pubkey.to_bytes()
+					} else {
+						Bytes::default()
 					},
 					sequence: match sighash.base {
 						SighashBase::Single | SighashBase::None if n != input_index => 0,
@@ -172,9 +174,10 @@ impl TransactionInputSigner {
 			SighashBase::Single => self.outputs.iter()
 				.take(input_index + 1)
 				.enumerate()
-				.map(|(n, out)| match n == input_index {
-					true => out.clone(),
-					false => TransactionOutput::default(),
+				.map(|(n, out)| if n == input_index {
+					out.clone()
+				} else {
+					TransactionOutput::default()
 				})
 				.collect(),
 			SighashBase::None => Vec::new(),

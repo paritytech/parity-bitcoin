@@ -143,7 +143,7 @@ impl UpdateContext {
 	pub fn apply(mut self, db: &Database) -> Result<(), Error> {
 		// actually saving meta
 		for (hash, meta) in self.meta.drain() {
-			self.db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.to_bytes());
+			self.db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.into_bytes());
 		}
 
 		try!(db.write(self.db_transaction));
@@ -277,7 +277,7 @@ impl Storage {
 
 		// another iteration skipping coinbase transaction
 		for accepted_tx in accepted_txs.iter().skip(1) {
-			for input in accepted_tx.inputs.iter() {
+			for input in &accepted_tx.inputs {
 				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
 						if meta.is_spent(input.previous_output.index as usize) {
@@ -334,7 +334,7 @@ impl Storage {
 
 			// denote outputs used
 			if tx_hash_num == 0 { continue; } // coinbase transaction does not have inputs
-			for input in tx.inputs.iter() {
+			for input in &tx.inputs {
 				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
 						meta.denote_used(input.previous_output.index as usize);
@@ -433,7 +433,7 @@ impl Storage {
 		}
 
 		// canonizing all route from the split point
-		for new_canonical_hash in route.iter() {
+		for new_canonical_hash in &route {
 			now_best += 1;
 			try!(self.canonize_block(context, now_best, &new_canonical_hash));
 		}
@@ -467,13 +467,13 @@ impl Store for Storage {
 	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256> {
 		self.resolve_hash(block_ref)
 			.map(|h| self.block_transaction_hashes_by_hash(&h))
-			.unwrap_or(Vec::new())
+			.unwrap_or_default()
 	}
 
 	fn block_transactions(&self, block_ref: BlockRef) -> Vec<chain::Transaction> {
 		self.resolve_hash(block_ref)
 			.map(|h| self.block_transactions_by_hash(&h))
-			.unwrap_or(Vec::new())
+			.unwrap_or_default()
 	}
 
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {

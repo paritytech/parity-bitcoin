@@ -38,10 +38,11 @@ impl Private {
 		let recovery_id = recovery_id.to_i32() as u8;
 		let mut signature = H520::default();
 		signature[1..65].copy_from_slice(&data[0..64]);
-		signature[0] = match self.compressed {
-			true => 27 + recovery_id + 4,
-			false => 27 + recovery_id,
-		};
+		if self.compressed {
+			signature[0] = 27 + recovery_id + 4;
+		} else {
+			signature[0] = 27 + recovery_id;
+		}
 		Ok(signature.into())
 	}
 }
@@ -62,7 +63,7 @@ impl DisplayLayout for Private {
 			result.push(1);
 		}
 		let cs = checksum(&result);
-		result.extend(&*cs);
+		result.extend_from_slice(&*cs);
 		result
 	}
 

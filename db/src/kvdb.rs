@@ -347,7 +347,7 @@ impl Database {
 
 				for (c, column) in overlay.iter_mut().enumerate() {
 					let column_data = mem::replace(column, HashMap::new());
-					for (key, state) in column_data.into_iter() {
+					for (key, state) in column_data {
 						match state {
 							KeyState::Delete => {
 								if c > 0 {
