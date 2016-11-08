@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::collections::VecDeque;
 use parking_lot::Mutex;
 use bytes::Bytes;
 use message::{Command, Error};
@@ -33,14 +34,22 @@ impl SessionFactory for NormalSessionFactory {
 	}
 }
 
+#[derive(Default)]
+struct MessagesQueue {
+	pub is_processing: bool,
+	pub queue: VecDeque<(Command, Bytes)>,
+}
+
 pub struct Session {
 	protocols: Mutex<Vec<Box<Protocol>>>,
+	messages: Mutex<MessagesQueue>,
 }
 
 impl Session {
 	pub fn new(protocols: Vec<Box<Protocol>>) -> Self {
 		Session {
 			protocols: Mutex::new(protocols),
+			messages: Mutex::new(MessagesQueue::default()),
 		}
 	}
 
@@ -51,6 +60,41 @@ impl Session {
 	}
 
 	pub fn on_message(&self, channel: Arc<Channel>, command: Command, payload: Bytes) -> Result<(), Error> {
+		{
+			let mut messages = self.messages.lock();
+			messages.queue.push_back((command, payload));
+			if messages.is_processing {
+				return Ok(())
+			}
+
+			messages.is_processing = true;
+		}
+
+		while let Some((command, payload)) = {
+			let mut messages = self.messages.lock();
+			match messages.queue.pop_front() {
+				Some(message) => Some(message),
+				None => {
+					messages.is_processing = false;
+					None
+				}
+			}
+		} {
+			if let Err(error) = self.process_message(&channel, command, payload) {
+				return Err(error);
+			}
+		}
+
+		Ok(())
+	}
+
+	pub fn on_close(&self) {
+		for protocol in self.protocols.lock().iter_mut() {
+			protocol.on_close();
+		}
+	}
+
+	fn process_message(&self, channel: &Arc<Channel>, command: Command, payload: Bytes) -> Result<(), Error> {
 		self.protocols.lock()
 			.iter_mut()
 			.map(|protocol| {
@@ -58,12 +102,6 @@ impl Session {
 			})
 			.collect::<Result<Vec<_>, Error>>()
 			.map(|_| ())
-	}
-
-	pub fn on_close(&self) {
-		for protocol in self.protocols.lock().iter_mut() {
-			protocol.on_close();
-		}
 	}
 }
 
