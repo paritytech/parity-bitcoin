@@ -11,14 +11,14 @@ pub enum HashPosition {
 	/// Block is at the front of the queue
 	Front,
 	/// Block is somewhere inside in the queue
-	Inside,
+	Inside(u32),
 }
 
 /// Ordered queue with O(1) contains() && random access operations cost.
 #[derive(Clone)]
 pub struct HashQueue {
 	queue: VecDeque<H256>,
-	set: HashSet<H256>
+	set: HashSet<H256>,
 }
 
 /// Chain of linked queues. First queue has index zero.
@@ -34,6 +34,12 @@ impl HashQueue {
 		}
 	}
 
+	/// Clears the queue
+	pub fn clear(&mut self) {
+		self.set.clear();
+		self.queue.clear();
+	}
+
 	/// Returns len of the given queue.
 	pub fn len(&self) -> u32 {
 		self.queue.len() as u32
@@ -47,6 +53,18 @@ impl HashQueue {
 	/// Returns back element from the given queue.
 	pub fn back(&self) -> Option<H256> {
 		self.queue.back().cloned()
+	}
+
+	/// Returns position of the element in the queue
+	pub fn position(&self, hash: &H256) -> Option<u32> {
+		self.queue.iter().enumerate()
+			.filter_map(|(pos, h)| if hash == h { Some(pos as u32) } else { None })
+			.nth(0)
+	}
+
+	/// Returns element at position
+	pub fn at(&self, position: u32) -> Option<H256> {
+		self.queue.get(position as usize).cloned()
 	}
 
 	/// Returns previous-to back element from the given queue.
@@ -86,6 +104,18 @@ impl HashQueue {
 		result
 	}
 
+	/// Removes element from the back of the queue.
+	pub fn pop_back(&mut self) -> Option<H256> {
+		match self.queue.pop_back() {
+			Some(hash) => {
+				self.set.remove(&hash);
+				Some(hash)
+			},
+			None => None,
+		}
+	}
+
+
 	/// Adds element to the back of the queue.
 	pub fn push_back(&mut self, hash: H256) {
 		if !self.set.insert(hash.clone()) {
@@ -115,7 +145,7 @@ impl HashQueue {
 		for i in 0..self.queue.len() {
 			if self.queue[i] == *hash {
 				self.queue.remove(i);
-				return HashPosition::Inside;
+				return HashPosition::Inside(i as u32);
 			}
 		}
 
@@ -124,9 +154,11 @@ impl HashQueue {
 	}
 
 	/// Removes all elements from the queue.
-	pub fn remove_all(&mut self) {
-		self.queue.clear();
+	pub fn remove_all(&mut self) -> VecDeque<H256> {
+		use std::mem::replace;
+
 		self.set.clear();
+		replace(&mut self.queue, VecDeque::new())
 	}
 }
 
@@ -155,6 +187,20 @@ impl HashQueueChain {
 	/// Returns length of the given queue.
 	pub fn len_of(&self, queue_index: usize) -> u32 {
 		self.chain[queue_index].len()
+	}
+
+	/// Returns element at the given position
+	pub fn at(&self, mut index: u32) -> Option<H256> {
+		for queue in self.chain.iter() {
+			let queue_len = queue.len();
+			if index < queue_len {
+				return queue.at(index);
+			}
+
+			index -= queue_len;
+		}
+
+		None
 	}
 
 	/// Returns element at the front of the given queue.
@@ -229,8 +275,8 @@ impl HashQueueChain {
 	}
 
 	/// Remove all items from given queue.
-	pub fn remove_all_at(&mut self, queue_index: usize) {
-		self.chain[queue_index].remove_all();
+	pub fn remove_all_at(&mut self, queue_index: usize) -> VecDeque<H256> {
+		self.chain[queue_index].remove_all()
 	}
 }
 

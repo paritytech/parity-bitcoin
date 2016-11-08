@@ -21,8 +21,8 @@ pub trait TaskExecutor : Send + 'static {
 pub enum Task {
 	/// Request given blocks.
 	RequestBlocks(usize, Vec<H256>),
-	/// Request full inventory using block_locator_hashes.
-	RequestInventory(usize),
+	/// Request blocks headers using full getheaders.block_locator_hashes.
+	RequestBlocksHeaders(usize),
 	/// Send block.
 	SendBlock(usize, Block),
 	/// Send notfound
@@ -80,9 +80,9 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					connection.send_getdata(&getdata);
 				}
 			}
-			Task::RequestInventory(peer_index) => {
+			Task::RequestBlocksHeaders(peer_index) => {
 				let block_locator_hashes = self.chain.read().block_locator_hashes();
-				let getblocks = types::GetBlocks {
+				let getheaders = types::GetHeaders {
 					version: 0,
 					block_locator_hashes: block_locator_hashes,
 					hash_stop: H256::default(),
@@ -90,8 +90,8 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
 					let connection = &mut *connection;
-					trace!(target: "sync", "Querying full inventory from peer#{}", peer_index);
-					connection.send_getblocks(&getblocks);
+					trace!(target: "sync", "Request blocks hashes from peer#{} using getheaders", peer_index);
+					connection.send_getheaders(&getheaders);
 				}
 			},
 			Task::SendBlock(peer_index, block) => {

@@ -20,7 +20,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 			magic: cfg.magic,
 			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
 			services: Services::default().with_network(true),
-			user_agent: "pbtc".into(),
+			user_agent: "/Satoshi:0.12.1/".into(),
 			start_height: 0,
 			relay: false,
 		},

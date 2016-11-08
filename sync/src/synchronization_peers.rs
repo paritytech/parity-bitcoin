@@ -49,10 +49,20 @@ impl Peers {
 		}
 	}
 
+	/// Has any peers?
+	pub fn any(&self) -> bool {
+		!self.idle.is_empty() || !self.requests.is_empty()
+	}
+
 	/// Get idle peer.
 	#[cfg(test)]
 	pub fn idle_peer(&self) -> Option<usize> {
 		self.idle.iter().cloned().next()
+	}
+
+	/// Get all peers.
+	pub fn all_peers(&self) -> Vec<usize> {
+		self.idle.iter().cloned().chain(self.requests.keys().cloned()).collect()
 	}
 
 	/// Get idle peers.
@@ -95,9 +105,6 @@ impl Peers {
 
 	/// Blocks have been requested from peer.
 	pub fn on_blocks_requested(&mut self, peer_index: usize, blocks_hashes: &Vec<H256>) {
-		// inventory can only be requested from idle peers
-		assert!(!self.requests.contains_key(&peer_index));
-
 		self.idle.remove(&peer_index);
 		self.requests.entry(peer_index).or_insert(HashSet::new()).extend(blocks_hashes.iter().cloned());
 		self.times.insert(peer_index, precise_time_s());
@@ -142,10 +149,11 @@ impl Peers {
 	}
 
 	/// Reset peer tasks
-	pub fn reset_tasks(&mut self, peer_index: usize) {
-		self.requests.remove(&peer_index);
+	pub fn reset_tasks(&mut self, peer_index: usize) -> Vec<H256> {
+		let requests = self.requests.remove(&peer_index);
 		self.times.remove(&peer_index);
 		self.idle.insert(peer_index);
+		requests.expect("empty requests queue is not allowed").into_iter().collect()
 	}
 
 	/// When sync message is received from peer

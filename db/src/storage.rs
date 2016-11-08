@@ -313,10 +313,14 @@ impl Storage {
 	/// block decanonization
 	///   all transaction outputs used are marked as not used
 	///   all transaction meta is removed
+	///   block number is removed
 	///   DOES NOT update best block
 	fn decanonize_block(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
 		// ensure that block is of the main chain
 		try!(self.block_number(hash).ok_or(Error::NotMain(hash.clone())));
+
+		// remove block number
+		context.db_transaction.delete(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(hash));
 
 		// transaction de-provisioning
 		let tx_hashes = self.block_transaction_hashes_by_hash(hash);
@@ -986,6 +990,7 @@ mod tests {
 				.input().hash(genesis_coinbase.clone()).build()
 				.build()
 			.build();
+		let block_hash = block.hash();
 
 		store.insert_block(&block).expect("inserting first block in the decanonize test should not fail");
 
@@ -994,13 +999,15 @@ mod tests {
 		assert!(genesis_meta.is_spent(0), "Genesis coinbase should be recorded as spent because block#1 transaction spends it");
 
 		let mut update_context = UpdateContext::new(&store.database);
-		store.decanonize_block(&mut update_context, &block.hash())
+		store.decanonize_block(&mut update_context, &block_hash)
 			.expect("Decanonizing block #1 which was just inserted should not fail");
 		update_context.apply(&store.database).unwrap();
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase)
 			.expect("Transaction meta for the genesis coinbase transaction should exist");
 		assert!(!genesis_meta.is_spent(0), "Genesis coinbase should be recorded as unspent because we retracted block #1");
+
+		assert_eq!(store.block_number(&block_hash), None);
 	}
 
 	#[test]
