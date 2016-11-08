@@ -6,14 +6,11 @@ use {db, APP_INFO};
 use config::Config;
 
 pub fn open_db(cfg: &Config) -> Arc<db::Store> {
-	match cfg.use_disk_database {
-		true => {
-			let db_path = app_dir(AppDataType::UserData, &APP_INFO, "db").expect("Failed to get app dir");
-			Arc::new(db::Storage::new(db_path).expect("Failed to open database"))
-		},
-		false => {
-			Arc::new(db::TestStorage::default())
-		}
+	if cfg.use_disk_database {
+		let db_path = app_dir(AppDataType::UserData, &APP_INFO, "db").expect("Failed to get app dir");
+		Arc::new(db::Storage::new(db_path).expect("Failed to open database"))
+	} else {
+		Arc::new(db::TestStorage::default())
 	}
 }
 

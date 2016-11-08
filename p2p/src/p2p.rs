@@ -107,7 +107,7 @@ impl Context {
 				let peers = context.node_table.read().nodes_with_services(&Services::default(), max);
 				let addresses = peers.into_iter()
 					.map(|peer| peer.address())
-					.filter(|address| !used_addresses.contains(&address))
+					.filter(|address| !used_addresses.contains(address))
 					.take(needed)
 					.collect::<Vec<_>>();
 
@@ -396,12 +396,12 @@ impl P2P {
 	}
 
 	pub fn run(&self) -> Result<(), Box<error::Error>> {
-		for peer in self.config.peers.iter() {
+		for peer in &self.config.peers {
 			self.connect::<NormalSessionFactory>(*peer);
 		}
 
 		let resolver = try!(DnsResolver::system_config(&self.event_loop_handle));
-		for seed in self.config.seeds.iter() {
+		for seed in &self.config.seeds {
 			self.connect_to_seednode(&resolver, seed);
 		}
 

@@ -201,7 +201,7 @@ impl Serializable for Bytes {
 	fn serialize(&self, stream: &mut Stream) {
 		stream
 			.append(&CompactInteger::from(self.len()))
-			.append_slice(&self);
+			.append_slice(self);
 	}
 
 	#[inline]

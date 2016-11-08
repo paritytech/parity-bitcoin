@@ -5,9 +5,10 @@ pub fn deserialize<R, T>(buffer: R) -> Result<T, Error> where R: io::Read, T: De
 	let mut reader = Reader::from_read(buffer);
 	let result = try!(reader.read());
 
-	match reader.is_finished() {
-		false => Err(Error::UnreadData),
-		true => Ok(result),
+	if reader.is_finished() {
+		Ok(result)
+	} else {
+		Err(Error::UnreadData)
 	}
 }
 
@@ -113,6 +114,7 @@ impl<R> Reader<R> where R: io::Read {
 		Ok(result)
 	}
 
+	#[cfg_attr(feature="clippy", allow(wrong_self_convention))]
 	pub fn is_finished(&mut self) -> bool {
 		if self.peeked.is_some() {
 			return false;
@@ -139,9 +141,10 @@ impl<R, T> Iterator for ReadIterator<R, T> where R: io::Read, T: Deserializable 
 	type Item = Result<T, Error>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		match self.reader.is_finished() {
-			true => None,
-			false => Some(self.reader.read())
+		if self.reader.is_finished() {
+			None
+		} else {
+			Some(self.reader.read())
 		}
 	}
 }

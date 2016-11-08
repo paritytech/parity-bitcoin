@@ -6,3 +6,11 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 [dependencies]
 heapsize = "0.3"
 rustc-serialize = "0.3"
+
+[dependencies.clippy]
+optional = true
+version = "0.0.97"
+
+[features]
+default = []
+dev = ["clippy"]

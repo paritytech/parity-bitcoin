@@ -24,3 +24,11 @@ import = { path = "import" }
 [[bin]]
 path = "pbtc/main.rs"
 name = "pbtc"
+
+[dependencies.clippy]
+optional = true
+version = "0.0.97"
+
+[features]
+default = []
+dev = ["clippy", "message/dev", "p2p/dev"]

@@ -6,3 +6,11 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 [dependencies]
 byteorder = "0.5"
 primitives = { path = "../primitives" }
+
+[dependencies.clippy]
+optional = true
+version = "0.0.97"
+
+[features]
+default = []
+dev = ["clippy", "primitives/dev"]

@@ -65,16 +65,16 @@ impl Payload for Version {
 impl Version {
 	pub fn version(&self) -> u32 {
 		match *self {
-			Version::V0(ref s) => s.version,
-			Version::V106(ref s, _) => s.version,
+			Version::V0(ref s) |
+			Version::V106(ref s, _) |
 			Version::V70001(ref s, _, _) => s.version,
 		}
 	}
 
 	pub fn services(&self) -> Services {
 		match *self {
-			Version::V0(ref s) => s.services,
-			Version::V106(ref s, _) => s.services,
+			Version::V0(ref s) |
+			Version::V106(ref s, _) |
 			Version::V70001(ref s, _, _) => s.services,
 		}
 	}

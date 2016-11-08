@@ -129,7 +129,7 @@ impl Ord for Node {
 					let self_port = self_addr.port();
 					let other_port = other_addr.port();
 					if self_port == other_port {
-						self_addr.ip().cmp(&other_addr.ip())
+						self_addr.ip().cmp(other_addr.ip())
 					}
 					else {
 						self_port.cmp(&other_port)
@@ -143,7 +143,7 @@ impl Ord for Node {
 					let self_port = self_addr.port();
 					let other_port = other_addr.port();
 					if self_port == other_port {
-						self_addr.ip().cmp(&other_addr.ip())
+						self_addr.ip().cmp(other_addr.ip())
 					}
 					else {
 						self_port.cmp(&other_port)
@@ -175,14 +175,13 @@ pub struct NodeTable<T = RealTime> where T: Time {
 impl NodeTable {
 	/// Opens a file loads node_table from it.
 	pub fn from_file<P>(path: P) -> Result<Self, io::Error> where P: AsRef<path::Path> {
-		let res = fs::OpenOptions::new()
+		fs::OpenOptions::new()
 			.create(true)
 			.read(true)
 			// without opening for write, mac os returns os error 22
 			.write(true)
 			.open(path)
-			.and_then(Self::load);
-		res
+			.and_then(Self::load)
 	}
 
 	/// Saves node table to file
