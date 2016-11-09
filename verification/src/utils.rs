@@ -39,9 +39,7 @@ pub fn check_nbits(hash: &H256, n_bits: u32) -> bool {
 
 	// the case when hash effective bits are equal to nbits
 	// then the rest of the hash must be zero
-	for byte in hash_bytes[0..shift].iter() { if *byte != 0 { return false; } }
-
-	true
+	hash_bytes[0..shift].iter().all(|&x| x == 0)
 }
 
 pub fn age(protocol_time: u32) -> i64 {
