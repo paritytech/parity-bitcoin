@@ -83,13 +83,13 @@ impl SynchronizationServer {
 					.map_or_else(|| {
 						queue_ready.wait(&mut queue);
 						queue.next_task()
-					}, |next_task| Some(next_task))
+					}, Some)
 			};
 
 			match server_task {
 				// has new task
 				Some(server_task) => match server_task {
-					// `getdata` => `notfound` + `block` + ... 
+					// `getdata` => `notfound` + `block` + ...
 					(peer_index, ServerTask::ServeGetData(inventory)) => {
 						let mut unknown_items: Vec<InventoryVector> = Vec::new();
 						let mut new_tasks: Vec<ServerTask> = Vec::new();
@@ -220,7 +220,7 @@ impl Server for SynchronizationServer {
 	fn serve_getdata(&mut self, peer_index: usize, message: types::GetData) {
 		self.queue.lock().add_task(peer_index, ServerTask::ServeGetData(message.inventory));
 	}
- 
+
 	fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks) {
 		if let Some(best_common_block) = self.locate_known_block(message.block_locator_hashes) {
 			trace!(target: "sync", "Best common block with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);
