@@ -4,10 +4,9 @@ use message::{Error, Payload, deserialize_payload};
 use message::types::{Ping, Pong};
 use message::common::Command;
 use protocol::Protocol;
-use util::Direction;
+use util::{PeerId, PeerInfo};
 use util::nonce::{NonceGenerator, RandomNonce};
 use p2p::Context;
-use PeerId;
 
 pub trait PingContext: Send + Sync {
 	fn send_to_peer<T>(context: Arc<Self>, peer: PeerId, payload: &T) where Self: Sized, T: Payload;
@@ -23,8 +22,8 @@ impl PingContext for Context {
 pub struct PingProtocol<T = RandomNonce, C = Context> {
 	/// Context
 	context: Arc<C>,
-	/// Connected peer id.
-	peer: PeerId,
+	/// Connected peer info.
+	info: PeerInfo,
 	/// Nonce generator.
 	nonce_generator: T,
 	/// Last nonce sent in the ping message.
@@ -32,10 +31,10 @@ pub struct PingProtocol<T = RandomNonce, C = Context> {
 }
 
 impl PingProtocol {
-	pub fn new(context: Arc<Context>, peer: PeerId) -> Self {
+	pub fn new(context: Arc<Context>, info: PeerInfo) -> Self {
 		PingProtocol {
 			context: context,
-			peer: peer,
+			info: info,
 			nonce_generator: RandomNonce::default(),
 			last_ping_nonce: None,
 		}
@@ -43,21 +42,21 @@ impl PingProtocol {
 }
 
 impl<T, C> Protocol for PingProtocol<T, C> where T: NonceGenerator + Send, C: PingContext {
-	fn initialize(&mut self, _direction: Direction, _version: u32) {
+	fn initialize(&mut self) {
 		// bitcoind always sends ping, let's do the same
 		let nonce = self.nonce_generator.get();
 		self.last_ping_nonce = Some(nonce);
 		let ping = Ping::new(nonce);
-		PingContext::send_to_peer(self.context.clone(), self.peer, &ping);
+		PingContext::send_to_peer(self.context.clone(), self.info.id, &ping);
 	}
 
-	fn on_message(&mut self, command: &Command, payload: &Bytes, version: u32) -> Result<(), Error> {
+	fn on_message(&mut self, command: &Command, payload: &Bytes) -> Result<(), Error> {
 		if command == &Ping::command() {
-			let ping: Ping = try!(deserialize_payload(payload, version));
+			let ping: Ping = try!(deserialize_payload(payload, self.info.version));
 			let pong = Pong::new(ping.nonce);
-			PingContext::send_to_peer(self.context.clone(), self.peer, &pong);
+			PingContext::send_to_peer(self.context.clone(), self.info.id, &pong);
 		} else if command == &Pong::command() {
-			let pong: Pong = try!(deserialize_payload(payload, version));
+			let pong: Pong = try!(deserialize_payload(payload, self.info.version));
 			if Some(pong.nonce) != self.last_ping_nonce.take() {
 				return Err(Error::InvalidCommand)
 			}
@@ -72,12 +71,11 @@ mod tests {
 	use std::sync::Arc;
 	use parking_lot::Mutex;
 	use bytes::Bytes;
-	use message::{Payload, serialize_payload};
+	use message::{Payload, serialize_payload, Magic};
 	use message::types::{Ping, Pong};
-	use util::Direction;
+	use util::{PeerId, PeerInfo, Direction};
 	use util::nonce::StaticNonce;
 	use protocol::Protocol;
-	use PeerId;
 	use super::{PingProtocol, PingContext};
 
 	#[derive(Default)]
@@ -101,12 +99,18 @@ mod tests {
 		let expected_message = serialize_payload(&Ping::new(nonce), 0).unwrap();
 		let mut ping_protocol = PingProtocol {
 			context: ping_context.clone(),
-			peer: peer,
+			info: PeerInfo {
+				id: peer,
+				address: "0.0.0.0:8080".parse().unwrap(),
+				direction: Direction::Inbound,
+				version: 0,
+				magic: Magic::Testnet,
+			},
 			nonce_generator: StaticNonce::new(nonce),
 			last_ping_nonce: None,
 		};
 
-		ping_protocol.initialize(Direction::Inbound, 0);
+		ping_protocol.initialize();
 		let messages: Vec<(PeerId, Bytes)> = ping_context.messages.lock().clone();
 		assert_eq!(messages.len(), 1);
 		assert_eq!(messages[0].0, peer);
@@ -124,12 +128,18 @@ mod tests {
 		let expected_message = serialize_payload(&Pong::new(nonce), 0).unwrap();
 		let mut ping_protocol = PingProtocol {
 			context: ping_context.clone(),
-			peer: peer,
+			info: PeerInfo {
+				id: peer,
+				address: "0.0.0.0:8080".parse().unwrap(),
+				direction: Direction::Inbound,
+				version: 0,
+				magic: Magic::Testnet,
+			},
 			nonce_generator: StaticNonce::new(nonce),
 			last_ping_nonce: None,
 		};
 
-		assert!(ping_protocol.on_message(&command, &message, 0).is_ok());
+		assert!(ping_protocol.on_message(&command, &message).is_ok());
 		let messages: Vec<(PeerId, Bytes)> = ping_context.messages.lock().clone();
 		assert_eq!(messages.len(), 1);
 		assert_eq!(messages[0].0, peer);
@@ -146,12 +156,18 @@ mod tests {
 		let message = serialize_payload(&Pong::new(nonce), 0).unwrap();
 		let mut ping_protocol = PingProtocol {
 			context: ping_context.clone(),
-			peer: peer,
+			info: PeerInfo {
+				id: peer,
+				address: "0.0.0.0:8080".parse().unwrap(),
+				direction: Direction::Inbound,
+				version: 0,
+				magic: Magic::Testnet,
+			},
 			nonce_generator: StaticNonce::new(nonce),
 			last_ping_nonce: Some(nonce),
 		};
 
-		assert!(ping_protocol.on_message(&command, &message, 0).is_ok());
+		assert!(ping_protocol.on_message(&command, &message).is_ok());
 		let messages: Vec<(PeerId, Bytes)> = ping_context.messages.lock().clone();
 		assert_eq!(messages.len(), 0);
 		assert_eq!(ping_protocol.last_ping_nonce, None);

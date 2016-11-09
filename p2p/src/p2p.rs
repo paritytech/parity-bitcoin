@@ -141,7 +141,7 @@ impl Context {
 					let channel = context.connections.store::<T>(context.clone(), connection, Direction::Outbound);
 
 					// initialize session and then start reading messages
-					channel.session().initialize(channel.clone());
+					channel.session().initialize();
 					Context::on_message(context, channel)
 				},
 				Ok(DeadlineStatus::Meet(Err(_))) => {
@@ -191,7 +191,7 @@ impl Context {
 					let channel = context.connections.store::<NormalSessionFactory>(context.clone(), connection, Direction::Inbound);
 
 					// initialize session and then start reading messages
-					channel.session().initialize(channel.clone());
+					channel.session().initialize();
 					Context::on_message(context.clone(), channel)
 				},
 				Ok(DeadlineStatus::Meet(Err(err))) => {
@@ -261,7 +261,7 @@ impl Context {
 					// successful read
 					trace!("Received {} message from {}", command, channel.peer_info().address);
 					// handle message and read the next one
-					match channel.session().on_message(channel.clone(), command, payload) {
+					match channel.session().on_message(command, payload) {
 						Ok(_) => {
 							context.node_table.write().note_used(&channel.peer_info().address);
 							let on_message = Context::on_message(context.clone(), channel);

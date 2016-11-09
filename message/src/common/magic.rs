@@ -11,7 +11,7 @@ const MAGIC_REGTEST: u32 = 0xDAB5BFFA;
 
 /// Bitcoin network
 /// https://bitcoin.org/en/glossary/mainnet
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Magic {
 	/// The original and main network for Bitcoin transactions, where satoshis have real economic value.
 	Mainnet,
