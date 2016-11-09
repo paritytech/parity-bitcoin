@@ -23,7 +23,6 @@ impl LocalSyncNode for InboundConnectionFactory {
 
 	fn create_sync_session(&self, best_block_height: i32, outbound_connection: OutboundSyncConnectionRef) -> InboundSyncConnectionRef {
 		let peer_index = self.local_node.create_sync_session(best_block_height, outbound_connection);
-		let inbound_connection = InboundConnection::new(self.local_node.clone(), peer_index);
-		inbound_connection
+		InboundConnection::new(self.local_node.clone(), peer_index)
 	}
 }

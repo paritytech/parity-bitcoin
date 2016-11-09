@@ -23,6 +23,7 @@ use synchronization_manager::{manage_synchronization_peers, MANAGEMENT_INTERVAL_
 use time;
 use std::time::Duration;
 
+#[cfg_attr(feature="cargo-clippy", allow(doc_markdown))]
 ///! Blocks synchronization process:
 ///!
 ///! When new peer is connected:
@@ -224,8 +225,8 @@ impl Default for Config {
 
 impl State {
 	pub fn is_synchronizing(&self) -> bool {
-		match self {
-			&State::Synchronizing(_, _) => true,
+		match *self {
+			State::Synchronizing(_, _) => true,
 			_ => false,
 		}
 	}
@@ -300,7 +301,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 			let mut chain = self.chain.write();
 
 			// remove block from verification queue
-			chain.remove_block_with_state(&hash, BlockState::Verifying);
+			chain.remove_block_with_state(hash, BlockState::Verifying);
 		}
 
 		// start new tasks
@@ -459,7 +460,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 							// remember as orphan block
 							self.orphaned_blocks
 								.entry(block.block_header.previous_header_hash.clone())
-								.or_insert(Vec::new())
+								.or_insert_with(Vec::new)
 								.push((block_hash, block))
 						}
 					}
@@ -597,7 +598,7 @@ pub mod tests {
 		let config = Config { threads_num: 1, skip_verification: true };
 		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain);
 		(event_loop, handle, executor, client)
-	} 
+	}
 
 	#[test]
 	fn synchronization_saturated_on_start() {

@@ -93,10 +93,10 @@ impl BlockState {
 	}
 
 	pub fn to_queue_index(&self) -> usize {
-		match self {
-			&BlockState::Scheduled => SCHEDULED_QUEUE,
-			&BlockState::Requested => REQUESTED_QUEUE,
-			&BlockState::Verifying => VERIFYING_QUEUE,
+		match *self {
+			BlockState::Scheduled => SCHEDULED_QUEUE,
+			BlockState::Requested => REQUESTED_QUEUE,
+			BlockState::Verifying => VERIFYING_QUEUE,
 			_ => panic!("Unsupported queue: {:?}", self),
 		}
 	}
@@ -136,7 +136,7 @@ impl Chain {
 	}
 
 	/// Get memory pool reference
-	pub fn memory_pool<'a>(&'a self) -> &'a MemoryPool {
+	pub fn memory_pool(&self) -> &MemoryPool {
 		&self.memory_pool
 	}
 
@@ -250,28 +250,28 @@ impl Chain {
 	}
 
 	/// Intersect chain with inventory
-	pub fn intersect_with_inventory(&self, inventory: &Vec<H256>) -> InventoryIntersection {
+	pub fn intersect_with_inventory(&self, inventory: &[H256]) -> InventoryIntersection {
 		let inventory_len = inventory.len();
 		assert!(inventory_len != 0);
 
 		// giving that blocks in inventory are ordered
 		match self.block_state(&inventory[0]) {
-			// if first block of inventory is unknown => all other blocks are also unknown 
+			// if first block of inventory is unknown => all other blocks are also unknown
 			BlockState::Unknown => {
 				InventoryIntersection::NoKnownBlocks(0)
 			},
 			// else if first block is known
-			first_block_state @ _ => match self.block_state(&inventory[inventory_len - 1]) {
+			first_block_state => match self.block_state(&inventory[inventory_len - 1]) {
 				// if last block is known to be in db => all inventory blocks are also in db
 				BlockState::Stored => {
-					InventoryIntersection::DbAllBlocksKnown 
+					InventoryIntersection::DbAllBlocksKnown
 				},
 				// if first block is known && last block is unknown => intersection with queue or with db
 				BlockState::Unknown => {
 					// find last known block
 					let mut previous_state = first_block_state;
-					for index in 1..inventory_len {
-						let state = self.block_state(&inventory[index]);
+					for (index, item) in inventory.iter().enumerate().take(inventory_len).skip(1) {
+						let state = self.block_state(item);
 						if state == BlockState::Unknown {
 							// previous block is stored => fork from stored block
 							if previous_state == BlockState::Stored {
