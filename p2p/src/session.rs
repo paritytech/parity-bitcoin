@@ -3,21 +3,20 @@ use parking_lot::Mutex;
 use bytes::Bytes;
 use message::{Command, Error};
 use p2p::Context;
-use net::Channel;
 use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, SeednodeProtocol};
-use PeerId;
+use util::{PeerInfo};
 
 pub trait SessionFactory {
-	fn new_session(context: Arc<Context>, peer: PeerId) -> Session;
+	fn new_session(context: Arc<Context>, info: PeerInfo) -> Session;
 }
 
 pub struct SeednodeSessionFactory;
 
 impl SessionFactory for SeednodeSessionFactory {
-	fn new_session(context: Arc<Context>, peer: PeerId) -> Session {
-		let ping = PingProtocol::new(context.clone(), peer).boxed();
-		let addr = AddrProtocol::new(context.clone(), peer).boxed();
-		let seed = SeednodeProtocol::new(context.clone(), peer).boxed();
+	fn new_session(context: Arc<Context>, info: PeerInfo) -> Session {
+		let ping = PingProtocol::new(context.clone(), info.clone()).boxed();
+		let addr = AddrProtocol::new(context.clone(), info.clone()).boxed();
+		let seed = SeednodeProtocol::new(context.clone(), info).boxed();
 		Session::new(vec![ping, addr, seed])
 	}
 }
@@ -25,10 +24,10 @@ impl SessionFactory for SeednodeSessionFactory {
 pub struct NormalSessionFactory;
 
 impl SessionFactory for NormalSessionFactory {
-	fn new_session(context: Arc<Context>, peer: PeerId) -> Session {
-		let ping = PingProtocol::new(context.clone(), peer).boxed();
-		let addr = AddrProtocol::new(context.clone(), peer).boxed();
-		let sync = SyncProtocol::new(context, peer).boxed();
+	fn new_session(context: Arc<Context>, info: PeerInfo) -> Session {
+		let ping = PingProtocol::new(context.clone(), info.clone()).boxed();
+		let addr = AddrProtocol::new(context.clone(), info.clone()).boxed();
+		let sync = SyncProtocol::new(context, info).boxed();
 		Session::new(vec![ping, addr, sync])
 	}
 }
@@ -44,17 +43,17 @@ impl Session {
 		}
 	}
 
-	pub fn initialize(&self, channel: Arc<Channel>) {
+	pub fn initialize(&self) {
 		for protocol in self.protocols.lock().iter_mut() {
-			protocol.initialize(channel.peer_info().direction, channel.version());
+			protocol.initialize();
 		}
 	}
 
-	pub fn on_message(&self, channel: Arc<Channel>, command: Command, payload: Bytes) -> Result<(), Error> {
+	pub fn on_message(&self, command: Command, payload: Bytes) -> Result<(), Error> {
 		self.protocols.lock()
 			.iter_mut()
 			.map(|protocol| {
-				protocol.on_message(&command, &payload, channel.version())
+				protocol.on_message(&command, &payload)
 			})
 			.collect::<Result<Vec<_>, Error>>()
 			.map(|_| ())

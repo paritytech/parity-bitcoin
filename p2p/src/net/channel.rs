@@ -1,41 +1,31 @@
-use message::{Payload, Magic, Message};
-use net::Connection;
+use message::{Payload, Message};
 use session::Session;
 use io::{SharedTcpStream, WriteMessage, write_message, read_any_message, ReadAnyMessage};
-use util::Direction;
-use {PeerId, PeerInfo};
+use util::PeerInfo;
 
 pub struct Channel {
-	version: u32,
-	magic: Magic,
+	stream: SharedTcpStream,
 	peer_info: PeerInfo,
 	session: Session,
-	stream: SharedTcpStream,
 }
 
 impl Channel {
-	pub fn new(connection: Connection, peer_id: PeerId, session: Session, direction: Direction) -> Self {
+	pub fn new(stream: SharedTcpStream, peer_info: PeerInfo, session: Session) -> Self {
 		Channel {
-			version: connection.version,
-			magic: connection.magic,
-			peer_info: PeerInfo {
-				address: connection.address,
-				id: peer_id,
-				direction: direction,
-			},
+			stream: stream,
+			peer_info: peer_info,
 			session: session,
-			stream: connection.stream,
 		}
 	}
 
 	pub fn write_message<T>(&self, payload: &T) -> WriteMessage<T, SharedTcpStream> where T: Payload {
 		// TODO: some tracing here
-		let message = Message::new(self.magic, self.version, payload).expect("failed to create outgoing message");
+		let message = Message::new(self.peer_info.magic, self.peer_info.version, payload).expect("failed to create outgoing message");
 		write_message(self.stream.clone(), message)
 	}
 
 	pub fn read_message(&self) -> ReadAnyMessage<SharedTcpStream> {
-		read_any_message(self.stream.clone(), self.magic)
+		read_any_message(self.stream.clone(), self.peer_info.magic)
 	}
 
 	pub fn shutdown(&self) {
@@ -43,11 +33,11 @@ impl Channel {
 	}
 
 	pub fn version(&self) -> u32 {
-		self.version
+		self.peer_info.version
 	}
 
 	pub fn peer_info(&self) -> PeerInfo {
-		self.peer_info
+		self.peer_info.clone()
 	}
 
 	pub fn session(&self) -> &Session {
