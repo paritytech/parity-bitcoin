@@ -5,7 +5,6 @@ use {Payload, MessageResult};
 
 #[derive(Debug, PartialEq)]
 pub struct Headers {
-	// TODO: Block headers need to have txn_count field
 	pub headers: Vec<BlockHeader>,
 }
 

@@ -1,8 +1,10 @@
 use std::fmt;
 use std::sync::Arc;
+use std::collections::VecDeque;
 use parking_lot::RwLock;
-use chain::Block;
+use chain::{Block, BlockHeader};
 use db;
+use best_headers_chain::{BestHeadersChain, Information as BestHeadersInformation};
 use primitives::hash::H256;
 use hash_queue::{HashQueueChain, HashPosition};
 use miner::MemoryPool;
@@ -35,21 +37,22 @@ pub enum BlockState {
 }
 
 /// Synchronization chain information
-#[derive(Debug)]
 pub struct Information {
-	/// Number of blocks currently scheduled for requesting
+	/// Number of blocks hashes currently scheduled for requesting
 	pub scheduled: u32,
-	/// Number of blocks currently requested from peers
+	/// Number of blocks hashes currently requested from peers
 	pub requested: u32,
 	/// Number of blocks currently verifying
 	pub verifying: u32,
 	/// Number of blocks in the storage
 	pub stored: u32,
+	/// Information on headers chain
+	pub headers: BestHeadersInformation,
 }
 
 /// Result of intersecting chain && inventory
 #[derive(Debug, PartialEq)]
-pub enum InventoryIntersection {
+pub enum HeadersIntersection {
 	/// 3.2: No intersection with in-memory queue && no intersection with db
 	NoKnownBlocks(usize),
 	/// 2.3: Inventory has no new blocks && some of blocks in inventory are in in-memory queue
@@ -78,6 +81,8 @@ pub struct Chain {
 	storage: Arc<db::Store>,
 	/// In-memory queue of blocks hashes
 	hash_chain: HashQueueChain,
+	/// In-memory queue of blocks headers
+	headers_chain: BestHeadersChain,
 	/// Transactions memory pool
 	memory_pool: MemoryPool,
 }
@@ -112,10 +117,11 @@ impl Chain {
 			.expect("non-empty storage is required");
 
 		Chain {
-			genesis_block_hash: genesis_block_hash,
+			genesis_block_hash: genesis_block_hash.clone(),
 			best_storage_block: best_storage_block,
 			storage: storage,
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
+			headers_chain: BestHeadersChain::new(genesis_block_hash),
 			memory_pool: MemoryPool::new(),
 		}
 	}
@@ -127,6 +133,7 @@ impl Chain {
 			requested: self.hash_chain.len_of(REQUESTED_QUEUE),
 			verifying: self.hash_chain.len_of(VERIFYING_QUEUE),
 			stored: self.best_storage_block.number + 1,
+			headers: self.headers_chain.information(),
 		}
 	}
 
@@ -165,6 +172,47 @@ impl Chain {
 		}
 	}
 
+	/// Get best storage block
+	pub fn best_storage_block(&self) -> db::BestBlock {
+		self.best_storage_block.clone()
+	}
+
+	/// Get block header by hash
+	pub fn block_hash(&self, number: u32) -> Option<H256> {
+		if number <= self.best_storage_block.number {
+			self.storage.block_hash(number)
+		} else {
+			// we try to keep these in order, but they are probably not
+			self.hash_chain.at(number - self.best_storage_block.number)
+		}
+	}
+
+	/// Get block number by hash
+	pub fn block_number(&self, hash: &H256) -> Option<u32> {
+		if let Some(number) = self.storage.block_number(hash) {
+			return Some(number);
+		}
+		self.headers_chain.height(hash).map(|p| self.best_storage_block.number + p + 1)
+	}
+
+	/// Get block header by number
+	pub fn block_header_by_number(&self, number: u32) -> Option<BlockHeader> {
+		if number <= self.best_storage_block.number {
+			// TODO: read block header only
+			self.storage.block(db::BlockRef::Number(number)).map(|b| b.block_header)
+		} else {
+			self.headers_chain.at(number - self.best_storage_block.number)
+		}
+	}
+
+	/// Get block header by hash
+	pub fn block_header_by_hash(&self, hash: &H256) -> Option<BlockHeader> {
+		if let Some(block) = self.storage.block(db::BlockRef::Hash(hash.clone())) {
+			return Some(block.block_header);
+		}
+		self.headers_chain.by_hash(hash)
+	}
+
 	/// Get block state
 	pub fn block_state(&self, hash: &H256) -> BlockState {
 		match self.hash_chain.contains_in(hash) {
@@ -195,9 +243,10 @@ impl Chain {
 		block_locator_hashes
 	}
 
-	/// Schedule blocks for requesting
-	pub fn schedule_blocks_hashes(&mut self, hashes: Vec<H256>) {
-		self.hash_chain.push_back_n_at(SCHEDULED_QUEUE, hashes)
+	/// Schedule blocks hashes for requesting
+	pub fn schedule_blocks_headers(&mut self, hashes: Vec<H256>, headers: Vec<BlockHeader>) {
+		self.hash_chain.push_back_n_at(SCHEDULED_QUEUE, hashes);
+		self.headers_chain.insert_n(headers);
 	}
 
 	/// Moves n blocks from scheduled queue to requested queue
@@ -208,7 +257,9 @@ impl Chain {
 	}
 
 	/// Add block to verifying queue
-	pub fn verify_block_hash(&mut self, hash: H256) {
+	pub fn verify_block(&mut self, hash: H256, header: BlockHeader) {
+		// insert header to the in-memory chain in case when it is not already there (non-headers-first sync)
+		self.headers_chain.insert(header);
 		self.hash_chain.push_back_at(VERIFYING_QUEUE, hash);
 	}
 
@@ -221,69 +272,131 @@ impl Chain {
 	}
 
 	/// Insert new best block to storage
-	pub fn insert_best_block(&mut self, block: Block) -> Result<(), db::Error> {
+	pub fn insert_best_block(&mut self, hash: H256, block: Block) -> Result<(), db::Error> {
 		// insert to storage
 		try!(self.storage.insert_block(&block));
 
 		// remember new best block hash
 		self.best_storage_block = self.storage.best_block().expect("Inserted block above");
 
+		// remove inserted block + handle possible reorganization in headers chain
+		self.headers_chain.block_inserted_to_storage(&hash, &self.best_storage_block.hash);
+
 		Ok(())
 	}
 
-	/// Remove block
-	pub fn remove_block(&mut self, hash: &H256) {
-		if self.hash_chain.remove_at(SCHEDULED_QUEUE, hash) == HashPosition::Missing
-			&& self.hash_chain.remove_at(REQUESTED_QUEUE, hash) == HashPosition::Missing {
-			self.hash_chain.remove_at(VERIFYING_QUEUE, hash);
+	/// Forget in-memory block
+	pub fn forget(&mut self, hash: &H256) -> HashPosition {
+		let position = self.forget_leave_header(hash);
+		if position != HashPosition::Missing {
+			self.headers_chain.remove(hash);
+		}
+		position
+	}
+
+	/// Forget in-memory block, but leave its header in the headers_chain (orphan queue)
+	pub fn forget_leave_header(&mut self, hash: &H256) -> HashPosition {
+		match self.hash_chain.remove_at(VERIFYING_QUEUE, hash) {
+			HashPosition::Missing => match self.hash_chain.remove_at(REQUESTED_QUEUE, hash) {
+				HashPosition::Missing => self.hash_chain.remove_at(SCHEDULED_QUEUE, hash),
+				position @ _ => position,
+			},
+			position @ _ => position,
 		}
 	}
 
-	/// Remove block by hash if it is currently in given state
-	pub fn remove_block_with_state(&mut self, hash: &H256, state: BlockState) -> HashPosition {
+	/// Forget in-memory block by hash if it is currently in given state
+	#[cfg(test)]
+	pub fn forget_with_state(&mut self, hash: &H256, state: BlockState) -> HashPosition {
+		let position = self.forget_with_state_leave_header(hash, state);
+		if position != HashPosition::Missing {
+			self.headers_chain.remove(hash);
+		}
+		position
+	}
+
+	/// Forget in-memory block by hash if it is currently in given state
+	pub fn forget_with_state_leave_header(&mut self, hash: &H256, state: BlockState) -> HashPosition {
 		self.hash_chain.remove_at(state.to_queue_index(), hash)
 	}
 
-	/// Remove all blocks with given state
-	pub fn remove_blocks_with_state(&mut self, state: BlockState) {
-		self.hash_chain.remove_all_at(state.to_queue_index());
+	/// Forget in-memory block by hash.
+	/// Also forget all its known children.
+	pub fn forget_with_children(&mut self, hash: &H256) {
+		let mut removal_stack: VecDeque<H256> = VecDeque::new();
+		let mut removal_queue: VecDeque<H256> = VecDeque::new();
+		removal_queue.push_back(hash.clone());
+
+		// remove in reverse order to minimize headers operations
+		while let Some(hash) = removal_queue.pop_front() {
+			removal_queue.extend(self.headers_chain.children(&hash));
+			removal_stack.push_back(hash);
+		}
+		while let Some(hash) = removal_stack.pop_back() {
+			self.forget(&hash);
+		}
+	}
+
+	/// Forget all blocks with given state
+	pub fn forget_all_with_state(&mut self, state: BlockState) {
+		let hashes = self.hash_chain.remove_all_at(state.to_queue_index());
+		self.headers_chain.remove_n(hashes);
 	}
 
 	/// Intersect chain with inventory
-	pub fn intersect_with_inventory(&self, inventory: &[H256]) -> InventoryIntersection {
-		let inventory_len = inventory.len();
-		assert!(inventory_len != 0);
+	pub fn intersect_with_headers(&self, hashes: &Vec<H256>, headers: &Vec<BlockHeader>) -> HeadersIntersection {
+		let hashes_len = hashes.len();
+		assert!(hashes_len != 0 && hashes.len() == headers.len());
 
-		// giving that blocks in inventory are ordered
-		match self.block_state(&inventory[0]) {
-			// if first block of inventory is unknown => all other blocks are also unknown
+		// giving that headers are ordered
+		let (is_first_known, first_state) = match self.block_state(&hashes[0]) {
+			BlockState::Unknown => (false, self.block_state(&headers[0].previous_header_hash)),
+			state @ _ => (true, state),
+		};
+		match first_state {
+			// if first block of inventory is unknown && its parent is unknonw => all other blocks are also unknown
 			BlockState::Unknown => {
-				InventoryIntersection::NoKnownBlocks(0)
+				HeadersIntersection::NoKnownBlocks(0)
 			},
 			// else if first block is known
-			first_block_state => match self.block_state(&inventory[inventory_len - 1]) {
+			first_block_state @ _ => match self.block_state(&hashes[hashes_len - 1]) {
 				// if last block is known to be in db => all inventory blocks are also in db
 				BlockState::Stored => {
-					InventoryIntersection::DbAllBlocksKnown
+					HeadersIntersection::DbAllBlocksKnown 
+				},
+				// if first block is known && last block is unknown but we know block before first one => intersection with queue or with db
+				BlockState::Unknown if !is_first_known => {
+					// previous block is stored => fork from stored block
+					if first_state == BlockState::Stored {
+						return HeadersIntersection::DbForkNewBlocks(0);
+					}
+					// previous block is best block => no fork
+					else if &self.best_block().hash == &headers[0].previous_header_hash {
+						return HeadersIntersection::InMemoryMainNewBlocks(0);
+					}
+					// previous block is not a best block => fork
+					else {
+						return HeadersIntersection::InMemoryForkNewBlocks(0);
+					}
 				},
 				// if first block is known && last block is unknown => intersection with queue or with db
-				BlockState::Unknown => {
+				BlockState::Unknown if is_first_known => {
 					// find last known block
 					let mut previous_state = first_block_state;
-					for (index, item) in inventory.iter().enumerate().take(inventory_len).skip(1) {
-						let state = self.block_state(item);
+					for index in 1..hashes_len {
+						let state = self.block_state(&hashes[index]);
 						if state == BlockState::Unknown {
 							// previous block is stored => fork from stored block
 							if previous_state == BlockState::Stored {
-								return InventoryIntersection::DbForkNewBlocks(index);
+								return HeadersIntersection::DbForkNewBlocks(index);
 							}
 							// previous block is best block => no fork
-							else if &self.best_block().hash == &inventory[index - 1] {
-								return InventoryIntersection::InMemoryMainNewBlocks(index);
+							else if &self.best_block().hash == &hashes[index - 1] {
+								return HeadersIntersection::InMemoryMainNewBlocks(index);
 							}
 							// previous block is not a best block => fork
 							else {
-								return InventoryIntersection::InMemoryForkNewBlocks(index);
+								return HeadersIntersection::InMemoryForkNewBlocks(index);
 							}
 						}
 						previous_state = state;
@@ -294,7 +407,7 @@ impl Chain {
 				},
 				// if first block is known && last block is also known && is in queue => queue intersection with no new block
 				_ => {
-					InventoryIntersection::InMemoryNoNewBlocks
+					HeadersIntersection::InMemoryNoNewBlocks
 				}
 			}
 		}
@@ -346,6 +459,12 @@ impl Chain {
 	}
 }
 
+impl fmt::Debug for Information {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "[sch:{} / bh:{} -> req:{} -> vfy:{} -> stored: {}]", self.scheduled, self.headers.best, self.requested, self.verifying, self.stored)
+	}
+}
+
 impl fmt::Debug for Chain {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		try!(writeln!(f, "chain: ["));
@@ -380,7 +499,7 @@ mod tests {
 	use std::sync::Arc;
 	use chain::RepresentH256;
 	use hash_queue::HashPosition;
-	use super::{Chain, BlockState, InventoryIntersection};
+	use super::{Chain, BlockState, HeadersIntersection};
 	use db::{self, Store, BestBlock};
 	use primitives::hash::H256;
 	use test_data;
@@ -409,18 +528,14 @@ mod tests {
 		let mut chain = Chain::new(db.clone());
 
 		// add 6 blocks to scheduled queue
-		chain.schedule_blocks_hashes(vec![
-			H256::from(0),
-			H256::from(1),
-			H256::from(2),
-			H256::from(3),
-			H256::from(4),
-			H256::from(5),
-		]);
+		let blocks = test_data::build_n_empty_blocks_from_genesis(6, 0);
+		let headers: Vec<_> = blocks.into_iter().map(|b| b.block_header).collect();
+		let hashes: Vec<_> = headers.iter().map(|h| h.hash()).collect();
+		chain.schedule_blocks_headers(hashes.clone(), headers);
 		assert!(chain.information().scheduled == 6 && chain.information().requested == 0
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 
-		// move 2 best blocks (0 && 1) to requested queue
+		// move 2 best blocks to requested queue
 		chain.request_blocks_hashes(2);
 		assert!(chain.information().scheduled == 4 && chain.information().requested == 2
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
@@ -428,32 +543,32 @@ mod tests {
 		chain.request_blocks_hashes(0);
 		assert!(chain.information().scheduled == 4 && chain.information().requested == 2
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
-		// move 1 best blocks (2) to requested queue
+		// move 1 best blocks to requested queue
 		chain.request_blocks_hashes(1);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 3
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 
 		// try to remove block 0 from scheduled queue => missing
-		assert_eq!(chain.remove_block_with_state(&H256::from(0), BlockState::Scheduled), HashPosition::Missing);
+		assert_eq!(chain.forget_with_state(&hashes[0], BlockState::Scheduled), HashPosition::Missing);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 3
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 		// remove blocks 0 & 1 from requested queue
-		assert_eq!(chain.remove_block_with_state(&H256::from(1), BlockState::Requested), HashPosition::Inside);
-		assert_eq!(chain.remove_block_with_state(&H256::from(0), BlockState::Requested), HashPosition::Front);
+		assert_eq!(chain.forget_with_state(&hashes[1], BlockState::Requested), HashPosition::Inside(1));
+		assert_eq!(chain.forget_with_state(&hashes[0], BlockState::Requested), HashPosition::Front);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 		// mark 0 & 1 as verifying
-		chain.verify_block_hash(H256::from(1));
-		chain.verify_block_hash(H256::from(2));
+		chain.verify_block(hashes[1].clone(), test_data::genesis().block_header);
+		chain.verify_block(hashes[2].clone(), test_data::genesis().block_header);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 2 && chain.information().stored == 1);
 
 		// mark block 0 as verified
-		assert_eq!(chain.remove_block_with_state(&H256::from(1), BlockState::Verifying), HashPosition::Front);
+		assert_eq!(chain.forget_with_state(&hashes[1], BlockState::Verifying), HashPosition::Front);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 1);
 		// insert new best block to the chain
-		chain.insert_best_block(test_data::block_h1()).expect("Db error");
+		chain.insert_best_block(test_data::block_h1().hash(), test_data::block_h1()).expect("Db error");
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 2);
 		assert_eq!(db.best_block().expect("storage with genesis block is required").number, 1);
@@ -468,91 +583,77 @@ mod tests {
 		let block1 = test_data::block_h1();
 		let block1_hash = block1.hash();
 
-		chain.insert_best_block(block1).expect("Error inserting new block");
+		chain.insert_best_block(block1_hash.clone(), block1).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block1_hash.clone(), genesis_hash.clone()]);
 
 		let block2 = test_data::block_h2();
 		let block2_hash = block2.hash();
 
-		chain.insert_best_block(block2).expect("Error inserting new block");
+		chain.insert_best_block(block2_hash.clone(), block2).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
 
-		chain.schedule_blocks_hashes(vec![
-			H256::from(0),
-			H256::from(1),
-			H256::from(2),
-			H256::from(3),
-			H256::from(4),
-			H256::from(5),
-			H256::from(6),
-			H256::from(7),
-			H256::from(8),
-			H256::from(9),
-			H256::from(10),
-		]);
+		let blocks0 = test_data::build_n_empty_blocks_from_genesis(11, 0);
+		let headers0: Vec<_> = blocks0.into_iter().map(|b| b.block_header).collect();
+		let hashes0: Vec<_> = headers0.iter().map(|h| h.hash()).collect();
+		chain.schedule_blocks_headers(hashes0.clone(), headers0.clone());
 		chain.request_blocks_hashes(10);
 		chain.verify_blocks_hashes(10);
 
 		assert_eq!(chain.block_locator_hashes(), vec![
-			H256::from(10),
-			H256::from(9),
-			H256::from(8),
-			H256::from(7),
-			H256::from(6),
-			H256::from(5),
-			H256::from(4),
-			H256::from(3),
-			H256::from(2),
-			H256::from(1),
+			hashes0[10].clone(),
+			hashes0[9].clone(),
+			hashes0[8].clone(),
+			hashes0[7].clone(),
+			hashes0[6].clone(),
+			hashes0[5].clone(),
+			hashes0[4].clone(),
+			hashes0[3].clone(),
+			hashes0[2].clone(),
+			hashes0[1].clone(),
 			block2_hash.clone(),
 			genesis_hash.clone(),
 		]);
 
-		chain.schedule_blocks_hashes(vec![
-			H256::from(11),
-			H256::from(12),
-			H256::from(13),
-			H256::from(14),
-			H256::from(15),
-			H256::from(16),
-		]);
+		let blocks1 = test_data::build_n_empty_blocks_from(6, 0, &headers0[10]);
+		let headers1: Vec<_> = blocks1.into_iter().map(|b| b.block_header).collect();
+		let hashes1: Vec<_> = headers1.iter().map(|h| h.hash()).collect();
+		chain.schedule_blocks_headers(hashes1.clone(), headers1.clone());
 		chain.request_blocks_hashes(10);
 
 		assert_eq!(chain.block_locator_hashes(), vec![
-			H256::from(16),
-			H256::from(15),
-			H256::from(14),
-			H256::from(13),
-			H256::from(12),
-			H256::from(11),
-			H256::from(10),
-			H256::from(9),
-			H256::from(8),
-			H256::from(7),
-			H256::from(5),
-			H256::from(1),
+			hashes1[5].clone(),
+			hashes1[4].clone(),
+			hashes1[3].clone(),
+			hashes1[2].clone(),
+			hashes1[1].clone(),
+			hashes1[0].clone(),
+			hashes0[10].clone(),
+			hashes0[9].clone(),
+			hashes0[8].clone(),
+			hashes0[7].clone(),
+			hashes0[5].clone(),
+			hashes0[1].clone(),
 			genesis_hash.clone(),
 		]);
 
-		chain.schedule_blocks_hashes(vec![
-			H256::from(20),
-			H256::from(21),
-			H256::from(22),
-		]);
+		let blocks2 = test_data::build_n_empty_blocks_from(3, 0, &headers1[5]);
+		let headers2: Vec<_> = blocks2.into_iter().map(|b| b.block_header).collect();
+		let hashes2: Vec<_> = headers2.iter().map(|h| h.hash()).collect();
+		chain.schedule_blocks_headers(hashes2.clone(), headers2);
 
 		assert_eq!(chain.block_locator_hashes(), vec![
-			H256::from(22),
-			H256::from(21),
-			H256::from(20),
-			H256::from(16),
-			H256::from(15),
-			H256::from(14),
-			H256::from(13),
-			H256::from(12),
-			H256::from(11),
-			H256::from(10),
-			H256::from(8),
-			H256::from(4),
+			hashes2[2].clone(),
+			hashes2[1].clone(),
+			hashes2[0].clone(),
+			hashes1[5].clone(),
+			hashes1[4].clone(),
+			hashes1[3].clone(),
+			hashes1[2].clone(),
+			hashes1[1].clone(),
+			hashes1[0].clone(),
+			hashes0[10].clone(),
+			hashes0[8].clone(),
+			hashes0[4].clone(),
 			genesis_hash.clone(),
 		]);
 	}
@@ -561,66 +662,75 @@ mod tests {
 	fn chain_intersect_with_inventory() {
 		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
 		// append 2 db blocks
-		chain.insert_best_block(test_data::block_h1()).expect("Error inserting new block");
-		chain.insert_best_block(test_data::block_h2()).expect("Error inserting new block");
-		// append 3 verifying blocks
-		chain.schedule_blocks_hashes(vec![
-			H256::from(0),
-			H256::from(1),
-			H256::from(2),
-		]);
-		chain.request_blocks_hashes(3);
+		chain.insert_best_block(test_data::block_h1().hash(), test_data::block_h1()).expect("Error inserting new block");
+		chain.insert_best_block(test_data::block_h2().hash(), test_data::block_h2()).expect("Error inserting new block");
+
+		// prepare blocks
+		let blocks0 = test_data::build_n_empty_blocks_from(9, 0, &test_data::block_h2().block_header);
+		let headers0: Vec<_> = blocks0.into_iter().map(|b| b.block_header).collect();
+		let hashes0: Vec<_> = headers0.iter().map(|h| h.hash()).collect();
+		// append 3 verifying blocks, 3 requested blocks && 3 scheduled blocks
+		chain.schedule_blocks_headers(hashes0.clone(), headers0.clone());
+		chain.request_blocks_hashes(6);
 		chain.verify_blocks_hashes(3);
-		// append 3 requested blocks
-		chain.schedule_blocks_hashes(vec![
-			H256::from(10),
-			H256::from(11),
-			H256::from(12),
-		]);
-		chain.request_blocks_hashes(10);
-		// append 3 scheduled blocks
-		chain.schedule_blocks_hashes(vec![
-			H256::from(20),
-			H256::from(21),
-			H256::from(22),
-		]);
 
-		assert_eq!(chain.intersect_with_inventory(&vec![
-			H256::from(30),
-			H256::from(31),
-		]), InventoryIntersection::NoKnownBlocks(0));
+		let blocks1 = test_data::build_n_empty_blocks(2, 0);
+		let headers1: Vec<_> = blocks1.into_iter().map(|b| b.block_header).collect();
+		let hashes1: Vec<_> = headers1.iter().map(|h| h.hash()).collect();
+		assert_eq!(chain.intersect_with_headers(&hashes1, &headers1), HeadersIntersection::NoKnownBlocks(0));
 
-		assert_eq!(chain.intersect_with_inventory(&vec![
-			H256::from(2),
-			H256::from(10),
-			H256::from(11),
-			H256::from(12),
-			H256::from(20),
-		]), InventoryIntersection::InMemoryNoNewBlocks);
+		assert_eq!(chain.intersect_with_headers(&vec![
+			hashes0[2].clone(),
+			hashes0[3].clone(),
+			hashes0[4].clone(),
+			hashes0[5].clone(),
+			hashes0[6].clone(),
+		], &vec![
+			headers0[2].clone(),
+			headers0[3].clone(),
+			headers0[4].clone(),
+			headers0[5].clone(),
+			headers0[6].clone(),
+		]), HeadersIntersection::InMemoryNoNewBlocks);
 
-		assert_eq!(chain.intersect_with_inventory(&vec![
-			H256::from(21),
-			H256::from(22),
-			H256::from(30),
-			H256::from(31),
-		]), InventoryIntersection::InMemoryMainNewBlocks(2));
+		assert_eq!(chain.intersect_with_headers(&vec![
+			hashes0[7].clone(),
+			hashes0[8].clone(),
+			hashes1[0].clone(),
+			hashes1[1].clone(),
+		], &vec![
+			headers0[7].clone(),
+			headers0[8].clone(),
+			headers1[0].clone(),
+			headers1[1].clone(),
+		]), HeadersIntersection::InMemoryMainNewBlocks(2));
 
-		assert_eq!(chain.intersect_with_inventory(&vec![
-			H256::from(20),
-			H256::from(21),
-			H256::from(30),
-			H256::from(31),
-		]), InventoryIntersection::InMemoryForkNewBlocks(2));
+		assert_eq!(chain.intersect_with_headers(&vec![
+			hashes0[6].clone(),
+			hashes0[7].clone(),
+			hashes1[0].clone(),
+			hashes1[1].clone(),
+		], &vec![
+			headers0[6].clone(),
+			headers0[7].clone(),
+			headers1[0].clone(),
+			headers1[1].clone(),
+		]), HeadersIntersection::InMemoryForkNewBlocks(2));
 
-		assert_eq!(chain.intersect_with_inventory(&vec![
+		assert_eq!(chain.intersect_with_headers(&vec![
 			test_data::block_h1().hash(),
 			test_data::block_h2().hash(),
-		]), InventoryIntersection::DbAllBlocksKnown);
+		], &vec![
+			test_data::block_h1().block_header,
+			test_data::block_h2().block_header,
+		]), HeadersIntersection::DbAllBlocksKnown);
 
-		assert_eq!(chain.intersect_with_inventory(&vec![
+		assert_eq!(chain.intersect_with_headers(&vec![
 			test_data::block_h2().hash(),
-			H256::from(30),
-			H256::from(31),
-		]), InventoryIntersection::DbForkNewBlocks(1));
+			hashes1[0].clone(),
+		], &vec![
+			test_data::block_h2().block_header,
+			headers1[0].clone(),
+		]), HeadersIntersection::DbForkNewBlocks(1));
 	}
 }

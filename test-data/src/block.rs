@@ -1,5 +1,6 @@
 //! Block builder
 
+use super::genesis;
 use chain::{self, RepresentH256};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
@@ -382,6 +383,31 @@ impl<F> TransactionOutputBuilder<F> where F: Invoke<chain::TransactionOutput> {
 
 pub fn block_builder() -> BlockBuilder { BlockBuilder::new() }
 pub fn block_hash_builder() -> BlockHashBuilder { BlockHashBuilder::new() }
+
+pub fn build_n_empty_blocks_from(n: u32, start_nonce: u32, previous: &chain::BlockHeader) -> Vec<chain::Block> {
+	let mut result = Vec::new();
+	let mut previous_hash = previous.hash();
+	let end_nonce = start_nonce + n;
+	for i in start_nonce..end_nonce {
+		let block = block_builder().header().nonce(i).parent(previous_hash).build().build();
+		previous_hash = block.hash();
+		result.push(block);
+	}
+	result
+}
+
+pub fn build_n_empty_blocks_from_genesis(n: u32, start_nonce: u32) -> Vec<chain::Block> {
+	build_n_empty_blocks_from(n, start_nonce, &genesis().block_header)
+}
+
+pub fn build_n_empty_blocks(n: u32, start_nonce: u32) -> Vec<chain::Block> {
+	assert!(n != 0);
+	let previous = block_builder().header().nonce(start_nonce).build().build();
+	let mut result = vec![previous];
+	let children = build_n_empty_blocks_from(n, start_nonce + 1, &result[0].block_header);
+	result.extend(children);
+	result
+}
 
 #[test]
 fn example1() {

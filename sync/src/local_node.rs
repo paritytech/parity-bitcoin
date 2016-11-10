@@ -23,7 +23,7 @@ pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections,
 	/// Synchronization process
 	client: Arc<Mutex<V>>,
 	/// Synchronization server
-	server: Arc<Mutex<U>>,
+	server: Arc<U>,
 }
 
 /// Peers list
@@ -36,7 +36,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 	U: Server,
 	V: Client {
 	/// New synchronization node with given storage
-	pub fn new(server: Arc<Mutex<U>>, client: Arc<Mutex<V>>, executor: Arc<Mutex<T>>) -> Self {
+	pub fn new(server: Arc<U>, client: Arc<Mutex<V>>, executor: Arc<Mutex<T>>) -> Self {
 		LocalNode {
 			peer_counter: AtomicUsize::new(0),
 			executor: executor,
@@ -63,7 +63,9 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		trace!(target: "sync", "Starting new sync session with peer#{}", peer_index);
 
 		// request inventory from peer
-		self.executor.lock().execute(SynchronizationTask::RequestInventory(peer_index));
+		// TODO: bitcoind doesn't respond to the `getheaders` request while it is synchronizing
+		//     but it answers to the `inventory` request
+		self.executor.lock().execute(SynchronizationTask::RequestBlocksHeaders(peer_index));
 	}
 
 	pub fn stop_sync_session(&self, peer_index: usize) {
@@ -98,19 +100,33 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 	pub fn on_peer_getdata(&self, peer_index: usize, message: types::GetData) {
 		trace!(target: "sync", "Got `getdata` message from peer#{}", peer_index);
 
-		self.server.lock().serve_getdata(peer_index, message);
+		self.server.serve_getdata(peer_index, message);
 	}
 
 	pub fn on_peer_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
 		trace!(target: "sync", "Got `getblocks` message from peer#{}", peer_index);
 
-		self.server.lock().serve_getblocks(peer_index, message);
+		self.server.serve_getblocks(peer_index, message);
 	}
 
 	pub fn on_peer_getheaders(&self, peer_index: usize, message: types::GetHeaders) {
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
 
-		self.server.lock().serve_getheaders(peer_index, message);
+		// simulating bitcoind for passing tests: if we are in nearly-saturated state
+		// and peer, which has just provided a new blocks to us, is asking for headers
+		// => do not serve getheaders until we have fully process his blocks + wait until headers are served before returning
+		let need_wait = {
+			let (need_wait, waiter) = { self.client.lock().get_peers_nearly_blocks_waiter(peer_index) };
+			if let Some(waiter) = waiter {
+				waiter.wait();
+			}
+			need_wait
+		};
+
+		self.server.serve_getheaders(peer_index, message);
+		if need_wait {
+			self.server.wait_peer_requests_completed(peer_index);
+		}
 	}
 
 	pub fn on_peer_transaction(&self, peer_index: usize, message: types::Tx) {
@@ -124,14 +140,18 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		self.client.lock().on_peer_block(peer_index, message.block);
 	}
 
-	pub fn on_peer_headers(&self, peer_index: usize, _message: types::Headers) {
-		trace!(target: "sync", "Got `headers` message from peer#{}", peer_index);
+	pub fn on_peer_headers(&self, peer_index: usize, message: types::Headers) {
+		trace!(target: "sync", "Got `headers` message from peer#{}. # of headers: {}", peer_index, message.headers.len());
+
+		if !message.headers.is_empty() {
+			self.client.lock().on_new_blocks_headers(peer_index, message.headers);
+		}
 	}
 
 	pub fn on_peer_mempool(&self, peer_index: usize, _message: types::MemPool) {
 		trace!(target: "sync", "Got `mempool` message from peer#{}", peer_index);
 
-		self.server.lock().serve_mempool(peer_index);
+		self.server.serve_mempool(peer_index);
 	}
 
 	pub fn on_peer_filterload(&self, peer_index: usize, _message: types::FilterLoad) {
@@ -228,12 +248,12 @@ mod tests {
 		fn send_notfound(&self, _message: &types::NotFound) {}
 	}
 
-	fn create_local_node() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<Mutex<DummyServer>>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor>>) {
+	fn create_local_node() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor>>) {
 		let event_loop = event_loop();
 		let handle = event_loop.handle();
 		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
 		let executor = DummyTaskExecutor::new();
-		let server = Arc::new(Mutex::new(DummyServer::new()));
+		let server = Arc::new(DummyServer::new());
 		let config = Config { threads_num: 1, skip_verification: true };
 		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain);
 		let local_node = LocalNode::new(server.clone(), client, executor.clone());
@@ -248,7 +268,7 @@ mod tests {
 		local_node.start_sync_session(peer_index, 0);
 		// => ask for inventory
 		let tasks = executor.lock().take_tasks();
-		assert_eq!(tasks, vec![Task::RequestInventory(peer_index)]);
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(peer_index)]);
 	}
 
 	#[test]
@@ -267,7 +287,7 @@ mod tests {
 			inventory: inventory.clone()
 		});
 		// => `getdata` is served
-		let tasks = server.lock().take_tasks();
+		let tasks = server.take_tasks();
 		assert_eq!(tasks, vec![(peer_index, ServerTask::ServeGetData(inventory))]);
 	}
 }

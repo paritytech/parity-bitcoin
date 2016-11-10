@@ -6,6 +6,7 @@ use std::collections::hash_map::Entry;
 use parking_lot::{Mutex, Condvar};
 use message::common::{InventoryVector, InventoryType};
 use db;
+use chain::BlockHeader;
 use primitives::hash::H256;
 use synchronization_chain::ChainRef;
 use synchronization_executor::{Task, TaskExecutor};
@@ -13,10 +14,20 @@ use message::types;
 
 /// Synchronization requests server trait
 pub trait Server : Send + 'static {
-	fn serve_getdata(&mut self, peer_index: usize, message: types::GetData);
-	fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks);
-	fn serve_getheaders(&mut self, peer_index: usize, message: types::GetHeaders);
-	fn serve_mempool(&mut self, peer_index: usize);
+	fn serve_getdata(&self, peer_index: usize, message: types::GetData);
+	fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks);
+	fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders);
+	fn serve_mempool(&self, peer_index: usize);
+	fn wait_peer_requests_completed(&self, peer_index: usize);
+}
+
+/// Peer requests waiter
+#[derive(Default)]
+pub struct PeerRequestsWaiter {
+	/// Awake mutex
+	peer_requests_lock: Mutex<()>,
+	/// Awake event
+	peer_requests_done: Condvar,
 }
 
 /// Synchronization requests server
@@ -32,6 +43,7 @@ struct ServerQueue {
 	queue_ready: Arc<Condvar>,
 	peers_queue: VecDeque<usize>,
 	tasks_queue: HashMap<usize, VecDeque<ServerTask>>,
+	peer_waiters: HashMap<usize, Arc<PeerRequestsWaiter>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -60,16 +72,14 @@ impl SynchronizationServer {
 		server
 	}
 
-	fn locate_known_block(&self, block_locator_hashes: Vec<H256>) -> Option<db::BestBlock> {
-		let chain = self.chain.read();
-		let storage = chain.storage();
+	fn locate_known_block_hash(&self, block_locator_hashes: Vec<H256>) -> Option<db::BestBlock> {
 		block_locator_hashes.into_iter()
-			.filter_map(|hash| storage.block_number(&hash)
-				.map(|number| db::BestBlock {
-					number: number,
-					hash: hash,
-				}))
+			.filter_map(|hash| SynchronizationServer::locate_best_known_block_hash(&self.chain, &hash))
 			.nth(0)
+	}
+
+	fn locate_known_block_header(&self, block_locator_hashes: Vec<H256>) -> Option<db::BestBlock> {
+		self.locate_known_block_hash(block_locator_hashes)
 	}
 
 	fn server_worker<T: TaskExecutor>(queue_ready: Arc<Condvar>, queue: Arc<Mutex<ServerQueue>>, chain: ChainRef, executor: Arc<Mutex<T>>) {
@@ -79,130 +89,176 @@ impl SynchronizationServer {
 				if queue.is_stopping.load(Ordering::SeqCst) {
 					break
 				}
+
 				queue.next_task()
-					.map_or_else(|| {
+					.or_else(|| {
 						queue_ready.wait(&mut queue);
 						queue.next_task()
-					}, Some)
+					})
 			};
 
 			match server_task {
-				// has new task
-				Some(server_task) => match server_task {
-					// `getdata` => `notfound` + `block` + ...
-					(peer_index, ServerTask::ServeGetData(inventory)) => {
-						let mut unknown_items: Vec<InventoryVector> = Vec::new();
-						let mut new_tasks: Vec<ServerTask> = Vec::new();
-						{
-							let chain = chain.read();
-							let storage = chain.storage();
-							for item in inventory {
-								match item.inv_type {
-									InventoryType::MessageBlock => {
-										match storage.block_number(&item.hash) {
-											Some(_) => new_tasks.push(ServerTask::ReturnBlock(item.hash.clone())),
-											None => unknown_items.push(item),
-										}
-									},
-									_ => (), // TODO: process other inventory types
-								}
+				// `getdata` => `notfound` + `block` + ... 
+				Some((peer_index, ServerTask::ServeGetData(inventory))) => {
+					let mut unknown_items: Vec<InventoryVector> = Vec::new();
+					let mut new_tasks: Vec<ServerTask> = Vec::new();
+					{
+						let chain = chain.read();
+						let storage = chain.storage();
+						for item in inventory {
+							match item.inv_type {
+								InventoryType::MessageBlock => {
+									match storage.block_number(&item.hash) {
+										Some(_) => new_tasks.push(ServerTask::ReturnBlock(item.hash.clone())),
+										None => unknown_items.push(item),
+									}
+								},
+								_ => (), // TODO: process other inventory types
 							}
 						}
-						// respond with `notfound` message for unknown data
-						if !unknown_items.is_empty() {
-							trace!(target: "sync", "Going to respond with notfound with {} items to peer#{}", unknown_items.len(), peer_index);
-							new_tasks.push(ServerTask::ReturnNotFound(unknown_items));
-						}
-						// schedule data responses
-						if !new_tasks.is_empty() {
-							trace!(target: "sync", "Going to respond with data with {} items to peer#{}", new_tasks.len(), peer_index);
-							queue.lock().add_tasks(peer_index, new_tasks);
-						}
-					},
-					// `getblocks` => `inventory`
-					(peer_index, ServerTask::ServeGetBlocks(best_block, hash_stop)) => {
-						let blocks_hashes = SynchronizationServer::blocks_hashes_after(&chain, &best_block, &hash_stop, 500);
-						if !blocks_hashes.is_empty() {
-							trace!(target: "sync", "Going to respond with inventory with {} items to peer#{}", blocks_hashes.len(), peer_index);
-							let inventory = blocks_hashes.into_iter().map(|hash| InventoryVector {
-								inv_type: InventoryType::MessageBlock,
-								hash: hash,
-							}).collect();
-							executor.lock().execute(Task::SendInventory(peer_index, inventory));
-						}
-					},
-					// `getheaders` => `headers`
-					(peer_index, ServerTask::ServeGetHeaders(best_block, hash_stop)) => {
-						// What if we have no common blocks with peer at all? Maybe drop connection or penalize peer?
-						// https://github.com/ethcore/parity-bitcoin/pull/91#discussion_r86734568
-						let blocks_hashes = SynchronizationServer::blocks_hashes_after(&chain, &best_block, &hash_stop, 2000);
-						if !blocks_hashes.is_empty() {
-							trace!(target: "sync", "Going to respond with blocks headers with {} items to peer#{}", blocks_hashes.len(), peer_index);
-							let chain = chain.read();
-							let storage = chain.storage();
-							// TODO: read block_header only
-							let blocks_headers = blocks_hashes.into_iter()
-								.filter_map(|hash| storage.block(db::BlockRef::Hash(hash)).map(|block| block.block_header))
-								.collect();
-							executor.lock().execute(Task::SendHeaders(peer_index, blocks_headers));
-						}
-					},
-					// `mempool` => `inventory`
-					(peer_index, ServerTask::ServeMempool) => {
-						let inventory: Vec<_> = chain.read()
-							.memory_pool()
-							.get_transactions_ids()
-							.into_iter()
-							.map(|hash| InventoryVector {
-								inv_type: InventoryType::MessageTx,
-								hash: hash,
-							})
-							.collect();
-						if !inventory.is_empty() {
-							trace!(target: "sync", "Going to respond with {} memory-pool transactions ids to peer#{}", inventory.len(), peer_index);
-							executor.lock().execute(Task::SendInventory(peer_index, inventory));
-						}
-					},
-					// `notfound`
-					(peer_index, ServerTask::ReturnNotFound(inventory)) => {
-						executor.lock().execute(Task::SendNotFound(peer_index, inventory));
-					},
-					// `block`
-					(peer_index, ServerTask::ReturnBlock(block_hash)) => {
-						let block = chain.read().storage().block(db::BlockRef::Hash(block_hash))
-							.expect("we have checked that block exists in ServeGetData; db is append-only; qed");
-						executor.lock().execute(Task::SendBlock(peer_index, block));
-					},
+					}
+					// respond with `notfound` message for unknown data
+					if !unknown_items.is_empty() {
+						trace!(target: "sync", "Going to respond with notfound with {} items to peer#{}", unknown_items.len(), peer_index);
+						new_tasks.push(ServerTask::ReturnNotFound(unknown_items));
+					}
+					// schedule data responses
+					if !new_tasks.is_empty() {
+						trace!(target: "sync", "Going to respond with data with {} items to peer#{}", new_tasks.len(), peer_index);
+						queue.lock().add_tasks(peer_index, new_tasks);
+					}
+					// inform that we have processed task for peer
+					queue.lock().task_processed(peer_index);
 				},
-				// no tasks after wake-up => stopping
-				None => break,
+				// `getblocks` => `inventory`
+				Some((peer_index, ServerTask::ServeGetBlocks(best_block, hash_stop))) => {
+					let blocks_hashes = SynchronizationServer::blocks_hashes_after(&chain, &best_block, &hash_stop, 500);
+					if !blocks_hashes.is_empty() {
+						trace!(target: "sync", "Going to respond with inventory with {} items to peer#{}", blocks_hashes.len(), peer_index);
+						let inventory = blocks_hashes.into_iter().map(|hash| InventoryVector {
+							inv_type: InventoryType::MessageBlock,
+							hash: hash,
+						}).collect();
+						executor.lock().execute(Task::SendInventory(peer_index, inventory));
+					}
+					// inform that we have processed task for peer
+					queue.lock().task_processed(peer_index);
+				},
+				// `getheaders` => `headers`
+				Some((peer_index, ServerTask::ServeGetHeaders(best_block, hash_stop))) => {
+					// What if we have no common blocks with peer at all? Maybe drop connection or penalize peer?
+					// https://github.com/ethcore/parity-bitcoin/pull/91#discussion_r86734568
+					let blocks_headers = SynchronizationServer::blocks_headers_after(&chain, &best_block, &hash_stop, 2000);
+					if !blocks_headers.is_empty() {
+						trace!(target: "sync", "Going to respond with blocks headers with {} items to peer#{}", blocks_headers.len(), peer_index);
+						executor.lock().execute(Task::SendHeaders(peer_index, blocks_headers));
+					}
+					// inform that we have processed task for peer
+					queue.lock().task_processed(peer_index);
+				},
+				// `mempool` => `inventory`
+				Some((peer_index, ServerTask::ServeMempool)) => {
+					let inventory: Vec<_> = chain.read()
+						.memory_pool()
+						.get_transactions_ids()
+						.into_iter()
+						.map(|hash| InventoryVector {
+							inv_type: InventoryType::MessageTx,
+							hash: hash,
+						})
+						.collect();
+					if !inventory.is_empty() {
+						trace!(target: "sync", "Going to respond with {} memory-pool transactions ids to peer#{}", inventory.len(), peer_index);
+						executor.lock().execute(Task::SendInventory(peer_index, inventory));
+					}
+					// inform that we have processed task for peer
+					queue.lock().task_processed(peer_index);
+				},
+				// `notfound`
+				Some((peer_index, ServerTask::ReturnNotFound(inventory))) => {
+					executor.lock().execute(Task::SendNotFound(peer_index, inventory));
+					// inform that we have processed task for peer
+					queue.lock().task_processed(peer_index);
+				},
+				// `block`
+				Some((peer_index, ServerTask::ReturnBlock(block_hash))) => {
+					let block = chain.read().storage().block(db::BlockRef::Hash(block_hash))
+						.expect("we have checked that block exists in ServeGetData; db is append-only; qed");
+					executor.lock().execute(Task::SendBlock(peer_index, block));
+					// inform that we have processed task for peer
+					queue.lock().task_processed(peer_index);
+				},
+				// no tasks after wake-up => stopping or pausing
+				None => (),
 			}
 		}
 	}
 
 	fn blocks_hashes_after(chain: &ChainRef, best_block: &db::BestBlock, hash_stop: &H256, max_hashes: u32) -> Vec<H256> {
-		let mut hashes: Vec<H256> = Vec::new();
 		let chain = chain.read();
-		let storage = chain.storage();
-		let storage_block_hash = storage.block_hash(best_block.number);
-		if let Some(hash) = storage_block_hash {
-			// check that chain has not reorganized since task was queued
-			if hash == best_block.hash {
-				let first_block_number = best_block.number + 1;
-				let last_block_number = first_block_number + max_hashes;
-				// `max_hashes` hashes after best_block.number OR hash_stop OR blockchain end
-				for block_number in first_block_number..last_block_number {
-					match storage.block_hash(block_number) {
-						Some(ref block_hash) if block_hash == hash_stop => break,
-						None => break,
-						Some(block_hash) => {
-							hashes.push(block_hash);
-						},
-					}
-				}
-			}
+		// check that chain has not reorganized since task was queued
+		if chain.block_hash(best_block.number).map(|h| h != best_block.hash).unwrap_or(true) {
+			return Vec::new();
 		}
-		hashes
+
+		let first_block_number = best_block.number + 1;
+		let last_block_number = first_block_number + max_hashes;
+		// `max_hashes` hashes after best_block.number OR hash_stop OR blockchain end
+		(first_block_number..last_block_number).into_iter()
+			.map(|number| chain.block_hash(number))
+			.take_while(|ref hash| hash.is_some())
+			.map(|hash| hash.unwrap())
+			.take_while(|ref hash| *hash != hash_stop)
+			.collect()
+	}
+
+	fn blocks_headers_after(chain: &ChainRef, best_block: &db::BestBlock, hash_stop: &H256, max_hashes: u32) -> Vec<BlockHeader> {
+		let chain = chain.read();
+		// check that chain has not reorganized since task was queued
+		if chain.block_hash(best_block.number).map(|h| h != best_block.hash).unwrap_or(true) {
+			return Vec::new();
+		}
+
+		let first_block_number = best_block.number + 1;
+		let last_block_number = first_block_number + max_hashes;
+		// `max_hashes` hashes after best_block.number OR hash_stop OR blockchain end
+		(first_block_number..last_block_number).into_iter()
+			.map(|number| chain.block_header_by_number(number))
+			.take_while(|ref header| header.is_some())
+			.map(|header| header.unwrap())
+			.take_while(|ref header| &header.hash() != hash_stop)
+			.collect()
+	}
+
+
+	fn locate_best_known_block_hash(chain: &ChainRef, hash: &H256) -> Option<db::BestBlock> {
+		let chain = chain.read();
+		match chain.block_number(&hash) {
+			Some(number) => Some(db::BestBlock {
+				number: number,
+				hash: hash.clone(),
+			}),
+			// block with hash is not in the main chain (block_number has returned None)
+			// but maybe it is in some fork? if so => we should find intersection with main chain
+			// and this would be our best common block
+			None => chain.block_header_by_hash(&hash)
+				.and_then(|block| {
+					let mut current_block_hash = block.previous_header_hash;
+					loop {
+						if let Some(block_number) = chain.block_number(&current_block_hash) {
+							return Some(db::BestBlock {
+								number: block_number,
+								hash: current_block_hash,
+							});
+						}
+
+						match chain.block_header_by_hash(&current_block_hash) {
+							Some(current_block_header) => current_block_hash = current_block_header.previous_header_hash,
+							None => return None,
+						}
+					}
+				}),
+		}
 	}
 }
 
@@ -217,12 +273,12 @@ impl Drop for SynchronizationServer {
 }
 
 impl Server for SynchronizationServer {
-	fn serve_getdata(&mut self, peer_index: usize, message: types::GetData) {
+	fn serve_getdata(&self, peer_index: usize, message: types::GetData) {
 		self.queue.lock().add_task(peer_index, ServerTask::ServeGetData(message.inventory));
 	}
 
-	fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks) {
-		if let Some(best_common_block) = self.locate_known_block(message.block_locator_hashes) {
+	fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
+		if let Some(best_common_block) = self.locate_known_block_hash(message.block_locator_hashes) {
 			trace!(target: "sync", "Best common block with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);
 			self.queue.lock().add_task(peer_index, ServerTask::ServeGetBlocks(best_common_block, message.hash_stop));
 		}
@@ -231,8 +287,8 @@ impl Server for SynchronizationServer {
 		}
 	}
 
-	fn serve_getheaders(&mut self, peer_index: usize, message: types::GetHeaders) {
-		if let Some(best_common_block) = self.locate_known_block(message.block_locator_hashes) {
+	fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders) {
+		if let Some(best_common_block) = self.locate_known_block_header(message.block_locator_hashes) {
 			trace!(target: "sync", "Best common block header with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);
 			self.queue.lock().add_task(peer_index, ServerTask::ServeGetHeaders(best_common_block, message.hash_stop));
 		}
@@ -241,8 +297,17 @@ impl Server for SynchronizationServer {
 		}
 	}
 
-	fn serve_mempool(&mut self, peer_index: usize) {
+	fn serve_mempool(&self, peer_index: usize) {
 		self.queue.lock().add_task(peer_index, ServerTask::ServeMempool);
+	}
+
+	fn wait_peer_requests_completed(&self, peer_index: usize) {
+		if let Some(waiter) = {
+			let mut queue = self.queue.lock();
+			queue.get_peer_requests_waiter(peer_index)
+		} {
+			waiter.wait();
+		}
 	}
 }
 
@@ -253,6 +318,7 @@ impl ServerQueue {
 			queue_ready: queue_ready,
 			peers_queue: VecDeque::new(),
 			tasks_queue: HashMap::new(),
+			peer_waiters: HashMap::new(),
 		}
 	}
 
@@ -266,20 +332,35 @@ impl ServerQueue {
 				};
 
 				// remove if no tasks left || schedule otherwise
-				if no_tasks_left {
-					self.tasks_queue.remove(&peer);
-				}
-				else {
+				if !no_tasks_left {
 					self.peers_queue.push_back(peer);
 				}
 				(peer, peer_task)
 			})
 	}
 
+	pub fn task_processed(&mut self, peer_index: usize) {
+		if let Entry::Occupied(tasks_entry) = self.tasks_queue.entry(peer_index) {
+			if !tasks_entry.get().is_empty() {
+				return;
+			}
+			tasks_entry.remove_entry();
+
+			if let Entry::Occupied(entry) = self.peer_waiters.entry(peer_index) {
+				entry.get().awake();
+				entry.remove_entry();
+			}
+		}
+	}
+
 	pub fn add_task(&mut self, peer_index: usize, task: ServerTask) {
 		match self.tasks_queue.entry(peer_index) {
 			Entry::Occupied(mut entry) => {
+				let add_to_peers_queue = entry.get().is_empty();
 				entry.get_mut().push_back(task);
+				if add_to_peers_queue {
+					self.peers_queue.push_back(peer_index);
+				}
 			},
 			Entry::Vacant(entry) => {
 				let mut new_tasks = VecDeque::new();
@@ -294,7 +375,11 @@ impl ServerQueue {
 	pub fn add_tasks(&mut self, peer_index: usize, tasks: Vec<ServerTask>) {
 		match self.tasks_queue.entry(peer_index) {
 			Entry::Occupied(mut entry) => {
+				let add_to_peers_queue = entry.get().is_empty();
 				entry.get_mut().extend(tasks);
+				if add_to_peers_queue {
+					self.peers_queue.push_back(peer_index);
+				}
 			},
 			Entry::Vacant(entry) => {
 				let mut new_tasks = VecDeque::new();
@@ -304,6 +389,36 @@ impl ServerQueue {
 			}
 		}
 		self.queue_ready.notify_one();
+	}
+
+	pub fn get_peer_requests_waiter(&mut self, peer_index: usize) -> Option<Arc<PeerRequestsWaiter>> {
+		match self.peer_waiters.entry(peer_index) {
+			Entry::Vacant(entry) => {
+				// there are no pending tasks for this peer
+				if !self.tasks_queue.contains_key(&peer_index) {
+					return None;
+				}
+
+				// there are tasks => wait for completion
+				let waiter = Arc::new(PeerRequestsWaiter::default());
+				entry.insert(waiter.clone());
+				Some(waiter)
+			},
+			Entry::Occupied(entry) => {
+				Some(entry.get().clone())
+			},
+		}
+	}
+}
+
+impl PeerRequestsWaiter {
+	pub fn wait(&self) {
+		let mut locker = self.peer_requests_lock.lock();
+		self.peer_requests_done.wait(&mut locker);
+	}
+
+	pub fn awake(&self) {
+		self.peer_requests_done.notify_all();
 	}
 }
 
@@ -324,42 +439,45 @@ pub mod tests {
 	use super::{Server, ServerTask, SynchronizationServer};
 
 	pub struct DummyServer {
-		tasks: Vec<(usize, ServerTask)>,
+		tasks: Mutex<Vec<(usize, ServerTask)>>,
 	}
 
 	impl DummyServer {
 		pub fn new() -> Self {
 			DummyServer {
-				tasks: Vec::new(),
+				tasks: Mutex::new(Vec::new()),
 			}
 		}
 
-		pub fn take_tasks(&mut self) -> Vec<(usize, ServerTask)> {
-			replace(&mut self.tasks, Vec::new())
+		pub fn take_tasks(&self) -> Vec<(usize, ServerTask)> {
+			replace(&mut *self.tasks.lock(), Vec::new())
 		}
 	}
 
 	impl Server for DummyServer {
-		fn serve_getdata(&mut self, peer_index: usize, message: types::GetData) {
-			self.tasks.push((peer_index, ServerTask::ServeGetData(message.inventory)));
+		fn serve_getdata(&self, peer_index: usize, message: types::GetData) {
+			self.tasks.lock().push((peer_index, ServerTask::ServeGetData(message.inventory)));
 		}
 
-		fn serve_getblocks(&mut self, peer_index: usize, message: types::GetBlocks) {
-			self.tasks.push((peer_index, ServerTask::ServeGetBlocks(db::BestBlock {
+		fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
+			self.tasks.lock().push((peer_index, ServerTask::ServeGetBlocks(db::BestBlock {
 				number: 0,
 				hash: message.block_locator_hashes[0].clone(),
 			}, message.hash_stop)));
 		}
 
-		fn serve_getheaders(&mut self, peer_index: usize, message: types::GetHeaders) {
-			self.tasks.push((peer_index, ServerTask::ServeGetHeaders(db::BestBlock {
+		fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders) {
+			self.tasks.lock().push((peer_index, ServerTask::ServeGetHeaders(db::BestBlock {
 				number: 0,
 				hash: message.block_locator_hashes[0].clone(),
 			}, message.hash_stop)));
 		}
 
-		fn serve_mempool(&mut self, peer_index: usize) {
-			self.tasks.push((peer_index, ServerTask::ServeMempool));
+		fn serve_mempool(&self, peer_index: usize) {
+			self.tasks.lock().push((peer_index, ServerTask::ServeMempool));
+		}
+
+		fn wait_peer_requests_completed(&self, _peer_index: usize) {
 		}
 	}
 
@@ -372,7 +490,7 @@ pub mod tests {
 
 	#[test]
 	fn server_getdata_responds_notfound_when_block_not_found() {
-		let (_, executor, mut server) = create_synchronization_server();
+		let (_, executor, server) = create_synchronization_server();
 		// when asking for unknown block
 		let inventory = vec![
 			InventoryVector {
@@ -390,7 +508,7 @@ pub mod tests {
 
 	#[test]
 	fn server_getdata_responds_block_when_block_is_found() {
-		let (_, executor, mut server) = create_synchronization_server();
+		let (_, executor, server) = create_synchronization_server();
 		// when asking for known block
 		let inventory = vec![
 			InventoryVector {
@@ -408,7 +526,7 @@ pub mod tests {
 
 	#[test]
 	fn server_getblocks_do_not_responds_inventory_when_synchronized() {
-		let (_, executor, mut server) = create_synchronization_server();
+		let (_, executor, server) = create_synchronization_server();
 		// when asking for blocks hashes
 		let genesis_block_hash = test_data::genesis().hash();
 		server.serve_getblocks(0, types::GetBlocks {
@@ -423,8 +541,8 @@ pub mod tests {
 
 	#[test]
 	fn server_getblocks_responds_inventory_when_have_unknown_blocks() {
-		let (chain, executor, mut server) = create_synchronization_server();
-		chain.write().insert_best_block(test_data::block_h1()).expect("Db write error");
+		let (chain, executor, server) = create_synchronization_server();
+		chain.write().insert_best_block(test_data::block_h1().hash(), test_data::block_h1()).expect("Db write error");
 		// when asking for blocks hashes
 		server.serve_getblocks(0, types::GetBlocks {
 			version: 0,
@@ -442,7 +560,7 @@ pub mod tests {
 
 	#[test]
 	fn server_getheaders_do_not_responds_headers_when_synchronized() {
-		let (_, executor, mut server) = create_synchronization_server();
+		let (_, executor, server) = create_synchronization_server();
 		// when asking for blocks hashes
 		let genesis_block_hash = test_data::genesis().hash();
 		server.serve_getheaders(0, types::GetHeaders {
@@ -457,8 +575,8 @@ pub mod tests {
 
 	#[test]
 	fn server_getheaders_responds_headers_when_have_unknown_blocks() {
-		let (chain, executor, mut server) = create_synchronization_server();
-		chain.write().insert_best_block(test_data::block_h1()).expect("Db write error");
+		let (chain, executor, server) = create_synchronization_server();
+		chain.write().insert_best_block(test_data::block_h1().hash(), test_data::block_h1()).expect("Db write error");
 		// when asking for blocks hashes
 		server.serve_getheaders(0, types::GetHeaders {
 			version: 0,
@@ -475,7 +593,7 @@ pub mod tests {
 
 	#[test]
 	fn server_mempool_do_not_responds_inventory_when_empty_memory_pool() {
-		let (_, executor, mut server) = create_synchronization_server();
+		let (_, executor, server) = create_synchronization_server();
 		// when asking for memory pool transactions ids
 		server.serve_mempool(0);
 		// => no response
@@ -485,7 +603,7 @@ pub mod tests {
 
 	#[test]
 	fn server_mempool_responds_inventory_when_non_empty_memory_pool() {
-		let (chain, executor, mut server) = create_synchronization_server();
+		let (chain, executor, server) = create_synchronization_server();
 		// when memory pool is non-empty
 		let transaction = Transaction::default();
 		let transaction_hash = transaction.hash();

@@ -1114,6 +1114,7 @@ mod tests {
 				.input().hash(genesis_coinbase.clone()).build()
 				.build()
 			.build();
+		let block_hash = block.hash();
 
 		store.insert_block(&block).expect("inserting first block in the decanonize test should not fail");
 
@@ -1122,13 +1123,15 @@ mod tests {
 		assert!(genesis_meta.is_spent(0), "Genesis coinbase should be recorded as spent because block#1 transaction spends it");
 
 		let mut update_context = UpdateContext::new(&store.database);
-		store.decanonize_block(&mut update_context, &block.hash())
+		store.decanonize_block(&mut update_context, &block_hash)
 			.expect("Decanonizing block #1 which was just inserted should not fail");
 		update_context.apply(&store.database).unwrap();
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase)
 			.expect("Transaction meta for the genesis coinbase transaction should exist");
 		assert!(!genesis_meta.is_spent(0), "Genesis coinbase should be recorded as unspent because we retracted block #1");
+
+		assert_eq!(store.block_number(&block_hash), None);
 	}
 
 	#[test]
