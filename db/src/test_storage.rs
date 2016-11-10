@@ -1,6 +1,6 @@
 //! Test storage
 
-use super::{BlockRef, Store, Error, BestBlock};
+use super::{BlockRef, Store, Error, BestBlock, BlockLocation};
 use chain::{self, Block, RepresentH256};
 use primitives::hash::H256;
 use serialization;
@@ -150,4 +150,10 @@ impl Store for TestStorage {
 	fn transaction_meta(&self, _hash: &H256) -> Option<TransactionMeta> {
 		unimplemented!();
 	}
+
+	fn accepted_location(&self, _header: &chain::BlockHeader) -> Option<BlockLocation> {
+		unimplemented!();
+	}
+
 }
+
