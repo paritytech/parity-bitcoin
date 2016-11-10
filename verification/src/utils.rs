@@ -20,7 +20,12 @@ pub fn check_nbits(hash: &H256, n_bits: u32) -> bool {
 
 	// making u32 from 3 bytes
 	let mut order = 0;
-	let hash_val: u32 = hash_bytes[should_be_le].iter().fold(0u32, |s, a| { let r = s + ((*a as u32) << order); order = order + 8; r });
+	let hash_val: u32 = hash_bytes[should_be_le].iter()
+		.fold(0u32, |s, a| {
+			let r = s + ((*a as u32) << order);
+			order += 8;
+			r
+		});
 
 	// using 3 bytes leftover of nbits
 	nb[0] = 0;
@@ -34,9 +39,7 @@ pub fn check_nbits(hash: &H256, n_bits: u32) -> bool {
 
 	// the case when hash effective bits are equal to nbits
 	// then the rest of the hash must be zero
-	for byte in hash_bytes[0..shift].iter() { if *byte != 0 { return false; } }
-
-	return true;
+	hash_bytes[0..shift].iter().all(|&x| x == 0)
 }
 
 pub fn age(protocol_time: u32) -> i64 {

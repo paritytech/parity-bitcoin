@@ -276,7 +276,7 @@ impl Server for SynchronizationServer {
 	fn serve_getdata(&self, peer_index: usize, message: types::GetData) {
 		self.queue.lock().add_task(peer_index, ServerTask::ServeGetData(message.inventory));
 	}
- 
+
 	fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
 		if let Some(best_common_block) = self.locate_known_block_hash(message.block_locator_hashes) {
 			trace!(target: "sync", "Best common block with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);

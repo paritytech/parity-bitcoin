@@ -12,12 +12,18 @@ pub struct DHash160 {
 	ripemd: Ripemd160,
 }
 
-impl DHash160 {
-	pub fn new() -> Self {
+impl Default for DHash160 {
+	fn default() -> Self {
 		DHash160 {
 			sha256: Sha256::new(),
 			ripemd: Ripemd160::new(),
 		}
+	}
+}
+
+impl DHash160 {
+	pub fn new() -> Self {
+		DHash160::default()
 	}
 }
 
@@ -51,11 +57,17 @@ pub struct DHash256 {
 	hasher: Sha256,
 }
 
-impl DHash256 {
-	pub fn new() -> Self {
+impl Default for DHash256 {
+	fn default() -> Self {
 		DHash256 {
 			hasher: Sha256::new(),
 		}
+	}
+}
+
+impl DHash256 {
+	pub fn new() -> Self {
+		DHash256::default()
 	}
 }
 

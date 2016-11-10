@@ -33,7 +33,7 @@ impl ChainVerifier {
 				Some(ref tx) => tx,
 				None => {
 					match block.transactions.iter().filter(|t| t.hash() == input.previous_output.hash).nth(0) {
-						Some(ref tx) => tx,
+						Some(tx) => tx,
 						None => { return Err(TransactionError::Inconclusive(input.previous_output.hash.clone())); },
 					}
 				},
@@ -44,7 +44,7 @@ impl ChainVerifier {
 
 			// signature verification
 			let signer: TransactionInputSigner = transaction.clone().into();
-			let ref paired_output = parent_transaction.outputs[input.previous_output.index as usize];
+			let paired_output = &parent_transaction.outputs[input.previous_output.index as usize];
 			let checker = TransactionSignatureChecker {
 				signer: signer,
 				input_index: input_index,

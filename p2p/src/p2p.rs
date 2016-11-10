@@ -107,7 +107,7 @@ impl Context {
 				let peers = context.node_table.read().nodes_with_services(&Services::default(), max);
 				let addresses = peers.into_iter()
 					.map(|peer| peer.address())
-					.filter(|address| !used_addresses.contains(&address))
+					.filter(|address| !used_addresses.contains(address))
 					.take(needed)
 					.collect::<Vec<_>>();
 
@@ -141,7 +141,7 @@ impl Context {
 					let channel = context.connections.store::<T>(context.clone(), connection, Direction::Outbound);
 
 					// initialize session and then start reading messages
-					channel.session().initialize(channel.clone());
+					channel.session().initialize();
 					Context::on_message(context, channel)
 				},
 				Ok(DeadlineStatus::Meet(Err(_))) => {
@@ -191,7 +191,7 @@ impl Context {
 					let channel = context.connections.store::<NormalSessionFactory>(context.clone(), connection, Direction::Inbound);
 
 					// initialize session and then start reading messages
-					channel.session().initialize(channel.clone());
+					channel.session().initialize();
 					Context::on_message(context.clone(), channel)
 				},
 				Ok(DeadlineStatus::Meet(Err(err))) => {
@@ -261,7 +261,7 @@ impl Context {
 					// successful read
 					trace!("Received {} message from {}", command, channel.peer_info().address);
 					// handle message and read the next one
-					match channel.session().on_message(channel.clone(), command, payload) {
+					match channel.session().on_message(command, payload) {
 						Ok(_) => {
 							context.node_table.write().note_used(&channel.peer_info().address);
 							let on_message = Context::on_message(context.clone(), channel);
@@ -396,12 +396,12 @@ impl P2P {
 	}
 
 	pub fn run(&self) -> Result<(), Box<error::Error>> {
-		for peer in self.config.peers.iter() {
+		for peer in &self.config.peers {
 			self.connect::<NormalSessionFactory>(*peer);
 		}
 
 		let resolver = try!(DnsResolver::system_config(&self.event_loop_handle));
-		for seed in self.config.seeds.iter() {
+		for seed in &self.config.seeds {
 			self.connect_to_seednode(&resolver, seed);
 		}
 

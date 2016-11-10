@@ -4,7 +4,7 @@
 //! and orders them by given strategies. It works like multi-indexed priority queue, giving option to pop 'top'
 //! transactions.
 //! It also guarantees that ancestor-descendant relation won't break during ordered removal (ancestors always removed
-//! before descendants). Removal using remove_by_hash can break this rule.
+//! before descendants). Removal using `remove_by_hash` can break this rule.
 use primitives::hash::H256;
 use chain::Transaction;
 use std::cmp::Ordering;
@@ -15,6 +15,7 @@ use ser::Serializable;
 use heapsize::HeapSizeOf;
 
 /// Transactions ordering strategy
+#[cfg_attr(feature="cargo-clippy", allow(enum_variant_names))]
 #[derive(Debug, Clone, Copy)]
 pub enum OrderingStrategy {
 	/// Order transactions by the time they have entered the memory pool
@@ -79,7 +80,7 @@ struct Storage {
 	references: ReferenceStorage,
 }
 
-/// Multi-index storage which holds references to entries from Storage::by_hash
+/// Multi-index storage which holds references to entries from `Storage::by_hash`
 #[derive(Debug, Clone)]
 struct ReferenceStorage {
 	/// By-input storage
@@ -90,7 +91,7 @@ struct ReferenceStorage {
 	ordered: OrderedReferenceStorage,
 }
 
-/// Multi-index orderings storage which holds ordered references to entries from Storage::by_hash
+/// Multi-index orderings storage which holds ordered references to entries from `Storage::by_hash`
 #[derive(Debug, Clone)]
 struct OrderedReferenceStorage {
 	/// By-entry-time storage
@@ -223,7 +224,7 @@ impl Ord for ByPackageScoreOrderedEntry {
 
 impl HeapSizeOf for Entry {
 	fn heap_size_of_children(&self) -> usize {
-		self.transaction.heap_size_of_children() + self.ancestors.heap_size_of_children() 
+		self.transaction.heap_size_of_children() + self.ancestors.heap_size_of_children()
 	}
 }
 
@@ -251,11 +252,11 @@ impl Storage {
 
 		// remember that this transactions depends on its inputs
 		for input_hash in entry.transaction.inputs.iter().map(|input| &input.previous_output.hash) {
-			self.references.by_input.entry(input_hash.clone()).or_insert_with(|| HashSet::new()).insert(entry.hash.clone());
+			self.references.by_input.entry(input_hash.clone()).or_insert_with(HashSet::new).insert(entry.hash.clone());
 		}
 
 		// update score of all packages this transaction is in
-		for ancestor_hash in entry.ancestors.iter() {
+		for ancestor_hash in &entry.ancestors {
 			if let Some(mut ancestor_entry) = self.by_hash.get_mut(ancestor_hash) {
 				let removed = self.references.ordered.by_package_score.remove(&(ancestor_entry as &Entry).into());
 
@@ -278,7 +279,7 @@ impl Storage {
 		}
 
 		// add to by_hash storage
-		self.by_hash.insert(entry.hash.clone(), entry); 
+		self.by_hash.insert(entry.hash.clone(), entry);
 	}
 
 	pub fn get_by_hash(&self, h: &H256) -> Option<&Entry> {
@@ -368,7 +369,7 @@ impl Storage {
 					self.by_hash.get(&top_hash).map(|entry| {
 						// simulate removal
 						removed.insert(top_hash.clone());
-						references.remove(Some(&removed), &self.by_hash, &entry);
+						references.remove(Some(&removed), &self.by_hash, entry);
 
 						// return this entry
 						result.push(top_hash);
@@ -427,7 +428,7 @@ impl Storage {
 
 			// move all descendants out of storage for later insertion
 			Some(all_descendants.into_iter()
-					.filter_map(|hash| self.remove_by_hash(&hash).map(|entry| entry.transaction))
+					.filter_map(|hash| self.remove_by_hash(hash).map(|entry| entry.transaction))
 					.collect())
 		}
 		else {
@@ -463,7 +464,7 @@ impl Storage {
 	}
 
 	pub fn get_transactions_ids(&self) -> Vec<H256> {
-		self.by_hash.keys().map(|h| h.clone()).collect()
+		self.by_hash.keys().cloned().collect()
 	}
 }
 
@@ -477,7 +478,7 @@ impl ReferenceStorage {
 	pub fn remove(&mut self, removed: Option<&HashSet<H256>>, by_hash: &HashMap<H256, Entry>, entry: &Entry) {
 		// for each pending descendant transaction
 		if let Some(descendants) = self.by_input.get(&entry.hash) {
-			let descendants = descendants.iter().filter_map(|hash| by_hash.get(&hash));
+			let descendants = descendants.iter().filter_map(|hash| by_hash.get(hash));
 			for descendant in descendants {
 				// if there are no more ancestors of this transaction in the pool
 				// => can move from pending to orderings
@@ -485,7 +486,7 @@ impl ReferenceStorage {
 					self.pending.remove(&descendant.hash);
 
 					if let Some(descendant_entry) = by_hash.get(&descendant.hash) {
-						self.ordered.insert_to_orderings(&descendant_entry);
+						self.ordered.insert_to_orderings(descendant_entry);
 					}
 				}
 			}
@@ -539,12 +540,18 @@ impl HeapSizeOf for OrderedReferenceStorage {
 	}
 }
 
-impl MemoryPool {
-	/// Creates new memory pool
-	pub fn new() -> Self {
+impl Default for MemoryPool {
+	fn default() -> Self {
 		MemoryPool {
 			storage: Storage::new(),
 		}
+	}
+}
+
+impl MemoryPool {
+	/// Creates new memory pool
+	pub fn new() -> Self {
+		MemoryPool::default()
 	}
 
 	/// Insert verified transaction to the `MemoryPool`
@@ -598,7 +605,7 @@ impl MemoryPool {
 
 	/// Get transaction by hash
 	pub fn get(&self, hash: &H256) -> Option<&Transaction> {
-		self.storage.get_by_hash(hash).map(|ref entry| &entry.transaction)
+		self.storage.get_by_hash(hash).map(|entry| &entry.transaction)
 	}
 
 	/// Checks if transaction is in the mempool
@@ -645,10 +652,10 @@ impl MemoryPool {
 	fn get_ancestors(&self, t: &Transaction) -> HashSet<H256> {
 		let mut ancestors: HashSet<H256> = HashSet::new();
 		let ancestors_entries = t.inputs.iter()
-			.filter_map(|ref input| self.storage.get_by_hash(&input.previous_output.hash));
+			.filter_map(|input| self.storage.get_by_hash(&input.previous_output.hash));
 		for ancestor_entry in ancestors_entries {
 			ancestors.insert(ancestor_entry.hash.clone());
-			for grand_ancestor in ancestor_entry.ancestors.iter() {
+			for grand_ancestor in &ancestor_entry.ancestors {
 				ancestors.insert(grand_ancestor.clone());
 			}
 		}
@@ -661,7 +668,7 @@ impl MemoryPool {
 
 	fn get_transaction_miner_fee(&self, t: &Transaction) -> i64 {
 		let input_value = 0; // TODO: sum all inputs of transaction
-		let output_value = t.outputs.iter().fold(0, |acc, ref output| acc + output.value);
+		let output_value = t.outputs.iter().fold(0, |acc, output| acc + output.value);
 		(output_value - input_value) as i64
 	}
 
@@ -779,8 +786,8 @@ mod tests {
 	fn test_memory_pool_insert_parent_after_child() {
 		let chain = &mut ChainBuilder::new();
 		TransactionBuilder::with_output(100).store(chain)
-			.to_input(0).add_output(100).store(chain)
-			.to_input(0).add_output(100).store(chain);
+			.into_input(0).add_output(100).store(chain)
+			.into_input(0).add_output(100).store(chain);
 
 		// insert child, then parent
 		let mut pool = MemoryPool::new();
@@ -800,8 +807,8 @@ mod tests {
 	fn test_memory_pool_insert_parent_before_child() {
 		let chain = &mut ChainBuilder::new();
 		TransactionBuilder::with_output(100).store(chain)
-			.to_input(0).add_output(100).store(chain)
-			.to_input(0).add_output(100).store(chain);
+			.into_input(0).add_output(100).store(chain)
+			.into_input(0).add_output(100).store(chain);
 
 		// insert parent, then child
 		let mut pool = to_memory_pool(chain);
@@ -818,8 +825,8 @@ mod tests {
 	fn test_memory_pool_insert_child_after_remove_by_hash() {
 		let chain = &mut ChainBuilder::new();
 		TransactionBuilder::with_output(100).store(chain)
-			.to_input(0).add_output(100).store(chain)
-			.to_input(0).add_output(100).store(chain);
+			.into_input(0).add_output(100).store(chain)
+			.into_input(0).add_output(100).store(chain);
 
 		// insert parent, then child
 		let mut pool = to_memory_pool(chain);
@@ -841,9 +848,9 @@ mod tests {
 	fn test_memory_pool_get_information() {
 		let chain = &mut ChainBuilder::new();
 		TransactionBuilder::with_output(10).store(chain)
-			.to_input(0).add_output(20).store(chain)
-			.to_input(0).add_output(30).store(chain)
-			.to_input(0).add_output(40).store(chain);
+			.into_input(0).add_output(20).store(chain)
+			.into_input(0).add_output(30).store(chain)
+			.into_input(0).add_output(40).store(chain);
 		let mut pool = MemoryPool::new();
 
 		let mut transactions_size = 0;
@@ -924,10 +931,10 @@ mod tests {
 		let chain = &mut ChainBuilder::new();
 		// all transactions of same size
 		TransactionBuilder::with_default_input(0).set_output(30).store(chain)	// transaction0
-			.to_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
+			.into_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
 			.set_default_input(0).set_output(35).store(chain)					// transaction2
-			.to_input(0).set_output(10).store(chain)							// transaction2 -> transaction3
-			.to_input(0).set_output(100).store(chain);							// transaction2 -> transaction3 -> transaction4
+			.into_input(0).set_output(10).store(chain)							// transaction2 -> transaction3
+			.into_input(0).set_output(100).store(chain);							// transaction2 -> transaction3 -> transaction4
 
 		let mut pool = MemoryPool::new();
 
@@ -979,8 +986,8 @@ mod tests {
 		let chain = &mut ChainBuilder::new();
 		// all transactions of same size
 		TransactionBuilder::with_default_input(0).set_output(17).store(chain)	// transaction0
-			.to_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
-			.to_input(0).set_output(7).store(chain)								// transaction0 -> transaction1 -> transaction2
+			.into_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
+			.into_input(0).set_output(7).store(chain)								// transaction0 -> transaction1 -> transaction2
 			.set_default_input(0).set_output(20).store(chain);					// transaction3
 
 		let mut pool = MemoryPool::new();

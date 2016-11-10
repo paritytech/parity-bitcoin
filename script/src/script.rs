@@ -16,7 +16,7 @@ pub const MAX_PUBKEYS_PER_MULTISIG: usize = 20;
 /// Maximum script length in bytes
 pub const MAX_SCRIPT_SIZE: usize = 10000;
 
-/// Threshold for nLockTime: below this value it is interpreted as block number,
+/// Threshold for `nLockTime`: below this value it is interpreted as block number,
 /// otherwise as UNIX timestamp.
 pub const LOCKTIME_THRESHOLD: u32 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 

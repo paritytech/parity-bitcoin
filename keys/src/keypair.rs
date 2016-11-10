@@ -1,4 +1,4 @@
-//! Bitcoin KeyPair
+//! Bitcoin key pair.
 
 use std::fmt;
 use secp256k1::key;

@@ -98,10 +98,10 @@ impl BlockState {
 	}
 
 	pub fn to_queue_index(&self) -> usize {
-		match self {
-			&BlockState::Scheduled => SCHEDULED_QUEUE,
-			&BlockState::Requested => REQUESTED_QUEUE,
-			&BlockState::Verifying => VERIFYING_QUEUE,
+		match *self {
+			BlockState::Scheduled => SCHEDULED_QUEUE,
+			BlockState::Requested => REQUESTED_QUEUE,
+			BlockState::Verifying => VERIFYING_QUEUE,
 			_ => panic!("Unsupported queue: {:?}", self),
 		}
 	}
@@ -143,7 +143,7 @@ impl Chain {
 	}
 
 	/// Get memory pool reference
-	pub fn memory_pool<'a>(&'a self) -> &'a MemoryPool {
+	pub fn memory_pool(&self) -> &MemoryPool {
 		&self.memory_pool
 	}
 

@@ -104,9 +104,9 @@ impl Peers {
 	}
 
 	/// Blocks have been requested from peer.
-	pub fn on_blocks_requested(&mut self, peer_index: usize, blocks_hashes: &Vec<H256>) {
+	pub fn on_blocks_requested(&mut self, peer_index: usize, blocks_hashes: &[H256]) {
 		self.idle.remove(&peer_index);
-		self.requests.entry(peer_index).or_insert(HashSet::new()).extend(blocks_hashes.iter().cloned());
+		self.requests.entry(peer_index).or_insert_with(HashSet::new).extend(blocks_hashes.iter().cloned());
 		self.times.insert(peer_index, precise_time_s());
 	}
 
@@ -126,7 +126,7 @@ impl Peers {
 		let peer_failures = match self.failures.entry(peer_index) {
 			Entry::Occupied(mut entry) => {
 				let failures = entry.get() + 1;
-				entry.insert(failures) + 1;
+				entry.insert(failures);
 				failures
 			},
 			Entry::Vacant(entry) => *entry.insert(1),

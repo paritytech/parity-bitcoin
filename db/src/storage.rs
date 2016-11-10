@@ -93,6 +93,8 @@ pub enum Error {
 	Meta(MetaError),
 	/// Unknown hash
 	Unknown(H256),
+	/// Unknown number
+	UnknownNumber(u32),
 	/// Not the block from the main chain
 	NotMain(H256),
 	/// Fork too long
@@ -141,7 +143,7 @@ impl UpdateContext {
 	pub fn apply(mut self, db: &Database) -> Result<(), Error> {
 		// actually saving meta
 		for (hash, meta) in self.meta.drain() {
-			self.db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.to_bytes());
+			self.db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.into_bytes());
 		}
 
 		try!(db.write(self.db_transaction));
@@ -275,7 +277,7 @@ impl Storage {
 
 		// another iteration skipping coinbase transaction
 		for accepted_tx in accepted_txs.iter().skip(1) {
-			for input in accepted_tx.inputs.iter() {
+			for input in &accepted_tx.inputs {
 				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
 						if meta.is_spent(input.previous_output.index as usize) {
@@ -319,8 +321,8 @@ impl Storage {
 		// ensure that block is of the main chain
 		try!(self.block_number(hash).ok_or(Error::NotMain(hash.clone())));
 
-		// remove block number
-		context.db_transaction.delete(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(hash));
+		// only canonical blocks have numbers, so remove this number entry for the hash
+		context.db_transaction.delete(Some(COL_BLOCK_NUMBERS), &**hash);
 
 		// transaction de-provisioning
 		let tx_hashes = self.block_transaction_hashes_by_hash(hash);
@@ -333,7 +335,7 @@ impl Storage {
 
 			// denote outputs used
 			if tx_hash_num == 0 { continue; } // coinbase transaction does not have inputs
-			for input in tx.inputs.iter() {
+			for input in &tx.inputs {
 				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
 						meta.denote_used(input.previous_output.index as usize);
@@ -388,7 +390,7 @@ impl Storage {
 		self.read_meta_u32(KEY_BEST_BLOCK_NUMBER)
 	}
 
-	fn best_hash(&self) -> Option<H256> {
+	fn _best_hash(&self) -> Option<H256> {
 		self.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val))
 	}
 
@@ -423,8 +425,8 @@ impl Storage {
 
 		// decanonizing main chain to the split point
 		loop {
-			let next_to_decanonize = try!(self.best_hash().ok_or(Error::NoBestBlock));
-			try!(self.decanonize_block(context, &next_to_decanonize));
+			let next_decanonize = try!(self.block_hash(now_best).ok_or(Error::UnknownNumber(now_best)));
+			try!(self.decanonize_block(context, &next_decanonize));
 
 			now_best -= 1;
 
@@ -432,7 +434,7 @@ impl Storage {
 		}
 
 		// canonizing all route from the split point
-		for new_canonical_hash in route.iter() {
+		for new_canonical_hash in &route {
 			now_best += 1;
 			try!(self.canonize_block(context, now_best, &new_canonical_hash));
 		}
@@ -466,13 +468,13 @@ impl Store for Storage {
 	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256> {
 		self.resolve_hash(block_ref)
 			.map(|h| self.block_transaction_hashes_by_hash(&h))
-			.unwrap_or(Vec::new())
+			.unwrap_or_default()
 	}
 
 	fn block_transactions(&self, block_ref: BlockRef) -> Vec<chain::Transaction> {
 		self.resolve_hash(block_ref)
 			.map(|h| self.block_transactions_by_hash(&h))
-			.unwrap_or(Vec::new())
+			.unwrap_or_default()
 	}
 
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
@@ -905,6 +907,9 @@ mod tests {
 			last_side_block_hash = new_side_hash;
 		}
 
+		let (height, route) = store.fork_route(128, &last_side_block_hash).unwrap();
+		assert_eq!(height, 0);
+		assert_eq!(route.len(), 31);
 
 		let (reorg_side_hash, reorg_side_block) = test_data::block_hash_builder()
 			.block()
@@ -919,11 +924,131 @@ mod tests {
 		assert_eq!(store.best_block().unwrap().hash, reorg_side_hash);
 	}
 
+	#[test]
+	fn fork_transactions() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		// Having 2 blocks initially in the main chain
+
+		let block1 = test_data::block_builder()
+			.header()
+				.nonce(10)
+				.parent(genesis.hash())
+				.build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().value(1).build()
+				.output().value(3).build()
+				.output().value(5).build()
+				.output().value(7).build()
+				.output().value(9).build()
+				.build()
+			.build();
+		store.insert_block(&block1).expect("Block #2 should get inserted with no error");
+		let parent_tx = block1.transactions()[1].hash();
+
+		let block2 = test_data::block_builder()
+			.header()
+				.nonce(20)
+				.parent(block1.hash())
+				.build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(parent_tx.clone()).index(1).build()
+				.input().hash(parent_tx.clone()).index(3).build()
+				.output().value(10).build()
+				.build()
+			.build();
+		store.insert_block(&block2).expect("Block #2 should get inserted with no error");
+
+		// Reorganizing to side chain adding two blocks to it
+
+		let side_block2 = test_data::block_builder()
+			.header().parent(block1.hash())
+				.nonce(30)
+				.build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(parent_tx.clone()).index(0).build()
+				.input().hash(parent_tx.clone()).index(2).build()
+				.output().value(6).build()
+				.build()
+			.build();
+		store.insert_block(&side_block2).expect("Side block #2 should get inserted with no error");
+
+		let side_block3 = test_data::block_builder()
+			.header().parent(side_block2.hash())
+				.nonce(40)
+				.build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(parent_tx.clone()).index(1).build()
+				.output().value(3).build()
+				.build()
+			.build();
+		store.insert_block(&side_block3).expect("Side block #3 should get inserted with no error");
+
+		let meta = store.transaction_meta(&parent_tx).expect("Transaction meta from block # 1 should exist");
+		// outputs 0, 1, 2 should be spent in the side chain branch
+		// we reorganized to the side chain branch
+		// so, outputs 0, 1, 2 should  be spent
+		assert!(meta.is_spent(0));
+		assert!(meta.is_spent(1));
+		assert!(meta.is_spent(2));
+
+		// outputs 3, 4 should not be spent in the side chain branch
+		// we reorganized to the side chain branch
+		// so, outputs 3, 4 should not be spent
+		assert!(!meta.is_spent(3));
+		assert!(!meta.is_spent(4));
+
+		// Reorganizing back to main chain with 2 blocks in a row
+
+		let block3 = test_data::block_builder()
+			.header().parent(block2.hash())
+				.nonce(50)
+				.build()
+			.transaction().coinbase().build()
+			.build();
+		store.insert_block(&block3).expect("Block #3 should get inserted with no error");
+
+		let block4 = test_data::block_builder()
+			.header().parent(block3.hash())
+				.nonce(60)
+				.build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(parent_tx.clone()).index(4).build()
+				.output().value(9).build()
+				.build()
+			.build();
+		store.insert_block(&block4).expect("Block #4 should get inserted with no error");
+
+		let meta = store.transaction_meta(&parent_tx).expect("Transaction meta from block # 1 should exist");
+		// outputs 1, 3, 4 should be spent in the main branch
+		// we reorganized to the main branch again after reorganized to side branch
+		// so, outputs 1, 3, 4 should be spent
+		assert!(meta.is_spent(1));
+		assert!(meta.is_spent(3));
+		assert!(meta.is_spent(4));
+
+		// outputs 0, 2 should not be spent in the main branch
+		// we reorganized to the main branch again after reorganized to side branch
+		// so, outputs 0, 2 should not be spent
+		assert!(!meta.is_spent(0));
+		assert!(!meta.is_spent(2));
+	}
+
 	// test simulates when main chain and side chain are competing all along, each adding
 	// block one by one
 	#[test]
 	fn fork_competing() {
-
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
 
@@ -1080,7 +1205,6 @@ mod tests {
 				.build()
 			.build();
 		store.insert_block(&side_block3).expect("side block 3 should insert with no problems");
-
 
 		let (h, route) = store.fork_route(16, &side_hash3).expect("Fork route should have been built");
 

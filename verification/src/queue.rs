@@ -38,8 +38,7 @@ pub enum ScheduleItem {
 impl ScheduleItem {
 	fn block(self) -> Block {
 		match self {
-			ScheduleItem::Block(block) => block,
-			ScheduleItem::Continued(block, _) => block,
+			ScheduleItem::Block(block) | ScheduleItem::Continued(block, _) => block,
 		}
 	}
 }

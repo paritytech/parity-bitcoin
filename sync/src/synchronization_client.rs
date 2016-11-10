@@ -24,6 +24,7 @@ use hash_queue::HashPosition;
 use time;
 use std::time::Duration;
 
+#[cfg_attr(feature="cargo-clippy", allow(doc_markdown))]
 ///! Blocks synchronization process:
 ///!
 ///! When new peer is connected:
@@ -251,8 +252,8 @@ impl State {
 	}
 
 	pub fn is_synchronizing(&self) -> bool {
-		match self {
-			&State::Synchronizing(_, _) => true,
+		match *self {
+			State::Synchronizing(_, _) => true,
 			_ => false,
 		}
 	}
@@ -591,7 +592,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 							// remember as orphan block
 							self.orphaned_blocks
 								.entry(block.block_header.previous_header_hash.clone())
-								.or_insert(Vec::new())
+								.or_insert_with(Vec::new)
 								.push((block_hash, block))
 						}
 					}
@@ -799,6 +800,7 @@ pub mod tests {
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = DummyTaskExecutor::new();
 		let config = Config { threads_num: 1, skip_verification: true };
+
 		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain.clone());
 		(event_loop, handle, executor, chain, client)
 	} 

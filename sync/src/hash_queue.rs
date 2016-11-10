@@ -205,19 +205,19 @@ impl HashQueueChain {
 
 	/// Returns element at the front of the given queue.
 	pub fn front_at(&self, queue_index: usize) -> Option<H256> {
-		let ref queue = self.chain[queue_index];
+		let queue = &self.chain[queue_index];
 		queue.front()
 	}
 
 	/// Returns element at the front of the given queue.
 	pub fn back_at(&self, queue_index: usize) -> Option<H256> {
-		let ref queue = self.chain[queue_index];
+		let queue = &self.chain[queue_index];
 		queue.back()
 	}
 
 	/// Returns previous-to back element from the given queue.
 	pub fn pre_back_at(&self, chain_index: usize) -> Option<H256> {
-		let ref queue = self.chain[chain_index];
+		let queue = &self.chain[chain_index];
 		queue.pre_back()
 	}
 
@@ -225,13 +225,13 @@ impl HashQueueChain {
 	pub fn back(&self) -> Option<H256> {
 		let mut queue_index = self.chain.len() - 1;
 		loop {
-			let ref queue = self.chain[queue_index];
+			let queue = &self.chain[queue_index];
 			let queue_back = queue.back();
 			if queue_back.is_some() {
 				return queue_back;
 			}
 
-			queue_index = queue_index - 1;
+			queue_index -= 1;
 			if queue_index == 0 {
 				return None;
 			}
@@ -283,8 +283,8 @@ impl HashQueueChain {
 impl Index<u32> for HashQueueChain {
 	type Output = H256;
 
-	fn index<'a>(&'a self, mut index: u32) -> &'a Self::Output {
-		for queue in self.chain.iter() {
+	fn index(&self, mut index: u32) -> &Self::Output {
+		for queue in &self.chain {
 			let queue_len = queue.len();
 			if index < queue_len {
 				return &queue[index];
