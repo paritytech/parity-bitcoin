@@ -163,7 +163,7 @@ impl Verify for ChainVerifier {
 
 		// verify transactions (except coinbase)
 		for (idx, transaction) in block.transactions().iter().skip(1).enumerate() {
-			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
+			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx+1, e)));
 		}
 
 		// todo: pre-process projected block number once verification is parallel!
@@ -254,7 +254,7 @@ mod tests {
 		let verifier = ChainVerifier::new(Arc::new(storage));
 
 		let should_be = Err(Error::Transaction(
-			0,
+			1,
 			TransactionError::Inconclusive("c997a5e56e104102fa209c6a852dd90660a20b2d9c352423edce25857fcd3704".into())
 		));
 		assert_eq!(should_be, verifier.verify(&b170));
@@ -266,14 +266,27 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		let storage = Storage::new(path.as_path()).unwrap();
 
-		let genesis = test_data::genesis();
+		let genesis = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output()
+					.value(50)
+					.signature("410411db93e1dcdb8a016b49840f8c53bc1eb68a382e97b1482ecad7b148a6909a5cb2e0eaddfb84ccf9744464f82e160bfa9b8b64f9d4c03f999b8643f656b412a3ac")
+					.build()
+				.build()
+			.merkled_header().build()
+			.build();
+
 		storage.insert_block(&genesis).unwrap();
 		let genesis_coinbase = genesis.transactions()[0].hash();
 
 		let block = test_data::block_builder()
 			.transaction().coinbase().build()
 			.transaction()
-				.input().hash(genesis_coinbase.clone()).build()
+				.input()
+					.hash(genesis_coinbase.clone())
+					.signature("483045022052ffc1929a2d8bd365c6a2a4e3421711b4b1e1b8781698ca9075807b4227abcb0221009984107ddb9e3813782b095d0d84361ed4c76e5edaf6561d252ae162c2341cfb01")
+					.build()
 				.build()
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
@@ -286,6 +299,5 @@ mod tests {
 		));
 
 		assert_eq!(expected, verifier.verify(&block));
-
 	}
 }

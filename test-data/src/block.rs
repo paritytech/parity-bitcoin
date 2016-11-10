@@ -325,6 +325,11 @@ impl<F> TransactionInputBuilder<F> where F: Invoke<chain::TransactionInput> {
 		}
 	}
 
+	pub fn signature(mut self, sig: &'static str) -> Self {
+		self.signature = sig.into();
+		self
+	}
+
 	pub fn hash(mut self, hash: H256) -> Self {
 		let mut output = self.output.unwrap_or(chain::OutPoint { hash: hash.clone(), index: 0 });
 		output.hash = hash;
@@ -373,6 +378,11 @@ impl<F> TransactionOutputBuilder<F> where F: Invoke<chain::TransactionOutput> {
 
 	pub fn value(mut self, value: u64) -> Self {
 		self.value = value;
+		self
+	}
+
+	pub fn signature(mut self, sig: &'static str) -> Self {
+		self.signature = sig.into();
 		self
 	}
 
