@@ -261,6 +261,7 @@ mod tests {
 	}
 
 	#[test]
+	#[ignore]
 	fn coinbase_maturity() {
 
 		let path = RandomTempPath::create_dir();
