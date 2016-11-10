@@ -8,6 +8,7 @@ use super::{Verify, VerificationResult, Chain, Error, TransactionError, Continue
 use utils;
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
+const COINBASE_MATURITY: u32 = 100; // 2 hours
 
 pub struct ChainVerifier {
 	store: Arc<db::Store>,
@@ -19,6 +20,63 @@ impl ChainVerifier {
 	}
 
 	fn ordered_verify(&self, block: &chain::Block, at_height: u32) -> Result<(), Error> {
+
+		let coinbase_spends = block.transactions()[0].total_spends();
+
+		let mut total_unspent = 0u64;
+		for (tx_index, tx) in block.transactions().iter().skip(1).enumerate() {
+
+			let mut total_claimed: u64 = 0;
+
+			for (_, input) in tx.inputs.iter().enumerate() {
+
+				// Coinbase maturity check
+				let previous_meta = try!(
+					self.store
+						.transaction_meta(&input.previous_output.hash)
+						.ok_or(
+							Error::Transaction(tx_index, TransactionError::UnknownReference(input.previous_output.hash.clone()))
+						)
+				);
+
+				if previous_meta.is_coinbase()
+					&& (at_height < COINBASE_MATURITY ||
+						at_height - COINBASE_MATURITY < previous_meta.height())
+				{
+					return Err(Error::Transaction(tx_index, TransactionError::Maturity));
+				}
+
+				let reference_tx = try!(
+					self.store.transaction(&input.previous_output.hash)
+						.ok_or(
+							Error::Transaction(tx_index, TransactionError::UnknownReference(input.previous_output.hash.clone()))
+						)
+				);
+
+				let output = try!(reference_tx.outputs.get(input.previous_output.index as usize)
+					.ok_or(
+						Error::Transaction(tx_index, TransactionError::Input(input.previous_output.index as usize))
+					)
+				);
+
+				total_claimed += output.value;
+			}
+
+			let total_spends = tx.total_spends();
+
+			if total_claimed < total_spends {
+				return Err(Error::Transaction(tx_index, TransactionError::Overspend));
+			}
+
+			// total_claimed is greater than total_spends, checked above and returned otherwise, cannot overflow; qed
+			total_unspent += total_claimed - total_spends;
+		}
+
+		let expected_max = utils::block_reward_satoshi(at_height) + total_unspent;
+		if coinbase_spends > expected_max{
+			return Err(Error::CoinbaseOverspend { expected_max: expected_max, actual: coinbase_spends });
+		}
+
 		Ok(())
 	}
 

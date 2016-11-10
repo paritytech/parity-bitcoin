@@ -147,8 +147,9 @@ impl Store for TestStorage {
 		Ok(())
 	}
 
-	fn transaction_meta(&self, _hash: &H256) -> Option<TransactionMeta> {
-		unimplemented!();
+	// just spawns new meta so far, use real store for proper tests
+	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
+		self.transaction(hash).map(|tx| TransactionMeta::new(0, tx.outputs.len()))
 	}
 
 	// supports only main chain in test storage

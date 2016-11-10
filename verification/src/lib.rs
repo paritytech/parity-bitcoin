@@ -43,6 +43,8 @@ pub enum Error {
 	Difficulty,
 	/// Invalid merkle root
 	MerkleRoot,
+	/// Coinbase spends too much
+	CoinbaseOverspend { expected_max: u64, actual: u64 },
 }
 
 #[derive(Debug, PartialEq)]
@@ -56,6 +58,10 @@ pub enum TransactionError {
 	Signature(usize),
 	/// Inconclusive (unknown parent transaction)
 	Inconclusive(H256),
+	/// Unknown previous transaction referenced
+	UnknownReference(H256),
+	/// Spends more than claims
+	Overspend,
 }
 
 #[derive(PartialEq, Debug)]
