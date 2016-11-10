@@ -12,11 +12,17 @@ const COINBASE_MATURITY: u32 = 100; // 2 hours
 
 pub struct ChainVerifier {
 	store: Arc<db::Store>,
+	skip_pow: bool,
 }
 
 impl ChainVerifier {
 	pub fn new(store: Arc<db::Store>) -> Self {
-		ChainVerifier { store: store }
+		ChainVerifier { store: store, skip_pow: false, }
+	}
+
+	pub fn pow_skip(mut self) -> Self {
+		self.skip_pow = true;
+		self
 	}
 
 	fn ordered_verify(&self, block: &chain::Block, at_height: u32) -> Result<(), Error> {
@@ -136,7 +142,7 @@ impl Verify for ChainVerifier {
 		}
 
 		// target difficulty threshold
-		if !utils::check_nbits(&hash, block.header().nbits) {
+		if !self.skip_pow && !utils::check_nbits(&hash, block.header().nbits) {
 			return Err(Error::Pow);
 		}
 
@@ -201,9 +207,11 @@ mod tests {
 
 	use super::ChainVerifier;
 	use super::super::{Verify, Chain, Error, TransactionError};
-	use db::TestStorage;
+	use db::{TestStorage, Storage, Store};
 	use test_data;
 	use std::sync::Arc;
+	use devtools::RandomTempPath;
+	use chain::RepresentH256;
 
 	#[test]
 	fn verify_orphan() {
@@ -250,5 +258,34 @@ mod tests {
 			TransactionError::Inconclusive("c997a5e56e104102fa209c6a852dd90660a20b2d9c352423edce25857fcd3704".into())
 		));
 		assert_eq!(should_be, verifier.verify(&b170));
+	}
+
+	#[test]
+	fn coinbase_maturity() {
+
+		let path = RandomTempPath::create_dir();
+		let storage = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		storage.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let block = test_data::block_builder()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase.clone()).build()
+				.build()
+			.merkled_header().parent(genesis.hash()).build()
+			.build();
+
+		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip();
+
+		let expected = Err(Error::Transaction(
+			1,
+			TransactionError::Maturity,
+		));
+
+		assert_eq!(expected, verifier.verify(&block));
+
 	}
 }

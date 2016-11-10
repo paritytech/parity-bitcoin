@@ -101,6 +101,12 @@ impl<F> BlockBuilder<F> where F: Invoke<chain::Block> {
 		BlockHeaderBuilder::with_callback(self)
 	}
 
+	pub fn merkled_header(self) -> BlockHeaderBuilder<Self> {
+		let hashes: Vec<H256> = self.transactions.iter().map(|t| t.hash()).collect();
+		let builder = self.header().merkle_root(chain::merkle_root(&hashes));
+		builder
+	}
+
 	pub fn transaction(self) -> TransactionBuilder<Self> {
 		TransactionBuilder::with_callback(self)
 	}
