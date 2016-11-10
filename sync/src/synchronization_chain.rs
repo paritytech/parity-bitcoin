@@ -307,11 +307,16 @@ impl Chain {
 
 	/// Forget in-memory block by hash if it is currently in given state
 	pub fn forget_with_state(&mut self, hash: &H256, state: BlockState) -> HashPosition {
-		let position = self.hash_chain.remove_at(state.to_queue_index(), hash);
+		let position = self.forget_with_state_leave_header(hash, state);
 		if position != HashPosition::Missing {
 			self.headers_chain.remove(hash);
 		}
 		position
+	}
+
+	/// Forget in-memory block by hash if it is currently in given state
+	pub fn forget_with_state_leave_header(&mut self, hash: &H256, state: BlockState) -> HashPosition {
+		self.hash_chain.remove_at(state.to_queue_index(), hash)
 	}
 
 	/// Forget in-memory block by hash.

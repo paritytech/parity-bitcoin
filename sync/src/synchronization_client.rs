@@ -298,9 +298,16 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 			return;
 		}
 
-		// else => request blocks
+		// else => request all unknown blocks
+		let unknown_blocks_hashes: Vec<_> = {
+			let chain = self.chain.read();
+			blocks_hashes.into_iter()
+				.filter(|h| chain.block_state(&h) == BlockState::Unknown)
+				.collect()
+		};
+
 		let mut executor = self.executor.lock();
-		executor.execute(Task::RequestBlocks(peer_index, blocks_hashes))
+		executor.execute(Task::RequestBlocks(peer_index, unknown_blocks_hashes))
 	}
 
 	/// Try to queue synchronization of unknown blocks when blocks headers are received.
@@ -386,7 +393,9 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 			let mut chain = self.chain.write();
 
 			// remove block from verification queue
-			if chain.forget_with_state(&hash, BlockState::Verifying) != HashPosition::Missing {
+			// header is removed in `insert_best_block` call
+			// or it is removed earlier, when block was removed from the verifying queue
+			if chain.forget_with_state_leave_header(&hash, BlockState::Verifying) != HashPosition::Missing {
 				// block was in verification queue => insert to storage
 				chain.insert_best_block(hash.clone(), block)
 					.expect("Error inserting to db.");
@@ -408,6 +417,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 			let mut chain = self.chain.write();
 
 			// forget for this block and all its children
+			// headers are also removed as they all are invalid
 			chain.forget_with_children(&hash);
 		}
 
@@ -561,6 +571,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 							blocks.push_back((block_hash, block));
 							while let Some((block_hash, block)) = blocks.pop_front() {
 								// remove block from current queue
+								// header is removed in insert_best_block or in one of on_verification_* methods
 								chain.forget_leave_header(&block_hash);
 								match self.verification_work_sender {
 									Some(ref verification_work_sender) => {
@@ -598,8 +609,6 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 							}
 						},
 						BlockState::Requested | BlockState::Scheduled => {
-							// remove block from current queue
-							chain.forget_leave_header(&block_hash);
 							// remember peer as useful
 							self.peers.insert(peer_index);
 							// remember as orphan block
@@ -864,7 +873,6 @@ pub mod tests {
 
 		// push requested block => should be moved to the test storage && orphan should be moved
 		sync.on_peer_block(5, block1);
-		println!("{:?}", sync.information());
 		assert!(sync.information().state.is_saturated());
 		assert_eq!(sync.information().orphaned, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
