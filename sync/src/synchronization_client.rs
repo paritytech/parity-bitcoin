@@ -245,7 +245,6 @@ impl Default for Config {
 }
 
 impl State {
-	#[cfg(test)]
 	pub fn is_saturated(&self) -> bool {
 		match self {
 			&State::Saturated => true,
@@ -656,7 +655,9 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 					if timestamp_diff >= 60.0 || blocks_diff > 1000 {
 						self.state = State::Synchronizing(time::precise_time_s(), new_num_of_blocks);
 
-						info!(target: "sync", "Processed {} blocks in {} seconds. Chain information: {:?}"
+						use time;
+						info!(target: "sync", "{:?} @ Processed {} blocks in {} seconds. Chain information: {:?}"
+							, time::strftime("%H:%M:%S", &time::now()).unwrap()
 							, blocks_diff, timestamp_diff
 							, chain.information());
 					}
@@ -720,6 +721,10 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 
 	/// Switch to saturated state
 	fn switch_to_saturated_state(&mut self, ask_for_inventory: bool) {
+		if self.state.is_saturated() {
+			return;
+		}
+
 		self.state = State::Saturated;
 		self.orphaned_blocks.clear();
 		self.peers.reset();
@@ -729,6 +734,11 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			let mut chain = self.chain.write();
 			chain.forget_all_with_state(BlockState::Requested);
 			chain.forget_all_with_state(BlockState::Scheduled);
+
+			use time;
+			info!(target: "sync", "{:?} @ Switched to saturated state. Chain information: {:?}",
+				time::strftime("%H:%M:%S", &time::now()).unwrap(),
+				chain.information());
 		}
 
 		if ask_for_inventory {
