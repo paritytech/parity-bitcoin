@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use db::{self, BlockRef};
+use db::{self, BlockRef, BlockLocation};
 use chain::{self, RepresentH256};
 use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
 use utils;
@@ -16,6 +16,10 @@ pub struct ChainVerifier {
 impl ChainVerifier {
 	pub fn new(store: Arc<db::Store>) -> Self {
 		ChainVerifier { store: store }
+	}
+
+	fn ordered_verify(&self, block: &chain::Block, at_height: u32) -> Result<(), Error> {
+		Ok(())
 	}
 
 	fn verify_transaction(&self, block: &chain::Block, transaction: &chain::Transaction) -> Result<(), TransactionError> {
@@ -98,12 +102,20 @@ impl Verify for ChainVerifier {
 			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
 		}
 
-		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
-			Some(b) => b,
-			None => { return Ok(Chain::Orphan); }
-		};
-
-		Ok(Chain::Main)
+		// todo: pre-process projected block number once verification is parallel!
+		match self.store.accepted_location(block.header()) {
+			None => {
+				Ok(Chain::Orphan)
+			},
+			Some(BlockLocation::Main(block_number)) => {
+				try!(self.ordered_verify(block, block_number));
+				Ok(Chain::Main)
+			},
+			Some(BlockLocation::Side(block_number)) => {
+				try!(self.ordered_verify(block, block_number));
+				Ok(Chain::Side)
+			},
+		}
 	}
 }
 

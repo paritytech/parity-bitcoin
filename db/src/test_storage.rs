@@ -151,8 +151,14 @@ impl Store for TestStorage {
 		unimplemented!();
 	}
 
-	fn accepted_location(&self, _header: &chain::BlockHeader) -> Option<BlockLocation> {
-		unimplemented!();
+	// supports only main chain in test storage
+	fn accepted_location(&self, header: &chain::BlockHeader) -> Option<BlockLocation> {
+		if self.best_block().is_none() { return Some(BlockLocation::Main(0)); }
+
+		let best = self.best_block().unwrap();
+		if best.hash == header.previous_header_hash { return Some(BlockLocation::Main(best.number + 1)); }
+
+		None
 	}
 
 }
