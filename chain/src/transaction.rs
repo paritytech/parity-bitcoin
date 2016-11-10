@@ -250,6 +250,12 @@ impl Transaction {
 		if self.inputs.len() != 1 { return false; }
 		self.inputs[0].previous_output.hash.is_zero() && self.inputs[0].previous_output.index == 0xffffffff
 	}
+
+	pub fn total_spends(&self) -> u64 {
+		self.outputs
+			.iter()
+			.fold(0u64, |acc, out| acc + out.value)
+	}
 }
 
 #[cfg(test)]

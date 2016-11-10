@@ -46,11 +46,29 @@ pub fn age(protocol_time: u32) -> i64 {
 	::time::get_time().sec - protocol_time as i64
 }
 
+pub fn block_reward_satoshi(block_height: u32) -> u64 {
+	let mut res = 50 * 100 * 1000 * 1000;
+	for _ in 0..block_height / 210000 { res = res / 2 }
+	res
+}
+
 #[cfg(test)]
 mod tests {
 
-	use super::check_nbits;
+	use super::{block_reward_satoshi, check_nbits};
 	use primitives::hash::H256;
+
+	#[test]
+	fn reward() {
+		assert_eq!(block_reward_satoshi(0), 5000000000);
+		assert_eq!(block_reward_satoshi(209999), 5000000000);
+		assert_eq!(block_reward_satoshi(210000), 2500000000);
+		assert_eq!(block_reward_satoshi(420000), 1250000000);
+		assert_eq!(block_reward_satoshi(420001), 1250000000);
+		assert_eq!(block_reward_satoshi(629999), 1250000000);
+		assert_eq!(block_reward_satoshi(630000), 625000000);
+		assert_eq!(block_reward_satoshi(630001), 625000000);
+	}
 
 	#[test]
 	fn nbits() {

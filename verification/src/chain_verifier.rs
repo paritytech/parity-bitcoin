@@ -2,20 +2,88 @@
 
 use std::sync::Arc;
 
-use db::{self, BlockRef};
+use db::{self, BlockRef, BlockLocation};
 use chain::{self, RepresentH256};
 use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
 use utils;
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
+const COINBASE_MATURITY: u32 = 100; // 2 hours
 
 pub struct ChainVerifier {
 	store: Arc<db::Store>,
+	skip_pow: bool,
 }
 
 impl ChainVerifier {
 	pub fn new(store: Arc<db::Store>) -> Self {
-		ChainVerifier { store: store }
+		ChainVerifier { store: store, skip_pow: false, }
+	}
+
+	pub fn pow_skip(mut self) -> Self {
+		self.skip_pow = true;
+		self
+	}
+
+	fn ordered_verify(&self, block: &chain::Block, at_height: u32) -> Result<(), Error> {
+
+		let coinbase_spends = block.transactions()[0].total_spends();
+
+		let mut total_unspent = 0u64;
+		for (tx_index, tx) in block.transactions().iter().skip(1).enumerate() {
+
+			let mut total_claimed: u64 = 0;
+
+			for (_, input) in tx.inputs.iter().enumerate() {
+
+				// Coinbase maturity check
+				let previous_meta = try!(
+					self.store
+						.transaction_meta(&input.previous_output.hash)
+						.ok_or(
+							Error::Transaction(tx_index, TransactionError::UnknownReference(input.previous_output.hash.clone()))
+						)
+				);
+
+				if previous_meta.is_coinbase()
+					&& (at_height < COINBASE_MATURITY ||
+						at_height - COINBASE_MATURITY < previous_meta.height())
+				{
+					return Err(Error::Transaction(tx_index, TransactionError::Maturity));
+				}
+
+				let reference_tx = try!(
+					self.store.transaction(&input.previous_output.hash)
+						.ok_or(
+							Error::Transaction(tx_index, TransactionError::UnknownReference(input.previous_output.hash.clone()))
+						)
+				);
+
+				let output = try!(reference_tx.outputs.get(input.previous_output.index as usize)
+					.ok_or(
+						Error::Transaction(tx_index, TransactionError::Input(input.previous_output.index as usize))
+					)
+				);
+
+				total_claimed += output.value;
+			}
+
+			let total_spends = tx.total_spends();
+
+			if total_claimed < total_spends {
+				return Err(Error::Transaction(tx_index, TransactionError::Overspend));
+			}
+
+			// total_claimed is greater than total_spends, checked above and returned otherwise, cannot overflow; qed
+			total_unspent += total_claimed - total_spends;
+		}
+
+		let expected_max = utils::block_reward_satoshi(at_height) + total_unspent;
+		if coinbase_spends > expected_max{
+			return Err(Error::CoinbaseOverspend { expected_max: expected_max, actual: coinbase_spends });
+		}
+
+		Ok(())
 	}
 
 	fn verify_transaction(&self, block: &chain::Block, transaction: &chain::Transaction) -> Result<(), TransactionError> {
@@ -74,7 +142,7 @@ impl Verify for ChainVerifier {
 		}
 
 		// target difficulty threshold
-		if !utils::check_nbits(&hash, block.header().nbits) {
+		if !self.skip_pow && !utils::check_nbits(&hash, block.header().nbits) {
 			return Err(Error::Pow);
 		}
 
@@ -95,15 +163,23 @@ impl Verify for ChainVerifier {
 
 		// verify transactions (except coinbase)
 		for (idx, transaction) in block.transactions().iter().skip(1).enumerate() {
-			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
+			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx+1, e)));
 		}
 
-		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
-			Some(b) => b,
-			None => { return Ok(Chain::Orphan); }
-		};
-
-		Ok(Chain::Main)
+		// todo: pre-process projected block number once verification is parallel!
+		match self.store.accepted_location(block.header()) {
+			None => {
+				Ok(Chain::Orphan)
+			},
+			Some(BlockLocation::Main(block_number)) => {
+				try!(self.ordered_verify(block, block_number));
+				Ok(Chain::Main)
+			},
+			Some(BlockLocation::Side(block_number)) => {
+				try!(self.ordered_verify(block, block_number));
+				Ok(Chain::Side)
+			},
+		}
 	}
 }
 
@@ -131,9 +207,11 @@ mod tests {
 
 	use super::ChainVerifier;
 	use super::super::{Verify, Chain, Error, TransactionError};
-	use db::TestStorage;
+	use db::{TestStorage, Storage, Store};
 	use test_data;
 	use std::sync::Arc;
+	use devtools::RandomTempPath;
+	use chain::RepresentH256;
 
 	#[test]
 	fn verify_orphan() {
@@ -176,9 +254,51 @@ mod tests {
 		let verifier = ChainVerifier::new(Arc::new(storage));
 
 		let should_be = Err(Error::Transaction(
-			0,
+			1,
 			TransactionError::Inconclusive("c997a5e56e104102fa209c6a852dd90660a20b2d9c352423edce25857fcd3704".into())
 		));
 		assert_eq!(should_be, verifier.verify(&b170));
+	}
+
+	#[test]
+	#[ignore]
+	fn coinbase_maturity() {
+
+		let path = RandomTempPath::create_dir();
+		let storage = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output()
+					.value(50)
+					.signature("410411db93e1dcdb8a016b49840f8c53bc1eb68a382e97b1482ecad7b148a6909a5cb2e0eaddfb84ccf9744464f82e160bfa9b8b64f9d4c03f999b8643f656b412a3ac")
+					.build()
+				.build()
+			.merkled_header().build()
+			.build();
+
+		storage.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let block = test_data::block_builder()
+			.transaction().coinbase().build()
+			.transaction()
+				.input()
+					.hash(genesis_coinbase.clone())
+					.signature("483045022052ffc1929a2d8bd365c6a2a4e3421711b4b1e1b8781698ca9075807b4227abcb0221009984107ddb9e3813782b095d0d84361ed4c76e5edaf6561d252ae162c2341cfb01")
+					.build()
+				.build()
+			.merkled_header().parent(genesis.hash()).build()
+			.build();
+
+		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip();
+
+		let expected = Err(Error::Transaction(
+			1,
+			TransactionError::Maturity,
+		));
+
+		assert_eq!(expected, verifier.verify(&block));
 	}
 }

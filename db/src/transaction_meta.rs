@@ -7,7 +7,8 @@ use byteorder::{LittleEndian, ByteOrder};
 #[derive(Debug)]
 pub struct TransactionMeta {
 	block_height: u32,
-	spent: BitVec,
+	// first bit is coinbase flag, others - one per output listed
+	bits: BitVec,
 }
 
 #[derive(Debug)]
@@ -20,25 +21,34 @@ impl TransactionMeta {
 	pub fn new(block_height: u32, outputs: usize) -> Self {
 		TransactionMeta {
 			block_height: block_height,
-			spent: BitVec::from_elem(outputs, false),
+			bits: BitVec::from_elem(outputs + 1, false),
 		}
 	}
 
 	/// note that particular output has been used
 	pub fn note_used(&mut self, index: usize) {
-		self.spent.set(index, true);
+		self.bits.set(index + 1 , true);
 	}
 
+	pub fn coinbase(mut self) -> Self {
+		self.bits.set(0, true);
+		self
+	}
+
+	pub fn is_coinbase(&self) -> bool {
+		self.bits.get(0)
+			.expect("One bit should always exists, since it is created as usize + 1; minimum value of usize is 0; 0 + 1 = 1;  qed")
+	}
 
 	/// note that particular output has been used
 	pub fn denote_used(&mut self, index: usize) {
-		self.spent.set(index, false);
+		self.bits.set(index + 1, false);
 	}
 
 	pub fn into_bytes(self) -> Vec<u8> {
 		let mut result = vec![0u8; 4];
 		LittleEndian::write_u32(&mut result[0..4], self.block_height);
-		result.extend(self.spent.to_bytes());
+		result.extend(self.bits.to_bytes());
 		result
 	}
 
@@ -47,12 +57,12 @@ impl TransactionMeta {
 
 		Ok(TransactionMeta {
 			block_height: LittleEndian::read_u32(&bytes[0..4]),
-			spent: BitVec::from_bytes(&bytes[4..]),
+			bits: BitVec::from_bytes(&bytes[4..]),
 		})
 	}
 
 	pub fn height(&self) -> u32 { self.block_height }
 
-	pub fn is_spent(&self, idx: usize) -> bool { self.spent.get(idx).expect("Index should be verified by the caller") }
+	pub fn is_spent(&self, idx: usize) -> bool { self.bits.get(idx + 1).expect("Index should be verified by the caller") }
 
 }

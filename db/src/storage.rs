@@ -6,7 +6,7 @@ use kvdb::{DBTransaction, Database, DatabaseConfig};
 use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
-use super::{BlockRef, BestBlock};
+use super::{BlockRef, BestBlock, BlockLocation};
 use serialization;
 use chain::{self, RepresentH256};
 use parking_lot::RwLock;
@@ -69,6 +69,9 @@ pub trait Store : Send + Sync {
 
 	/// get transaction metadata
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta>;
+
+	/// return the location of this block once if it ever gets inserted
+	fn accepted_location(&self, header: &chain::BlockHeader) -> Option<BlockLocation>;
 }
 
 /// Blockchain storage with rocksdb database
@@ -588,6 +591,28 @@ impl Store for Storage {
 			TransactionMeta::from_bytes(&val).unwrap_or_else(|e| panic!("Invalid transaction metadata: db corrupted? ({:?})", e))
 		)
 	}
+
+	fn accepted_location(&self, header: &chain::BlockHeader) -> Option<BlockLocation> {
+		let best_number = match self.best_block() {
+			None => { return Some(BlockLocation::Main(0)); },
+			Some(best) => best.number,
+		};
+
+		if let Some(height) = self.block_number(&header.previous_header_hash) {
+			if best_number == height { Some(BlockLocation::Main(height + 1)) }
+			else { Some(BlockLocation::Side(height + 1)) }
+		}
+		else {
+			match self.fork_route(MAX_FORK_ROUTE_PRESET, &header.previous_header_hash) {
+				Ok((height, route)) => {
+					// +2 = +1 for parent (fork_route won't include it in route), +1 for self
+					Some(BlockLocation::Side(height + route.len() as u32 + 2))
+				},
+				// possibly that block is totally unknown
+				_ => None,
+			}
+		}
+	}
 }
 
 #[cfg(test)]
@@ -596,7 +621,7 @@ mod tests {
 	use super::{Storage, Store, UpdateContext};
 	use devtools::RandomTempPath;
 	use chain::{Block, RepresentH256};
-	use super::super::BlockRef;
+	use super::super::{BlockRef, BlockLocation};
 	use test_data;
 
 	#[test]
@@ -1132,6 +1157,73 @@ mod tests {
 		assert!(!genesis_meta.is_spent(0), "Genesis coinbase should be recorded as unspent because we retracted block #1");
 
 		assert_eq!(store.block_number(&block_hash), None);
+	}
+
+	#[test]
+	fn accepted_location_for_genesis() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let location = store.accepted_location(test_data::genesis().header());
+
+		assert_eq!(Some(BlockLocation::Main(0)), location);
+	}
+
+
+	#[test]
+	fn accepted_location_for_main() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		store.insert_block(&test_data::genesis())
+			.expect("Genesis should be inserted with no issues in the accepted location test");
+
+		let location = store.accepted_location(test_data::block_h1().header());
+
+		assert_eq!(Some(BlockLocation::Main(1)), location);
+	}
+
+
+	#[test]
+	fn accepted_location_for_branch() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		store.insert_block(&test_data::genesis())
+			.expect("Genesis should be inserted with no issues in the accepted location test");
+
+		let block1 = test_data::block_h1();
+		let block1_hash = block1.hash();
+		store.insert_block(&block1)
+			.expect("Block 1 should be inserted with no issues in the accepted location test");
+
+		store.insert_block(&test_data::block_h2())
+			.expect("Block 2 should be inserted with no issues in the accepted location test");
+
+		let block2_side = test_data::block_builder()
+			.header().parent(block1_hash).build()
+			.build();
+
+		let location = store.accepted_location(block2_side.header());
+
+		assert_eq!(Some(BlockLocation::Side(2)), location);
+	}
+
+	#[test]
+	fn accepted_location_for_unknown() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		store.insert_block(&test_data::genesis())
+			.expect("Genesis should be inserted with no issues in the accepted location test");
+
+		let location = store.accepted_location(test_data::block_h2().header());
+
+		assert_eq!(None, location);
 	}
 
 	#[test]

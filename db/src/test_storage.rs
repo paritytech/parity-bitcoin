@@ -1,6 +1,6 @@
 //! Test storage
 
-use super::{BlockRef, Store, Error, BestBlock};
+use super::{BlockRef, Store, Error, BestBlock, BlockLocation};
 use chain::{self, Block, RepresentH256};
 use primitives::hash::H256;
 use serialization;
@@ -147,7 +147,20 @@ impl Store for TestStorage {
 		Ok(())
 	}
 
-	fn transaction_meta(&self, _hash: &H256) -> Option<TransactionMeta> {
-		unimplemented!();
+	// just spawns new meta so far, use real store for proper tests
+	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
+		self.transaction(hash).map(|tx| TransactionMeta::new(0, tx.outputs.len()))
 	}
+
+	// supports only main chain in test storage
+	fn accepted_location(&self, header: &chain::BlockHeader) -> Option<BlockLocation> {
+		if self.best_block().is_none() { return Some(BlockLocation::Main(0)); }
+
+		let best = self.best_block().unwrap();
+		if best.hash == header.previous_header_hash { return Some(BlockLocation::Main(best.number + 1)); }
+
+		None
+	}
+
 }
+

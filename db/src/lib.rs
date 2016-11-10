@@ -26,6 +26,12 @@ pub enum BlockRef {
 	Hash(primitives::hash::H256),
 }
 
+#[derive(PartialEq, Debug)]
+pub enum BlockLocation {
+	Main(u32),
+	Side(u32),
+}
+
 pub use best_block::BestBlock;
 pub use storage::{Storage, Store, Error};
 pub use kvdb::Database;
