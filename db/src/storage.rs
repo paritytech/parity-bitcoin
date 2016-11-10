@@ -275,7 +275,9 @@ impl Storage {
 		// inserting new meta for coinbase transaction
 		for accepted_tx in accepted_txs.iter() {
 			// adding unspent transaction meta
-			context.meta.insert(accepted_tx.hash(), TransactionMeta::new(number, accepted_tx.outputs.len()));
+			context.meta.insert(accepted_tx.hash(),
+				TransactionMeta::new(number, accepted_tx.outputs.len()).coinbase()
+			);
 		}
 
 		// another iteration skipping coinbase transaction
