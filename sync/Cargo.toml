@@ -11,6 +11,7 @@ futures = "0.1"
 futures-cpupool = "0.1"
 tokio-core = { git = "https://github.com/debris/tokio-core" }
 linked-hash-map = "0.3"
+ethcore-devtools = { path = "../devtools" }
 
 chain = { path = "../chain" }
 db = { path = "../db" }
@@ -20,3 +21,6 @@ p2p = { path = "../p2p" }
 primitives = { path = "../primitives" }
 test-data = { path = "../test-data" }
 verification = { path = "../verification" }
+
+[features]
+dev = []

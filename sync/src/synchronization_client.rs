@@ -25,6 +25,8 @@ use time;
 use std::time::Duration;
 
 #[cfg_attr(feature="cargo-clippy", allow(doc_markdown))]
+///! TODO: update with headers-first corrections
+///!
 ///! Blocks synchronization process:
 ///!
 ///! When new peer is connected:
@@ -286,8 +288,19 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 	}
 
 	/// Try to queue synchronization of unknown blocks when new inventory is received.
-	fn on_new_blocks_inventory(&mut self, _peer_index: usize, _peer_hashes: Vec<H256>) {
-		// TODO
+	fn on_new_blocks_inventory(&mut self, peer_index: usize, blocks_hashes: Vec<H256>) {
+		// we use headers-first synchronization
+		// we know nothing about these blocks
+		// =>
+
+		// if we are in synchronization state, we will ignore this message
+		if self.state.is_synchronizing() {
+			return;
+		}
+
+		// else => request blocks
+		let mut executor = self.executor.lock();
+		executor.execute(Task::RequestBlocks(peer_index, blocks_hashes))
 	}
 
 	/// Try to queue synchronization of unknown blocks when blocks headers are received.
@@ -789,14 +802,20 @@ pub mod tests {
 	use p2p::event_loop;
 	use test_data;
 	use db;
+	use devtools::RandomTempPath;
 
-	fn create_sync(empty_genesis: bool) -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, ChainRef, Arc<Mutex<SynchronizationClient<DummyTaskExecutor>>>) {
+	fn create_disk_storage() -> Arc<db::Store> {
+		let path = RandomTempPath::create_dir();
+		Arc::new(db::Storage::new(path.as_path()).unwrap())
+	}
+
+	fn create_sync(storage: Option<Arc<db::Store>>) -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, ChainRef, Arc<Mutex<SynchronizationClient<DummyTaskExecutor>>>) {
 		let event_loop = event_loop();
 		let handle = event_loop.handle();
-		let storage = Arc::new(
-			if empty_genesis { db::TestStorage::with_blocks(&[test_data::block_builder().header().build().build()]) }
-			else { db::TestStorage::with_genesis_block() }
-		);
+		let storage = match storage {
+			Some(storage) => storage,
+			None => Arc::new(db::TestStorage::with_genesis_block()),
+		};
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = DummyTaskExecutor::new();
 		let config = Config { threads_num: 1, skip_verification: true };
@@ -807,7 +826,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_saturated_on_start() {
-		let (_, _, _, _, sync) = create_sync(false);
+		let (_, _, _, _, sync) = create_sync(None);
 		let sync = sync.lock();
 		let info = sync.information();
 		assert!(!info.state.is_synchronizing());
@@ -816,7 +835,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_in_order_block_path_nearly_saturated() {
-		let (_, _, executor, _, sync) = create_sync(false);
+		let (_, _, executor, _, sync) = create_sync(None);
 
 		let mut sync = sync.lock();
 		let block1: Block = test_data::block_h1();
@@ -858,7 +877,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_out_of_order_block_path() {
-		let (_, _, _, _, sync) = create_sync(false);
+		let (_, _, _, _, sync) = create_sync(None);
 		let mut sync = sync.lock();
 
 		let block2: Block = test_data::block_h169();
@@ -880,7 +899,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_parallel_peers() {
-		let (_, _, executor, _, sync) = create_sync(false);
+		let (_, _, executor, _, sync) = create_sync(None);
 
 		let block1: Block = test_data::block_h1();
 		let block2: Block = test_data::block_h2();
@@ -925,7 +944,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_reset_when_peer_is_disconnected() {
-		let (_, _, _, _, sync) = create_sync(false);
+		let (_, _, _, _, sync) = create_sync(None);
 
 		// request new blocks
 		{
@@ -944,7 +963,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_not_starting_when_receiving_known_blocks() {
-		let (_, _, executor, _, sync) = create_sync(false);
+		let (_, _, executor, _, sync) = create_sync(None);
 		let mut sync = sync.lock();
 		// saturated => receive inventory with known blocks only
 		sync.on_new_blocks_headers(1, vec![test_data::genesis().block_header]);
@@ -957,7 +976,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_asks_for_inventory_after_saturating() {
-		let (_, _, executor, _, sync) = create_sync(false);
+		let (_, _, executor, _, sync) = create_sync(None);
 		let mut sync = sync.lock();
 		let block = test_data::block_h1();
 		sync.on_new_blocks_headers(1, vec![block.block_header.clone()]);
@@ -973,7 +992,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_remembers_correct_block_headers_in_order() {
-		let (_, _, executor, chain, sync) = create_sync(false);
+		let (_, _, executor, chain, sync) = create_sync(None);
 		let mut sync = sync.lock();
 
 		let b1 = test_data::block_h1();
@@ -1016,7 +1035,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_remembers_correct_block_headers_out_of_order() {
-		let (_, _, executor, chain, sync) = create_sync(false);
+		let (_, _, executor, chain, sync) = create_sync(None);
 		let mut sync = sync.lock();
 
 		let b1 = test_data::block_h1();
@@ -1059,7 +1078,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_ignores_unknown_block_headers() {
-		let (_, _, executor, chain, sync) = create_sync(false);
+		let (_, _, executor, chain, sync) = create_sync(None);
 		let mut sync = sync.lock();
 
 		let b169 = test_data::block_h169();
@@ -1075,8 +1094,12 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_works_for_forks_from_db_best_block() {
-		let (_, _, executor, chain, sync) = create_sync(true);
-		let genesis_header = { chain.read().block_header_by_number(0).unwrap() };
+		let storage = create_disk_storage();
+		let genesis = test_data::genesis();
+		storage.insert_block(&genesis).expect("no db error");
+
+		let (_, _, executor, chain, sync) = create_sync(Some(storage));
+		let genesis_header = &genesis.block_header;
 		let fork1 = test_data::build_n_empty_blocks_from(2, 100, &genesis_header);
 		let fork2 = test_data::build_n_empty_blocks_from(3, 200, &genesis_header);
 
@@ -1099,28 +1122,25 @@ pub mod tests {
 		}
 
 		sync.on_peer_block(1, fork1[0].clone());
-		// TODO
-		//{
-		//	let chain = chain.read();
-		//	assert_eq!(chain.best_storage_block().hash, fork2[0].hash());
-		//	assert_eq!(chain.best_storage_block().number, 1);
-		//}
+		{
+			let chain = chain.read();
+			assert_eq!(chain.best_storage_block().hash, fork2[0].hash());
+			assert_eq!(chain.best_storage_block().number, 1);
+		}
 
 		sync.on_peer_block(1, fork1[1].clone());
-		// TODO
-		//{
-		//	let chain = chain.read();
-		//	assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
-		//	assert_eq!(chain.best_storage_block().number, 2);
-		//}
+		{
+			let chain = chain.read();
+			assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
+			assert_eq!(chain.best_storage_block().number, 2);
+		}
 
 		sync.on_peer_block(2, fork2[1].clone());
-		// TODO
-		//{
-		//	let chain = chain.read();
-		//	assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
-		//	assert_eq!(chain.best_storage_block().number, 2);
-		//}
+		{
+			let chain = chain.read();
+			assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
+			assert_eq!(chain.best_storage_block().number, 2);
+		}
 
 		sync.on_peer_block(2, fork2[2].clone());
 		{

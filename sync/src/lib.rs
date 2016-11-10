@@ -14,6 +14,8 @@ extern crate test_data;
 extern crate time;
 extern crate verification;
 extern crate miner;
+#[cfg(test)]
+extern crate ethcore_devtools as devtools;
 
 mod best_headers_chain;
 mod blocks_writer;
