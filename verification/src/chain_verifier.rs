@@ -278,9 +278,7 @@ mod tests {
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
-				.output()
-					.value(50)
-					.build()
+				.output().value(50).build()
 				.build()
 			.merkled_header().build()
 			.build();
@@ -291,9 +289,7 @@ mod tests {
 		let block = test_data::block_builder()
 			.transaction().coinbase().build()
 			.transaction()
-				.input()
-					.hash(genesis_coinbase.clone())
-					.build()
+				.input().hash(genesis_coinbase.clone()).build()
 				.build()
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
@@ -304,6 +300,80 @@ mod tests {
 			1,
 			TransactionError::Maturity,
 		));
+
+		assert_eq!(expected, verifier.verify(&block));
+	}
+
+	#[test]
+	fn coinbase_happy() {
+
+		let path = RandomTempPath::create_dir();
+		let storage = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(50).build()
+				.build()
+			.merkled_header().build()
+			.build();
+
+		storage.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		// waiting 100 blocks for genesis coinbase to become valid
+		for _ in 0..100 {
+			storage.insert_block(
+				&test_data::block_builder()
+					.transaction().coinbase().build()
+				.merkled_header().parent(genesis.hash()).build()
+				.build()
+			).expect("All dummy blocks should be inserted");
+		}
+
+		let best_hash = storage.best_block().expect("Store should have hash after all we pushed there").hash;
+
+		let block = test_data::block_builder()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase.clone()).build()
+				.build()
+			.merkled_header().parent(best_hash).build()
+			.build();
+
+		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+
+		let expected = Ok(Chain::Main);
+
+		assert_eq!(expected, verifier.verify(&block))
+	}
+
+	#[test]
+	fn coinbase_overspend() {
+
+		let path = RandomTempPath::create_dir();
+		let storage = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::block_builder()
+			.transaction().coinbase().build()
+			.merkled_header().build()
+			.build();
+		storage.insert_block(&genesis).unwrap();
+
+		let block = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(5000000001).build()
+				.build()
+			.merkled_header().parent(genesis.hash()).build()
+			.build();
+
+		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+
+		let expected = Err(Error::CoinbaseOverspend {
+			expected_max: 5000000000,
+			actual: 5000000001
+		});
 
 		assert_eq!(expected, verifier.verify(&block));
 	}
