@@ -940,7 +940,7 @@ pub mod tests {
 			let mut sync = sync.lock();
 			// receive block from peer#2
 			sync.on_peer_block(2, block2);
-			assert!(sync.information().chain.requested == 1
+			assert!(sync.information().chain.requested == 2
 				&& sync.information().orphaned == 1);
 			// receive block from peer#1
 			sync.on_peer_block(1, block1);
@@ -1155,6 +1155,50 @@ pub mod tests {
 			let chain = chain.read();
 			assert_eq!(chain.best_storage_block().hash, fork2[2].hash());
 			assert_eq!(chain.best_storage_block().number, 3);
+		}
+	}
+
+	#[test]
+	fn synchronization_works_for_forks_long_after_short() {
+		let storage = create_disk_storage();
+		let genesis = test_data::genesis();
+		storage.insert_block(&genesis).expect("no db error");
+
+		let (_, _, executor, chain, sync) = create_sync(Some(storage));
+		let common_block = test_data::block_builder().header().parent(genesis.hash()).build().build();
+		let fork1 = test_data::build_n_empty_blocks_from(2, 100, &common_block.block_header);
+		let fork2 = test_data::build_n_empty_blocks_from(3, 200, &common_block.block_header);
+
+		let mut sync = sync.lock();
+		sync.on_new_blocks_headers(1, vec![common_block.block_header.clone(), fork1[0].block_header.clone(), fork1[1].block_header.clone()]);
+		sync.on_new_blocks_headers(2, vec![common_block.block_header.clone(), fork2[0].block_header.clone(), fork2[1].block_header.clone(), fork2[2].block_header.clone()]);
+
+		let tasks = { executor.lock().take_tasks() };
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1),
+			Task::RequestBlocks(1, vec![common_block.hash(), fork1[0].hash(), fork1[1].hash()]),
+			Task::RequestBlocksHeaders(2),
+			Task::RequestBlocks(2, vec![fork2[0].hash(), fork2[1].hash(), fork2[2].hash()]),
+		]);
+
+		// TODO: this will change from 3 to 4 after longest fork will be stored in the BestHeadersChain
+		// however id doesn't affect sync process, as it is shown below
+		{
+			let chain = chain.read();
+			assert_eq!(chain.information().headers.best, 3);
+			assert_eq!(chain.information().headers.total, 3);
+		}
+
+		sync.on_peer_block(1, common_block.clone());
+		sync.on_peer_block(1, fork1[0].clone());
+		sync.on_peer_block(1, fork1[1].clone());
+		sync.on_peer_block(2, fork2[0].clone());
+		sync.on_peer_block(2, fork2[1].clone());
+		sync.on_peer_block(2, fork2[2].clone());
+
+		{
+			let chain = chain.read();
+			assert_eq!(chain.best_storage_block().hash, fork2[2].hash());
+			assert_eq!(chain.best_storage_block().number, 4);
 		}
 	}
 }
