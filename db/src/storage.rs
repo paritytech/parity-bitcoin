@@ -593,15 +593,13 @@ impl Store for Storage {
 	}
 
 	fn accepted_location(&self, header: &chain::BlockHeader) -> Option<BlockLocation> {
-		if self.best_block().is_none() { return Some(BlockLocation::Main(0)); }
+		let best_number = match self.best_block() {
+			None => { return Some(BlockLocation::Main(0)); },
+			Some(best) => best.number,
+		};
 
 		if let Some(height) = self.block_number(&header.previous_header_hash) {
-			if self.best_block()
-				.expect("chacked it is not none above; best_block cannot be retracted; qed")
-				.number == height
-			{
-				Some(BlockLocation::Main(height + 1))
-			}
+			if best_number == height { Some(BlockLocation::Main(height + 1)) }
 			else { Some(BlockLocation::Side(height + 1)) }
 		}
 		else {
