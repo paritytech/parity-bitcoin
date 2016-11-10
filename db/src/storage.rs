@@ -315,7 +315,6 @@ impl Storage {
 	/// block decanonization
 	///   all transaction outputs used are marked as not used
 	///   all transaction meta is removed
-	///   block number is removed
 	///   DOES NOT update best block
 	fn decanonize_block(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
 		// ensure that block is of the main chain
