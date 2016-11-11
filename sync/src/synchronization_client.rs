@@ -197,7 +197,7 @@ pub trait Client : Send + 'static {
 #[derive(Default)]
 pub struct PeersBlocksWaiter {
 	/// Awake mutex
-	peer_blocks_lock: Mutex<()>,
+	peer_blocks_lock: Mutex<bool>,
 	/// Awake event
 	peer_blocks_done: Condvar,
 }
@@ -872,10 +872,16 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 impl PeersBlocksWaiter {
 	pub fn wait(&self) {
 		let mut locker = self.peer_blocks_lock.lock();
+		if *locker {
+			return;
+		}
+
 		self.peer_blocks_done.wait(&mut locker);
 	}
 
 	pub fn awake(&self) {
+		let mut locker = self.peer_blocks_lock.lock();
+		*locker = true;
 		self.peer_blocks_done.notify_all();
 	}
 }
