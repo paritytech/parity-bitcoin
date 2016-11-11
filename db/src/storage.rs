@@ -133,6 +133,7 @@ const KEY_BEST_BLOCK_HASH: &'static[u8] = b"best_block_hash";
 struct UpdateContext {
 	pub meta: HashMap<H256, TransactionMeta>,
 	pub db_transaction: DBTransaction,
+	meta_snapshot: Option<HashMap<H256, TransactionMeta>>,
 }
 
 impl UpdateContext {
@@ -140,6 +141,7 @@ impl UpdateContext {
 		UpdateContext {
 			meta: HashMap::new(),
 			db_transaction: db.transaction(),
+			meta_snapshot: None,
 		}
 	}
 
@@ -151,6 +153,19 @@ impl UpdateContext {
 
 		try!(db.write(self.db_transaction));
 		Ok(())
+	}
+
+	pub fn restore_point(&mut self) {
+		// todo: optimize clone here
+		self.meta_snapshot = Some(self.meta.clone());
+		self.db_transaction.remember();
+	}
+
+	pub fn restore(&mut self) {
+		if let Some(meta_snapshot) = std::mem::replace(&mut self.meta_snapshot, None) {
+			self.meta = meta_snapshot;
+			self.db_transaction.rollback();
+		}
 	}
 }
 
@@ -416,6 +431,20 @@ impl Storage {
 	// maybe reorganize to the _known_ block
 	// it will actually reorganize only when side chain is at least the same length as main
 	fn maybe_reorganize(&self, context: &mut UpdateContext, hash: &H256) -> Result<Option<(u32, H256)>, Error> {
+		context.restore_point();
+
+		match self.maybe_reorganize_fallable(context, hash) {
+			Ok(result) => Ok(result),
+			Err(e) => {
+				// todo: log error here
+				context.restore();
+				println!("Error while reorganizing to {}: {:?}", hash, e);
+				Err(e)
+			}
+		}
+	}
+
+	fn maybe_reorganize_fallable(&self, context: &mut UpdateContext, hash: &H256) -> Result<Option<(u32, H256)>, Error> {
 		if self.block_number(hash).is_some() {
 			return Ok(None); // cannot reorganize to canonical block
 		}

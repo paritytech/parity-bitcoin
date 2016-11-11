@@ -37,6 +37,7 @@ const DB_BACKGROUND_COMPACTIONS: i32 = 2;
 /// Write transaction. Batches a sequence of put/delete operations for efficiency.
 pub struct DBTransaction {
 	ops: Vec<DBOp>,
+	rollback_len: Option<usize>,
 }
 
 enum DBOp {
@@ -56,6 +57,7 @@ impl DBTransaction {
 	pub fn new(_db: &Database) -> DBTransaction {
 		DBTransaction {
 			ops: Vec::with_capacity(256),
+			rollback_len: None,
 		}
 	}
 
@@ -103,6 +105,16 @@ impl DBTransaction {
 		let mut val = [0u8; 4];
 		LittleEndian::write_u32(&mut val, value);
 		self.put(col, key, &val);
+	}
+
+	pub fn remember(&mut self) {
+		self.rollback_len = Some(self.ops.len());
+	}
+
+	pub fn rollback(&mut self) {
+		if let Some(len) = self.rollback_len {
+			self.ops.truncate(len);
+		}
 	}
 }
 

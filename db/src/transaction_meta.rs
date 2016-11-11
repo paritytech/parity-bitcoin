@@ -4,7 +4,7 @@ use bit_vec::BitVec;
 use byteorder::{LittleEndian, ByteOrder};
 
 /// structure for indexing transaction info
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TransactionMeta {
 	block_height: u32,
 	// first bit is coinbase flag, others - one per output listed
