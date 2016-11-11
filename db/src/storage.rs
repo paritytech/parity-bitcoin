@@ -156,6 +156,7 @@ impl UpdateContext {
 	}
 
 	pub fn restore_point(&mut self) {
+		// todo: optimize clone here
 		self.meta_snapshot = Some(self.meta.clone());
 		self.db_transaction.remember();
 	}
