@@ -289,7 +289,7 @@ mod tests {
 		let block = test_data::block_builder()
 			.transaction().coinbase().build()
 			.transaction()
-				.input().hash(genesis_coinbase.clone()).build()
+				.input().hash(genesis_coinbase).build()
 				.build()
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
@@ -301,6 +301,38 @@ mod tests {
 			TransactionError::Maturity,
 		));
 
+		assert_eq!(expected, verifier.verify(&block));
+	}
+
+	#[test]
+	fn non_coinbase_happy() {
+		let path = RandomTempPath::create_dir();
+		let storage = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.build()
+			.transaction()
+				.output().value(50).build()
+				.build()
+			.merkled_header().build()
+			.build();
+
+		storage.insert_block(&genesis).unwrap();
+		let reference_tx = genesis.transactions()[1].hash();
+
+		let block = test_data::block_builder()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(reference_tx).build()
+				.build()
+			.merkled_header().parent(genesis.hash()).build()
+			.build();
+
+		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+
+		let expected = Ok(Chain::Main);
 		assert_eq!(expected, verifier.verify(&block));
 	}
 
