@@ -164,8 +164,8 @@ impl UpdateContext {
 	pub fn restore(&mut self) {
 		if let Some(meta_snapshot) = std::mem::replace(&mut self.meta_snapshot, None) {
 			self.meta = meta_snapshot;
+			self.db_transaction.rollback();
 		}
-		self.db_transaction.rollback();
 	}
 }
 
@@ -431,6 +431,20 @@ impl Storage {
 	// maybe reorganize to the _known_ block
 	// it will actually reorganize only when side chain is at least the same length as main
 	fn maybe_reorganize(&self, context: &mut UpdateContext, hash: &H256) -> Result<Option<(u32, H256)>, Error> {
+		context.restore_point();
+
+		match self.maybe_reorganize_fallable(context, hash) {
+			Ok(result) => Ok(result),
+			Err(e) => {
+				// todo: log error here
+				context.restore();
+				println!("Error while reorganizing to {}: {:?}", hash, e);
+				Err(e)
+			}
+		}
+	}
+
+	fn maybe_reorganize_fallable(&self, context: &mut UpdateContext, hash: &H256) -> Result<Option<(u32, H256)>, Error> {
 		if self.block_number(hash).is_some() {
 			return Ok(None); // cannot reorganize to canonical block
 		}
@@ -446,8 +460,6 @@ impl Storage {
 
 		let mut now_best = try!(self.best_number().ok_or(Error::NoBestBlock));
 
-		context.restore_point();
-
 		// decanonizing main chain to the split point
 		loop {
 			let next_decanonize = try!(self.block_hash(now_best).ok_or(Error::UnknownNumber(now_best)));
@@ -458,29 +470,14 @@ impl Storage {
 			if now_best == at_height { break; }
 		}
 
-		let mut error: Option<Error> = None;
 		// canonizing all route from the split point
 		for new_canonical_hash in &route {
 			now_best += 1;
-			if let Err(e) = self.canonize_block(context, now_best, &new_canonical_hash) {
-				error = Some(e);
-				break;
-			}
+			try!(self.canonize_block(context, now_best, &new_canonical_hash));
 		}
 
 		// finaly canonizing the top block we are reorganizing to
-		if error.is_none() {
-			if let Err(e) = self.canonize_block(context, now_best + 1, hash) {
-				error = Some(e);
-			}
-		}
-
-		if let Some(e) = error {
-			// todo: log error here
-			context.restore();
-			println!("Error while reorganizing to {}: {:?}", hash, e);
-			return Err(e);
-		}
+		try!(self.canonize_block(context, now_best + 1, hash));
 
 		Ok(Some((now_best+1, hash.clone())))
 	}
