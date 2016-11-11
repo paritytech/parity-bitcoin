@@ -287,11 +287,8 @@ impl Chain {
 
 	/// Forget in-memory block
 	pub fn forget(&mut self, hash: &H256) -> HashPosition {
-		let position = self.forget_leave_header(hash);
-		if position != HashPosition::Missing {
-			self.headers_chain.remove(hash);
-		}
-		position
+		self.headers_chain.remove(hash);
+		self.forget_leave_header(hash)
 	}
 
 	/// Forget in-memory block, but leave its header in the headers_chain (orphan queue)
@@ -308,11 +305,8 @@ impl Chain {
 	/// Forget in-memory block by hash if it is currently in given state
 	#[cfg(test)]
 	pub fn forget_with_state(&mut self, hash: &H256, state: BlockState) -> HashPosition {
-		let position = self.forget_with_state_leave_header(hash, state);
-		if position != HashPosition::Missing {
-			self.headers_chain.remove(hash);
-		}
-		position
+		self.headers_chain.remove(hash);
+		self.forget_with_state_leave_header(hash, state)
 	}
 
 	/// Forget in-memory block by hash if it is currently in given state
