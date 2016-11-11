@@ -45,23 +45,22 @@ impl ChainVerifier {
 			for (_, input) in tx.inputs.iter().enumerate() {
 
 				// Coinbase maturity check
-				let previous_meta = try!(
-					self.store
-						.transaction_meta(&input.previous_output.hash)
-						.ok_or(
-							Error::Transaction(tx_index, TransactionError::UnknownReference(input.previous_output.hash.clone()))
-						)
-				);
-
-				if previous_meta.is_coinbase()
-					&& (at_height < COINBASE_MATURITY ||
-						at_height - COINBASE_MATURITY < previous_meta.height())
-				{
-					return Err(Error::Transaction(tx_index+1, TransactionError::Maturity));
+				if let Some(previous_meta) = self.store.transaction_meta(&input.previous_output.hash) {
+					// check if it exists only
+					// it will fail a little later if there is no transaction at all
+					if previous_meta.is_coinbase()
+						&& (at_height < COINBASE_MATURITY ||
+							at_height - COINBASE_MATURITY < previous_meta.height())
+					{
+						return Err(Error::Transaction(tx_index+1, TransactionError::Maturity));
+					}
 				}
 
 				let reference_tx = try!(
+
 					self.store.transaction(&input.previous_output.hash)
+						// todo: optimize block decomposition vec<transaction> -> hashmap<h256, transaction>
+						.or(block.transactions().iter().find(|tx| !tx.is_coinbase() && tx.hash() == input.previous_output.hash).cloned())
 						.ok_or(
 							Error::Transaction(tx_index+1, TransactionError::UnknownReference(input.previous_output.hash.clone()))
 						)
@@ -333,6 +332,81 @@ mod tests {
 		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
 
 		let expected = Ok(Chain::Main);
+		assert_eq!(expected, verifier.verify(&block));
+	}
+
+
+	#[test]
+	fn transaction_references_same_block_happy() {
+		let path = RandomTempPath::create_dir();
+		let storage = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.build()
+			.transaction()
+				.output().value(50).build()
+				.build()
+			.merkled_header().build()
+			.build();
+
+		storage.insert_block(&genesis).expect("Genesis should be inserted with no errors");
+		let genesis_coinbase = genesis.transactions()[1].hash();
+
+		let block = test_data::block_builder()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().value(30).build()
+				.output().value(20).build()
+				.build()
+			.derived_transaction(1, 0)
+				.output().value(30).build()
+				.build()
+			.merkled_header().parent(genesis.hash()).build()
+			.build();
+
+		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+
+		let expected = Ok(Chain::Main);
+		assert_eq!(expected, verifier.verify(&block));
+	}
+
+	#[test]
+	fn transaction_references_same_block_overspend() {
+		let path = RandomTempPath::create_dir();
+		let storage = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.build()
+			.transaction()
+				.output().value(50).build()
+				.build()
+			.merkled_header().build()
+			.build();
+
+		storage.insert_block(&genesis).expect("Genesis should be inserted with no errors");
+		let genesis_coinbase = genesis.transactions()[1].hash();
+
+		let block = test_data::block_builder()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().value(30).build()
+				.output().value(20).build()
+				.build()
+			.derived_transaction(1, 0)
+				.output().value(35).build()
+				.build()
+			.merkled_header().parent(genesis.hash()).build()
+			.build();
+
+		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+
+		let expected = Err(Error::Transaction(2, TransactionError::Overspend));
 		assert_eq!(expected, verifier.verify(&block));
 	}
 
