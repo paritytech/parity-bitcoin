@@ -25,7 +25,7 @@ pub trait Server : Send + 'static {
 #[derive(Default)]
 pub struct PeerRequestsWaiter {
 	/// Awake mutex
-	peer_requests_lock: Mutex<()>,
+	peer_requests_lock: Mutex<bool>,
 	/// Awake event
 	peer_requests_done: Condvar,
 }
@@ -414,10 +414,16 @@ impl ServerQueue {
 impl PeerRequestsWaiter {
 	pub fn wait(&self) {
 		let mut locker = self.peer_requests_lock.lock();
+		if *locker {
+			return;
+		}
+
 		self.peer_requests_done.wait(&mut locker);
 	}
 
 	pub fn awake(&self) {
+		let mut locker = self.peer_requests_lock.lock();
+		*locker = true;
 		self.peer_requests_done.notify_all();
 	}
 }
