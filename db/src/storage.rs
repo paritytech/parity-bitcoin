@@ -133,6 +133,7 @@ const KEY_BEST_BLOCK_HASH: &'static[u8] = b"best_block_hash";
 struct UpdateContext {
 	pub meta: HashMap<H256, TransactionMeta>,
 	pub db_transaction: DBTransaction,
+	meta_snapshot: Option<HashMap<H256, TransactionMeta>>,
 }
 
 impl UpdateContext {
@@ -140,6 +141,7 @@ impl UpdateContext {
 		UpdateContext {
 			meta: HashMap::new(),
 			db_transaction: db.transaction(),
+			meta_snapshot: None,
 		}
 	}
 
@@ -151,6 +153,18 @@ impl UpdateContext {
 
 		try!(db.write(self.db_transaction));
 		Ok(())
+	}
+
+	pub fn restore_point(&mut self) {
+		self.meta_snapshot = Some(self.meta.clone());
+		self.db_transaction.remember();
+	}
+
+	pub fn restore(&mut self) {
+		if let Some(meta_snapshot) = std::mem::replace(&mut self.meta_snapshot, None) {
+			self.meta = meta_snapshot;
+		}
+		self.db_transaction.rollback();
 	}
 }
 
@@ -431,7 +445,7 @@ impl Storage {
 
 		let mut now_best = try!(self.best_number().ok_or(Error::NoBestBlock));
 
-		context.db_transaction.remember();
+		context.restore_point();
 
 		// decanonizing main chain to the split point
 		loop {
@@ -462,7 +476,7 @@ impl Storage {
 
 		if let Some(e) = error {
 			// todo: log error here
-			context.db_transaction.rollback();
+			context.restore();
 			println!("Error while reorganizing to {}: {:?}", hash, e);
 			return Err(e);
 		}
