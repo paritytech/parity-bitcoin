@@ -272,16 +272,20 @@ impl Storage {
 	fn update_transactions_meta(&self, context: &mut UpdateContext, number: u32, accepted_txs: &[chain::Transaction])
 		-> Result<(), Error>
 	{
-		// inserting new meta for coinbase transaction
-		for accepted_tx in accepted_txs.iter() {
-			// adding unspent transaction meta
-			context.meta.insert(accepted_tx.hash(),
-				TransactionMeta::new(number, accepted_tx.outputs.len()).coinbase()
-			);
-		}
+		for (accepted_idx, accepted_tx) in accepted_txs.iter().enumerate() {
+			if accepted_idx == 0 {
+				context.meta.insert(
+					accepted_tx.hash(),
+					TransactionMeta::new(number, accepted_tx.outputs.len()).coinbase()
+				);
+				continue;
+			}
 
-		// another iteration skipping coinbase transaction
-		for accepted_tx in accepted_txs.iter().skip(1) {
+			context.meta.insert(
+				accepted_tx.hash(),
+				TransactionMeta::new(number, accepted_tx.outputs.len())
+			);
+
 			for input in &accepted_tx.inputs {
 				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
