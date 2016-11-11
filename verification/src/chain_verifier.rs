@@ -13,15 +13,23 @@ const COINBASE_MATURITY: u32 = 100; // 2 hours
 pub struct ChainVerifier {
 	store: Arc<db::Store>,
 	skip_pow: bool,
+	skip_sig: bool,
 }
 
 impl ChainVerifier {
 	pub fn new(store: Arc<db::Store>) -> Self {
-		ChainVerifier { store: store, skip_pow: false, }
+		ChainVerifier { store: store, skip_pow: false, skip_sig: false }
 	}
 
+	#[cfg(test)]
 	pub fn pow_skip(mut self) -> Self {
 		self.skip_pow = true;
+		self
+	}
+
+	#[cfg(test)]
+	pub fn signatures_skip(mut self) -> Self {
+		self.skip_sig = true;
 		self
 	}
 
@@ -49,19 +57,19 @@ impl ChainVerifier {
 					&& (at_height < COINBASE_MATURITY ||
 						at_height - COINBASE_MATURITY < previous_meta.height())
 				{
-					return Err(Error::Transaction(tx_index, TransactionError::Maturity));
+					return Err(Error::Transaction(tx_index+1, TransactionError::Maturity));
 				}
 
 				let reference_tx = try!(
 					self.store.transaction(&input.previous_output.hash)
 						.ok_or(
-							Error::Transaction(tx_index, TransactionError::UnknownReference(input.previous_output.hash.clone()))
+							Error::Transaction(tx_index+1, TransactionError::UnknownReference(input.previous_output.hash.clone()))
 						)
 				);
 
 				let output = try!(reference_tx.outputs.get(input.previous_output.index as usize)
 					.ok_or(
-						Error::Transaction(tx_index, TransactionError::Input(input.previous_output.index as usize))
+						Error::Transaction(tx_index+1, TransactionError::Input(input.previous_output.index as usize))
 					)
 				);
 
@@ -71,7 +79,7 @@ impl ChainVerifier {
 			let total_spends = tx.total_spends();
 
 			if total_claimed < total_spends {
-				return Err(Error::Transaction(tx_index, TransactionError::Overspend));
+				return Err(Error::Transaction(tx_index+1, TransactionError::Overspend));
 			}
 
 			// total_claimed is greater than total_spends, checked above and returned otherwise, cannot overflow; qed
@@ -110,6 +118,7 @@ impl ChainVerifier {
 				return Err(TransactionError::Input(input_index));
 			}
 
+			if self.skip_sig { continue; }
 			// signature verification
 			let signer: TransactionInputSigner = transaction.clone().into();
 			let paired_output = &parent_transaction.outputs[input.previous_output.index as usize];
@@ -261,7 +270,6 @@ mod tests {
 	}
 
 	#[test]
-	#[ignore]
 	fn coinbase_maturity() {
 
 		let path = RandomTempPath::create_dir();
@@ -270,10 +278,7 @@ mod tests {
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
-				.output()
-					.value(50)
-					.signature("410411db93e1dcdb8a016b49840f8c53bc1eb68a382e97b1482ecad7b148a6909a5cb2e0eaddfb84ccf9744464f82e160bfa9b8b64f9d4c03f999b8643f656b412a3ac")
-					.build()
+				.output().value(50).build()
 				.build()
 			.merkled_header().build()
 			.build();
@@ -284,20 +289,91 @@ mod tests {
 		let block = test_data::block_builder()
 			.transaction().coinbase().build()
 			.transaction()
-				.input()
-					.hash(genesis_coinbase.clone())
-					.signature("483045022052ffc1929a2d8bd365c6a2a4e3421711b4b1e1b8781698ca9075807b4227abcb0221009984107ddb9e3813782b095d0d84361ed4c76e5edaf6561d252ae162c2341cfb01")
-					.build()
+				.input().hash(genesis_coinbase.clone()).build()
 				.build()
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
 
 		let expected = Err(Error::Transaction(
 			1,
 			TransactionError::Maturity,
 		));
+
+		assert_eq!(expected, verifier.verify(&block));
+	}
+
+	#[test]
+	fn coinbase_happy() {
+
+		let path = RandomTempPath::create_dir();
+		let storage = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(50).build()
+				.build()
+			.merkled_header().build()
+			.build();
+
+		storage.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		// waiting 100 blocks for genesis coinbase to become valid
+		for _ in 0..100 {
+			storage.insert_block(
+				&test_data::block_builder()
+					.transaction().coinbase().build()
+				.merkled_header().parent(genesis.hash()).build()
+				.build()
+			).expect("All dummy blocks should be inserted");
+		}
+
+		let best_hash = storage.best_block().expect("Store should have hash after all we pushed there").hash;
+
+		let block = test_data::block_builder()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase.clone()).build()
+				.build()
+			.merkled_header().parent(best_hash).build()
+			.build();
+
+		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+
+		let expected = Ok(Chain::Main);
+
+		assert_eq!(expected, verifier.verify(&block))
+	}
+
+	#[test]
+	fn coinbase_overspend() {
+
+		let path = RandomTempPath::create_dir();
+		let storage = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::block_builder()
+			.transaction().coinbase().build()
+			.merkled_header().build()
+			.build();
+		storage.insert_block(&genesis).unwrap();
+
+		let block = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(5000000001).build()
+				.build()
+			.merkled_header().parent(genesis.hash()).build()
+			.build();
+
+		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+
+		let expected = Err(Error::CoinbaseOverspend {
+			expected_max: 5000000000,
+			actual: 5000000001
+		});
 
 		assert_eq!(expected, verifier.verify(&block));
 	}
