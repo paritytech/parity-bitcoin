@@ -431,6 +431,8 @@ impl Storage {
 
 		let mut now_best = try!(self.best_number().ok_or(Error::NoBestBlock));
 
+		context.db_transaction.remember();
+
 		// decanonizing main chain to the split point
 		loop {
 			let next_decanonize = try!(self.block_hash(now_best).ok_or(Error::UnknownNumber(now_best)));
@@ -441,14 +443,29 @@ impl Storage {
 			if now_best == at_height { break; }
 		}
 
+		let mut error: Option<Error> = None;
 		// canonizing all route from the split point
 		for new_canonical_hash in &route {
 			now_best += 1;
-			try!(self.canonize_block(context, now_best, &new_canonical_hash));
+			if let Err(e) = self.canonize_block(context, now_best, &new_canonical_hash) {
+				error = Some(e);
+				break;
+			}
 		}
 
 		// finaly canonizing the top block we are reorganizing to
-		try!(self.canonize_block(context, now_best + 1, hash));
+		if error.is_none() {
+			if let Err(e) = self.canonize_block(context, now_best + 1, hash) {
+				error = Some(e);
+			}
+		}
+
+		if let Some(e) = error {
+			// todo: log error here
+			context.db_transaction.rollback();
+			println!("Error while reorganizing to {}: {:?}", hash, e);
+			return Err(e);
+		}
 
 		Ok(Some((now_best+1, hash.clone())))
 	}
