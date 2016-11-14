@@ -157,7 +157,7 @@ impl Queue {
 				items.push_front(hash, ScheduleItem::Continued(item.block(), num));
 			},
 			Err(e) => {
-				println!("Verification failed: {:?}", e);
+				trace!(target: "verification", "Verification of block {} failed: {:?}", &hash, e);
 				let mut invalid = self.invalid.write();
 				let mut processing = self.processing.write();
 

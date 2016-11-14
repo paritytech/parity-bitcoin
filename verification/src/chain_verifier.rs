@@ -134,7 +134,7 @@ impl ChainVerifier {
 			if self.skip_sig { continue; }
 
 			if let Err(e) = verify_script(&input, &output, &flags, &checker) {
-				println!("transaction signature verification failure: {:?}", e);
+				trace!(target: "verification", "transaction signature verification failure: {}", e);
 				// todo: log error here
 				return Err(TransactionError::Signature(input_index))
 			}
@@ -187,10 +187,14 @@ impl Verify for ChainVerifier {
 			}
 
 			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx+1, e)));
-
 		}
 
-		trace!(target: "verification", "Block {} total sigops: {}", &hash, &block_sigops);
+		trace!(
+			target: "verification", "Block {} (transactons: {}, sigops: {}) verification finished",
+			&hash,
+			block.transactions().len(),
+			&block_sigops
+		);
 
 		// todo: pre-process projected block number once verification is parallel!
 		match self.store.accepted_location(block.header()) {
