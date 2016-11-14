@@ -20,7 +20,7 @@ use synchronization_chain::{Chain, ChainRef, BlockState, HeadersIntersection};
 use synchronization_chain::{Information as ChainInformation};
 use verification::{ChainVerifier, Error as VerificationError, Verify};
 use synchronization_executor::{Task, TaskExecutor};
-use synchronization_manager::{manage_synchronization_peers, manage_unknown_orphaned_blocks, MANAGEMENT_INTERVAL_MS};
+use synchronization_manager::{manage_synchronization_peers, manage_unknown_orphaned_blocks, MANAGEMENT_INTERVAL_MS, ManagePeersConfig, ManageUnknownBlocksConfig};
 use hash_queue::HashPosition;
 use time;
 use std::time::Duration;
@@ -468,6 +468,8 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 		// TODO: start management worker only when synchronization is started
 		//       currently impossible because there is no way to call Interval::new with Remote && Handle is not-Send
 		{
+			let peers_config = ManagePeersConfig::default();
+			let unknown_config = ManageUnknownBlocksConfig::default();
 			let csync = Arc::downgrade(&sync);
 			let mut sync = sync.lock();
 			let management_worker = Interval::new(Duration::from_millis(MANAGEMENT_INTERVAL_MS), handle)
@@ -479,7 +481,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 					};
 					let mut client = client.lock();
 					if client.state.is_synchronizing() || client.state.is_nearly_saturated() {
-						let blocks_to_request = manage_synchronization_peers(&mut client.peers);
+						let blocks_to_request = manage_synchronization_peers(&peers_config, &mut client.peers);
 						// if no peers left => we are saturated
 						if !client.peers.any() {
 							client.switch_to_saturated_state(false);
@@ -487,7 +489,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 							client.execute_synchronization_tasks(blocks_to_request);
 						}
 
-						if let Some(orphans_to_remove) = manage_unknown_orphaned_blocks(&mut client.unknown_blocks) {
+						if let Some(orphans_to_remove) = manage_unknown_orphaned_blocks(&unknown_config, &mut client.unknown_blocks) {
 							client.remove_orphaned_blocks(orphans_to_remove.into_iter().collect());
 						}
 					}
