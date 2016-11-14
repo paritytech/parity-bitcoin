@@ -318,7 +318,7 @@ impl Script {
 		let mut result = 0;
 		for opcode in self.opcodes() {
 			let opcode = try!(opcode);
-			
+
 			match opcode {
 				Opcode::OP_CHECKSIG | Opcode::OP_CHECKSIGVERIFY => { result += 1; },
 				Opcode::OP_CHECKMULTISIG | Opcode::OP_CHECKMULTISIGVERIFY => {
@@ -340,7 +340,7 @@ impl Script {
 						Opcode::OP_14 |
 						Opcode::OP_15 |
 						Opcode::OP_16 => {
-							result += (opcode as u8 - (Opcode::OP_1 as u8 - 1)) as usize;
+							result += (last_opcode as u8 - (Opcode::OP_1 as u8 - 1)) as usize;
 						},
 						_ => {
 							result += MAX_PUBKEYS_PER_MULTISIG;
@@ -530,7 +530,7 @@ OP_ADD
 	#[test]
 	fn test_sigops_count() {
 		assert_eq!(1usize, Script::from("76a914aab76ba4877d696590d94ea3e02948b55294815188ac").sigop_count().unwrap());
-		assert_eq!(94usize, Script::from("522102004525da5546e7603eefad5ef971e82f7dad2272b34e6b3036ab1fe3d299c22f21037d7f2227e6c646707d1c61ecceb821794124363a2cf2c1d2a6f28cf01e5d6abe52ae").sigop_count().unwrap());
+		assert_eq!(2usize, Script::from("522102004525da5546e7603eefad5ef971e82f7dad2272b34e6b3036ab1fe3d299c22f21037d7f2227e6c646707d1c61ecceb821794124363a2cf2c1d2a6f28cf01e5d6abe52ae").sigop_count().unwrap());
 		assert_eq!(0usize, Script::from("a9146262b64aec1f4a4c1d21b32e9c2811dd2171fd7587").sigop_count().unwrap());
 		assert_eq!(1usize, Script::from("4104ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84cac").sigop_count().unwrap());
 	}
