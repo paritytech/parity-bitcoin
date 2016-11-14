@@ -48,7 +48,7 @@ pub fn manage_synchronization_peers(config: &ManagePeersConfig, peers: &mut Peer
 	let mut blocks_to_request: Vec<H256> = Vec::new();
 	let now = precise_time_s();
 	// reset tasks for peers, which has not responded during given period
-	for (worst_peer_index, worst_peer_time) in peers.worst_peers() {
+	for (worst_peer_index, worst_peer_time) in peers.active_peers_order() {
 		// check if peer has not responded within given time
 		let time_diff = now - worst_peer_time;
 		if time_diff <= config.failure_interval_ms as f64 / 1000f64 {

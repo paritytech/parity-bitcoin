@@ -362,8 +362,9 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 	/// Peer disconnected.
 	fn on_peer_disconnected(&mut self, peer_index: usize) {
 		// when last peer is disconnected, reset, but let verifying blocks be verified
-		if self.peers.on_peer_disconnected(peer_index) {
-			self.switch_to_saturated_state(false);
+		self.peers.on_peer_disconnected(peer_index);
+		if !self.peers.any() {
+			self.switch_to_saturated_state();
 		}
 	}
 
@@ -482,11 +483,13 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 					let mut client = client.lock();
 					if client.state.is_synchronizing() || client.state.is_nearly_saturated() {
 						let blocks_to_request = manage_synchronization_peers(&peers_config, &mut client.peers);
-						// if no peers left => we are saturated
-						if !client.peers.any() {
-							client.switch_to_saturated_state(false);
-						} else {
-							client.execute_synchronization_tasks(blocks_to_request);
+						if blocks_to_request.is_some() {
+							// if no peers able to serve blocks_to_request => we are saturated
+							if client.peers.idle_peers().is_empty() && client.peers.active_peers().is_empty() {
+								client.switch_to_saturated_state();
+							} else {
+								client.execute_synchronization_tasks(blocks_to_request);
+							}
 						}
 
 						if let Some(orphans_to_remove) = manage_unknown_orphaned_blocks(&unknown_config, &mut client.unknown_blocks) {
@@ -649,7 +652,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 		};
 
 		if switch_to_saturated {
-			self.switch_to_saturated_state(true);
+			self.switch_to_saturated_state();
 		}
 	}
 
@@ -743,7 +746,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	}
 
 	/// Switch to saturated state
-	fn switch_to_saturated_state(&mut self, ask_for_inventory: bool) {
+	fn switch_to_saturated_state(&mut self) {
 		if self.state.is_saturated() {
 			return;
 		}
@@ -770,11 +773,13 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 				chain.information());
 		}
 
-		if ask_for_inventory {
+		// finally - ask all known peers for their best blocks inventory, in case if some peer 
+		// has lead us to the fork
+		{
 			let mut executor = self.executor.lock();
-			for idle_peer in self.peers.idle_peers() {
-				self.peers.on_inventory_requested(idle_peer);
-				executor.execute(Task::RequestBlocksHeaders(idle_peer));
+			for peer in self.peers.all_peers() {
+				self.peers.on_inventory_requested(peer);
+				executor.execute(Task::RequestBlocksHeaders(peer));
 			}
 		}
 	}
