@@ -5,6 +5,8 @@ use protocol::Protocol;
 use util::{PeerInfo, PeerId};
 use p2p::Context;
 
+const UNIMPLEMENTED_TASK_ID: u32 = 0;
+
 pub type InboundSyncConnectionRef = Box<InboundSyncConnection>;
 pub type OutboundSyncConnectionRef = Box<OutboundSyncConnection>;
 pub type LocalSyncNodeRef = Box<LocalSyncNode>;
@@ -19,13 +21,13 @@ pub trait InboundSyncConnection : Send + Sync {
 	fn start_sync_session(&self, version: u32);
 	fn close_session(&self);
 	fn on_inventory(&self, message: types::Inv);
-	fn on_getdata(&self, message: types::GetData);
-	fn on_getblocks(&self, message: types::GetBlocks);
-	fn on_getheaders(&self, message: types::GetHeaders);
+	fn on_getdata(&self, message: types::GetData, id: u32);
+	fn on_getblocks(&self, message: types::GetBlocks, id: u32);
+	fn on_getheaders(&self, message: types::GetHeaders, id: u32);
 	fn on_transaction(&self, message: types::Tx);
 	fn on_block(&self, message: types::Block);
 	fn on_headers(&self, message: types::Headers);
-	fn on_mempool(&self, message: types::MemPool);
+	fn on_mempool(&self, message: types::MemPool, id: u32);
 	fn on_filterload(&self, message: types::FilterLoad);
 	fn on_filteradd(&self, message: types::FilterAdd);
 	fn on_filterclear(&self, message: types::FilterClear);
@@ -40,14 +42,14 @@ pub trait InboundSyncConnection : Send + Sync {
 }
 
 pub trait OutboundSyncConnection : Send + Sync {
-	fn send_inventory(&self, message: &types::Inv);
+	fn send_inventory(&self, message: &types::Inv, id: u32, is_final: bool);
 	fn send_getdata(&self, message: &types::GetData);
 	fn send_getblocks(&self, message: &types::GetBlocks);
 	fn send_getheaders(&self, message: &types::GetHeaders);
 	fn send_transaction(&self, message: &types::Tx);
-	fn send_block(&self, message: &types::Block);
-	fn send_headers(&self, message: &types::Headers);
-	fn send_mempool(&self, message: &types::MemPool);
+	fn send_block(&self, message: &types::Block, id: u32, is_final: bool);
+	fn send_headers(&self, message: &types::Headers, id: u32, is_final: bool);
+	fn send_mempool(&self, message: &types::MemPool, id: u32, is_final: bool);
 	fn send_filterload(&self, message: &types::FilterLoad);
 	fn send_filteradd(&self, message: &types::FilterAdd);
 	fn send_filterclear(&self, message: &types::FilterClear);
@@ -58,7 +60,7 @@ pub trait OutboundSyncConnection : Send + Sync {
 	fn send_compact_block(&self, message: &types::CompactBlock);
 	fn send_get_block_txn(&self, message: &types::GetBlockTxn);
 	fn send_block_txn(&self, message: &types::BlockTxn);
-	fn send_notfound(&self, message: &types::NotFound);
+	fn send_notfound(&self, message: &types::NotFound, id: u32, is_final: bool);
 }
 
 struct OutboundSync {
@@ -85,7 +87,7 @@ impl OutboundSync {
 }
 
 impl OutboundSyncConnection for OutboundSync {
-	fn send_inventory(&self, message: &types::Inv) {
+	fn send_inventory(&self, message: &types::Inv, id: u32, is_final: bool) {
 		self.send_message(message);
 	}
 
@@ -105,15 +107,15 @@ impl OutboundSyncConnection for OutboundSync {
 		self.send_message(message);
 	}
 
-	fn send_block(&self, message: &types::Block) {
+	fn send_block(&self, message: &types::Block, id: u32, is_final: bool) {
 		self.send_message(message);
 	}
 
-	fn send_headers(&self, message: &types::Headers) {
+	fn send_headers(&self, message: &types::Headers, id: u32, is_final: bool) {
 		self.send_message(message);
 	}
 
-	fn send_mempool(&self, message: &types::MemPool) {
+	fn send_mempool(&self, message: &types::MemPool, id: u32, is_final: bool) {
 		self.send_message(message);
 	}
 
@@ -157,7 +159,7 @@ impl OutboundSyncConnection for OutboundSync {
 		self.send_message(message);
 	}
 
-	fn send_notfound(&self, message: &types::NotFound) {
+	fn send_notfound(&self, message: &types::NotFound, id: u32, is_final: bool) {
 		self.send_message(message);
 	}
 }
@@ -190,15 +192,15 @@ impl Protocol for SyncProtocol {
 		}
 		else if command == &types::GetData::command() {
 			let message: types::GetData = try!(deserialize_payload(payload, self.info.version));
-			self.inbound_connection.on_getdata(message);
+			self.inbound_connection.on_getdata(message, UNIMPLEMENTED_TASK_ID);
 		}
 		else if command == &types::GetBlocks::command() {
 			let message: types::GetBlocks = try!(deserialize_payload(payload, self.info.version));
-			self.inbound_connection.on_getblocks(message);
+			self.inbound_connection.on_getblocks(message, UNIMPLEMENTED_TASK_ID);
 		}
 		else if command == &types::GetHeaders::command() {
 			let message: types::GetHeaders = try!(deserialize_payload(payload, self.info.version));
-			self.inbound_connection.on_getheaders(message);
+			self.inbound_connection.on_getheaders(message, UNIMPLEMENTED_TASK_ID);
 		}
 		else if command == &types::Tx::command() {
 			let message: types::Tx = try!(deserialize_payload(payload, self.info.version));
@@ -210,7 +212,7 @@ impl Protocol for SyncProtocol {
 		}
 		else if command == &types::MemPool::command() {
 			let message: types::MemPool = try!(deserialize_payload(payload, self.info.version));
-			self.inbound_connection.on_mempool(message);
+			self.inbound_connection.on_mempool(message, UNIMPLEMENTED_TASK_ID);
 		}
 		else if command == &types::Headers::command() {
 			let message: types::Headers = try!(deserialize_payload(payload, self.info.version));

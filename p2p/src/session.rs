@@ -4,7 +4,7 @@ use bytes::Bytes;
 use message::{Command, Error};
 use p2p::Context;
 use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, SeednodeProtocol};
-use util::{PeerInfo};
+use util::{ConfigurableSynchronizer, PeerInfo};
 
 pub trait SessionFactory {
 	fn new_session(context: Arc<Context>, info: PeerInfo) -> Session;
@@ -34,12 +34,14 @@ impl SessionFactory for NormalSessionFactory {
 
 pub struct Session {
 	protocols: Mutex<Vec<Box<Protocol>>>,
+	synchronizer: Mutex<ConfigurableSynchronizer>,
 }
 
 impl Session {
 	pub fn new(protocols: Vec<Box<Protocol>>) -> Self {
 		Session {
 			protocols: Mutex::new(protocols),
+			synchronizer: Mutex::new(ConfigurableSynchronizer::new(false)),
 		}
 	}
 
