@@ -447,35 +447,37 @@ pub fn eval_script(
 			},
 			Opcode::OP_NOP => break,
 			Opcode::OP_CHECKLOCKTIMEVERIFY => {
-				if !flags.verify_clocktimeverify && flags.verify_discourage_upgradable_nops {
+				if flags.verify_discourage_upgradable_nops {
 					return Err(Error::DiscourageUpgradableNops);
 				}
 
-				// Note that elsewhere numeric opcodes are limited to
-				// operands in the range -2**31+1 to 2**31-1, however it is
-				// legal for opcodes to produce results exceeding that
-				// range. This limitation is implemented by CScriptNum's
-				// default 4-byte limit.
-				//
-				// If we kept to that limit we'd have a year 2038 problem,
-				// even though the nLockTime field in transactions
-				// themselves is uint32 which only becomes meaningless
-				// after the year 2106.
-				//
-				// Thus as a special case we tell CScriptNum to accept up
-				// to 5-byte bignums, which are good until 2**39-1, well
-				// beyond the 2**32-1 limit of the nLockTime field itself.
-				let lock_time = try!(Num::from_slice(try!(stack.last()), flags.verify_minimaldata, 5));
+				if flags.verify_clocktimeverify {
+					// Note that elsewhere numeric opcodes are limited to
+					// operands in the range -2**31+1 to 2**31-1, however it is
+					// legal for opcodes to produce results exceeding that
+					// range. This limitation is implemented by CScriptNum's
+					// default 4-byte limit.
+					//
+					// If we kept to that limit we'd have a year 2038 problem,
+					// even though the nLockTime field in transactions
+					// themselves is uint32 which only becomes meaningless
+					// after the year 2106.
+					//
+					// Thus as a special case we tell CScriptNum to accept up
+					// to 5-byte bignums, which are good until 2**39-1, well
+					// beyond the 2**32-1 limit of the nLockTime field itself.
+					let lock_time = try!(Num::from_slice(try!(stack.last()), flags.verify_minimaldata, 5));
 
-				// In the rare event that the argument may be < 0 due to
-				// some arithmetic being done first, you can always use
-				// 0 MAX CHECKLOCKTIMEVERIFY.
-				if lock_time.is_negative() {
-					return Err(Error::NegativeLocktime);
-				}
+					// In the rare event that the argument may be < 0 due to
+					// some arithmetic being done first, you can always use
+					// 0 MAX CHECKLOCKTIMEVERIFY.
+					if lock_time.is_negative() {
+						return Err(Error::NegativeLocktime);
+					}
 
-				if !checker.check_lock_time(lock_time) {
-					return Err(Error::UnsatisfiedLocktime);
+					if !checker.check_lock_time(lock_time) {
+						return Err(Error::UnsatisfiedLocktime);
+					}
 				}
 			},
 			Opcode::OP_CHECKSEQUENCEVERIFY => {
@@ -1869,5 +1871,27 @@ mod tests {
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
 		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+	}
+
+	// https://blockchain.info/rawtx/eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb
+	#[test]
+	fn test_transaction_bip65() {
+		let tx: Transaction = "01000000024de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8000000006b48304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b0121035aa98d5f77cd9a2d88710e6fc66212aff820026f0dad8f32d1f7ce87457dde50ffffffff4de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8010000006f004730440220276d6dad3defa37b5f81add3992d510d2f44a317fd85e04f93a1e2daea64660202200f862a0da684249322ceb8ed842fb8c859c0cb94c81e1c5308b4868157a428ee01ab51210232abdc893e7f0631364d7fd01cb33d24da45329a00357b3a7886211ab414d55a51aeffffffff02e0fd1c00000000001976a914380cb3c594de4e7e9b8e18db182987bebb5a4f7088acc0c62d000000000017142a9bc5447d664c1d0141392a842d23dba45c4f13b17500000000".into();
+		let signer: TransactionInputSigner = tx.into();
+		let checker = TransactionSignatureChecker {
+			signer: signer,
+			input_index: 1,
+		};
+		let input: Script = "004730440220276d6dad3defa37b5f81add3992d510d2f44a317fd85e04f93a1e2daea64660202200f862a0da684249322ceb8ed842fb8c859c0cb94c81e1c5308b4868157a428ee01ab51210232abdc893e7f0631364d7fd01cb33d24da45329a00357b3a7886211ab414d55a51ae".into();
+		let output: Script = "142a9bc5447d664c1d0141392a842d23dba45c4f13b175".into();
+
+		let flags = VerificationFlags::default()
+			.verify_p2sh(true);
+		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+
+		let flags = VerificationFlags::default()
+			.verify_p2sh(true)
+			.verify_clocktimeverify(true);
+		assert_eq!(verify_script(&input, &output, &flags, &checker), Err(Error::NumberOverflow));
 	}
 }
