@@ -172,6 +172,15 @@ impl Verify for ChainVerifier {
 		if !block.transactions()[0].is_coinbase() {
 			return Err(Error::Coinbase)
 		}
+		else {
+			// check that coinbase does not have a signature
+			let coinbase = &block.transactions()[0];
+			// is_coinbase() = true above guarantees that there is at least one input
+			let coinbase_script_len = coinbase.inputs[0].script_sig().len();
+			if coinbase_script_len < 2 || coinbase_script_len > 100 {
+				return Err(Error::CoinbaseSignatureLength(coinbase_script_len));
+			}
+		}
 
 		// verify transactions (except coinbase)
 		let mut block_sigops = try!(
@@ -261,6 +270,9 @@ mod tests {
 	fn verify_smoky() {
 		let storage = TestStorage::with_blocks(&vec![test_data::genesis()]);
 		let b1 = test_data::block_h1();
+
+		println!("{:?}", b1.transactions()[0].inputs[0].script_sig());
+
 		let verifier = ChainVerifier::new(Arc::new(storage));
 		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
 	}
