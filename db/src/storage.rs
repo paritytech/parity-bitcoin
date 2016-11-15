@@ -92,8 +92,32 @@ pub enum Error {
 	DB(String),
 	/// Io error
 	Io(std::io::Error),
-	/// Invalid meta info
+	/// Invalid meta info (while opening the database)
 	Meta(MetaError),
+	/// Database blockchain consistency error
+	Consistency(ConsitencyError),
+}
+
+impl Error {
+	fn unknown_hash(h: &H256) -> Self {
+		Error::Consistency(ConsitencyError::Unknown(h.clone()))
+	}
+
+	fn unknown_number(n: u32) -> Self {
+		Error::Consistency(ConsitencyError::UnknownNumber(n))
+	}
+
+	fn double_spend(h: &H256) -> Self {
+		Error::Consistency(ConsitencyError::DoubleSpend(h.clone()))
+	}
+
+	fn not_main(h: &H256) -> Self {
+		Error::Consistency(ConsitencyError::NotMain(h.clone()))
+	}
+}
+
+#[derive(Debug)]
+pub enum ConsitencyError {
 	/// Unknown hash
 	Unknown(H256),
 	/// Unknown number
@@ -104,6 +128,8 @@ pub enum Error {
 	ForkTooLong,
 	/// Main chain block transaction attempts to double-spend
 	DoubleSpend(H256),
+	/// Transaction tries to spend
+	UnknownSpending(H256),
 	/// Chain has no best block
 	NoBestBlock,
 }
@@ -305,7 +331,7 @@ impl Storage {
 				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
 						if meta.is_spent(input.previous_output.index as usize) {
-							return Err(Error::DoubleSpend(input.previous_output.hash.clone()));
+							return Err(Error::double_spend(&input.previous_output.hash));
 						}
 
 						meta.note_used(input.previous_output.index as usize);
@@ -314,14 +340,13 @@ impl Storage {
 					None => false,
 				} {
 					let mut meta =
-						self.transaction_meta(&input.previous_output.hash)
-							.unwrap_or_else(|| panic!(
-								"No transaction metadata for {}! Corrupted DB? Reindex?",
-								&input.previous_output.hash
-							));
+						try!(
+							self.transaction_meta(&input.previous_output.hash)
+								.ok_or(Error::Consistency(ConsitencyError::UnknownSpending(input.previous_output.hash.clone())))
+						);
 
 					if meta.is_spent(input.previous_output.index as usize) {
-						return Err(Error::DoubleSpend(input.previous_output.hash.clone()));
+						return Err(Error::double_spend(&input.previous_output.hash));
 					}
 
 					meta.note_used(input.previous_output.index as usize);
@@ -344,7 +369,7 @@ impl Storage {
 		trace!(target: "reorg", "Decanonizing block {}", hash);
 
 		// ensure that block is of the main chain
-		try!(self.block_number(hash).ok_or(Error::NotMain(hash.clone())));
+		try!(self.block_number(hash).ok_or(Error::not_main(hash)));
 
 		// only canonical blocks have numbers, so remove this number entry for the hash
 		context.db_transaction.delete(Some(COL_BLOCK_NUMBERS), &**hash);
@@ -371,6 +396,8 @@ impl Storage {
 					let mut meta =
 						self.transaction_meta(&input.previous_output.hash)
 							.unwrap_or_else(|| panic!(
+								// decanonization should always have meta
+								// because block could not have made canonical without writing meta
 								"No transaction metadata for {}! Corrupted DB? Reindex?",
 								&input.previous_output.hash
 							));
@@ -389,7 +416,7 @@ impl Storage {
 
 	/// Returns the height where the fork occurred and chain up to this place (not including last canonical hash)
 	fn fork_route(&self, max_route: usize, hash: &H256) -> Result<(u32, Vec<H256>), Error> {
-		let header = try!(self.block_header_by_hash(hash).ok_or(Error::Unknown(hash.clone())));
+		let header = try!(self.block_header_by_hash(hash).ok_or(Error::unknown_hash(hash)));
 
 		// only main chain blocks has block numbers
 		// so if it has, it is not a fork and we return empty route
@@ -405,10 +432,10 @@ impl Storage {
 				return Ok((number, result));
 			}
 			result.push(next_hash.clone());
-			next_hash = try!(self.block_header_by_hash(&next_hash).ok_or(Error::Unknown(hash.clone())))
+			next_hash = try!(self.block_header_by_hash(&next_hash).ok_or(Error::unknown_hash(hash)))
 				.previous_header_hash;
 		}
-		Err(Error::ForkTooLong)
+		Err(Error::Consistency(ConsitencyError::ForkTooLong))
 	}
 
 	fn best_number(&self) -> Option<u32> {
@@ -460,11 +487,11 @@ impl Storage {
 			return Ok(None);
 		}
 
-		let mut now_best = try!(self.best_number().ok_or(Error::NoBestBlock));
+		let mut now_best = try!(self.best_number().ok_or(Error::Consistency(ConsitencyError::NoBestBlock)));
 
 		// decanonizing main chain to the split point
 		loop {
-			let next_decanonize = try!(self.block_hash(now_best).ok_or(Error::UnknownNumber(now_best)));
+			let next_decanonize = try!(self.block_hash(now_best).ok_or(Error::unknown_number(now_best)));
 			try!(self.decanonize_block(context, &next_decanonize));
 
 			now_best -= 1;
