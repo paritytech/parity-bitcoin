@@ -645,7 +645,7 @@ impl Store for Storage {
 							return Err(Error::reorganize(&hash));
 						},
 						ConsistencyError::UnknownSpending(hash) => {
-							warn!(target: "reorg", "Failed to reorganize to {} due to double-spend at {}", &block_hash, &hash);
+							warn!(target: "reorg", "Failed to reorganize to {} due to spending unknown transaction {}", &block_hash, &hash);
 							// return without any commit
 							return Err(Error::reorganize(&hash));
 						},
