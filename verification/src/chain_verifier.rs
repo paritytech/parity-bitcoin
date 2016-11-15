@@ -13,13 +13,19 @@ const MAX_BLOCK_SIGOPS: usize = 20000;
 
 pub struct ChainVerifier {
 	store: Arc<db::Store>,
+	verify_clocktimeverify: bool,
 	skip_pow: bool,
 	skip_sig: bool,
 }
 
 impl ChainVerifier {
 	pub fn new(store: Arc<db::Store>) -> Self {
-		ChainVerifier { store: store, skip_pow: false, skip_sig: false }
+		ChainVerifier {
+			store: store,
+			verify_clocktimeverify: false,
+			skip_pow: false,
+			skip_sig: false
+		}
 	}
 
 	#[cfg(test)]
@@ -31,6 +37,11 @@ impl ChainVerifier {
 	#[cfg(test)]
 	pub fn signatures_skip(mut self) -> Self {
 		self.skip_sig = true;
+		self
+	}
+
+	pub fn verify_clocktimeverify(mut self, verify: bool) -> Self {
+		self.verify_clocktimeverify = verify;
 		self
 	}
 
@@ -128,7 +139,9 @@ impl ChainVerifier {
 			let input: Script = input.script_sig().to_vec().into();
 			let output: Script = paired_output.script_pubkey.to_vec().into();
 
-			let flags = VerificationFlags::default().verify_p2sh(true);
+			let flags = VerificationFlags::default()
+				.verify_p2sh(true)
+				.verify_clocktimeverify(self.verify_clocktimeverify);
 
 			// for tests only, skips as late as possible
 			if self.skip_sig { continue; }
