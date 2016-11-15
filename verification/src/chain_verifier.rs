@@ -177,16 +177,17 @@ impl Verify for ChainVerifier {
 			return Err(Error::Timestamp);
 		}
 
+		// todo: serialized_size function is at least suboptimal
+		let size = ::serialization::Serializable::serialized_size(block);
+		if size > MAX_BLOCK_SIZE {
+			return Err(Error::Size(size))
+		}
+
 		// verify merkle root
 		if block.merkle_root() != block.header().merkle_root_hash {
 			return Err(Error::MerkleRoot);
 		}
 
-		// todo: serialized_size function is at least suboptimal
-		let size = ::serialization::Serializable::serialized_size(block);
-		if size >= MAX_BLOCK_SIZE {
-			return Err(Error::Size(size))
-		}
 
 		// check first transaction is a coinbase transaction
 		if !block.transactions()[0].is_coinbase() {
