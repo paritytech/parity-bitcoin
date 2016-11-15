@@ -9,6 +9,8 @@ extern crate linked_hash_map;
 extern crate byteorder;
 extern crate time;
 extern crate script;
+#[macro_use]
+extern crate log;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
@@ -45,6 +47,9 @@ pub enum Error {
 	MerkleRoot,
 	/// Coinbase spends too much
 	CoinbaseOverspend { expected_max: u64, actual: u64 },
+	/// Maximum sigops operations exceeded - will not provide how much it was in total
+	/// since it stops counting once `MAX_BLOCK_SIGOPS` is reached
+	MaximumSigops,
 }
 
 #[derive(Debug, PartialEq)]
@@ -62,6 +67,8 @@ pub enum TransactionError {
 	UnknownReference(H256),
 	/// Spends more than claims
 	Overspend,
+	/// Signature script can't be properly parsed
+	SignatureMallformed(String),
 }
 
 #[derive(PartialEq, Debug)]

@@ -8,6 +8,7 @@ extern crate byteorder;
 extern crate chain;
 extern crate serialization;
 extern crate bit_vec;
+#[macro_use] extern crate log;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;

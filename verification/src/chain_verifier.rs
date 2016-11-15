@@ -9,6 +9,7 @@ use utils;
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
 const COINBASE_MATURITY: u32 = 100; // 2 hours
+const MAX_BLOCK_SIGOPS: usize = 20000;
 
 pub struct ChainVerifier {
 	store: Arc<db::Store>,
@@ -117,7 +118,6 @@ impl ChainVerifier {
 				return Err(TransactionError::Input(input_index));
 			}
 
-			if self.skip_sig { continue; }
 			// signature verification
 			let signer: TransactionInputSigner = transaction.clone().into();
 			let paired_output = &parent_transaction.outputs[input.previous_output.index as usize];
@@ -127,10 +127,14 @@ impl ChainVerifier {
 			};
 			let input: Script = input.script_sig().to_vec().into();
 			let output: Script = paired_output.script_pubkey.to_vec().into();
+
 			let flags = VerificationFlags::default().verify_p2sh(true);
 
-			if let Err(e) =  verify_script(&input, &output, &flags, &checker) {
-				println!("transaction signature verification failure: {:?}", e);
+			// for tests only, skips as late as possible
+			if self.skip_sig { continue; }
+
+			if let Err(e) = verify_script(&input, &output, &flags, &checker) {
+				trace!(target: "verification", "transaction signature verification failure: {}", e);
 				// todo: log error here
 				return Err(TransactionError::Signature(input_index))
 			}
@@ -170,9 +174,31 @@ impl Verify for ChainVerifier {
 		}
 
 		// verify transactions (except coinbase)
+		let mut block_sigops = try!(
+			utils::transaction_sigops(&block.transactions()[0])
+				.map_err(|e| Error::Transaction(1, TransactionError::SignatureMallformed(format!("{}", e))))
+		);
+
 		for (idx, transaction) in block.transactions().iter().skip(1).enumerate() {
+
+			block_sigops += try!(
+				utils::transaction_sigops(transaction)
+					.map_err(|e| Error::Transaction(idx+1, TransactionError::SignatureMallformed(format!("{}", e))))
+			);
+
+			if block_sigops > MAX_BLOCK_SIGOPS {
+				return Err(Error::MaximumSigops);
+			}
+
 			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx+1, e)));
 		}
+
+		trace!(
+			target: "verification", "Block {} (transactons: {}, sigops: {}) verification finished",
+			&hash,
+			block.transactions().len(),
+			&block_sigops
+		);
 
 		// todo: pre-process projected block number once verification is parallel!
 		match self.store.accepted_location(block.header()) {
@@ -220,6 +246,7 @@ mod tests {
 	use std::sync::Arc;
 	use devtools::RandomTempPath;
 	use chain::RepresentH256;
+	use script;
 
 	#[test]
 	fn verify_orphan() {
@@ -452,6 +479,57 @@ mod tests {
 		let expected = Ok(Chain::Main);
 
 		assert_eq!(expected, verifier.verify(&block))
+	}
+
+	#[test]
+	fn sigops_overflow_block() {
+		let path = RandomTempPath::create_dir();
+		let storage = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.build()
+			.transaction()
+				.output().value(50).build()
+				.build()
+			.merkled_header().build()
+			.build();
+
+		storage.insert_block(&genesis).unwrap();
+		let reference_tx = genesis.transactions()[1].hash();
+
+		let mut builder_tx1 = script::Builder::default();
+		for _ in 0..11000 {
+			builder_tx1 = builder_tx1.push_opcode(script::Opcode::OP_CHECKSIG)
+		}
+
+		let mut builder_tx2 = script::Builder::default();
+		for _ in 0..11000 {
+			builder_tx2 = builder_tx2.push_opcode(script::Opcode::OP_CHECKSIG)
+		}
+
+		let block = test_data::block_builder()
+			.transaction().coinbase().build()
+			.transaction()
+				.input()
+					.hash(reference_tx.clone())
+					.signature_bytes(builder_tx1.into_script().to_bytes())
+					.build()
+				.build()
+			.transaction()
+				.input()
+					.hash(reference_tx)
+					.signature_bytes(builder_tx2.into_script().to_bytes())
+					.build()
+				.build()
+			.merkled_header().parent(genesis.hash()).build()
+			.build();
+
+		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+
+		let expected = Err(Error::MaximumSigops);
+		assert_eq!(expected, verifier.verify(&block));
 	}
 
 	#[test]
