@@ -962,6 +962,7 @@ pub mod tests {
 	use parking_lot::{Mutex, RwLock};
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, RepresentH256};
+	use message::common::{Magic, ConsensusParams};
 	use super::{Client, Config, SynchronizationClient};
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
@@ -985,7 +986,7 @@ pub mod tests {
 		};
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = DummyTaskExecutor::new();
-		let config = Config { threads_num: 1, skip_verification: true };
+		let config = Config { consensus_params: ConsensusParams::with_magic(Magic::Mainnet), threads_num: 1, skip_verification: true };
 
 		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain.clone());
 		(event_loop, handle, executor, chain, client)

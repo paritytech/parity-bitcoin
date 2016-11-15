@@ -26,12 +26,13 @@ impl ConsensusParams {
 
 #[cfg(test)]
 mod tests {
-	use super::{Magic, ConsensusParams};
+	use super::super::Magic;
+	use super::ConsensusParams;
 
 	#[test]
 	fn test_consensus_params_bip65_height() {
-		assert_eq!(ConsensusParams::with_magic(Magic::Mainnet), 388381);
-		assert_eq!(ConsensusParams::with_magic(Magic::Testnet), 581885);
-		assert_eq!(ConsensusParams::with_magic(Magic::Regtest), 1351);
+		assert_eq!(ConsensusParams::with_magic(Magic::Mainnet).bip65_height, 388381);
+		assert_eq!(ConsensusParams::with_magic(Magic::Testnet).bip65_height, 581885);
+		assert_eq!(ConsensusParams::with_magic(Magic::Regtest).bip65_height, 1351);
 	}
 }
