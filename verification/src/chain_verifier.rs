@@ -169,6 +169,7 @@ impl Verify for ChainVerifier {
 			return Err(Error::MerkleRoot);
 		}
 
+		// todo: serialized_size function is at least suboptimal
 		let size = ::serialization::Serializable::serialized_size(block);
 		if size >= MAX_BLOCK_SIZE {
 			return Err(Error::Size(size))
