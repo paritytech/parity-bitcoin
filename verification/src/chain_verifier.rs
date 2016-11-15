@@ -104,7 +104,7 @@ impl ChainVerifier {
 		Ok(())
 	}
 
-	fn verify_transaction(&self, block: &chain::Block, transaction: &chain::Transaction) -> Result<usize, TransactionError> {
+	fn verify_transaction(&self, block: &chain::Block, transaction: &chain::Transaction) -> Result<(), TransactionError> {
 		use script::{
 			TransactionInputSigner,
 			TransactionSignatureChecker,
@@ -113,7 +113,6 @@ impl ChainVerifier {
 			verify_script,
 		};
 
-		let mut sigops: usize = 0;
 		for (input_index, input) in transaction.inputs().iter().enumerate() {
 			let store_parent_transaction = self.store.transaction(&input.previous_output.hash);
 			let parent_transaction = match store_parent_transaction {
@@ -139,15 +138,6 @@ impl ChainVerifier {
 			let input: Script = input.script_sig().to_vec().into();
 			let output: Script = paired_output.script_pubkey.to_vec().into();
 
-			sigops +=
-				try!(output.sigop_count().map_err(|e| TransactionError::ReferenceSignatureMallformed(format!("{}", e)))) +
-				try!(input.sigop_count().map_err(|e| TransactionError::SignatureMallformed(format!("{}", e))));
-
-			if sigops > MAX_BLOCK_SIGOPS {
-				// already overflown
-				return Err(TransactionError::SigopsAmount);
-			}
-
 			let flags = VerificationFlags::default()
 				.verify_p2sh(true)
 				.verify_clocktimeverify(self.verify_clocktimeverify);
@@ -156,13 +146,13 @@ impl ChainVerifier {
 			if self.skip_sig { continue; }
 
 			if let Err(e) = verify_script(&input, &output, &flags, &checker) {
-				println!("transaction signature verification failure: {:?}", e);
+				trace!(target: "verification", "transaction signature verification failure: {}", e);
 				// todo: log error here
 				return Err(TransactionError::Signature(input_index))
 			}
 		}
 
-		Ok(sigops)
+		Ok(())
 	}
 }
 
@@ -196,17 +186,31 @@ impl Verify for ChainVerifier {
 		}
 
 		// verify transactions (except coinbase)
-		let mut block_sigops = 0;
-		for (idx, transaction) in block.transactions().iter().skip(1).enumerate() {
-			let tx_sigops = try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx+1, e)));
-			block_sigops += tx_sigops;
+		let mut block_sigops = try!(
+			utils::transaction_sigops(&block.transactions()[0])
+				.map_err(|e| Error::Transaction(1, TransactionError::SignatureMallformed(format!("{}", e))))
+		);
 
-			if block_sigops >= MAX_BLOCK_SIGOPS {
+		for (idx, transaction) in block.transactions().iter().skip(1).enumerate() {
+
+			block_sigops += try!(
+				utils::transaction_sigops(transaction)
+					.map_err(|e| Error::Transaction(idx+1, TransactionError::SignatureMallformed(format!("{}", e))))
+			);
+
+			if block_sigops > MAX_BLOCK_SIGOPS {
 				return Err(Error::MaximumSigops);
 			}
+
+			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx+1, e)));
 		}
 
-		trace!(target: "verification", "Block {} total sigops: {}", &hash, &block_sigops);
+		trace!(
+			target: "verification", "Block {} (transactons: {}, sigops: {}) verification finished",
+			&hash,
+			block.transactions().len(),
+			&block_sigops
+		);
 
 		// todo: pre-process projected block number once verification is parallel!
 		match self.store.accepted_location(block.header()) {
@@ -487,46 +491,6 @@ mod tests {
 		let expected = Ok(Chain::Main);
 
 		assert_eq!(expected, verifier.verify(&block))
-	}
-
-	#[test]
-	fn sigops_overflow_tx() {
-		let path = RandomTempPath::create_dir();
-		let storage = Storage::new(path.as_path()).unwrap();
-
-		let genesis = test_data::block_builder()
-			.transaction()
-				.coinbase()
-				.build()
-			.transaction()
-				.output().value(50).build()
-				.build()
-			.merkled_header().build()
-			.build();
-
-		storage.insert_block(&genesis).unwrap();
-		let reference_tx = genesis.transactions()[1].hash();
-
-		let mut builder = script::Builder::default();
-		for _ in 0..21000 {
-			builder = builder.push_opcode(script::Opcode::OP_CHECKSIG)
-		}
-
-		let block = test_data::block_builder()
-			.transaction().coinbase().build()
-			.transaction()
-				.input()
-					.hash(reference_tx)
-					.signature_bytes(builder.into_script().to_bytes())
-					.build()
-				.build()
-			.merkled_header().parent(genesis.hash()).build()
-			.build();
-
-		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip();
-
-		let expected = Err(Error::Transaction(1, TransactionError::SigopsAmount));
-		assert_eq!(expected, verifier.verify(&block));
 	}
 
 	#[test]

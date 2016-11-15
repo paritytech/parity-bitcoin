@@ -69,10 +69,6 @@ pub enum TransactionError {
 	Overspend,
 	/// Signature script can't be properly parsed
 	SignatureMallformed(String),
-	/// Signature script in referenced transaction can't be properly parsed
-	ReferenceSignatureMallformed(String),
-	/// Too many sigops
-	SigopsAmount,
 }
 
 #[derive(PartialEq, Debug)]
