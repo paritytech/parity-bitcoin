@@ -64,7 +64,8 @@ pub fn transaction_sigops(transaction: &chain::Transaction) -> Result<usize, scr
 
 	for output in transaction.outputs.iter() {
 		let output_script: Script = output.script_pubkey.to_vec().into();
-		result += try!(output_script.sigop_count());
+		// todo: not always allow malformed output?
+		result += output_script.sigop_count().unwrap_or(1);
 	}
 
 	Ok(result)
