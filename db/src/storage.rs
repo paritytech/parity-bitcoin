@@ -114,6 +114,10 @@ impl Error {
 	fn not_main(h: &H256) -> Self {
 		Error::Consistency(ConsistencyError::NotMain(h.clone()))
 	}
+
+	fn reorganize(h: &H256) -> Self {
+		Error::Consistency(ConsistencyError::Reorganize(h.clone()))
+	}
 }
 
 #[derive(Debug, PartialEq)]
@@ -132,6 +136,8 @@ pub enum ConsistencyError {
 	UnknownSpending(H256),
 	/// Chain has no best block
 	NoBestBlock,
+	/// Failed reorganization caused by block
+	Reorganize(H256),
 }
 
 impl From<String> for Error {
@@ -618,16 +624,49 @@ impl Store for Storage {
 		// the block does not continue the main chain
 		// but can cause reorganization here
 		// this can canonize the block parent if block parent + this block is longer than the main chain
-		else if let Some((reorg_number, _)) = self.maybe_reorganize(&mut context, &block.header().previous_header_hash).unwrap_or(None) {
-			// if so, we have new best main chain block
-			new_best_number = reorg_number + 1;
-			new_best_hash = block_hash;
+		else {
+			match self.maybe_reorganize(&mut context, &block.header().previous_header_hash) {
+				Ok(Some((reorg_number, _))) => {
+					// if so, we have new best main chain block
+					new_best_number = reorg_number + 1;
+					new_best_hash = block_hash;
 
-			// and we canonize it also by provisioning transactions
-			try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
-			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
-			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&new_best_hash));
-			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&new_best_hash), new_best_number);
+					// and we canonize it also by provisioning transactions
+					try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
+					context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
+					context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&new_best_hash));
+					context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&new_best_hash), new_best_number);
+				},
+				Err(Error::Consistency(consistency_error)) => {
+					match consistency_error {
+						ConsistencyError::DoubleSpend(hash) => {
+							warn!(target: "reorg", "Failed to reorganize to {} due to double-spend at {}", &block_hash, &hash);
+							// return without any commit
+							return Err(Error::reorganize(&hash));
+						},
+						ConsistencyError::UnknownSpending(hash) => {
+							warn!(target: "reorg", "Failed to reorganize to {} due to spending unknown transaction {}", &block_hash, &hash);
+							// return without any commit
+							return Err(Error::reorganize(&hash));
+						},
+						ConsistencyError::Unknown(hash) => {
+							// this is orphan block inserted or disconnected chain head updated, we allow that (by now)
+							// so it is no-op
+							warn!(target: "reorg", "Disconnected chain head {} updated with {}", &hash, &block_hash);
+						},
+						_ => {
+							// we don't allow other errors on side chain/orphans
+							return Err(Error::Consistency(consistency_error))
+						}
+					}
+				},
+				Err(e) => {
+					return Err(e)
+				},
+				Ok(None) => {
+					// reorganize didn't happen but the block is ok, no-op here
+				}
+			}
 		}
 
 		// we always update best hash even if it is not changed
