@@ -289,7 +289,6 @@ mod tests {
 	fn verify_smoky() {
 		let storage = TestStorage::with_blocks(&vec![test_data::genesis()]);
 		let b1 = test_data::block_h1();
-		
 		let verifier = ChainVerifier::new(Arc::new(storage));
 		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
 	}
