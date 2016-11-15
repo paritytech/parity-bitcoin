@@ -1,4 +1,5 @@
 use std::io;
+use bytes::Bytes;
 use ser::{Reader, Stream};
 use MessageResult;
 

@@ -3,43 +3,48 @@ use parking_lot::Mutex;
 use bytes::Bytes;
 use message::{Command, Error};
 use p2p::Context;
+use net::PeerContext;
 use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, SeednodeProtocol};
 use util::{ConfigurableSynchronizer, PeerInfo};
 
 pub trait SessionFactory {
-	fn new_session(context: Arc<Context>, info: PeerInfo) -> Session;
+	fn new_session(context: Arc<Context>, info: PeerInfo, synchronous: bool) -> Session;
 }
 
 pub struct SeednodeSessionFactory;
 
 impl SessionFactory for SeednodeSessionFactory {
-	fn new_session(context: Arc<Context>, info: PeerInfo) -> Session {
-		let ping = PingProtocol::new(context.clone(), info.clone()).boxed();
-		let addr = AddrProtocol::new(context.clone(), info.clone()).boxed();
-		let seed = SeednodeProtocol::new(context.clone(), info).boxed();
-		Session::new(vec![ping, addr, seed])
+	fn new_session(context: Arc<Context>, info: PeerInfo, synchronous: bool) -> Session {
+		let peer_context = Arc::new(PeerContext::new(context, info, synchronous));
+		let ping = PingProtocol::new(peer_context.clone()).boxed();
+		let addr = AddrProtocol::new(peer_context.clone()).boxed();
+		let seed = SeednodeProtocol::new(peer_context.clone()).boxed();
+		Session::new(peer_context, vec![ping, addr, seed])
 	}
 }
 
 pub struct NormalSessionFactory;
 
 impl SessionFactory for NormalSessionFactory {
-	fn new_session(context: Arc<Context>, info: PeerInfo) -> Session {
-		let ping = PingProtocol::new(context.clone(), info.clone()).boxed();
-		let addr = AddrProtocol::new(context.clone(), info.clone()).boxed();
-		let sync = SyncProtocol::new(context, info).boxed();
-		Session::new(vec![ping, addr, sync])
+	fn new_session(context: Arc<Context>, info: PeerInfo, synchronous: bool) -> Session {
+		let peer_context = Arc::new(PeerContext::new(context, info, synchronous));
+		let ping = PingProtocol::new(peer_context.clone()).boxed();
+		let addr = AddrProtocol::new(peer_context.clone()).boxed();
+		let sync = SyncProtocol::new(peer_context.clone()).boxed();
+		Session::new(peer_context, vec![ping, addr, sync])
 	}
 }
 
 pub struct Session {
+	peer_context: Arc<PeerContext>,
 	protocols: Mutex<Vec<Box<Protocol>>>,
 	synchronizer: Mutex<ConfigurableSynchronizer>,
 }
 
 impl Session {
-	pub fn new(protocols: Vec<Box<Protocol>>) -> Self {
+	pub fn new(peer_context: Arc<PeerContext>, protocols: Vec<Box<Protocol>>) -> Self {
 		Session {
+			peer_context: peer_context,
 			protocols: Mutex::new(protocols),
 			synchronizer: Mutex::new(ConfigurableSynchronizer::new(false)),
 		}

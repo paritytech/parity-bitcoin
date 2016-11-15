@@ -1,3 +1,4 @@
+use tokio_core::io::{write_all, WriteAll};
 use message::{Payload, Message};
 use session::Session;
 use io::{SharedTcpStream, WriteMessage, write_message, read_any_message, ReadAnyMessage};
@@ -18,10 +19,8 @@ impl Channel {
 		}
 	}
 
-	pub fn write_message<T>(&self, payload: &T) -> WriteMessage<T, SharedTcpStream> where T: Payload {
-		// TODO: some tracing here
-		let message = Message::new(self.peer_info.magic, self.peer_info.version, payload).expect("failed to create outgoing message");
-		write_message(self.stream.clone(), message)
+	pub fn write_message<T>(&self, message: T) -> WriteAll<SharedTcpStream, T> where T: AsRef<[u8]> {
+		write_all(self.stream.clone(), message)
 	}
 
 	pub fn read_message(&self) -> ReadAnyMessage<SharedTcpStream> {
