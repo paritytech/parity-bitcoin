@@ -5,7 +5,7 @@ use message::{Command, Error};
 use p2p::Context;
 use net::PeerContext;
 use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, SeednodeProtocol};
-use util::{ConfigurableSynchronizer, PeerInfo};
+use util::PeerInfo;
 
 pub trait SessionFactory {
 	fn new_session(context: Arc<Context>, info: PeerInfo, synchronous: bool) -> Session;
@@ -36,17 +36,15 @@ impl SessionFactory for NormalSessionFactory {
 }
 
 pub struct Session {
-	peer_context: Arc<PeerContext>,
+	_peer_context: Arc<PeerContext>,
 	protocols: Mutex<Vec<Box<Protocol>>>,
-	synchronizer: Mutex<ConfigurableSynchronizer>,
 }
 
 impl Session {
 	pub fn new(peer_context: Arc<PeerContext>, protocols: Vec<Box<Protocol>>) -> Self {
 		Session {
-			peer_context: peer_context,
+			_peer_context: peer_context,
 			protocols: Mutex::new(protocols),
-			synchronizer: Mutex::new(ConfigurableSynchronizer::new(false)),
 		}
 	}
 

@@ -5,7 +5,7 @@ use message::{Error, Command, deserialize_payload, Payload};
 use message::types::{GetAddr, Addr};
 use protocol::Protocol;
 use net::PeerContext;
-use util::{Direction, PeerInfo};
+use util::Direction;
 
 pub struct AddrProtocol {
 	/// Context

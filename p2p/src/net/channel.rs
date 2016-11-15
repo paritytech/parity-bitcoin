@@ -1,7 +1,6 @@
 use tokio_core::io::{write_all, WriteAll};
-use message::{Payload, Message};
 use session::Session;
-use io::{SharedTcpStream, WriteMessage, write_message, read_any_message, ReadAnyMessage};
+use io::{SharedTcpStream, read_any_message, ReadAnyMessage};
 use util::PeerInfo;
 
 pub struct Channel {

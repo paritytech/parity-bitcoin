@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use parking_lot::Mutex;
-use message::{Payload, serialize_payload, Message};
+use message::{Payload, Message};
 use p2p::Context;
 use util::{PeerInfo, ConfigurableSynchronizer, ResponseQueue, Synchronizer, Responses};
 
@@ -59,7 +59,9 @@ impl PeerContext {
 	}
 
 	pub fn declare_response(&self) -> u32 {
-		self.synchronizer.lock().declare_response()
+		let d = self.synchronizer.lock().declare_response();
+		trace!("declared response: {}", d);
+		d
 	}
 
 	pub fn send_response_inline<T>(&self, payload: &T) where T: Payload {
@@ -69,6 +71,7 @@ impl PeerContext {
 
 	/// Responses are sent in order defined by synchronizer.
 	pub fn send_response<T>(&self, payload: &T, id: u32, is_final: bool) where T: Payload {
+		trace!("response ready: {}, id: {}, final: {}", T::command(), id, is_final);
 		let mut sync = self.synchronizer.lock();
 		let mut queue = self.response_queue.lock();
 		if is_final {

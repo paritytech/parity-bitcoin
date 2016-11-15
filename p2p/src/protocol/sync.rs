@@ -2,10 +2,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use message::{Command, Error, Payload, types, deserialize_payload};
 use protocol::Protocol;
-use util::{PeerInfo, PeerId};
 use net::PeerContext;
-
-const UNIMPLEMENTED_TASK_ID: u32 = 0;
 
 pub type InboundSyncConnectionRef = Box<InboundSyncConnection>;
 pub type OutboundSyncConnectionRef = Box<OutboundSyncConnection>;
@@ -159,7 +156,7 @@ impl OutboundSyncConnection for OutboundSync {
 
 pub struct SyncProtocol {
 	inbound_connection: InboundSyncConnectionRef,
-	info: PeerInfo,
+	context: Arc<PeerContext>,
 }
 
 impl SyncProtocol {
@@ -168,33 +165,33 @@ impl SyncProtocol {
 		let inbound_connection = context.global().create_sync_session(0, outbound_connection);
 		SyncProtocol {
 			inbound_connection: inbound_connection,
-			info: context.info().clone(),
+			context: context,
 		}
 	}
 }
 
 impl Protocol for SyncProtocol {
 	fn initialize(&mut self) {
-		self.inbound_connection.start_sync_session(self.info.version);
+		self.inbound_connection.start_sync_session(self.context.info().version);
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes) -> Result<(), Error> {
-		let version = self.info.version;
+		let version = self.context.info().version;
 		if command == &types::Inv::command() {
 			let message: types::Inv = try!(deserialize_payload(payload, version));
 			self.inbound_connection.on_inventory(message);
 		}
 		else if command == &types::GetData::command() {
 			let message: types::GetData = try!(deserialize_payload(payload, version));
-			self.inbound_connection.on_getdata(message, UNIMPLEMENTED_TASK_ID);
+			self.inbound_connection.on_getdata(message, self.context.declare_response());
 		}
 		else if command == &types::GetBlocks::command() {
 			let message: types::GetBlocks = try!(deserialize_payload(payload, version));
-			self.inbound_connection.on_getblocks(message, UNIMPLEMENTED_TASK_ID);
+			self.inbound_connection.on_getblocks(message, self.context.declare_response());
 		}
 		else if command == &types::GetHeaders::command() {
 			let message: types::GetHeaders = try!(deserialize_payload(payload, version));
-			self.inbound_connection.on_getheaders(message, UNIMPLEMENTED_TASK_ID);
+			self.inbound_connection.on_getheaders(message, self.context.declare_response());
 		}
 		else if command == &types::Tx::command() {
 			let message: types::Tx = try!(deserialize_payload(payload, version));
@@ -206,7 +203,7 @@ impl Protocol for SyncProtocol {
 		}
 		else if command == &types::MemPool::command() {
 			let message: types::MemPool = try!(deserialize_payload(payload, version));
-			self.inbound_connection.on_mempool(message, UNIMPLEMENTED_TASK_ID);
+			self.inbound_connection.on_mempool(message, self.context.declare_response());
 		}
 		else if command == &types::Headers::command() {
 			let message: types::Headers = try!(deserialize_payload(payload, version));
