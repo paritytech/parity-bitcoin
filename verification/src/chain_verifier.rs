@@ -186,7 +186,7 @@ impl Verify for ChainVerifier {
 					.map_err(|e| Error::Transaction(idx+1, TransactionError::SignatureMallformed(format!("{}", e))))
 			);
 
-			if block_sigops >= MAX_BLOCK_SIGOPS {
+			if block_sigops > MAX_BLOCK_SIGOPS {
 				return Err(Error::MaximumSigops);
 			}
 
