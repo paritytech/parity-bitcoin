@@ -911,7 +911,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 							let best_storage_block = sync.chain.read().best_storage_block();
 
 							let is_bip65_active = best_storage_block.number >= config.consensus_params.bip65_height;
-							verifier.verify_clocktimeverify(is_bip65_active);
+							verifier = verifier.verify_clocktimeverify(is_bip65_active);
 
 							if is_bip65_active {
 								parameters_change_steps = None;

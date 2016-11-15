@@ -40,8 +40,9 @@ impl ChainVerifier {
 		self
 	}
 
-	pub fn verify_clocktimeverify(&mut self, verify: bool) {
+	pub fn verify_clocktimeverify(mut self, verify: bool) -> Self {
 		self.verify_clocktimeverify = verify;
+		self
 	}
 
 	fn ordered_verify(&self, block: &chain::Block, at_height: u32) -> Result<(), Error> {
