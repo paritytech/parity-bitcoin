@@ -57,15 +57,17 @@ pub fn block_reward_satoshi(block_height: u32) -> u64 {
 pub fn transaction_sigops(transaction: &chain::Transaction) -> Result<usize, script::Error> {
 	let mut result = 0usize;
 
-	for input in transaction.inputs.iter() {
-		let input_script: Script = input.script_sig().to_vec().into();
-		result += try!(input_script.sigop_count());
-	}
-
 	for output in transaction.outputs.iter() {
 		let output_script: Script = output.script_pubkey.to_vec().into();
 		// todo: not always allow malformed output?
-		result += output_script.sigop_count().unwrap_or(1);
+		result += output_script.sigop_count().unwrap_or(0);
+	}
+
+	if transaction.is_coinbase() { return Ok(result); }
+
+	for input in transaction.inputs.iter() {
+		let input_script: Script = input.script_sig().to_vec().into();
+		result += try!(input_script.sigop_count());
 	}
 
 	Ok(result)

@@ -174,7 +174,11 @@ impl Verify for ChainVerifier {
 		}
 
 		// verify transactions (except coinbase)
-		let mut block_sigops = 0;
+		let mut block_sigops = try!(
+			utils::transaction_sigops(&block.transactions()[0])
+				.map_err(|e| Error::Transaction(1, TransactionError::SignatureMallformed(format!("{}", e))))
+		);
+
 		for (idx, transaction) in block.transactions().iter().skip(1).enumerate() {
 
 			block_sigops += try!(
