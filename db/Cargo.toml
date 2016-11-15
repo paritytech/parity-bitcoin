@@ -14,6 +14,7 @@ serialization = { path = "../serialization" }
 parking_lot = "0.3"
 test-data = { path = "../test-data" }
 bit-vec = "0.4"
+log = "0.3"
 
 [features]
 dev = []
