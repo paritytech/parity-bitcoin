@@ -1403,4 +1403,9 @@ pub mod tests {
 			assert_eq!(tasks, vec![Task::RequestBlocks(2, vec![block1.hash()])]);
 		}
 	}
+
+	#[test]
+	fn sync_after_db_insert_nonfatal_fail() {
+		// TODO: implement me
+	}
 }
