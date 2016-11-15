@@ -80,7 +80,7 @@ pub struct Storage {
 	best_block: RwLock<Option<BestBlock>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MetaError {
 	UnsupportedVersion,
 }
@@ -95,29 +95,29 @@ pub enum Error {
 	/// Invalid meta info (while opening the database)
 	Meta(MetaError),
 	/// Database blockchain consistency error
-	Consistency(ConsitencyError),
+	Consistency(ConsistencyError),
 }
 
 impl Error {
 	fn unknown_hash(h: &H256) -> Self {
-		Error::Consistency(ConsitencyError::Unknown(h.clone()))
+		Error::Consistency(ConsistencyError::Unknown(h.clone()))
 	}
 
 	fn unknown_number(n: u32) -> Self {
-		Error::Consistency(ConsitencyError::UnknownNumber(n))
+		Error::Consistency(ConsistencyError::UnknownNumber(n))
 	}
 
 	fn double_spend(h: &H256) -> Self {
-		Error::Consistency(ConsitencyError::DoubleSpend(h.clone()))
+		Error::Consistency(ConsistencyError::DoubleSpend(h.clone()))
 	}
 
 	fn not_main(h: &H256) -> Self {
-		Error::Consistency(ConsitencyError::NotMain(h.clone()))
+		Error::Consistency(ConsistencyError::NotMain(h.clone()))
 	}
 }
 
-#[derive(Debug)]
-pub enum ConsitencyError {
+#[derive(Debug, PartialEq)]
+pub enum ConsistencyError {
 	/// Unknown hash
 	Unknown(H256),
 	/// Unknown number
@@ -342,7 +342,7 @@ impl Storage {
 					let mut meta =
 						try!(
 							self.transaction_meta(&input.previous_output.hash)
-								.ok_or(Error::Consistency(ConsitencyError::UnknownSpending(input.previous_output.hash.clone())))
+								.ok_or(Error::Consistency(ConsistencyError::UnknownSpending(input.previous_output.hash.clone())))
 						);
 
 					if meta.is_spent(input.previous_output.index as usize) {
@@ -435,7 +435,7 @@ impl Storage {
 			next_hash = try!(self.block_header_by_hash(&next_hash).ok_or(Error::unknown_hash(hash)))
 				.previous_header_hash;
 		}
-		Err(Error::Consistency(ConsitencyError::ForkTooLong))
+		Err(Error::Consistency(ConsistencyError::ForkTooLong))
 	}
 
 	fn best_number(&self) -> Option<u32> {
@@ -487,7 +487,7 @@ impl Storage {
 			return Ok(None);
 		}
 
-		let mut now_best = try!(self.best_number().ok_or(Error::Consistency(ConsitencyError::NoBestBlock)));
+		let mut now_best = try!(self.best_number().ok_or(Error::Consistency(ConsistencyError::NoBestBlock)));
 
 		// decanonizing main chain to the split point
 		loop {
@@ -682,7 +682,7 @@ impl Store for Storage {
 #[cfg(test)]
 mod tests {
 
-	use super::{Storage, Store, UpdateContext};
+	use super::{Storage, Store, UpdateContext, Error, ConsistencyError};
 	use devtools::RandomTempPath;
 	use chain::{Block, RepresentH256};
 	use super::super::{BlockRef, BlockLocation};
@@ -1288,6 +1288,46 @@ mod tests {
 		let location = store.accepted_location(test_data::block_h2().header());
 
 		assert_eq!(None, location);
+	}
+
+	#[test]
+	fn double_spend() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let block = test_data::block_builder()
+			.header().parent(genesis.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase.clone()).build()
+				.build()
+			.build();
+
+		store.insert_block(&block).expect("inserting first block in the double spend test should not fail");
+
+		let _dup_block = test_data::block_builder()
+			.header().parent(block.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase.clone()).build()
+				.build()
+			.build();
+
+		let insert_result = store.insert_block(&block);
+		if insert_result.is_ok() { panic!("Insert should fail because of the double-spend"); }
+
+		let _ = insert_result.map_err(|e| {
+			let should_be = ConsistencyError::DoubleSpend(genesis_coinbase);
+
+			if let Error::Consistency(consistency_error) = e {
+				assert_eq!(should_be, consistency_error, "Store should return double spend consistency return");
+			}
+			else { panic!("Insert should fail because of the double-spend"); }
+		});
 	}
 
 	#[test]
