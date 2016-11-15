@@ -18,7 +18,7 @@ use synchronization_peers::Peers;
 use synchronization_chain::{Chain, ChainRef, BlockState, HeadersIntersection};
 #[cfg(test)]
 use synchronization_chain::{Information as ChainInformation};
-use verification::{ChainVerifier, Error as VerificationError, Verify};
+use verification::{ChainVerifier, Verify};
 use synchronization_executor::{Task, TaskExecutor};
 use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchronization_peers_inventory,
 	manage_unknown_orphaned_blocks, MANAGEMENT_INTERVAL_MS, ManagePeersConfig, ManageUnknownBlocksConfig};
@@ -192,7 +192,7 @@ pub trait Client : Send + 'static {
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn get_peers_nearly_blocks_waiter(&mut self, peer_index: usize) -> (bool, Option<Arc<PeersBlocksWaiter>>);
 	fn on_block_verification_success(&mut self, block: Block);
-	fn on_block_verification_error(&mut self, err: &VerificationError, hash: &H256);
+	fn on_block_verification_error(&mut self, err: &str, hash: &H256);
 }
 
 /// Synchronization peer blocks waiter
@@ -208,7 +208,7 @@ pub struct PeersBlocksWaiter {
 pub struct Config {
 	/// Number of threads to allocate in synchronization CpuPool.
 	pub threads_num: usize,
-	/// Do not verify incoming blocks before inserting to db.
+/// Do not verify incoming blocks before inserting to db.
 	pub skip_verification: bool,
 }
 
@@ -404,7 +404,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 	fn on_block_verification_success(&mut self, block: Block) {
 		let hash = block.hash();
 		// insert block to the storage
-		{
+		match {
 			let mut chain = self.chain.write();
 
 			// remove block from verification queue
@@ -413,19 +413,30 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 			if chain.forget_with_state_leave_header(&hash, BlockState::Verifying) != HashPosition::Missing {
 				// block was in verification queue => insert to storage
 				chain.insert_best_block(hash.clone(), block)
-					.expect("Error inserting to db.");
+			} else {
+				Ok(())
+			}
+		} {
+			Ok(_) => {
+				// awake threads, waiting for this block insertion
+				self.awake_waiting_threads(&hash);
+
+				// continue with synchronization
+				self.execute_synchronization_tasks(None);
+			},
+			Err(db::Error::Consistency(e)) => {
+				// process as verification error
+				self.on_block_verification_error(&format!("{:?}", db::Error::Consistency(e)), &hash);
+			},
+			Err(e) => {
+				// process as irrecoverable failure
+				panic!("Block {:?} insertion failed with error {:?}", hash, e);
 			}
 		}
-
-		// awake threads, waiting for this block insertion
-		self.awake_waiting_threads(&hash);
-
-		// continue with synchronization
-		self.execute_synchronization_tasks(None);
 	}
 
 	/// Process failed block verification
-	fn on_block_verification_error(&mut self, err: &VerificationError, hash: &H256) {
+	fn on_block_verification_error(&mut self, err: &str, hash: &H256) {
 		warn!(target: "sync", "Block {:?} verification failed with error {:?}", hash, err);
 
 		{
@@ -893,8 +904,8 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 						Ok(_chain) => {
 							sync.lock().on_block_verification_success(block)
 						},
-						Err(err) => {
-							sync.lock().on_block_verification_error(&err, &block.hash())
+						Err(e) => {
+							sync.lock().on_block_verification_error(&format!("{:?}", e), &block.hash())
 						}
 					}
 				},
@@ -1391,5 +1402,10 @@ pub mod tests {
 			let tasks = executor.lock().take_tasks();
 			assert_eq!(tasks, vec![Task::RequestBlocks(2, vec![block1.hash()])]);
 		}
+	}
+
+	#[test]
+	fn sync_after_db_insert_nonfatal_fail() {
+		// TODO: implement me
 	}
 }
