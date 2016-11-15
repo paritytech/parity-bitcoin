@@ -104,6 +104,8 @@ pub enum Error {
 	ForkTooLong,
 	/// Main chain block transaction attempts to double-spend
 	DoubleSpend(H256),
+	/// Transaction tries to spend
+	UnknownSpending(H256),
 	/// Chain has no best block
 	NoBestBlock,
 }
@@ -314,11 +316,10 @@ impl Storage {
 					None => false,
 				} {
 					let mut meta =
-						self.transaction_meta(&input.previous_output.hash)
-							.unwrap_or_else(|| panic!(
-								"No transaction metadata for {}! Corrupted DB? Reindex?",
-								&input.previous_output.hash
-							));
+						try!(
+							self.transaction_meta(&input.previous_output.hash)
+								.ok_or(Error::UnknownSpending(input.previous_output.hash.clone()))
+						);
 
 					if meta.is_spent(input.previous_output.index as usize) {
 						return Err(Error::DoubleSpend(input.previous_output.hash.clone()));
@@ -371,6 +372,8 @@ impl Storage {
 					let mut meta =
 						self.transaction_meta(&input.previous_output.hash)
 							.unwrap_or_else(|| panic!(
+								// decanonization should always have meta
+								// because block could not have made canonical without writing meta
 								"No transaction metadata for {}! Corrupted DB? Reindex?",
 								&input.previous_output.hash
 							));
