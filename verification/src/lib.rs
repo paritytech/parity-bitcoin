@@ -52,6 +52,8 @@ pub enum Error {
 	MaximumSigops,
 	/// Coinbase signature is not in the range 2-100
 	CoinbaseSignatureLength(usize),
+	/// Block size is invalid
+	Size(usize),
 }
 
 #[derive(Debug, PartialEq)]

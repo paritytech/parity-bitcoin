@@ -10,6 +10,7 @@ use utils;
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
 const COINBASE_MATURITY: u32 = 100; // 2 hours
 const MAX_BLOCK_SIGOPS: usize = 20000;
+const MAX_BLOCK_SIZE: usize = 1000000;
 
 pub struct ChainVerifier {
 	store: Arc<db::Store>,
@@ -168,18 +169,22 @@ impl Verify for ChainVerifier {
 			return Err(Error::MerkleRoot);
 		}
 
+		let size = ::serialization::Serializable::serialized_size(block);
+		if size >= MAX_BLOCK_SIZE {
+			return Err(Error::Size(size))
+		}
+
 		// check first transaction is a coinbase transaction
 		if !block.transactions()[0].is_coinbase() {
 			return Err(Error::Coinbase)
 		}
-		else {
-			// check that coinbase does not have a signature
-			let coinbase = &block.transactions()[0];
-			// is_coinbase() = true above guarantees that there is at least one input
-			let coinbase_script_len = coinbase.inputs[0].script_sig().len();
-			if coinbase_script_len < 2 || coinbase_script_len > 100 {
-				return Err(Error::CoinbaseSignatureLength(coinbase_script_len));
-			}
+
+		// check that coinbase has a valid signature
+		let coinbase = &block.transactions()[0];
+		// is_coinbase() = true above guarantees that there is at least one input
+		let coinbase_script_len = coinbase.inputs[0].script_sig().len();
+		if coinbase_script_len < 2 || coinbase_script_len > 100 {
+			return Err(Error::CoinbaseSignatureLength(coinbase_script_len));
 		}
 
 		// verify transactions (except coinbase)
