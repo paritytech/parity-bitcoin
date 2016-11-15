@@ -188,7 +188,6 @@ impl Verify for ChainVerifier {
 			return Err(Error::MerkleRoot);
 		}
 
-
 		// check first transaction is a coinbase transaction
 		if !block.transactions()[0].is_coinbase() {
 			return Err(Error::Coinbase)
