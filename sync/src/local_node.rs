@@ -215,7 +215,7 @@ mod tests {
 	use synchronization_chain::Chain;
 	use p2p::{event_loop, OutboundSyncConnection, OutboundSyncConnectionRef};
 	use message::types;
-	use message::common::{InventoryVector, InventoryType};
+	use message::common::{Magic, ConsensusParams, InventoryVector, InventoryType};
 	use db;
 	use super::LocalNode;
 	use test_data;
@@ -259,7 +259,7 @@ mod tests {
 		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
-		let config = Config { threads_num: 1, skip_verification: true };
+		let config = Config { consensus_params: ConsensusParams::with_magic(Magic::Mainnet), threads_num: 1, skip_verification: true };
 		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain);
 		let local_node = LocalNode::new(server.clone(), client, executor.clone());
 		(event_loop, handle, executor, server, local_node)

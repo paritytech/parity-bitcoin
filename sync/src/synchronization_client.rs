@@ -12,6 +12,7 @@ use futures_cpupool::CpuPool;
 use linked_hash_map::LinkedHashMap;
 use db;
 use chain::{Block, BlockHeader, RepresentH256};
+use message::common::ConsensusParams;
 use primitives::hash::H256;
 use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers::{Information as PeersInformation};
@@ -206,6 +207,8 @@ pub struct PeersBlocksWaiter {
 
 /// Synchronization client configuration options.
 pub struct Config {
+	/// Consensus-related parameters.
+	pub consensus_params: ConsensusParams,
 	/// Number of threads to allocate in synchronization CpuPool.
 	pub threads_num: usize,
 /// Do not verify incoming blocks before inserting to db.
@@ -214,6 +217,8 @@ pub struct Config {
 
 /// Synchronization client.
 pub struct SynchronizationClient<T: TaskExecutor> {
+	/// Synchronization configuration.
+	config: Config,
 	/// Synchronization state.
 	state: State,
 	/// Cpu pool.
@@ -240,9 +245,10 @@ pub struct SynchronizationClient<T: TaskExecutor> {
 	verifying_blocks_waiters: HashMap<usize, (HashSet<H256>, Option<Arc<PeersBlocksWaiter>>)>,
 }
 
-impl Default for Config {
-	fn default() -> Self {
+impl Config {
+	pub fn with_consensus_params(consensus_params: ConsensusParams) -> Self {
 		Config {
+			consensus_params: consensus_params,
 			threads_num: 4,
 			skip_verification: false,
 		}
@@ -458,6 +464,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	/// Create new synchronization window
 	pub fn new(config: Config, handle: &Handle, executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
+		let skip_verification = config.skip_verification;
 		let sync = Arc::new(Mutex::new(
 			SynchronizationClient {
 				state: State::Saturated,
@@ -472,19 +479,21 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 				verification_worker_thread: None,
 				verifying_blocks_by_peer: HashMap::new(),
 				verifying_blocks_waiters: HashMap::new(),
+				config: config,
 			}
 		));
 
-		if !config.skip_verification {
+		if !skip_verification {
 			let (verification_work_sender, verification_work_receiver) = channel();
 			let csync = sync.clone();
 			let mut lsync = sync.lock();
 			let storage = chain.read().storage();
+			let verifier = ChainVerifier::new(storage);
 			lsync.verification_work_sender = Some(verification_work_sender);
 			lsync.verification_worker_thread = Some(thread::Builder::new()
 				.name("Sync verification thread".to_string())
 				.spawn(move || {
-					SynchronizationClient::verification_worker_proc(csync, storage, verification_work_receiver)
+					SynchronizationClient::verification_worker_proc(csync, verifier, verification_work_receiver)
 				})
 				.expect("Error creating verification thread"));
 		}
@@ -534,6 +543,11 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			chain: self.chain.read().information(),
 			orphaned: self.orphaned_blocks.len(),
 		}
+	}
+
+	/// Get configuration parameters.
+	pub fn config<'a>(&'a self) -> &'a Config {
+		&self.config
 	}
 
 	/// Process new blocks inventory
@@ -895,11 +909,32 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	}
 
 	/// Thread procedure for handling verification tasks
-	fn verification_worker_proc(sync: Arc<Mutex<Self>>, storage: Arc<db::Store>, work_receiver: Receiver<VerificationTask>) {
-		let verifier = ChainVerifier::new(storage);
+	fn verification_worker_proc(sync: Arc<Mutex<Self>>, mut verifier: ChainVerifier, work_receiver: Receiver<VerificationTask>) {
+		let mut parameters_change_steps = Some(0);
 		while let Ok(task) = work_receiver.recv() {
 			match task {
 				VerificationTask::VerifyBlock(block) => {
+					// change verifier parameters, if needed
+					if let Some(steps_left) = parameters_change_steps {
+						if steps_left == 0 {
+							let sync = sync.lock();
+							let config = sync.config();
+							let best_storage_block = sync.chain.read().best_storage_block();
+
+							let is_bip65_active = best_storage_block.number >= config.consensus_params.bip65_height;
+							verifier = verifier.verify_clocktimeverify(is_bip65_active);
+
+							if is_bip65_active {
+								parameters_change_steps = None;
+							} else {
+								parameters_change_steps = Some(config.consensus_params.bip65_height - best_storage_block.number);
+							}
+						} else {
+							parameters_change_steps = Some(steps_left - 1);
+						}
+					}
+
+					// verify block
 					match verifier.verify(&block) {
 						Ok(_chain) => {
 							sync.lock().on_block_verification_success(block)
@@ -938,6 +973,7 @@ pub mod tests {
 	use parking_lot::{Mutex, RwLock};
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, RepresentH256};
+	use message::common::{Magic, ConsensusParams};
 	use super::{Client, Config, SynchronizationClient};
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
@@ -961,7 +997,7 @@ pub mod tests {
 		};
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = DummyTaskExecutor::new();
-		let config = Config { threads_num: 1, skip_verification: true };
+		let config = Config { consensus_params: ConsensusParams::with_magic(Magic::Mainnet), threads_num: 1, skip_verification: true };
 
 		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain.clone());
 		(event_loop, handle, executor, chain, client)

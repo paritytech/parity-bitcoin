@@ -71,5 +71,10 @@ impl VerificationFlags {
 		self.verify_p2sh = value;
 		self
 	}
+
+	pub fn verify_clocktimeverify(mut self, value: bool) -> Self {
+		self.verify_clocktimeverify = value;
+		self
+	}
 }
 
