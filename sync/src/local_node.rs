@@ -112,6 +112,11 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 	pub fn on_peer_getheaders(&self, peer_index: usize, message: types::GetHeaders) {
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
 
+		// do not serve getheaders requests until we are synchronized
+		if self.client.lock().state().is_synchronizing() {
+			return;
+		}
+
 		// simulating bitcoind for passing tests: if we are in nearly-saturated state
 		// and peer, which has just provided a new blocks to us, is asking for headers
 		// => do not serve getheaders until we have fully process his blocks + wait until headers are served before returning
