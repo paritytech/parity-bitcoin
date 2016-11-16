@@ -258,6 +258,7 @@ mod tests {
 		fn send_get_block_txn(&self, _message: &types::GetBlockTxn) {}
 		fn send_block_txn(&self, _message: &types::BlockTxn) {}
 		fn send_notfound(&self, _message: &types::NotFound, _id: u32, _is_final: bool) {}
+		fn ignored(&self, _id: u32) {}
 	}
 
 	fn create_local_node() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor>>) {

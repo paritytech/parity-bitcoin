@@ -619,7 +619,7 @@ pub mod tests {
 		let (_, executor, server) = create_synchronization_server();
 		// when asking for blocks hashes
 		let genesis_block_hash = test_data::genesis().hash();
-		let dummy_id = 0;
+		let dummy_id = 5;
 		server.serve_getblocks(0, types::GetBlocks {
 			version: 0,
 			block_locator_hashes: vec![genesis_block_hash.clone()],
@@ -627,7 +627,7 @@ pub mod tests {
 		}, dummy_id);
 		// => no response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
-		assert_eq!(tasks, vec![]);
+		assert_eq!(tasks, vec![Task::Ignore(0, dummy_id)]);
 	}
 
 	#[test]
@@ -655,7 +655,7 @@ pub mod tests {
 		let (_, executor, server) = create_synchronization_server();
 		// when asking for blocks hashes
 		let genesis_block_hash = test_data::genesis().hash();
-		let dummy_id = 0;
+		let dummy_id = 6;
 		server.serve_getheaders(0, types::GetHeaders {
 			version: 0,
 			block_locator_hashes: vec![genesis_block_hash.clone()],
@@ -663,7 +663,7 @@ pub mod tests {
 		}, dummy_id);
 		// => no response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
-		assert_eq!(tasks, vec![]);
+		assert_eq!(tasks, vec![Task::Ignore(0, dummy_id)]);
 	}
 
 	#[test]
@@ -689,11 +689,11 @@ pub mod tests {
 	fn server_mempool_do_not_responds_inventory_when_empty_memory_pool() {
 		let (_, executor, server) = create_synchronization_server();
 		// when asking for memory pool transactions ids
-		let dummy_id = 0;
+		let dummy_id = 9;
 		server.serve_mempool(0, dummy_id);
 		// => no response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
-		assert_eq!(tasks, vec![]);
+		assert_eq!(tasks, vec![Task::Ignore(0, dummy_id)]);
 	}
 
 	#[test]
