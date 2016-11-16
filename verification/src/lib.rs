@@ -50,6 +50,10 @@ pub enum Error {
 	/// Maximum sigops operations exceeded - will not provide how much it was in total
 	/// since it stops counting once `MAX_BLOCK_SIGOPS` is reached
 	MaximumSigops,
+	/// Coinbase signature is not in the range 2-100
+	CoinbaseSignatureLength(usize),
+	/// Block size is invalid
+	Size(usize),
 }
 
 #[derive(Debug, PartialEq)]

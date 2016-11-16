@@ -80,7 +80,7 @@ pub struct Storage {
 	best_block: RwLock<Option<BestBlock>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MetaError {
 	UnsupportedVersion,
 }
@@ -92,8 +92,36 @@ pub enum Error {
 	DB(String),
 	/// Io error
 	Io(std::io::Error),
-	/// Invalid meta info
+	/// Invalid meta info (while opening the database)
 	Meta(MetaError),
+	/// Database blockchain consistency error
+	Consistency(ConsistencyError),
+}
+
+impl Error {
+	fn unknown_hash(h: &H256) -> Self {
+		Error::Consistency(ConsistencyError::Unknown(h.clone()))
+	}
+
+	fn unknown_number(n: u32) -> Self {
+		Error::Consistency(ConsistencyError::UnknownNumber(n))
+	}
+
+	fn double_spend(h: &H256) -> Self {
+		Error::Consistency(ConsistencyError::DoubleSpend(h.clone()))
+	}
+
+	fn not_main(h: &H256) -> Self {
+		Error::Consistency(ConsistencyError::NotMain(h.clone()))
+	}
+
+	fn reorganize(h: &H256) -> Self {
+		Error::Consistency(ConsistencyError::Reorganize(h.clone()))
+	}
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ConsistencyError {
 	/// Unknown hash
 	Unknown(H256),
 	/// Unknown number
@@ -104,8 +132,12 @@ pub enum Error {
 	ForkTooLong,
 	/// Main chain block transaction attempts to double-spend
 	DoubleSpend(H256),
+	/// Transaction tries to spend
+	UnknownSpending(H256),
 	/// Chain has no best block
 	NoBestBlock,
+	/// Failed reorganization caused by block
+	Reorganize(H256),
 }
 
 impl From<String> for Error {
@@ -305,7 +337,7 @@ impl Storage {
 				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
 						if meta.is_spent(input.previous_output.index as usize) {
-							return Err(Error::DoubleSpend(input.previous_output.hash.clone()));
+							return Err(Error::double_spend(&input.previous_output.hash));
 						}
 
 						meta.note_used(input.previous_output.index as usize);
@@ -314,14 +346,13 @@ impl Storage {
 					None => false,
 				} {
 					let mut meta =
-						self.transaction_meta(&input.previous_output.hash)
-							.unwrap_or_else(|| panic!(
-								"No transaction metadata for {}! Corrupted DB? Reindex?",
-								&input.previous_output.hash
-							));
+						try!(
+							self.transaction_meta(&input.previous_output.hash)
+								.ok_or(Error::Consistency(ConsistencyError::UnknownSpending(input.previous_output.hash.clone())))
+						);
 
 					if meta.is_spent(input.previous_output.index as usize) {
-						return Err(Error::DoubleSpend(input.previous_output.hash.clone()));
+						return Err(Error::double_spend(&input.previous_output.hash));
 					}
 
 					meta.note_used(input.previous_output.index as usize);
@@ -344,7 +375,7 @@ impl Storage {
 		trace!(target: "reorg", "Decanonizing block {}", hash);
 
 		// ensure that block is of the main chain
-		try!(self.block_number(hash).ok_or(Error::NotMain(hash.clone())));
+		try!(self.block_number(hash).ok_or(Error::not_main(hash)));
 
 		// only canonical blocks have numbers, so remove this number entry for the hash
 		context.db_transaction.delete(Some(COL_BLOCK_NUMBERS), &**hash);
@@ -371,6 +402,8 @@ impl Storage {
 					let mut meta =
 						self.transaction_meta(&input.previous_output.hash)
 							.unwrap_or_else(|| panic!(
+								// decanonization should always have meta
+								// because block could not have made canonical without writing meta
 								"No transaction metadata for {}! Corrupted DB? Reindex?",
 								&input.previous_output.hash
 							));
@@ -389,7 +422,7 @@ impl Storage {
 
 	/// Returns the height where the fork occurred and chain up to this place (not including last canonical hash)
 	fn fork_route(&self, max_route: usize, hash: &H256) -> Result<(u32, Vec<H256>), Error> {
-		let header = try!(self.block_header_by_hash(hash).ok_or(Error::Unknown(hash.clone())));
+		let header = try!(self.block_header_by_hash(hash).ok_or(Error::unknown_hash(hash)));
 
 		// only main chain blocks has block numbers
 		// so if it has, it is not a fork and we return empty route
@@ -405,10 +438,10 @@ impl Storage {
 				return Ok((number, result));
 			}
 			result.push(next_hash.clone());
-			next_hash = try!(self.block_header_by_hash(&next_hash).ok_or(Error::Unknown(hash.clone())))
+			next_hash = try!(self.block_header_by_hash(&next_hash).ok_or(Error::unknown_hash(hash)))
 				.previous_header_hash;
 		}
-		Err(Error::ForkTooLong)
+		Err(Error::Consistency(ConsistencyError::ForkTooLong))
 	}
 
 	fn best_number(&self) -> Option<u32> {
@@ -460,11 +493,11 @@ impl Storage {
 			return Ok(None);
 		}
 
-		let mut now_best = try!(self.best_number().ok_or(Error::NoBestBlock));
+		let mut now_best = try!(self.best_number().ok_or(Error::Consistency(ConsistencyError::NoBestBlock)));
 
 		// decanonizing main chain to the split point
 		loop {
-			let next_decanonize = try!(self.block_hash(now_best).ok_or(Error::UnknownNumber(now_best)));
+			let next_decanonize = try!(self.block_hash(now_best).ok_or(Error::unknown_number(now_best)));
 			try!(self.decanonize_block(context, &next_decanonize));
 
 			now_best -= 1;
@@ -591,16 +624,49 @@ impl Store for Storage {
 		// the block does not continue the main chain
 		// but can cause reorganization here
 		// this can canonize the block parent if block parent + this block is longer than the main chain
-		else if let Some((reorg_number, _)) = self.maybe_reorganize(&mut context, &block.header().previous_header_hash).unwrap_or(None) {
-			// if so, we have new best main chain block
-			new_best_number = reorg_number + 1;
-			new_best_hash = block_hash;
+		else {
+			match self.maybe_reorganize(&mut context, &block.header().previous_header_hash) {
+				Ok(Some((reorg_number, _))) => {
+					// if so, we have new best main chain block
+					new_best_number = reorg_number + 1;
+					new_best_hash = block_hash;
 
-			// and we canonize it also by provisioning transactions
-			try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
-			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
-			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&new_best_hash));
-			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&new_best_hash), new_best_number);
+					// and we canonize it also by provisioning transactions
+					try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
+					context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
+					context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&new_best_hash));
+					context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&new_best_hash), new_best_number);
+				},
+				Err(Error::Consistency(consistency_error)) => {
+					match consistency_error {
+						ConsistencyError::DoubleSpend(hash) => {
+							warn!(target: "reorg", "Failed to reorganize to {} due to double-spend at {}", &block_hash, &hash);
+							// return without any commit
+							return Err(Error::reorganize(&hash));
+						},
+						ConsistencyError::UnknownSpending(hash) => {
+							warn!(target: "reorg", "Failed to reorganize to {} due to spending unknown transaction {}", &block_hash, &hash);
+							// return without any commit
+							return Err(Error::reorganize(&hash));
+						},
+						ConsistencyError::Unknown(hash) => {
+							// this is orphan block inserted or disconnected chain head updated, we allow that (by now)
+							// so it is no-op
+							warn!(target: "reorg", "Disconnected chain head {} updated with {}", &hash, &block_hash);
+						},
+						_ => {
+							// we don't allow other errors on side chain/orphans
+							return Err(Error::Consistency(consistency_error))
+						}
+					}
+				},
+				Err(e) => {
+					return Err(e)
+				},
+				Ok(None) => {
+					// reorganize didn't happen but the block is ok, no-op here
+				}
+			}
 		}
 
 		// we always update best hash even if it is not changed
@@ -655,7 +721,7 @@ impl Store for Storage {
 #[cfg(test)]
 mod tests {
 
-	use super::{Storage, Store, UpdateContext};
+	use super::{Storage, Store, UpdateContext, Error, ConsistencyError};
 	use devtools::RandomTempPath;
 	use chain::{Block, RepresentH256};
 	use super::super::{BlockRef, BlockLocation};
@@ -1261,6 +1327,46 @@ mod tests {
 		let location = store.accepted_location(test_data::block_h2().header());
 
 		assert_eq!(None, location);
+	}
+
+	#[test]
+	fn double_spend() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let block = test_data::block_builder()
+			.header().parent(genesis.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase.clone()).build()
+				.build()
+			.build();
+
+		store.insert_block(&block).expect("inserting first block in the double spend test should not fail");
+
+		let _dup_block = test_data::block_builder()
+			.header().parent(block.hash()).build()
+			.transaction().coinbase().build()
+			.transaction()
+				.input().hash(genesis_coinbase.clone()).build()
+				.build()
+			.build();
+
+		let insert_result = store.insert_block(&block);
+		if insert_result.is_ok() { panic!("Insert should fail because of the double-spend"); }
+
+		let _ = insert_result.map_err(|e| {
+			let should_be = ConsistencyError::DoubleSpend(genesis_coinbase);
+
+			if let Error::Consistency(consistency_error) = e {
+				assert_eq!(should_be, consistency_error, "Store should return double spend consistency return");
+			}
+			else { panic!("Insert should fail because of the double-spend"); }
+		});
 	}
 
 	#[test]

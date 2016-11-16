@@ -12,13 +12,14 @@ use futures_cpupool::CpuPool;
 use linked_hash_map::LinkedHashMap;
 use db;
 use chain::{Block, BlockHeader, RepresentH256};
+use message::common::ConsensusParams;
 use primitives::hash::H256;
 use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers::{Information as PeersInformation};
 use synchronization_chain::{Chain, ChainRef, BlockState, HeadersIntersection};
 #[cfg(test)]
 use synchronization_chain::{Information as ChainInformation};
-use verification::{ChainVerifier, Error as VerificationError, Verify};
+use verification::{ChainVerifier, Verify};
 use synchronization_executor::{Task, TaskExecutor};
 use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchronization_peers_inventory,
 	manage_unknown_orphaned_blocks, MANAGEMENT_INTERVAL_MS, ManagePeersConfig, ManageUnknownBlocksConfig};
@@ -186,13 +187,14 @@ enum VerificationTask {
 pub trait Client : Send + 'static {
 	fn best_block(&self) -> db::BestBlock;
 	fn state(&self) -> State;
-	fn on_new_blocks_inventory(&mut self, peer_index: usize, peer_hashes: Vec<H256>);
+	fn on_new_blocks_inventory(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
 	fn on_new_blocks_headers(&mut self, peer_index: usize, blocks_headers: Vec<BlockHeader>);
+	fn on_peer_blocks_notfound(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
 	fn on_peer_block(&mut self, peer_index: usize, block: Block);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn get_peers_nearly_blocks_waiter(&mut self, peer_index: usize) -> (bool, Option<Arc<PeersBlocksWaiter>>);
 	fn on_block_verification_success(&mut self, block: Block);
-	fn on_block_verification_error(&mut self, err: &VerificationError, hash: &H256);
+	fn on_block_verification_error(&mut self, err: &str, hash: &H256);
 }
 
 /// Synchronization peer blocks waiter
@@ -206,14 +208,18 @@ pub struct PeersBlocksWaiter {
 
 /// Synchronization client configuration options.
 pub struct Config {
+	/// Consensus-related parameters.
+	pub consensus_params: ConsensusParams,
 	/// Number of threads to allocate in synchronization CpuPool.
 	pub threads_num: usize,
-	/// Do not verify incoming blocks before inserting to db.
+/// Do not verify incoming blocks before inserting to db.
 	pub skip_verification: bool,
 }
 
 /// Synchronization client.
 pub struct SynchronizationClient<T: TaskExecutor> {
+	/// Synchronization configuration.
+	config: Config,
 	/// Synchronization state.
 	state: State,
 	/// Cpu pool.
@@ -240,9 +246,10 @@ pub struct SynchronizationClient<T: TaskExecutor> {
 	verifying_blocks_waiters: HashMap<usize, (HashSet<H256>, Option<Arc<PeersBlocksWaiter>>)>,
 }
 
-impl Default for Config {
-	fn default() -> Self {
+impl Config {
+	pub fn with_consensus_params(consensus_params: ConsensusParams) -> Self {
 		Config {
+			consensus_params: consensus_params,
 			threads_num: 4,
 			skip_verification: false,
 		}
@@ -358,6 +365,25 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 		self.execute_synchronization_tasks(None);
 	}
 
+	/// When peer has no blocks
+	fn on_peer_blocks_notfound(&mut self, peer_index: usize, blocks_hashes: Vec<H256>) {
+		if let Some(requested_blocks) = self.peers.get_blocks_tasks(peer_index) {
+			// check if peer has responded with notfound to requested blocks
+			let notfound_blocks: HashSet<H256> = blocks_hashes.into_iter().collect();
+			if requested_blocks.intersection(&notfound_blocks).nth(0).is_none() {
+				// if notfound some other blocks => just ignore the message
+				return;
+			}
+
+			// for now, let's exclude peer from synchronization - we are relying on full nodes for synchronization
+			let removed_tasks = self.peers.reset_blocks_tasks(peer_index);
+			self.peers.unuseful_peer(peer_index);
+
+			// if peer has had some blocks tasks, rerequest these blocks
+			self.execute_synchronization_tasks(Some(removed_tasks));
+		}
+	}
+
 	/// Process new block.
 	fn on_peer_block(&mut self, peer_index: usize, block: Block) {
 		let block_hash = block.hash();
@@ -404,7 +430,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 	fn on_block_verification_success(&mut self, block: Block) {
 		let hash = block.hash();
 		// insert block to the storage
-		{
+		match {
 			let mut chain = self.chain.write();
 
 			// remove block from verification queue
@@ -413,19 +439,30 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 			if chain.forget_with_state_leave_header(&hash, BlockState::Verifying) != HashPosition::Missing {
 				// block was in verification queue => insert to storage
 				chain.insert_best_block(hash.clone(), block)
-					.expect("Error inserting to db.");
+			} else {
+				Ok(())
+			}
+		} {
+			Ok(_) => {
+				// awake threads, waiting for this block insertion
+				self.awake_waiting_threads(&hash);
+
+				// continue with synchronization
+				self.execute_synchronization_tasks(None);
+			},
+			Err(db::Error::Consistency(e)) => {
+				// process as verification error
+				self.on_block_verification_error(&format!("{:?}", db::Error::Consistency(e)), &hash);
+			},
+			Err(e) => {
+				// process as irrecoverable failure
+				panic!("Block {:?} insertion failed with error {:?}", hash, e);
 			}
 		}
-
-		// awake threads, waiting for this block insertion
-		self.awake_waiting_threads(&hash);
-
-		// continue with synchronization
-		self.execute_synchronization_tasks(None);
 	}
 
 	/// Process failed block verification
-	fn on_block_verification_error(&mut self, err: &VerificationError, hash: &H256) {
+	fn on_block_verification_error(&mut self, err: &str, hash: &H256) {
 		warn!(target: "sync", "Block {:?} verification failed with error {:?}", hash, err);
 
 		{
@@ -447,6 +484,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	/// Create new synchronization window
 	pub fn new(config: Config, handle: &Handle, executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
+		let skip_verification = config.skip_verification;
 		let sync = Arc::new(Mutex::new(
 			SynchronizationClient {
 				state: State::Saturated,
@@ -461,19 +499,21 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 				verification_worker_thread: None,
 				verifying_blocks_by_peer: HashMap::new(),
 				verifying_blocks_waiters: HashMap::new(),
+				config: config,
 			}
 		));
 
-		if !config.skip_verification {
+		if !skip_verification {
 			let (verification_work_sender, verification_work_receiver) = channel();
 			let csync = sync.clone();
 			let mut lsync = sync.lock();
 			let storage = chain.read().storage();
+			let verifier = ChainVerifier::new(storage);
 			lsync.verification_work_sender = Some(verification_work_sender);
 			lsync.verification_worker_thread = Some(thread::Builder::new()
 				.name("Sync verification thread".to_string())
 				.spawn(move || {
-					SynchronizationClient::verification_worker_proc(csync, storage, verification_work_receiver)
+					SynchronizationClient::verification_worker_proc(csync, verifier, verification_work_receiver)
 				})
 				.expect("Error creating verification thread"));
 		}
@@ -523,6 +563,11 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			chain: self.chain.read().information(),
 			orphaned: self.orphaned_blocks.len(),
 		}
+	}
+
+	/// Get configuration parameters.
+	pub fn config<'a>(&'a self) -> &'a Config {
+		&self.config
 	}
 
 	/// Process new blocks inventory
@@ -884,17 +929,38 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	}
 
 	/// Thread procedure for handling verification tasks
-	fn verification_worker_proc(sync: Arc<Mutex<Self>>, storage: Arc<db::Store>, work_receiver: Receiver<VerificationTask>) {
-		let verifier = ChainVerifier::new(storage);
+	fn verification_worker_proc(sync: Arc<Mutex<Self>>, mut verifier: ChainVerifier, work_receiver: Receiver<VerificationTask>) {
+		let mut parameters_change_steps = Some(0);
 		while let Ok(task) = work_receiver.recv() {
 			match task {
 				VerificationTask::VerifyBlock(block) => {
+					// change verifier parameters, if needed
+					if let Some(steps_left) = parameters_change_steps {
+						if steps_left == 0 {
+							let sync = sync.lock();
+							let config = sync.config();
+							let best_storage_block = sync.chain.read().best_storage_block();
+
+							let is_bip65_active = best_storage_block.number >= config.consensus_params.bip65_height;
+							verifier = verifier.verify_clocktimeverify(is_bip65_active);
+
+							if is_bip65_active {
+								parameters_change_steps = None;
+							} else {
+								parameters_change_steps = Some(config.consensus_params.bip65_height - best_storage_block.number);
+							}
+						} else {
+							parameters_change_steps = Some(steps_left - 1);
+						}
+					}
+
+					// verify block
 					match verifier.verify(&block) {
 						Ok(_chain) => {
 							sync.lock().on_block_verification_success(block)
 						},
-						Err(err) => {
-							sync.lock().on_block_verification_error(&err, &block.hash())
+						Err(e) => {
+							sync.lock().on_block_verification_error(&format!("{:?}", e), &block.hash())
 						}
 					}
 				},
@@ -927,6 +993,7 @@ pub mod tests {
 	use parking_lot::{Mutex, RwLock};
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, RepresentH256};
+	use message::common::{Magic, ConsensusParams};
 	use super::{Client, Config, SynchronizationClient};
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
@@ -950,7 +1017,7 @@ pub mod tests {
 		};
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = DummyTaskExecutor::new();
-		let config = Config { threads_num: 1, skip_verification: true };
+		let config = Config { consensus_params: ConsensusParams::with_magic(Magic::Mainnet), threads_num: 1, skip_verification: true };
 
 		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain.clone());
 		(event_loop, handle, executor, chain, client)
@@ -1391,5 +1458,62 @@ pub mod tests {
 			let tasks = executor.lock().take_tasks();
 			assert_eq!(tasks, vec![Task::RequestBlocks(2, vec![block1.hash()])]);
 		}
+	}
+
+	#[test]
+	fn sync_after_db_insert_nonfatal_fail() {
+		// TODO: implement me
+	}
+
+	#[test]
+	fn peer_removed_from_sync_after_responding_with_requested_block_notfound() {
+		let (_, _, executor, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_new_blocks_headers(1, vec![b1.block_header.clone(), b2.block_header.clone()]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::RequestBlocks(1, vec![b1.hash(), b2.hash()])]);
+
+		assert_eq!(sync.information().peers.idle, 0);
+		assert_eq!(sync.information().peers.unuseful, 0);
+		assert_eq!(sync.information().peers.active, 1);
+
+		sync.on_peer_blocks_notfound(1, vec![b1.hash()]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1)]);
+
+		assert_eq!(sync.information().peers.idle, 0);
+		assert_eq!(sync.information().peers.unuseful, 1);
+		assert_eq!(sync.information().peers.active, 0);
+	}
+
+	#[test]
+	fn peer_not_removed_from_sync_after_responding_with_requested_block_notfound() {
+		let (_, _, executor, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_new_blocks_headers(1, vec![b1.block_header.clone(), b2.block_header.clone()]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::RequestBlocks(1, vec![b1.hash(), b2.hash()])]);
+
+		assert_eq!(sync.information().peers.idle, 0);
+		assert_eq!(sync.information().peers.unuseful, 0);
+		assert_eq!(sync.information().peers.active, 1);
+
+		sync.on_peer_blocks_notfound(1, vec![test_data::block_h170().hash()]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![]);
+
+		assert_eq!(sync.information().peers.idle, 0);
+		assert_eq!(sync.information().peers.unuseful, 0);
+		assert_eq!(sync.information().peers.active, 1);
 	}
 }

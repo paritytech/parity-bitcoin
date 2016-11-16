@@ -352,6 +352,7 @@ impl<F> TransactionInputBuilder<F> where F: Invoke<chain::TransactionInput> {
 
 	pub fn coinbase(mut self) -> Self {
 		self.output = Some(chain::OutPoint { hash: H256::from(0), index: 0xffffffff });
+		self.signature = vec![0u8; 2].into();
 		self
 	}
 
