@@ -372,7 +372,7 @@ impl Storage {
 	///   all transaction meta is removed
 	///   DOES NOT update best block
 	fn decanonize_block(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
-		trace!(target: "reorg", "Decanonizing block {}", hash);
+		trace!(target: "reorg", "Decanonizing block {}", hash.to_reversed_str());
 
 		// ensure that block is of the main chain
 		try!(self.block_number(hash).ok_or(Error::not_main(hash)));

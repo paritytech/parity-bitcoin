@@ -98,7 +98,7 @@ impl SynchronizationServer {
 			};
 
 			match server_task {
-				// `getdata` => `notfound` + `block` + ... 
+				// `getdata` => `notfound` + `block` + ...
 				Some((peer_index, ServerTask::ServeGetData(inventory))) => {
 					let mut unknown_items: Vec<InventoryVector> = Vec::new();
 					let mut new_tasks: Vec<ServerTask> = Vec::new();
@@ -279,7 +279,13 @@ impl Server for SynchronizationServer {
 
 	fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
 		if let Some(best_common_block) = self.locate_known_block_hash(message.block_locator_hashes) {
-			trace!(target: "sync", "Best common block with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);
+			trace!(
+				target: "sync",
+				"Best common block with peer#{} is block#{}: {:?}",
+				peer_index,
+				best_common_block.number,
+				best_common_block.hash.to_reversed_str(),
+			);
 			self.queue.lock().add_task(peer_index, ServerTask::ServeGetBlocks(best_common_block, message.hash_stop));
 		}
 		else {

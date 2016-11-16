@@ -599,7 +599,13 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 				let new_blocks_hashes = hashes.split_off(new_block_index);
 				let new_blocks_headers = headers.split_off(new_block_index);
 				let new_blocks_hashes_len = new_blocks_hashes.len();
-				trace!(target: "sync", "Sch. {} headers from peer#{}. First {:?}, last: {:?}", new_blocks_hashes_len, peer_index, new_blocks_hashes[0], new_blocks_hashes[new_blocks_hashes_len - 1]);
+				trace!(
+					target: "sync", "Sch. {} headers from peer#{}. First {:?}, last: {:?}",
+					new_blocks_hashes_len,
+					peer_index,
+					new_blocks_hashes[0].to_reversed_str(),
+					new_blocks_hashes[new_blocks_hashes_len - 1].to_reversed_str()
+				);
 				chain.schedule_blocks_headers(new_blocks_hashes, new_blocks_headers);
 				// remember peer as useful
 				self.peers.useful_peer(peer_index);
@@ -631,7 +637,12 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 						BlockState::Unknown => {
 							if self.state.is_synchronizing() {
 								// when synchronizing, we tend to receive all blocks in-order
-								trace!(target: "sync", "Ignoring block {} from peer#{}, because its parent is unknown and we are synchronizing", block_hash, peer_index);
+								trace!(
+									target: "sync",
+									"Ignoring block {} from peer#{}, because its parent is unknown and we are synchronizing",
+									block_hash.to_reversed_str(),
+									peer_index
+								);
 								// remove block from current queue
 								chain.forget(&block_hash);
 								// remove orphaned blocks
@@ -826,7 +837,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 				chain.information());
 		}
 
-		// finally - ask all known peers for their best blocks inventory, in case if some peer 
+		// finally - ask all known peers for their best blocks inventory, in case if some peer
 		// has lead us to the fork
 		{
 			let mut executor = self.executor.lock();
@@ -1034,7 +1045,7 @@ pub mod tests {
 
 		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain.clone());
 		(event_loop, handle, executor, chain, client)
-	} 
+	}
 
 	#[test]
 	fn synchronization_saturated_on_start() {
