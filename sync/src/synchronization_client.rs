@@ -187,8 +187,9 @@ enum VerificationTask {
 pub trait Client : Send + 'static {
 	fn best_block(&self) -> db::BestBlock;
 	fn state(&self) -> State;
-	fn on_new_blocks_inventory(&mut self, peer_index: usize, peer_hashes: Vec<H256>);
+	fn on_new_blocks_inventory(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
 	fn on_new_blocks_headers(&mut self, peer_index: usize, blocks_headers: Vec<BlockHeader>);
+	fn on_peer_blocks_notfound(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
 	fn on_peer_block(&mut self, peer_index: usize, block: Block);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn get_peers_nearly_blocks_waiter(&mut self, peer_index: usize) -> (bool, Option<Arc<PeersBlocksWaiter>>);
@@ -362,6 +363,25 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 		// now insert unknown blocks to the queue
 		self.process_new_blocks_headers(peer_index, blocks_hashes, blocks_headers);
 		self.execute_synchronization_tasks(None);
+	}
+
+	/// When peer has no blocks
+	fn on_peer_blocks_notfound(&mut self, peer_index: usize, blocks_hashes: Vec<H256>) {
+		if let Some(requested_blocks) = self.peers.get_blocks_tasks(peer_index) {
+			// check if peer has responded with notfound to requested blocks
+			let notfound_blocks: HashSet<H256> = blocks_hashes.into_iter().collect();
+			if requested_blocks.intersection(&notfound_blocks).nth(0).is_none() {
+				// if notfound some other blocks => just ignore the message
+				return;
+			}
+
+			// for now, let's exclude peer from synchronization - we are relying on full nodes for synchronization
+			let removed_tasks = self.peers.reset_blocks_tasks(peer_index);
+			self.peers.unuseful_peer(peer_index);
+
+			// if peer has had some blocks tasks, rerequest these blocks
+			self.execute_synchronization_tasks(Some(removed_tasks));
+		}
 	}
 
 	/// Process new block.
@@ -1443,5 +1463,57 @@ pub mod tests {
 	#[test]
 	fn sync_after_db_insert_nonfatal_fail() {
 		// TODO: implement me
+	}
+
+	#[test]
+	fn peer_removed_from_sync_after_responding_with_requested_block_notfound() {
+		let (_, _, executor, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_new_blocks_headers(1, vec![b1.block_header.clone(), b2.block_header.clone()]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::RequestBlocks(1, vec![b1.hash(), b2.hash()])]);
+
+		assert_eq!(sync.information().peers.idle, 0);
+		assert_eq!(sync.information().peers.unuseful, 0);
+		assert_eq!(sync.information().peers.active, 1);
+
+		sync.on_peer_blocks_notfound(1, vec![b1.hash()]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1)]);
+
+		assert_eq!(sync.information().peers.idle, 0);
+		assert_eq!(sync.information().peers.unuseful, 1);
+		assert_eq!(sync.information().peers.active, 0);
+	}
+
+	#[test]
+	fn peer_not_removed_from_sync_after_responding_with_requested_block_notfound() {
+		let (_, _, executor, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_new_blocks_headers(1, vec![b1.block_header.clone(), b2.block_header.clone()]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::RequestBlocks(1, vec![b1.hash(), b2.hash()])]);
+
+		assert_eq!(sync.information().peers.idle, 0);
+		assert_eq!(sync.information().peers.unuseful, 0);
+		assert_eq!(sync.information().peers.active, 1);
+
+		sync.on_peer_blocks_notfound(1, vec![test_data::block_h170().hash()]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![]);
+
+		assert_eq!(sync.information().peers.idle, 0);
+		assert_eq!(sync.information().peers.unuseful, 0);
+		assert_eq!(sync.information().peers.active, 1);
 	}
 }
