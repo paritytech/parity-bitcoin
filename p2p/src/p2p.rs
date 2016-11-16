@@ -9,7 +9,7 @@ use tokio_core::net::{TcpListener, TcpStream};
 use tokio_core::reactor::{Handle, Remote, Timeout, Interval};
 use abstract_ns::Resolver;
 use ns_dns_tokio::DnsResolver;
-use message::{Payload, MessageResult};
+use message::{Payload, MessageResult, Message};
 use message::common::Services;
 use net::{connect, Connections, Channel, Config as NetConfig, accept_connection, ConnectionCounter};
 use util::{NodeTable, Node, Direction};
@@ -293,7 +293,22 @@ impl Context {
 	/// Send message to a channel with given peer id.
 	pub fn send_to_peer<T>(context: Arc<Context>, peer: PeerId, payload: &T) -> IoFuture<()> where T: Payload {
 		match context.connections.channel(peer) {
-			Some(channel) => Context::send(context, channel, payload),
+			Some(channel) => {
+				let info = channel.peer_info();
+				let message = Message::new(info.magic, info.version, payload).expect("failed to create outgoing message");
+				Context::send(context, channel, message)
+			},
+			None => {
+				// peer no longer exists.
+				// TODO: should we return error here?
+				finished(()).boxed()
+			}
+		}
+	}
+
+	pub fn send_message_to_peer<T>(context: Arc<Context>, peer: PeerId, message: T) -> IoFuture<()> where T: AsRef<[u8]> + Send + 'static {
+		match context.connections.channel(peer) {
+			Some(channel) => Context::send(context, channel, message),
 			None => {
 				// peer no longer exists.
 				// TODO: should we return error here?
@@ -303,13 +318,13 @@ impl Context {
 	}
 
 	/// Send message using given channel.
-	pub fn send<T>(_context: Arc<Context>, channel: Arc<Channel>, payload: &T) -> IoFuture<()> where T: Payload {
-		trace!("Sending {} message to {}", T::command(), channel.peer_info().address);
-		channel.write_message(payload).then(move |result| {
+	pub fn send<T>(_context: Arc<Context>, channel: Arc<Channel>, message: T) -> IoFuture<()> where T: AsRef<[u8]> + Send + 'static {
+		//trace!("Sending {} message to {}", T::command(), channel.peer_info().address);
+		channel.write_message(message).then(move |result| {
 			match result {
 				Ok(_) => {
 					// successful send
-					trace!("Sent {} message to {}", T::command(), channel.peer_info().address);
+					//trace!("Sent {} message to {}", T::command(), channel.peer_info().address);
 					finished(()).boxed()
 				},
 				Err(err) => {
