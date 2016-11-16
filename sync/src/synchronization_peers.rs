@@ -120,6 +120,11 @@ impl Peers {
 			.collect()
 	}
 
+	/// Get peer tasks
+	pub fn get_blocks_tasks(&self, peer_index: usize) -> Option<HashSet<H256>> {
+		self.blocks_requests.get(&peer_index).cloned()
+	}
+
 	/// Mark peer as useful.
 	pub fn useful_peer(&mut self, peer_index: usize) {
 		// if peer is unknown => insert to idle queue
@@ -131,6 +136,20 @@ impl Peers {
 			self.unuseful.remove(&peer_index);
 			self.failures.remove(&peer_index);
 		}
+	}
+
+	/// Mark peer as unuseful.
+	pub fn unuseful_peer(&mut self, peer_index: usize) {
+		// if peer is unknown => insert to idle queue
+		// if peer is known && not useful => insert to idle queue
+		assert!(!self.blocks_requests.contains_key(&peer_index));
+		assert!(!self.blocks_requests_order.contains_key(&peer_index));
+
+		self.idle.remove(&peer_index);
+		self.unuseful.insert(peer_index);
+		self.failures.remove(&peer_index);
+		self.inventory_requests.remove(&peer_index);
+		self.inventory_requests_order.remove(&peer_index);
 	}
 
 	/// Peer has been disconnected

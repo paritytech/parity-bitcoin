@@ -4,11 +4,12 @@ use parking_lot::Mutex;
 use db;
 use chain::RepresentH256;
 use p2p::OutboundSyncConnectionRef;
-use message::common::InventoryType;
+use message::common::{InventoryType, InventoryVector};
 use message::types;
 use synchronization_client::{Client, SynchronizationClient};
 use synchronization_executor::{Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor, LocalSynchronizationTaskExecutor};
 use synchronization_server::{Server, SynchronizationServer};
+use primitives::hash::H256;
 
 pub type LocalNodeRef = Arc<LocalNode<LocalSynchronizationTaskExecutor, SynchronizationServer, SynchronizationClient<LocalSynchronizationTaskExecutor>>>;
 
@@ -83,13 +84,8 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		// (2) with 500 entries
 		// what is (1)?
 
-		// process blocks first
-		let blocks_inventory: Vec<_> = message.inventory.iter()
-			.filter(|item| item.inv_type == InventoryType::MessageBlock)
-			.map(|item| item.hash.clone())
-			.collect();
-
 		// if there are unknown blocks => start synchronizing with peer
+		let blocks_inventory = self.blocks_inventory(&message.inventory);
 		if !blocks_inventory.is_empty() {
 			self.client.lock().on_new_blocks_inventory(peer_index, blocks_inventory);
 		}
@@ -199,8 +195,18 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		trace!(target: "sync", "Got `blocktxn` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_notfound(&self, peer_index: usize, _message: types::NotFound) {
+	pub fn on_peer_notfound(&self, peer_index: usize, message: types::NotFound) {
 		trace!(target: "sync", "Got `notfound` message from peer#{}", peer_index);
+
+		let blocks_inventory = self.blocks_inventory(&message.inventory);
+		self.client.lock().on_peer_blocks_notfound(peer_index, blocks_inventory);
+	}
+
+	fn blocks_inventory(&self, inventory: &Vec<InventoryVector>) -> Vec<H256> {
+		inventory.iter()
+			.filter(|item| item.inv_type == InventoryType::MessageBlock)
+			.map(|item| item.hash.clone())
+			.collect()
 	}
 }
 
