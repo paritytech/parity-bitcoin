@@ -930,16 +930,29 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 
 	/// Thread procedure for handling verification tasks
 	fn verification_worker_proc(sync: Arc<Mutex<Self>>, mut verifier: ChainVerifier, work_receiver: Receiver<VerificationTask>) {
+		let bip16_time_border = { sync.lock().config().consensus_params.bip16_time };
+		let mut is_bip16_active = false;
 		let mut parameters_change_steps = Some(0);
+
 		while let Ok(task) = work_receiver.recv() {
 			match task {
 				VerificationTask::VerifyBlock(block) => {
+					// for changes that are not relying on block#
+					let is_bip16_active_on_block = block.block_header.time >= bip16_time_border;
+					let force_parameters_change = is_bip16_active_on_block != is_bip16_active;
+					if force_parameters_change {
+						parameters_change_steps = Some(0);
+					}
+
 					// change verifier parameters, if needed
 					if let Some(steps_left) = parameters_change_steps {
 						if steps_left == 0 {
 							let sync = sync.lock();
 							let config = sync.config();
 							let best_storage_block = sync.chain.read().best_storage_block();
+
+							is_bip16_active = is_bip16_active_on_block;
+							verifier = verifier.verify_p2sh(is_bip16_active);
 
 							let is_bip65_active = best_storage_block.number >= config.consensus_params.bip65_height;
 							verifier = verifier.verify_clocktimeverify(is_bip65_active);
