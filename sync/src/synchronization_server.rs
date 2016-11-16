@@ -368,7 +368,7 @@ impl Server for SynchronizationServer {
 
 	fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders, id: u32) {
 		if let Some(best_common_block) = self.locate_known_block_header(message.block_locator_hashes) {
-			trace!(target: "sync", "Best common block header with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);
+			trace!(target: "sync", "Best common block header with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash.to_reversed_str());
 			let task = IndexedServerTask::new(ServerTask::ServeGetHeaders(best_common_block, message.hash_stop), ServerTaskIndex::Final(id));
 			self.queue.lock().add_task(peer_index, task);
 		}

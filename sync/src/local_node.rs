@@ -132,11 +132,11 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 	}
 
 	pub fn on_peer_transaction(&self, peer_index: usize, message: types::Tx) {
-		trace!(target: "sync", "Got `transaction` message from peer#{}. Transaction hash: {}", peer_index, message.transaction.hash());
+		trace!(target: "sync", "Got `transaction` message from peer#{}. Transaction hash: {}", peer_index, message.transaction.hash().to_reversed_str());
 	}
 
 	pub fn on_peer_block(&self, peer_index: usize, message: types::Block) {
-		trace!(target: "sync", "Got `block` message from peer#{}. Block hash: {}", peer_index, message.block.hash());
+		trace!(target: "sync", "Got `block` message from peer#{}. Block hash: {}", peer_index, message.block.hash().to_reversed_str());
 
 		// try to process new block
 		self.client.lock().on_peer_block(peer_index, message.block);
