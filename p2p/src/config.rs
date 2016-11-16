@@ -20,6 +20,6 @@ pub struct Config {
 	pub peers: Vec<SocketAddr>,
 	/// Connect to these nodes to retrieve peer addresses, and disconnect.
 	pub seeds: Vec<String>,
-	/// p2p module cache directory.
+	/// p2p/nodes.csv file path
 	pub node_table_path: PathBuf,
 }

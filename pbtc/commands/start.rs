@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use sync::create_sync_connection_factory;
-use message::{Services, Magic};
+use message::Services;
 use util::{open_db, init_db, node_table_path};
 use {config, p2p};
 
@@ -10,17 +10,12 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 	let db = open_db(&cfg);
 	try!(init_db(&cfg, &db));
 
-	let p2p_threads = match cfg.magic {
-		Magic::Regtest => 1,
-		Magic::Testnet | Magic::Mainnet => 4,
-	};
-
 	let p2p_cfg = p2p::Config {
-		threads: p2p_threads,
+		threads: cfg.p2p_threads,
 		protocol_minimum: 70001,
 		protocol_maximum: 70017,
-		inbound_connections: 10,
-		outbound_connections: 10,
+		inbound_connections: cfg.inbound_connections,
+		outbound_connections: cfg.outbound_connections,
 		connection: p2p::NetConfig {
 			magic: cfg.magic,
 			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
