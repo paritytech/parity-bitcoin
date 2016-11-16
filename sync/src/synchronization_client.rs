@@ -335,7 +335,13 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 			if {
 				self.chain.read().block_state(&header0.previous_header_hash) == BlockState::Unknown
 			} {
-				warn!(target: "sync", "Previous header of the first header from peer#{} `headers` message is unknown. First: {:?}. Previous: {:?}", peer_index, header0.hash(), header0.previous_header_hash);
+				warn!(
+					target: "sync",
+					"Previous header of the first header from peer#{} `headers` message is unknown. First: {:?}. Previous: {:?}",
+					peer_index,
+					header0.hash().to_reversed_str(),
+					header0.previous_header_hash.to_reversed_str()
+				);
 				return;
 			}
 
@@ -463,7 +469,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 
 	/// Process failed block verification
 	fn on_block_verification_error(&mut self, err: &str, hash: &H256) {
-		warn!(target: "sync", "Block {:?} verification failed with error {:?}", hash, err);
+		warn!(target: "sync", "Block {:?} verification failed with error {:?}", hash.to_reversed_str(), err);
 
 		{
 			let mut chain = self.chain.write();
