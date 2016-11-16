@@ -64,6 +64,11 @@ pub trait Store : Send + Sync {
 		self.block_header_bytes(block_ref).is_some()
 	}
 
+	/// returns true if store contains given transaction
+	fn contains_transaction(&self, hash: &H256) -> bool {
+		self.transaction(hash).is_some()
+	}
+
 	/// insert block in the storage
 	fn insert_block(&self, block: &chain::Block) -> Result<(), Error>;
 
