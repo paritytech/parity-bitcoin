@@ -5,13 +5,9 @@ use chain::RepresentH256;
 use {db, APP_INFO};
 use config::Config;
 
-pub fn open_db(cfg: &Config) -> Arc<db::Store> {
-	if cfg.use_disk_database {
-		let db_path = app_dir(AppDataType::UserData, &APP_INFO, "db").expect("Failed to get app dir");
-		Arc::new(db::Storage::new(db_path).expect("Failed to open database"))
-	} else {
-		Arc::new(db::TestStorage::default())
-	}
+pub fn open_db(_cfg: &Config) -> Arc<db::Store> {
+	let db_path = app_dir(AppDataType::UserData, &APP_INFO, "db").expect("Failed to get app dir");
+	Arc::new(db::Storage::new(db_path).expect("Failed to open database"))
 }
 
 pub fn node_table_path() -> PathBuf {
