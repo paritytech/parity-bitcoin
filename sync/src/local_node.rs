@@ -203,7 +203,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		self.client.lock().on_peer_blocks_notfound(peer_index, blocks_inventory);
 	}
 
-	fn blocks_inventory(&self, inventory: &Vec<InventoryVector>) -> Vec<H256> {
+	fn blocks_inventory(&self, inventory: &[InventoryVector]) -> Vec<H256> {
 		inventory.iter()
 			.filter(|item| item.inv_type == InventoryType::MessageBlock)
 			.map(|item| item.hash.clone())

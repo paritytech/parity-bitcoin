@@ -111,7 +111,7 @@ pub fn manage_unknown_orphaned_blocks(config: &ManageUnknownBlocksConfig, unknow
 	}
 
 	// remove unknown blocks
-	for unknown_block in unknown_to_remove.iter() {
+	for unknown_block in &unknown_to_remove {
 		unknown_blocks.remove(unknown_block);
 	}
 

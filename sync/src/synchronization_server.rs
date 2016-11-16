@@ -58,8 +58,7 @@ pub enum ServerTaskIndex {
 impl ServerTaskIndex {
 	pub fn raw(&self) -> u32 {
 		match *self {
-			ServerTaskIndex::Partial(id) => id,
-			ServerTaskIndex::Final(id) => id,
+			ServerTaskIndex::Partial(id) | ServerTaskIndex::Final(id) => id,
 		}
 	}
 
@@ -282,9 +281,9 @@ impl SynchronizationServer {
 		// `max_hashes` hashes after best_block.number OR hash_stop OR blockchain end
 		(first_block_number..last_block_number).into_iter()
 			.map(|number| chain.block_hash(number))
-			.take_while(|ref hash| hash.is_some())
+			.take_while(|hash| hash.is_some())
 			.map(|hash| hash.unwrap())
-			.take_while(|ref hash| *hash != hash_stop)
+			.take_while(|hash| hash != hash_stop)
 			.collect()
 	}
 
@@ -300,16 +299,16 @@ impl SynchronizationServer {
 		// `max_hashes` hashes after best_block.number OR hash_stop OR blockchain end
 		(first_block_number..last_block_number).into_iter()
 			.map(|number| chain.block_header_by_number(number))
-			.take_while(|ref header| header.is_some())
+			.take_while(|header| header.is_some())
 			.map(|header| header.unwrap())
-			.take_while(|ref header| &header.hash() != hash_stop)
+			.take_while(|header| &header.hash() != hash_stop)
 			.collect()
 	}
 
 
 	fn locate_best_known_block_hash(chain: &ChainRef, hash: &H256) -> Option<db::BestBlock> {
 		let chain = chain.read();
-		match chain.block_number(&hash) {
+		match chain.block_number(hash) {
 			Some(number) => Some(db::BestBlock {
 				number: number,
 				hash: hash.clone(),
@@ -317,7 +316,7 @@ impl SynchronizationServer {
 			// block with hash is not in the main chain (block_number has returned None)
 			// but maybe it is in some fork? if so => we should find intersection with main chain
 			// and this would be our best common block
-			None => chain.block_header_by_hash(&hash)
+			None => chain.block_header_by_hash(hash)
 				.and_then(|block| {
 					let mut current_block_hash = block.previous_header_hash;
 					loop {

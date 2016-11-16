@@ -296,9 +296,9 @@ impl Chain {
 		match self.hash_chain.remove_at(VERIFYING_QUEUE, hash) {
 			HashPosition::Missing => match self.hash_chain.remove_at(REQUESTED_QUEUE, hash) {
 				HashPosition::Missing => self.hash_chain.remove_at(SCHEDULED_QUEUE, hash),
-				position @ _ => position,
+				position => position,
 			},
-			position @ _ => position,
+			position => position,
 		}
 	}
 
@@ -338,14 +338,14 @@ impl Chain {
 	}
 
 	/// Intersect chain with inventory
-	pub fn intersect_with_headers(&self, hashes: &Vec<H256>, headers: &Vec<BlockHeader>) -> HeadersIntersection {
+	pub fn intersect_with_headers(&self, hashes: &[H256], headers: &[BlockHeader]) -> HeadersIntersection {
 		let hashes_len = hashes.len();
 		assert!(hashes_len != 0 && hashes.len() == headers.len());
 
 		// giving that headers are ordered
 		let (is_first_known, first_state) = match self.block_state(&hashes[0]) {
 			BlockState::Unknown => (false, self.block_state(&headers[0].previous_header_hash)),
-			state @ _ => (true, state),
+			state => (true, state),
 		};
 		match first_state {
 			// if first block of inventory is unknown && its parent is unknonw => all other blocks are also unknown
@@ -353,32 +353,32 @@ impl Chain {
 				HeadersIntersection::NoKnownBlocks(0)
 			},
 			// else if first block is known
-			first_block_state @ _ => match self.block_state(&hashes[hashes_len - 1]) {
+			first_block_state => match self.block_state(&hashes[hashes_len - 1]) {
 				// if last block is known to be in db => all inventory blocks are also in db
 				BlockState::Stored => {
-					HeadersIntersection::DbAllBlocksKnown 
+					HeadersIntersection::DbAllBlocksKnown
 				},
 				// if first block is known && last block is unknown but we know block before first one => intersection with queue or with db
 				BlockState::Unknown if !is_first_known => {
 					// previous block is stored => fork from stored block
 					if first_state == BlockState::Stored {
-						return HeadersIntersection::DbForkNewBlocks(0);
+						HeadersIntersection::DbForkNewBlocks(0)
 					}
 					// previous block is best block => no fork
 					else if &self.best_block().hash == &headers[0].previous_header_hash {
-						return HeadersIntersection::InMemoryMainNewBlocks(0);
+						HeadersIntersection::InMemoryMainNewBlocks(0)
 					}
 					// previous block is not a best block => fork
 					else {
-						return HeadersIntersection::InMemoryForkNewBlocks(0);
+						HeadersIntersection::InMemoryForkNewBlocks(0)
 					}
 				},
 				// if first block is known && last block is unknown => intersection with queue or with db
 				BlockState::Unknown if is_first_known => {
 					// find last known block
 					let mut previous_state = first_block_state;
-					for index in 1..hashes_len {
-						let state = self.block_state(&hashes[index]);
+					for (index, hash) in hashes.iter().enumerate().take(hashes_len).skip(1) {
+						let state = self.block_state(hash);
 						if state == BlockState::Unknown {
 							// previous block is stored => fork from stored block
 							if previous_state == BlockState::Stored {

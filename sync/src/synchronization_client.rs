@@ -258,8 +258,8 @@ impl Config {
 
 impl State {
 	pub fn is_saturated(&self) -> bool {
-		match self {
-			&State::Saturated => true,
+		match *self {
+			State::Saturated => true,
 			_ => false,
 		}
 	}
@@ -272,8 +272,8 @@ impl State {
 	}
 
 	pub fn is_nearly_saturated(&self) -> bool {
-		match self {
-			&State::NearlySaturated => true,
+		match *self {
+			State::NearlySaturated => true,
 			_ => false,
 		}
 	}
@@ -300,7 +300,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 
 	/// Get synchronization state
 	fn state(&self) -> State {
-		self.state.clone()
+		self.state
 	}
 
 	/// Try to queue synchronization of unknown blocks when new inventory is received.
@@ -318,7 +318,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 		let unknown_blocks_hashes: Vec<_> = {
 			let chain = self.chain.read();
 			blocks_hashes.into_iter()
-				.filter(|h| chain.block_state(&h) == BlockState::Unknown)
+				.filter(|h| chain.block_state(h) == BlockState::Unknown)
 				.filter(|h| !self.unknown_blocks.contains_key(h))
 				.collect()
 		};
@@ -331,10 +331,9 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 	fn on_new_blocks_headers(&mut self, peer_index: usize, blocks_headers: Vec<BlockHeader>) {
 		let blocks_hashes = {
 			// we can't process headers message if it has no link to our headers
-			let ref header0 = blocks_headers[0];
-			if {
-				self.chain.read().block_state(&header0.previous_header_hash) == BlockState::Unknown
-			} {
+			let header0 = &blocks_headers[0];
+			let unknown_state = self.chain.read().block_state(&header0.previous_header_hash) == BlockState::Unknown;
+			if unknown_state {
 				warn!(
 					target: "sync",
 					"Previous header of the first header from peer#{} `headers` message is unknown. First: {:?}. Previous: {:?}",
@@ -349,7 +348,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 			// validate blocks headers before scheduling
 			let mut blocks_hashes: Vec<H256> = Vec::with_capacity(blocks_headers.len());
 			let mut prev_block_hash = header0.previous_header_hash.clone();
-			for block_header in blocks_headers.iter() {
+			for block_header in &blocks_headers {
 				let block_header_hash = block_header.hash();
 				if block_header.previous_header_hash != prev_block_hash {
 					warn!(target: "sync", "Neighbour headers in peer#{} `headers` message are unlinked: Prev: {:?}, PrevLink: {:?}, Curr: {:?}", peer_index, prev_block_hash, block_header.previous_header_hash, block_header_hash);
@@ -476,11 +475,11 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 
 			// forget for this block and all its children
 			// headers are also removed as they all are invalid
-			chain.forget_with_children(&hash);
+			chain.forget_with_children(hash);
 		}
 
 		// awake threads, waiting for this block insertion
-		self.awake_waiting_threads(&hash);
+		self.awake_waiting_threads(hash);
 
 		// start new tasks
 		self.execute_synchronization_tasks(None);
@@ -572,7 +571,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	}
 
 	/// Get configuration parameters.
-	pub fn config<'a>(&'a self) -> &'a Config {
+	pub fn config(&self) -> &Config {
 		&self.config
 	}
 
@@ -755,11 +754,11 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			if !inventory_idle_peers.is_empty() {
 				let scheduled_hashes_len = { self.chain.read().length_of_state(BlockState::Scheduled) };
 				if scheduled_hashes_len < MAX_SCHEDULED_HASHES {
-					for inventory_peer in inventory_idle_peers.iter() {
+					for inventory_peer in &inventory_idle_peers {
 						self.peers.on_inventory_requested(*inventory_peer);
 					}
 
-					let inventory_tasks = inventory_idle_peers.into_iter().map(|p| Task::RequestBlocksHeaders(p));
+					let inventory_tasks = inventory_idle_peers.into_iter().map(Task::RequestBlocksHeaders);
 					tasks.extend(inventory_tasks);
 				}
 			}
@@ -865,7 +864,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			if let Entry::Occupied(entry) = orphaned_blocks.entry(parent_hash) {
 				let (_, orphaned) = entry.remove_entry();
 				for orphaned_hash in orphaned.keys() {
-					unknown_blocks.remove(&orphaned_hash);
+					unknown_blocks.remove(orphaned_hash);
 				}
 				queue.extend(orphaned.keys().cloned());
 				removed.extend(orphaned.into_iter());
@@ -877,16 +876,18 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 	/// Remove given orphaned blocks
 	fn remove_orphaned_blocks(&mut self, orphans_to_remove: HashSet<H256>) {
 		let parent_orphan_keys: Vec<_> = self.orphaned_blocks.keys().cloned().collect();
-		for parent_orphan_key in parent_orphan_keys.into_iter() {
+		for parent_orphan_key in parent_orphan_keys {
 			if let Entry::Occupied(mut orphan_entry) = self.orphaned_blocks.entry(parent_orphan_key.clone()) {
-				if {
+				let is_empty = {
 					let mut orphans = orphan_entry.get_mut();
 					let orphans_keys: HashSet<H256> = orphans.keys().cloned().collect();
 					for orphan_to_remove in orphans_keys.intersection(&orphans_to_remove) {
 						orphans.remove(orphan_to_remove);
 					}
 					orphans.is_empty()
-				} {
+				};
+
+				if is_empty {
 					orphan_entry.remove_entry();
 				}
 			}
