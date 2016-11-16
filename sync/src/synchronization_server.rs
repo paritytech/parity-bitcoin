@@ -89,6 +89,12 @@ impl IndexedServerTask {
 	}
 }
 
+impl IndexedServerTask {
+	fn ignore(id: u32) -> Self {
+		IndexedServerTask::new(ServerTask::Ignore, ServerTaskIndex::Final(id))
+	}
+}
+
 #[derive(Debug, PartialEq)]
 pub enum ServerTask {
 	ServeGetData(Vec<InventoryVector>),
@@ -97,6 +103,7 @@ pub enum ServerTask {
 	ServeMempool,
 	ReturnNotFound(Vec<InventoryVector>),
 	ReturnBlock(H256),
+	Ignore,
 }
 
 impl SynchronizationServer {
@@ -184,6 +191,8 @@ impl SynchronizationServer {
 							task.id = ServerTaskIndex::Final(task_id);
 						}
 						queue.lock().add_tasks(peer_index, new_tasks);
+					} else {
+						executor.lock().execute(Task::Ignore(peer_index, task_id));
 					}
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
@@ -198,6 +207,8 @@ impl SynchronizationServer {
 							hash: hash,
 						}).collect();
 						executor.lock().execute(Task::SendInventory(peer_index, inventory, indexed_task.id));
+					} else {
+						executor.lock().execute(Task::Ignore(peer_index, indexed_task.id.raw()));
 					}
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
@@ -210,6 +221,8 @@ impl SynchronizationServer {
 					if !blocks_headers.is_empty() {
 						trace!(target: "sync", "Going to respond with blocks headers with {} items to peer#{}", blocks_headers.len(), peer_index);
 						executor.lock().execute(Task::SendHeaders(peer_index, blocks_headers, indexed_task.id));
+					} else {
+						executor.lock().execute(Task::Ignore(peer_index, indexed_task.id.raw()));
 					}
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
@@ -228,6 +241,8 @@ impl SynchronizationServer {
 					if !inventory.is_empty() {
 						trace!(target: "sync", "Going to respond with {} memory-pool transactions ids to peer#{}", inventory.len(), peer_index);
 						executor.lock().execute(Task::SendInventory(peer_index, inventory, indexed_task.id));
+					} else {
+						executor.lock().execute(Task::Ignore(peer_index, indexed_task.id.raw()));
 					}
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
@@ -244,6 +259,11 @@ impl SynchronizationServer {
 						.expect("we have checked that block exists in ServeGetData; db is append-only; qed");
 					executor.lock().execute(Task::SendBlock(peer_index, block, indexed_task.id));
 					// inform that we have processed task for peer
+					queue.lock().task_processed(peer_index);
+				},
+				// ignore
+				ServerTask::Ignore => {
+					executor.lock().execute(Task::Ignore(peer_index, indexed_task.id.raw()));
 					queue.lock().task_processed(peer_index);
 				},
 			}
@@ -342,6 +362,7 @@ impl Server for SynchronizationServer {
 		}
 		else {
 			trace!(target: "sync", "No common blocks with peer#{}", peer_index);
+			self.queue.lock().add_task(peer_index, IndexedServerTask::ignore(id));
 		}
 	}
 
@@ -353,6 +374,7 @@ impl Server for SynchronizationServer {
 		}
 		else {
 			trace!(target: "sync", "No common blocks headers with peer#{}", peer_index);
+			self.queue.lock().add_task(peer_index, IndexedServerTask::ignore(id));
 		}
 	}
 

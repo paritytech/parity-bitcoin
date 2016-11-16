@@ -109,9 +109,10 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
 
 		// do not serve getheaders requests until we are synchronized
-		if self.client.lock().state().is_synchronizing() {
-			return;
-		}
+		// TODO: uncomment this, and notify p2p module about ignored request
+		//if self.client.lock().state().is_synchronizing() {
+			//return;
+		//}
 
 		// simulating bitcoind for passing tests: if we are in nearly-saturated state
 		// and peer, which has just provided a new blocks to us, is asking for headers

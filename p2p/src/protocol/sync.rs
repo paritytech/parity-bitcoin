@@ -58,6 +58,7 @@ pub trait OutboundSyncConnection : Send + Sync {
 	fn send_get_block_txn(&self, message: &types::GetBlockTxn);
 	fn send_block_txn(&self, message: &types::BlockTxn);
 	fn send_notfound(&self, message: &types::NotFound, id: u32, is_final: bool);
+	fn ignored(&self, id: u32);
 }
 
 struct OutboundSync {
@@ -152,6 +153,10 @@ impl OutboundSyncConnection for OutboundSync {
 	fn send_notfound(&self, message: &types::NotFound, id: u32, is_final: bool) {
 		self.context.send_response(message, id, is_final);
 	}
+
+	fn ignored(&self, id: u32) {
+		self.context.ignore_response(id);
+	}
 }
 
 pub struct SyncProtocol {
@@ -183,15 +188,21 @@ impl Protocol for SyncProtocol {
 		}
 		else if command == &types::GetData::command() {
 			let message: types::GetData = try!(deserialize_payload(payload, version));
-			self.inbound_connection.on_getdata(message, self.context.declare_response());
+			let id = self.context.declare_response();
+			trace!("declared response {} for request: {}", id, types::GetData::command());
+			self.inbound_connection.on_getdata(message, id);
 		}
 		else if command == &types::GetBlocks::command() {
 			let message: types::GetBlocks = try!(deserialize_payload(payload, version));
-			self.inbound_connection.on_getblocks(message, self.context.declare_response());
+			let id = self.context.declare_response();
+			trace!("declared response {} for request: {}", id, types::GetBlocks::command());
+			self.inbound_connection.on_getblocks(message, id);
 		}
 		else if command == &types::GetHeaders::command() {
 			let message: types::GetHeaders = try!(deserialize_payload(payload, version));
-			self.inbound_connection.on_getheaders(message, self.context.declare_response());
+			let id = self.context.declare_response();
+			trace!("declared response {} for request: {}", id, types::GetHeaders::command());
+			self.inbound_connection.on_getheaders(message, id);
 		}
 		else if command == &types::Tx::command() {
 			let message: types::Tx = try!(deserialize_payload(payload, version));
@@ -203,7 +214,9 @@ impl Protocol for SyncProtocol {
 		}
 		else if command == &types::MemPool::command() {
 			let message: types::MemPool = try!(deserialize_payload(payload, version));
-			self.inbound_connection.on_mempool(message, self.context.declare_response());
+			let id = self.context.declare_response();
+			trace!("declared response {} for request: {}", id, types::MemPool::command());
+			self.inbound_connection.on_mempool(message, id);
 		}
 		else if command == &types::Headers::command() {
 			let message: types::Headers = try!(deserialize_payload(payload, version));

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use bytes::Bytes;
 
 /// Queue of out-of-order responses. Each peer has it's own queue.
@@ -6,11 +6,13 @@ use bytes::Bytes;
 pub struct ResponseQueue {
 	unfinished: HashMap<u32, Vec<Bytes>>,
 	finished: HashMap<u32, Vec<Bytes>>,
+	ignored: HashSet<u32>,
 }
 
 pub enum Responses {
 	Unfinished(Vec<Bytes>),
 	Finished(Vec<Bytes>),
+	Ignored,
 }
 
 impl ResponseQueue {
@@ -25,8 +27,19 @@ impl ResponseQueue {
 		assert!(previous.is_none(), "logic error; same finished response should never be pushed twice");
 	}
 
+	pub fn push_ignored_response(&mut self, id: u32) {
+		assert!(self.ignored.insert(id), "logic error; same response should never be ignored twice");
+	}
+
 	pub fn responses(&mut self, id: u32) -> Option<Responses> {
 		self.unfinished.remove(&id).map(Responses::Unfinished)
 			.or_else(|| self.finished.remove(&id).map(Responses::Finished))
+			.or_else(|| {
+				if self.ignored.remove(&id) {
+					Some(Responses::Ignored)
+				} else {
+					None
+				}
+			})
 	}
 }

@@ -37,6 +37,9 @@ impl PeerContext {
 						self.context.spawn(send);
 					}
 				},
+				Some(Responses::Ignored) => {
+					assert!(sync.permission_for_response(next_id));
+				},
 				Some(Responses::Unfinished(messages)) => {
 					assert!(sync.is_permitted(next_id));
 					for message in messages {
@@ -67,6 +70,17 @@ impl PeerContext {
 	pub fn send_response_inline<T>(&self, payload: &T) where T: Payload {
 		let id = self.declare_response();
 		self.send_response(payload, id, true);
+	}
+
+	/// Do not wait for response with given id.
+	pub fn ignore_response(&self, id: u32) {
+		let mut sync = self.synchronizer.lock();
+		let mut queue = self.response_queue.lock();
+		if sync.permission_for_response(id) {
+			self.send_awaiting(&mut sync, &mut queue, id);
+		} else {
+			queue.push_ignored_response(id);
+		}
 	}
 
 	/// Responses are sent in order defined by synchronizer.
