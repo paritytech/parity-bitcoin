@@ -14,3 +14,6 @@ dot -Tpng > tools/graph.png tools/graph.dot
 
 # Finally let's bring back old Cargo.toml file
 patch Cargo.toml tools/workspace.diff
+
+# Now let's revert Cargo.lock to previous state
+cargo update -p pbtc
