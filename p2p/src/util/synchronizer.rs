@@ -99,8 +99,7 @@ impl ThresholdSynchronizer {
 			self.to_grant_min <= id && id < self.to_grant_max
 		} else {
 			// otherwise if is in range [min, u32::max_value()] || [0, max)
-			(self.to_grant_min <= id && id <= u32::max_value()) ||
-				id < self.to_grant_max
+			self.to_grant_min <= id || id < self.to_grant_max
 		}
 	}
 }
@@ -158,12 +157,12 @@ impl ConfigurableSynchronizer {
 	/// from last_processed response will still be granted permissions.
 	pub fn change_sync_policy(&mut self, sync: bool) {
 		let new_inner = match self.inner {
-			InnerSynchronizer::Threshold(ref s) if sync == false => {
+			InnerSynchronizer::Threshold(ref s) if !sync => {
 				InnerSynchronizer::Noop(NoopSynchronizer {
 					declared_responses: s.inner.declared_responses,
 				})
 			},
-			InnerSynchronizer::Noop(ref s) if sync == true => {
+			InnerSynchronizer::Noop(ref s) if sync => {
 				let threshold  = ThresholdSynchronizer::new(
 					s.declared_responses,
 					CONFIGURABLE_SYNCHRONIZER_THRESHOLD,

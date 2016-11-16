@@ -50,14 +50,14 @@ pub fn age(protocol_time: u32) -> i64 {
 
 pub fn block_reward_satoshi(block_height: u32) -> u64 {
 	let mut res = 50 * 100 * 1000 * 1000;
-	for _ in 0..block_height / 210000 { res = res / 2 }
+	for _ in 0..block_height / 210000 { res /= 2 }
 	res
 }
 
 pub fn transaction_sigops(transaction: &chain::Transaction) -> Result<usize, script::Error> {
 	let mut result = 0usize;
 
-	for output in transaction.outputs.iter() {
+	for output in &transaction.outputs {
 		let output_script: Script = output.script_pubkey.to_vec().into();
 		// todo: not always allow malformed output?
 		result += output_script.sigop_count(false).unwrap_or(0);
@@ -65,7 +65,7 @@ pub fn transaction_sigops(transaction: &chain::Transaction) -> Result<usize, scr
 
 	if transaction.is_coinbase() { return Ok(result); }
 
-	for input in transaction.inputs.iter() {
+	for input in &transaction.inputs {
 		let input_script: Script = input.script_sig().to_vec().into();
 		result += try!(input_script.sigop_count(false));
 	}
