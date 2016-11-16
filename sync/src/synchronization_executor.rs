@@ -7,6 +7,7 @@ use message::types;
 use primitives::hash::H256;
 use p2p::OutboundSyncConnectionRef;
 use synchronization_chain::ChainRef;
+use synchronization_server::ServerTaskIndex;
 use local_node::PeersConnections;
 
 pub type LocalSynchronizationTaskExecutorRef = Arc<Mutex<LocalSynchronizationTaskExecutor>>;
@@ -24,13 +25,15 @@ pub enum Task {
 	/// Request blocks headers using full getheaders.block_locator_hashes.
 	RequestBlocksHeaders(usize),
 	/// Send block.
-	SendBlock(usize, Block),
+	SendBlock(usize, Block, ServerTaskIndex),
 	/// Send notfound
-	SendNotFound(usize, Vec<InventoryVector>),
+	SendNotFound(usize, Vec<InventoryVector>, ServerTaskIndex),
 	/// Send inventory
-	SendInventory(usize, Vec<InventoryVector>),
+	SendInventory(usize, Vec<InventoryVector>, ServerTaskIndex),
 	/// Send headers
-	SendHeaders(usize, Vec<BlockHeader>),
+	SendHeaders(usize, Vec<BlockHeader>, ServerTaskIndex),
+	/// Notify io about ignored request
+	Ignore(usize, u32),
 }
 
 /// Synchronization tasks executor
@@ -75,7 +78,6 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					let connection = &mut *connection;
 					trace!(target: "sync", "Querying {} unknown blocks from peer#{}", getdata.inventory.len(), peer_index);
 					connection.send_getdata(&getdata);
 				}
@@ -89,53 +91,54 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					let connection = &mut *connection;
 					trace!(target: "sync", "Request blocks hashes from peer#{} using getheaders", peer_index);
 					connection.send_getheaders(&getheaders);
 				}
 			},
-			Task::SendBlock(peer_index, block) => {
+			Task::SendBlock(peer_index, block, id) => {
 				let block_message = types::Block {
 					block: block,
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					let connection = &mut *connection;
 					trace!(target: "sync", "Sending block {:?} to peer#{}", block_message.block.hash(), peer_index);
-					connection.send_block(&block_message);
+					connection.send_block(&block_message, id.raw(), id.is_final());
 				}
 			},
-			Task::SendNotFound(peer_index, unknown_inventory) => {
+			Task::SendNotFound(peer_index, unknown_inventory, id) => {
 				let notfound = types::NotFound {
 					inventory: unknown_inventory,
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					let connection = &mut *connection;
 					trace!(target: "sync", "Sending notfound to peer#{} with {} items", peer_index, notfound.inventory.len());
-					connection.send_notfound(&notfound);
+					connection.send_notfound(&notfound, id.raw(), id.is_final());
 				}
 			},
-			Task::SendInventory(peer_index, inventory) => {
+			Task::SendInventory(peer_index, inventory, id) => {
 				let inventory = types::Inv {
 					inventory: inventory,
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					let connection = &mut *connection;
 					trace!(target: "sync", "Sending inventory to peer#{} with {} items", peer_index, inventory.inventory.len());
-					connection.send_inventory(&inventory);
+					connection.send_inventory(&inventory, id.raw(), id.is_final());
 				}
 			},
-			Task::SendHeaders(peer_index, headers) => {
+			Task::SendHeaders(peer_index, headers, id) => {
 				let headers = types::Headers {
 					headers: headers,
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					let connection = &mut *connection;
 					trace!(target: "sync", "Sending headers to peer#{} with {} items", peer_index, headers.headers.len());
-					connection.send_headers(&headers);
+					connection.send_headers(&headers, id.raw(), id.is_final());
+				}
+			},
+			Task::Ignore(peer_index, id) => {
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					trace!(target: "sync", "Ignoring request from peer#{} with id {}", peer_index, id);
+					connection.ignored(id);
 				}
 			},
 		}

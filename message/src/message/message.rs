@@ -33,3 +33,9 @@ impl<T> AsRef<[u8]> for Message<T> {
 		self.bytes.as_ref()
 	}
 }
+
+impl<T> From<Message<T>> for Bytes {
+	fn from(m: Message<T>) -> Self {
+		m.bytes.into_raw()
+	}
+}
