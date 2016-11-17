@@ -224,7 +224,7 @@ impl Reorganization {
 
 #[derive(Debug)]
 pub enum BlockInsertedChain {
-    Disconnected,
+	Disconnected,
 	Main,
 	Side,
 	Rorganized(Reorganization),
@@ -546,6 +546,7 @@ impl Storage {
 		// finaly canonizing the top block we are reorganizing to
 		try!(self.canonize_block(context, now_best + 1, hash));
 		reorganization.push_canonized(&hash);
+		reorganization.height = now_best + 1;
 
 		Ok(Some(reorganization))
 	}
