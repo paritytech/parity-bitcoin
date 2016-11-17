@@ -986,7 +986,7 @@ mod tests {
 	}
 
 	#[test]
-	fn memory_pool_transactions_are_reerified_after_reorganization() {
+	fn memory_pool_transactions_are_reverified_after_reorganization() {
 		let b0 = test_data::block_builder().header().build().build();
 		let b1 = test_data::block_builder().header().nonce(1).parent(b0.hash()).build().build();
 		let b2 = test_data::block_builder().header().nonce(2).parent(b0.hash()).build().build();
