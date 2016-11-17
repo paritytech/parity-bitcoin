@@ -24,6 +24,10 @@ pub enum Task {
 	RequestBlocks(usize, Vec<H256>),
 	/// Request blocks headers using full getheaders.block_locator_hashes.
 	RequestBlocksHeaders(usize),
+	/// Request memory pool contents
+	RequestTransactions(usize, Vec<H256>),
+	/// Request memory pool contents
+	RequestMemoryPool(usize),
 	/// Send block.
 	SendBlock(usize, Block, ServerTaskIndex),
 	/// Send notfound
@@ -81,7 +85,7 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					trace!(target: "sync", "Querying {} unknown blocks from peer#{}", getdata.inventory.len(), peer_index);
 					connection.send_getdata(&getdata);
 				}
-			}
+			},
 			Task::RequestBlocksHeaders(peer_index) => {
 				let block_locator_hashes = self.chain.read().block_locator_hashes();
 				let getheaders = types::GetHeaders {
@@ -93,6 +97,28 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
 					trace!(target: "sync", "Request blocks hashes from peer#{} using getheaders", peer_index);
 					connection.send_getheaders(&getheaders);
+				}
+			},
+			Task::RequestMemoryPool(peer_index) => {
+				let mempool = types::MemPool;
+
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					trace!(target: "sync", "Querying memory pool contents from peer#{}", peer_index);
+					connection.send_mempool(&mempool);
+				}
+			},
+			Task::RequestTransactions(peer_index, transactions_hashes) => {
+				let getdata = types::GetData {
+					inventory: transactions_hashes.into_iter()
+						.map(|hash| InventoryVector {
+							inv_type: InventoryType::MessageTx,
+							hash: hash,
+						}).collect()
+				};
+
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					trace!(target: "sync", "Querying {} unknown transactions from peer#{}", getdata.inventory.len(), peer_index);
+					connection.send_getdata(&getdata);
 				}
 			},
 			Task::SendBlock(peer_index, block, id) => {

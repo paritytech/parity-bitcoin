@@ -8,7 +8,7 @@ use message::common::{InventoryVector, InventoryType};
 use db;
 use chain::BlockHeader;
 use primitives::hash::H256;
-use synchronization_chain::ChainRef;
+use synchronization_chain::{ChainRef, TransactionState};
 use synchronization_executor::{Task, TaskExecutor};
 use message::types;
 
@@ -229,8 +229,7 @@ impl SynchronizationServer {
 				// `mempool` => `inventory`
 				ServerTask::ServeMempool => {
 					let inventory: Vec<_> = chain.read()
-						.memory_pool()
-						.get_transactions_ids()
+						.transactions_hashes_with_state(TransactionState::InMemory)
 						.into_iter()
 						.map(|hash| InventoryVector {
 							inv_type: InventoryType::MessageTx,
@@ -632,7 +631,7 @@ pub mod tests {
 	#[test]
 	fn server_getblocks_responds_inventory_when_have_unknown_blocks() {
 		let (chain, executor, server) = create_synchronization_server();
-		chain.write().insert_best_block(test_data::block_h1().hash(), test_data::block_h1()).expect("Db write error");
+		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Db write error");
 		// when asking for blocks hashes
 		let dummy_id = 0;
 		server.serve_getblocks(0, types::GetBlocks {
@@ -668,7 +667,7 @@ pub mod tests {
 	#[test]
 	fn server_getheaders_responds_headers_when_have_unknown_blocks() {
 		let (chain, executor, server) = create_synchronization_server();
-		chain.write().insert_best_block(test_data::block_h1().hash(), test_data::block_h1()).expect("Db write error");
+		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Db write error");
 		// when asking for blocks hashes
 		let dummy_id = 0;
 		server.serve_getheaders(0, types::GetHeaders {
@@ -701,7 +700,7 @@ pub mod tests {
 		// when memory pool is non-empty
 		let transaction = Transaction::default();
 		let transaction_hash = transaction.hash();
-		chain.write().memory_pool_mut().insert_verified(transaction);
+		chain.write().insert_verified_transaction(transaction);
 		// when asking for memory pool transactions ids
 		let dummy_id = 0;
 		server.serve_mempool(0, dummy_id);

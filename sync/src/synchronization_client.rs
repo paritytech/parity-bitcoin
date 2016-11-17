@@ -9,20 +9,22 @@ use futures::{BoxFuture, Future, finished};
 use futures::stream::Stream;
 use tokio_core::reactor::{Handle, Interval};
 use futures_cpupool::CpuPool;
-use linked_hash_map::LinkedHashMap;
 use db;
-use chain::{Block, BlockHeader, RepresentH256};
+use chain::{Block, BlockHeader, Transaction, RepresentH256};
 use message::common::ConsensusParams;
 use primitives::hash::H256;
 use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers::{Information as PeersInformation};
-use synchronization_chain::{Chain, ChainRef, BlockState, HeadersIntersection};
+use synchronization_chain::{ChainRef, BlockState, TransactionState, HeadersIntersection, BlockInsertionResult};
 #[cfg(test)]
 use synchronization_chain::{Information as ChainInformation};
 use verification::{ChainVerifier, Verify};
 use synchronization_executor::{Task, TaskExecutor};
+use orphan_blocks_pool::OrphanBlocksPool;
+use orphan_transactions_pool::OrphanTransactionsPool;
 use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchronization_peers_inventory,
-	manage_unknown_orphaned_blocks, MANAGEMENT_INTERVAL_MS, ManagePeersConfig, ManageUnknownBlocksConfig};
+	manage_unknown_orphaned_blocks, manage_orphaned_transactions, MANAGEMENT_INTERVAL_MS,
+	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
 use hash_queue::HashPosition;
 use time;
 use std::time::Duration;
@@ -172,13 +174,17 @@ pub struct Information {
 	/// Current synchronization chain inormation.
 	pub chain: ChainInformation,
 	/// Number of currently orphaned blocks.
-	pub orphaned: usize,
+	pub orphaned_blocks: usize,
+	/// Number of currently orphaned transactions.
+	pub orphaned_transactions: usize,
 }
 
 /// Verification thread tasks
 enum VerificationTask {
 	/// Verify single block
 	VerifyBlock(Block),
+	/// Verify single transaction
+	VerifyTransaction(Transaction),
 	/// Stop verification thread
 	Stop,
 }
@@ -188,13 +194,17 @@ pub trait Client : Send + 'static {
 	fn best_block(&self) -> db::BestBlock;
 	fn state(&self) -> State;
 	fn on_new_blocks_inventory(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
+	fn on_new_transactions_inventory(&mut self, peer_index: usize, transactions_hashes: Vec<H256>);
 	fn on_new_blocks_headers(&mut self, peer_index: usize, blocks_headers: Vec<BlockHeader>);
 	fn on_peer_blocks_notfound(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
 	fn on_peer_block(&mut self, peer_index: usize, block: Block);
+	fn on_peer_transaction(&mut self, peer_index: usize, transaction: Transaction);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn get_peers_nearly_blocks_waiter(&mut self, peer_index: usize) -> (bool, Option<Arc<PeersBlocksWaiter>>);
 	fn on_block_verification_success(&mut self, block: Block);
 	fn on_block_verification_error(&mut self, err: &str, hash: &H256);
+	fn on_transaction_verification_success(&mut self, transaction: Transaction);
+	fn on_transaction_verification_error(&mut self, err: &str, hash: &H256);
 }
 
 /// Synchronization peer blocks waiter
@@ -232,10 +242,10 @@ pub struct SynchronizationClient<T: TaskExecutor> {
 	executor: Arc<Mutex<T>>,
 	/// Chain reference.
 	chain: ChainRef,
-	/// Blocks from requested_hashes, but received out-of-order.
-	orphaned_blocks: HashMap<H256, HashMap<H256, Block>>,
-	/// Blocks that we have received without requesting with receiving time.
-	unknown_blocks: LinkedHashMap<H256, f64>,
+	/// Orphaned blocks pool.
+	orphaned_blocks_pool: OrphanBlocksPool,
+	/// Orphaned transactions pool.
+	orphaned_transactions_pool: OrphanTransactionsPool,
 	/// Verification work transmission channel.
 	verification_work_sender: Option<Sender<VerificationTask>>,
 	/// Verification thread.
@@ -319,12 +329,35 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 			let chain = self.chain.read();
 			blocks_hashes.into_iter()
 				.filter(|h| chain.block_state(h) == BlockState::Unknown)
-				.filter(|h| !self.unknown_blocks.contains_key(h))
+				.filter(|h| !self.orphaned_blocks_pool.contains_unknown_block(h))
 				.collect()
 		};
 
-		let mut executor = self.executor.lock();
-		executor.execute(Task::RequestBlocks(peer_index, unknown_blocks_hashes))
+		if !unknown_blocks_hashes.is_empty() {
+			let mut executor = self.executor.lock();
+			executor.execute(Task::RequestBlocks(peer_index, unknown_blocks_hashes));
+		}
+	}
+
+	/// Add new transactions to the memory pool
+	fn on_new_transactions_inventory(&mut self, peer_index: usize, transactions_hashes: Vec<H256>) {
+		// if we are in synchronization state, we will ignore this message
+		if self.state.is_synchronizing() {
+			return;
+		}
+
+		// else => request all unknown transactions
+		let unknown_transactions_hashes: Vec<_> = {
+			let chain = self.chain.read();
+			transactions_hashes.into_iter()
+				.filter(|h| chain.transaction_state(h) == TransactionState::Unknown)
+				.collect()
+		};
+
+		if !unknown_transactions_hashes.is_empty() {
+			let mut executor = self.executor.lock();
+			executor.execute(Task::RequestTransactions(peer_index, unknown_transactions_hashes));
+		}
 	}
 
 	/// Try to queue synchronization of unknown blocks when blocks headers are received.
@@ -400,6 +433,11 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 		self.execute_synchronization_tasks(None);
 	}
 
+	/// Process new transaction.
+	fn on_peer_transaction(&mut self, _peer_index: usize, transaction: Transaction) {
+		self.process_peer_transaction(transaction);
+	}
+
 	/// Peer disconnected.
 	fn on_peer_disconnected(&mut self, peer_index: usize) {
 		// when last peer is disconnected, reset, but let verifying blocks be verified
@@ -441,19 +479,29 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 			// remove block from verification queue
 			// header is removed in `insert_best_block` call
 			// or it is removed earlier, when block was removed from the verifying queue
-			if chain.forget_with_state_leave_header(&hash, BlockState::Verifying) != HashPosition::Missing {
+			if chain.forget_block_with_state_leave_header(&hash, BlockState::Verifying) != HashPosition::Missing {
 				// block was in verification queue => insert to storage
-				chain.insert_best_block(hash.clone(), block)
+				chain.insert_best_block(hash.clone(), &block)
 			} else {
-				Ok(())
+				Ok(BlockInsertionResult::default())
 			}
 		} {
-			Ok(_) => {
+			Ok(insert_result) => {
 				// awake threads, waiting for this block insertion
 				self.awake_waiting_threads(&hash);
 
 				// continue with synchronization
 				self.execute_synchronization_tasks(None);
+
+				// relay block to our peers
+				if self.state.is_saturated() {
+					// TODO: Task::BroadcastBlock
+				}
+
+				// deal with block transactions
+				for (_, tx) in insert_result.transactions_to_reverify {
+					self.process_peer_transaction(tx)
+				}
 			},
 			Err(db::Error::Consistency(e)) => {
 				// process as verification error
@@ -475,7 +523,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 
 			// forget for this block and all its children
 			// headers are also removed as they all are invalid
-			chain.forget_with_children(hash);
+			chain.forget_block_with_children(hash);
 		}
 
 		// awake threads, waiting for this block insertion
@@ -483,6 +531,34 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 
 		// start new tasks
 		self.execute_synchronization_tasks(None);
+	}
+
+	/// Process successful transaction verification
+	fn on_transaction_verification_success(&mut self, transaction: Transaction) {
+		let hash = transaction.hash();
+		// insert transaction to the memory pool
+		let mut chain = self.chain.write();
+
+		// remove transaction from verification queue
+		// if it is not in the queue => it was removed due to error or reorganization
+		if !chain.forget_verifying_transaction(&hash) {
+			return;
+		}
+
+		// transaction was in verification queue => insert to memory pool
+		chain.insert_verified_transaction(transaction);
+	}
+
+	/// Process failed transaction verification
+	fn on_transaction_verification_error(&mut self, err: &str, hash: &H256) {
+		warn!(target: "sync", "Transaction {:?} verification failed with error {:?}", hash.to_reversed_str(), err);
+
+		{
+			let mut chain = self.chain.write();
+
+			// forget for this transaction and all its children
+			chain.forget_verifying_transaction_with_children(hash);
+		}
 	}
 }
 
@@ -498,8 +574,8 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 				management_worker: None,
 				executor: executor,
 				chain: chain.clone(),
-				orphaned_blocks: HashMap::new(),
-				unknown_blocks: LinkedHashMap::new(),
+				orphaned_blocks_pool: OrphanBlocksPool::new(),
+				orphaned_transactions_pool: OrphanTransactionsPool::new(),
 				verification_work_sender: None,
 				verification_worker_thread: None,
 				verifying_blocks_by_peer: HashMap::new(),
@@ -528,6 +604,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 		{
 			let peers_config = ManagePeersConfig::default();
 			let unknown_config = ManageUnknownBlocksConfig::default();
+			let orphan_config = ManageOrphanTransactionsConfig::default();
 			let csync = Arc::downgrade(&sync);
 			let mut sync = sync.lock();
 			let management_worker = Interval::new(Duration::from_millis(MANAGEMENT_INTERVAL_MS), handle)
@@ -544,8 +621,12 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 						client.execute_synchronization_tasks(blocks_to_request);
 
 						manage_synchronization_peers_inventory(&peers_config, &mut client.peers);
-						if let Some(orphans_to_remove) = manage_unknown_orphaned_blocks(&unknown_config, &mut client.unknown_blocks) {
-							client.remove_orphaned_blocks(orphans_to_remove.into_iter().collect());
+						manage_orphaned_transactions(&orphan_config, &mut client.orphaned_transactions_pool);
+						if let Some(orphans_to_remove) = manage_unknown_orphaned_blocks(&unknown_config, &mut client.orphaned_blocks_pool) {
+							let mut chain = client.chain.write();
+							for orphan_to_remove in orphans_to_remove {
+								chain.forget_block(&orphan_to_remove);
+							}
 						}
 					}
 					Ok(())
@@ -566,7 +647,8 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			state: self.state,
 			peers: self.peers.information(),
 			chain: self.chain.read().information(),
-			orphaned: self.orphaned_blocks.len(),
+			orphaned_blocks: self.orphaned_blocks_pool.len(),
+			orphaned_transactions: self.orphaned_transactions_pool.len(),
 		}
 	}
 
@@ -580,7 +662,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 		assert_eq!(hashes.len(), headers.len());
 
 		let mut chain = self.chain.write();
-		match chain.intersect_with_headers(&hashes, &headers) {
+		match chain.intersect_with_blocks_headers(&hashes, &headers) {
 			HeadersIntersection::NoKnownBlocks(_) if self.state.is_synchronizing() => {
 				warn!(target: "sync", "Ignoring {} headers from peer#{}. Unknown and we are synchronizing.", headers.len(), peer_index);
 			},
@@ -616,6 +698,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 				self.peers.useful_peer(peer_index);
 				// switch to synchronization state
 				if !self.state.is_synchronizing() {
+					// TODO: NearlySaturated should start when we are in Saturated state && count(new_blocks_headers) is < LIMIT (LIMIT > 1)
 					if new_blocks_hashes_len == 1 && !self.state.is_nearly_saturated() {
 						self.state = State::NearlySaturated;
 					}
@@ -649,29 +732,27 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 									peer_index
 								);
 								// remove block from current queue
-								chain.forget(&block_hash);
+								chain.forget_block(&block_hash);
 								// remove orphaned blocks
-								SynchronizationClient::<T>::remove_orphaned_blocks_for_parent(&mut self.unknown_blocks, &mut self.orphaned_blocks, &mut chain, &block_hash);
+								let removed_blocks_hashes: Vec<_> = self.orphaned_blocks_pool.remove_blocks_for_parent(&block_hash).into_iter().map(|t| t.0).collect();
+								chain.forget_blocks_leave_header(&removed_blocks_hashes);
 							} else {
 								// remove this block from the queue
-								chain.forget_leave_header(&block_hash);
+								chain.forget_block_leave_header(&block_hash);
 								// remember this block as unknown
-								self.unknown_blocks.insert(block_hash.clone(), time::precise_time_s());
-								self.orphaned_blocks
-									.entry(block.block_header.previous_header_hash.clone())
-									.or_insert_with(HashMap::new)
-									.insert(block_hash, block);
+								self.orphaned_blocks_pool.insert_unknown_block(block_hash, block);
 							}
 						},
 						BlockState::Verifying | BlockState::Stored => {
 							// remember peer as useful
 							self.peers.useful_peer(peer_index);
-							// forget block
-							chain.forget_leave_header(&block_hash);
 							// schedule verification
 							let mut blocks: VecDeque<(H256, Block)> = VecDeque::new();
 							blocks.push_back((block_hash.clone(), block));
-							blocks.extend(SynchronizationClient::<T>::remove_orphaned_blocks_for_parent(&mut self.unknown_blocks, &mut self.orphaned_blocks, &mut chain, &block_hash));
+							blocks.extend(self.orphaned_blocks_pool.remove_blocks_for_parent(&block_hash));
+							// forget blocks we are going to process
+							let blocks_hashes_to_forget: Vec<_> = blocks.iter().map(|t| t.0.clone()).collect();
+							chain.forget_blocks_leave_header(&blocks_hashes_to_forget);
 							while let Some((block_hash, block)) = blocks.pop_front() {
 								match self.verification_work_sender {
 									Some(ref verification_work_sender) => {
@@ -696,7 +777,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 									},
 									None => {
 										// insert to the storage + forget block header
-										chain.insert_best_block(block_hash.clone(), block)
+										chain.insert_best_block(block_hash.clone(), &block)
 											.expect("Error inserting to db.");
 									},
 								}
@@ -706,22 +787,62 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 							// remember peer as useful
 							self.peers.useful_peer(peer_index);
 							// remember as orphan block
-							self.orphaned_blocks
-								.entry(block.block_header.previous_header_hash.clone())
-								.or_insert_with(HashMap::new)
-								.insert(block_hash, block);
+							self.orphaned_blocks_pool.insert_orphaned_block(block_hash, block);
 						}
 					}
 				},
 			}
 
 			// requested block is received => move to saturated state if there are no more blocks
-			chain.length_of_state(BlockState::Scheduled) == 0
-				&& chain.length_of_state(BlockState::Requested) == 0
+			chain.length_of_blocks_state(BlockState::Scheduled) == 0
+				&& chain.length_of_blocks_state(BlockState::Requested) == 0
 		};
 
 		if switch_to_saturated {
 			self.switch_to_saturated_state();
+		}
+	}
+
+	/// Process new peer transaction
+	fn process_peer_transaction(&mut self, transaction: Transaction) {
+		// if we are in synchronization state, we will ignore this message
+		if self.state.is_synchronizing() {
+			return;
+		}
+
+		// else => verify transaction + it's orphans and then add to the memory pool
+		let hash = transaction.hash();
+		let mut chain = self.chain.write();
+
+		// if any parent transaction is unknown => we have orphan transaction => remember in orphan pool
+		let unknown_parents: HashSet<H256> = transaction.inputs.iter()
+			.filter(|input| chain.transaction_state(&input.previous_output.hash) == TransactionState::Unknown)
+			.map(|input| input.previous_output.hash.clone())
+			.collect();
+		if !unknown_parents.is_empty() {
+			self.orphaned_transactions_pool.insert(hash, transaction, unknown_parents);
+			return;
+		}
+
+		// else verify && insert this transaction && all dependent orphans
+		let mut transactons: VecDeque<(H256, Transaction)> = VecDeque::new();
+		transactons.push_back((hash.clone(), transaction));
+		transactons.extend(self.orphaned_transactions_pool.remove_transactions_for_parent(&hash));
+		while let Some((tx_hash, tx)) = transactons.pop_front() {
+			match self.verification_work_sender {
+				Some(ref verification_work_sender) => {
+					// append to verifying queue
+					chain.verify_transaction(tx_hash.clone(), tx.clone());
+					// schedule verification
+					verification_work_sender
+						.send(VerificationTask::VerifyTransaction(tx))
+						.expect("Verification thread have the same lifetime as `Synchronization`");
+				},
+				None => {
+					// insert to the memory pool
+					chain.insert_verified_transaction(tx);
+				},
+			}
 		}
 	}
 
@@ -752,7 +873,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			// check if we can query some blocks hashes
 			let inventory_idle_peers = self.peers.idle_peers_for_inventory();
 			if !inventory_idle_peers.is_empty() {
-				let scheduled_hashes_len = { self.chain.read().length_of_state(BlockState::Scheduled) };
+				let scheduled_hashes_len = { self.chain.read().length_of_blocks_state(BlockState::Scheduled) };
 				if scheduled_hashes_len < MAX_SCHEDULED_HASHES {
 					for inventory_peer in &inventory_idle_peers {
 						self.peers.on_inventory_requested(*inventory_peer);
@@ -767,9 +888,9 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			let blocks_idle_peers_len = blocks_idle_peers.len() as u32;
 			if blocks_idle_peers_len != 0 {
 				let mut chain = self.chain.write();
-				let scheduled_hashes_len = chain.length_of_state(BlockState::Scheduled);
-				let requested_hashes_len = chain.length_of_state(BlockState::Requested);
-				let verifying_hashes_len = chain.length_of_state(BlockState::Verifying);
+				let scheduled_hashes_len = chain.length_of_blocks_state(BlockState::Scheduled);
+				let requested_hashes_len = chain.length_of_blocks_state(BlockState::Requested);
+				let verifying_hashes_len = chain.length_of_blocks_state(BlockState::Verifying);
 				if requested_hashes_len + verifying_hashes_len < MAX_REQUESTED_BLOCKS + MAX_VERIFYING_BLOCKS && scheduled_hashes_len != 0 {
 					let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(scheduled_hashes_len / blocks_idle_peers_len, MIN_BLOCKS_IN_REQUEST));
 					let hashes_to_request_len = chunk_size * blocks_idle_peers_len;
@@ -824,17 +945,14 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 		self.peers.reset();
 
 		// remove sync orphans, but leave unknown orphans until they'll be removed by management thread
-		let orphans_to_remove: HashSet<_> = self.orphaned_blocks.values()
-			.flat_map(|v| v.iter().map(|e| e.0.clone()))
-			.filter(|h| !self.unknown_blocks.contains_key(h))
-			.collect();
-		self.remove_orphaned_blocks(orphans_to_remove);
+		let removed_orphans = self.orphaned_blocks_pool.remove_known_blocks();
 
 		// leave currently verifying blocks
 		{
 			let mut chain = self.chain.write();
-			chain.forget_all_with_state(BlockState::Requested);
-			chain.forget_all_with_state(BlockState::Scheduled);
+			chain.forget_blocks(&removed_orphans);
+			chain.forget_all_blocks_with_state(BlockState::Requested);
+			chain.forget_all_blocks_with_state(BlockState::Scheduled);
 
 			use time;
 			info!(target: "sync", "{:?} @ Switched to saturated state. Chain information: {:?}",
@@ -844,58 +962,13 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 
 		// finally - ask all known peers for their best blocks inventory, in case if some peer
 		// has lead us to the fork
+		// + ask all peers for their memory pool
 		{
 			let mut executor = self.executor.lock();
 			for peer in self.peers.all_peers() {
 				executor.execute(Task::RequestBlocksHeaders(peer));
+				executor.execute(Task::RequestMemoryPool(peer));
 			}
-		}
-	}
-
-	/// Remove orphaned blocks for given parent
-	fn remove_orphaned_blocks_for_parent(unknown_blocks: &mut LinkedHashMap<H256, f64>, orphaned_blocks: &mut HashMap<H256, HashMap<H256, Block>>, chain: &mut Chain, parent: &H256) -> VecDeque<(H256, Block)> {
-		let mut queue: VecDeque<H256> = VecDeque::new();
-		queue.push_back(parent.clone());
-
-		let mut removed: VecDeque<(H256, Block)> = VecDeque::new();
-		while let Some(parent_hash) = queue.pop_front() {
-			chain.forget_leave_header(&parent_hash);
-
-			if let Entry::Occupied(entry) = orphaned_blocks.entry(parent_hash) {
-				let (_, orphaned) = entry.remove_entry();
-				for orphaned_hash in orphaned.keys() {
-					unknown_blocks.remove(orphaned_hash);
-				}
-				queue.extend(orphaned.keys().cloned());
-				removed.extend(orphaned.into_iter());
-			}
-		}
-		removed
-	}
-
-	/// Remove given orphaned blocks
-	fn remove_orphaned_blocks(&mut self, orphans_to_remove: HashSet<H256>) {
-		let parent_orphan_keys: Vec<_> = self.orphaned_blocks.keys().cloned().collect();
-		for parent_orphan_key in parent_orphan_keys {
-			if let Entry::Occupied(mut orphan_entry) = self.orphaned_blocks.entry(parent_orphan_key.clone()) {
-				let is_empty = {
-					let mut orphans = orphan_entry.get_mut();
-					let orphans_keys: HashSet<H256> = orphans.keys().cloned().collect();
-					for orphan_to_remove in orphans_keys.intersection(&orphans_to_remove) {
-						orphans.remove(orphan_to_remove);
-					}
-					orphans.is_empty()
-				};
-
-				if is_empty {
-					orphan_entry.remove_entry();
-				}
-			}
-		}
-
-		let mut chain = self.chain.write();
-		for orphan_to_remove in orphans_to_remove {
-			chain.forget(&orphan_to_remove);
 		}
 	}
 
@@ -906,7 +979,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			let peer_index = *block_entry.get();
 			// find a # of blocks, which this thread has supplied
 			if let Entry::Occupied(mut entry) = self.verifying_blocks_waiters.entry(peer_index) {
-				if {
+				let is_last_block = {
 					let &mut (ref mut waiting, ref waiter) = entry.get_mut();
 					waiting.remove(hash);
 					// if this is the last block => awake waiting threads
@@ -917,7 +990,9 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 						}
 					}
 					is_last_block
-				} {
+				};
+
+				if is_last_block {
 					entry.remove_entry();
 				}
 			}
@@ -995,7 +1070,11 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 						}
 					}
 				},
-				_ => break,
+				VerificationTask::VerifyTransaction(transaction) => {
+					// TODO: add verification here
+					sync.lock().on_transaction_verification_error("unimplemented", &transaction.hash())
+				}
+				VerificationTask::Stop => break,
 			}
 		}
 	}
@@ -1023,12 +1102,13 @@ pub mod tests {
 	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
 	use tokio_core::reactor::{Core, Handle};
-	use chain::{Block, RepresentH256};
+	use chain::{Block, Transaction, RepresentH256};
 	use message::common::{Magic, ConsensusParams};
 	use super::{Client, Config, SynchronizationClient};
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
 	use synchronization_executor::tests::DummyTaskExecutor;
+	use primitives::hash::H256;
 	use p2p::event_loop;
 	use test_data;
 	use db;
@@ -1060,7 +1140,8 @@ pub mod tests {
 		let sync = sync.lock();
 		let info = sync.information();
 		assert!(!info.state.is_synchronizing());
-		assert_eq!(info.orphaned, 0);
+		assert_eq!(info.orphaned_blocks, 0);
+		assert_eq!(info.orphaned_transactions, 0);
 	}
 
 	#[test]
@@ -1075,7 +1156,7 @@ pub mod tests {
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(5), Task::RequestBlocks(5, vec![block1.hash()])]);
 		assert!(sync.information().state.is_nearly_saturated());
-		assert_eq!(sync.information().orphaned, 0);
+		assert_eq!(sync.information().orphaned_blocks, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 1);
 		assert_eq!(sync.information().chain.stored, 1);
@@ -1085,7 +1166,7 @@ pub mod tests {
 		// push unknown block => will be queued as orphan
 		sync.on_peer_block(5, block2);
 		assert!(sync.information().state.is_nearly_saturated());
-		assert_eq!(sync.information().orphaned, 1);
+		assert_eq!(sync.information().orphaned_blocks, 1);
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 1);
 		assert_eq!(sync.information().chain.stored, 1);
@@ -1095,7 +1176,7 @@ pub mod tests {
 		// push requested block => should be moved to the test storage && orphan should be moved
 		sync.on_peer_block(5, block1);
 		assert!(sync.information().state.is_saturated());
-		assert_eq!(sync.information().orphaned, 0);
+		assert_eq!(sync.information().orphaned_blocks, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 0);
 		assert_eq!(sync.information().chain.stored, 3);
@@ -1114,7 +1195,7 @@ pub mod tests {
 
 		// out-of-order block was presented by the peer
 		assert!(sync.information().state.is_synchronizing());
-		assert_eq!(sync.information().orphaned, 0);
+		assert_eq!(sync.information().orphaned_blocks, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
 		assert_eq!(sync.information().chain.requested, 2);
 		assert_eq!(sync.information().chain.stored, 1);
@@ -1160,12 +1241,12 @@ pub mod tests {
 			// receive block from peer#2
 			sync.on_peer_block(2, block2);
 			assert!(sync.information().chain.requested == 2
-				&& sync.information().orphaned == 1);
+				&& sync.information().orphaned_blocks == 1);
 			// receive block from peer#1
 			sync.on_peer_block(1, block1);
 
 			assert!(sync.information().chain.requested == 0
-				&& sync.information().orphaned == 0
+				&& sync.information().orphaned_blocks == 0
 				&& sync.information().chain.stored == 3);
 		}
 	}
@@ -1213,9 +1294,11 @@ pub mod tests {
 		sync.on_peer_block(2, block);
 
 		let tasks = executor.lock().take_tasks();
-		assert_eq!(tasks.len(), 2);
+		assert_eq!(tasks.len(), 4);
 		assert!(tasks.iter().any(|t| t == &Task::RequestBlocksHeaders(1)));
 		assert!(tasks.iter().any(|t| t == &Task::RequestBlocksHeaders(2)));
+		assert!(tasks.iter().any(|t| t == &Task::RequestMemoryPool(1)));
+		assert!(tasks.iter().any(|t| t == &Task::RequestMemoryPool(2)));
 	}
 
 	#[test]
@@ -1252,7 +1335,7 @@ pub mod tests {
 		sync.on_peer_block(1, b2);
 
 		let tasks = executor.lock().take_tasks();
-		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1)]);
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::RequestMemoryPool(1)]);
 
 		{
 			let chain = chain.read();
@@ -1295,7 +1378,7 @@ pub mod tests {
 		sync.on_peer_block(1, b1);
 
 		let tasks = executor.lock().take_tasks();
-		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1)]);
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::RequestMemoryPool(1)]);
 
 		{
 			let chain = chain.read();
@@ -1428,7 +1511,7 @@ pub mod tests {
 		let mut sync = sync.lock();
 
 		sync.on_peer_block(1, test_data::block_h2());
-		assert_eq!(sync.information().orphaned, 1);
+		assert_eq!(sync.information().orphaned_blocks, 1);
 
 		{
 			let chain = chain.read();
@@ -1436,7 +1519,7 @@ pub mod tests {
 		}
 
 		sync.on_peer_block(1, test_data::block_h1());
-		assert_eq!(sync.information().orphaned, 0);
+		assert_eq!(sync.information().orphaned_blocks, 0);
 
 		{
 			let chain = chain.read();
@@ -1515,7 +1598,7 @@ pub mod tests {
 		sync.on_peer_blocks_notfound(1, vec![b1.hash()]);
 
 		let tasks = executor.lock().take_tasks();
-		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1)]);
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::RequestMemoryPool(1)]);
 
 		assert_eq!(sync.information().peers.idle, 0);
 		assert_eq!(sync.information().peers.unuseful, 1);
@@ -1546,5 +1629,137 @@ pub mod tests {
 		assert_eq!(sync.information().peers.idle, 0);
 		assert_eq!(sync.information().peers.unuseful, 0);
 		assert_eq!(sync.information().peers.active, 1);
+	}
+
+	#[test]
+	fn transaction_is_not_requested_when_synchronizing() {
+		let (_, _, executor, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_new_blocks_headers(1, vec![b1.block_header.clone(), b2.block_header.clone()]);
+
+		assert!(sync.information().state.is_synchronizing());
+		{ executor.lock().take_tasks(); } // forget tasks
+
+		sync.on_new_transactions_inventory(0, vec![H256::from(0)]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![]);
+	}
+
+	#[test]
+	fn transaction_is_requested_when_not_synchronizing() {
+		let (_, _, executor, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		sync.on_new_transactions_inventory(0, vec![H256::from(0)]);
+
+		{
+			let tasks = executor.lock().take_tasks();
+			assert_eq!(tasks, vec![Task::RequestTransactions(0, vec![H256::from(0)])]);
+		}
+
+		let b1 = test_data::block_h1();
+		sync.on_new_blocks_headers(1, vec![b1.block_header.clone()]);
+
+		assert!(sync.information().state.is_nearly_saturated());
+		{ executor.lock().take_tasks(); } // forget tasks
+
+		sync.on_new_transactions_inventory(0, vec![H256::from(1)]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::RequestTransactions(0, vec![H256::from(1)])]);
+	}
+
+	#[test]
+	fn same_transaction_can_be_requested_twice() {
+		let (_, _, executor, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		sync.on_new_transactions_inventory(0, vec![H256::from(0)]);
+
+		{
+			let tasks = executor.lock().take_tasks();
+			assert_eq!(tasks, vec![Task::RequestTransactions(0, vec![H256::from(0)])]);
+		}
+
+		sync.on_new_transactions_inventory(0, vec![H256::from(0)]);
+
+		{
+			let tasks = executor.lock().take_tasks();
+			assert_eq!(tasks, vec![Task::RequestTransactions(0, vec![H256::from(0)])]);
+		}
+	}
+
+	#[test]
+	fn known_transaction_is_not_requested() {
+		let (_, _, executor, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		sync.on_new_transactions_inventory(0, vec![test_data::genesis().transactions[0].hash(), H256::from(0)]);
+		assert_eq!(executor.lock().take_tasks(), vec![Task::RequestTransactions(0, vec![H256::from(0)])]);
+	}
+
+	#[test]
+	fn transaction_is_not_accepted_when_synchronizing() {
+		let (_, _, _, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_new_blocks_headers(1, vec![b1.block_header.clone(), b2.block_header.clone()]);
+
+		assert!(sync.information().state.is_synchronizing());
+
+		sync.process_peer_transaction(Transaction::default());
+
+		assert_eq!(sync.information().chain.transactions.transactions_count, 0);
+	}
+
+	#[test]
+	fn transaction_is_accepted_when_not_synchronizing() {
+		let (_, _, _, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		sync.process_peer_transaction(test_data::TransactionBuilder::with_version(1).into());
+		assert_eq!(sync.information().chain.transactions.transactions_count, 1);
+
+		let b1 = test_data::block_h1();
+		sync.on_new_blocks_headers(1, vec![b1.block_header.clone()]);
+
+		assert!(sync.information().state.is_nearly_saturated());
+
+		sync.process_peer_transaction(test_data::TransactionBuilder::with_version(2).into());
+		assert_eq!(sync.information().chain.transactions.transactions_count, 2);
+	}
+
+	#[test]
+	fn transaction_is_orphaned_when_input_is_unknown() {
+		let (_, _, _, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		sync.process_peer_transaction(test_data::TransactionBuilder::with_default_input(0).into());
+		assert_eq!(sync.information().chain.transactions.transactions_count, 0);
+		assert_eq!(sync.information().orphaned_transactions, 1);
+	}
+
+	#[test]
+	fn orphaned_transaction_is_verified_when_input_is_received() {
+		let chain = &mut test_data::ChainBuilder::new();
+		test_data::TransactionBuilder::with_output(10).store(chain)		// t0
+			.set_input(&chain.at(0), 0).set_output(20).store(chain);	// t0 -> t1
+
+		let (_, _, _, _, sync) = create_sync(None);
+		let mut sync = sync.lock();
+
+		sync.process_peer_transaction(chain.at(1));
+		assert_eq!(sync.information().chain.transactions.transactions_count, 0);
+		assert_eq!(sync.information().orphaned_transactions, 1);
+
+		sync.process_peer_transaction(chain.at(0));
+		assert_eq!(sync.information().chain.transactions.transactions_count, 2);
+		assert_eq!(sync.information().orphaned_transactions, 0);
 	}
 }

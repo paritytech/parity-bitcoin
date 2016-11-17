@@ -79,18 +79,19 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 	pub fn on_peer_inventory(&self, peer_index: usize, message: types::Inv) {
 		trace!(target: "sync", "Got `inventory` message from peer#{}. Inventory len: {}", peer_index, message.inventory.len());
 
-		// TODO: after each `getblocks` message bitcoind responds with two `inventory` messages:
-		// (1) with single entry
-		// (2) with 500 entries
-		// what is (1)?
-
 		// if there are unknown blocks => start synchronizing with peer
 		let blocks_inventory = self.blocks_inventory(&message.inventory);
 		if !blocks_inventory.is_empty() {
 			self.client.lock().on_new_blocks_inventory(peer_index, blocks_inventory);
 		}
 
-		// TODO: process unknown transactions, etc...
+		// if there are unknown transactions => add to memory pool
+		let transactions_inventory = self.transactions_inventory(&message.inventory);
+		if !transactions_inventory.is_empty() {
+			self.client.lock().on_new_transactions_inventory(peer_index, transactions_inventory);
+		}
+
+		// TODO: process other inventory types
 	}
 
 	pub fn on_peer_getdata(&self, peer_index: usize, message: types::GetData, id: u32) {
@@ -133,6 +134,9 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 
 	pub fn on_peer_transaction(&self, peer_index: usize, message: types::Tx) {
 		trace!(target: "sync", "Got `transaction` message from peer#{}. Transaction hash: {}", peer_index, message.transaction.hash().to_reversed_str());
+
+		// try to process new transaction
+		self.client.lock().on_peer_transaction(peer_index, message.transaction);
 	}
 
 	pub fn on_peer_block(&self, peer_index: usize, message: types::Block) {
@@ -203,6 +207,13 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		self.client.lock().on_peer_blocks_notfound(peer_index, blocks_inventory);
 	}
 
+	fn transactions_inventory(&self, inventory: &[InventoryVector]) -> Vec<H256> {
+		inventory.iter()
+			.filter(|item| item.inv_type == InventoryType::MessageTx)
+			.map(|item| item.hash.clone())
+			.collect()
+	}
+
 	fn blocks_inventory(&self, inventory: &[InventoryVector]) -> Vec<H256> {
 		inventory.iter()
 			.filter(|item| item.inv_type == InventoryType::MessageBlock)
@@ -246,7 +257,7 @@ mod tests {
 		fn send_transaction(&self, _message: &types::Tx) {}
 		fn send_block(&self, _message: &types::Block, _id: u32, _is_final: bool) {}
 		fn send_headers(&self, _message: &types::Headers, _id: u32, _is_final: bool) {}
-		fn send_mempool(&self, _message: &types::MemPool, _id: u32, _is_final: bool) {}
+		fn send_mempool(&self, _message: &types::MemPool) {}
 		fn send_filterload(&self, _message: &types::FilterLoad) {}
 		fn send_filteradd(&self, _message: &types::FilterAdd) {}
 		fn send_filterclear(&self, _message: &types::FilterClear) {}
