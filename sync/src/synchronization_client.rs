@@ -350,7 +350,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 		let unknown_transactions_hashes: Vec<_> = {
 			let chain = self.chain.read();
 			transactions_hashes.into_iter()
-				.filter(|h| chain.transaction_state(&h) == TransactionState::Unknown)
+				.filter(|h| chain.transaction_state(h) == TransactionState::Unknown)
 				.collect()
 		};
 
@@ -557,7 +557,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 			let mut chain = self.chain.write();
 
 			// forget for this transaction and all its children
-			chain.forget_verifying_transaction_with_children(&hash);
+			chain.forget_verifying_transaction_with_children(hash);
 		}
 	}
 }
@@ -979,7 +979,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 			let peer_index = *block_entry.get();
 			// find a # of blocks, which this thread has supplied
 			if let Entry::Occupied(mut entry) = self.verifying_blocks_waiters.entry(peer_index) {
-				if {
+				let is_last_block = {
 					let &mut (ref mut waiting, ref waiter) = entry.get_mut();
 					waiting.remove(hash);
 					// if this is the last block => awake waiting threads
@@ -990,7 +990,9 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 						}
 					}
 					is_last_block
-				} {
+				};
+
+				if is_last_block {
 					entry.remove_entry();
 				}
 			}

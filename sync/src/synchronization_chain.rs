@@ -549,7 +549,7 @@ impl Chain {
 		while let Some(hash) = queue.pop_front() {
 			let all_keys: Vec<_> = self.verifying_transactions.keys().cloned().collect();
 			for h in all_keys {
-				if {
+				let remove_verifying_transaction = {
 					if let Some(entry) = self.verifying_transactions.get(&h) {
 						if entry.inputs.iter().any(|i| i.previous_output.hash == hash) {
 							queue.push_back(h.clone());
@@ -561,7 +561,9 @@ impl Chain {
 						// iterating by previously read keys
 						unreachable!()
 					}
-				} {
+				};
+
+				if remove_verifying_transaction {
 					self.verifying_transactions.remove(&h);
 				}
 			}

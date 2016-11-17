@@ -92,17 +92,19 @@ impl OrphanBlocksPool {
 		let parent_orphan_keys: Vec<_> = self.orphaned_blocks.keys().cloned().collect();
 		for parent_orphan_key in parent_orphan_keys {
 			if let Entry::Occupied(mut orphan_entry) = self.orphaned_blocks.entry(parent_orphan_key) {
-				if {
+				let remove_entry = {
 					let mut orphans = orphan_entry.get_mut();
 					let orphans_keys: HashSet<H256> = orphans.keys().cloned().collect();
-					for orphan_to_remove in orphans_keys.intersection(&hashes) {
+					for orphan_to_remove in orphans_keys.intersection(hashes) {
 						self.unknown_blocks.remove(orphan_to_remove);
 						removed.push((orphan_to_remove.clone(),
 							orphans.remove(orphan_to_remove).expect("iterating by intersection of orphans keys with hashes; removing from orphans; qed")
 						));
 					}
 					orphans.is_empty()
-				} {
+				};
+				
+				if remove_entry {
 					orphan_entry.remove_entry();
 				}
 			}
