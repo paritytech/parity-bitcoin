@@ -140,13 +140,14 @@ impl Chain {
 			.expect("storage with genesis block is required");
 		let best_storage_block = storage.best_block()
 			.expect("non-empty storage is required");
+		let best_storage_block_hash = best_storage_block.hash.clone();
 
 		Chain {
-			genesis_block_hash: genesis_block_hash.clone(),
+			genesis_block_hash: genesis_block_hash,
 			best_storage_block: best_storage_block,
 			storage: storage,
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
-			headers_chain: BestHeadersChain::new(genesis_block_hash),
+			headers_chain: BestHeadersChain::new(best_storage_block_hash),
 			verifying_transactions: LinkedHashMap::new(),
 			memory_pool: MemoryPool::new(),
 		}
