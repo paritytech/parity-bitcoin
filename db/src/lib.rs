@@ -21,6 +21,12 @@ mod storage;
 #[cfg(feature="dev")]
 mod test_storage;
 mod transaction_meta;
+mod block_provider;
+mod block_stapler;
+mod transaction_provider;
+mod transaction_meta_provider;
+mod error;
+mod update_context;
 
 pub enum BlockRef {
 	Number(u32),
@@ -34,8 +40,13 @@ pub enum BlockLocation {
 }
 
 pub use best_block::BestBlock;
-pub use storage::{Storage, Store, Error, BlockInsertedChain};
+pub use storage::{Storage, Store};
+pub use error::Error;
 pub use kvdb::Database;
+pub use transaction_provider::TransactionProvider;
+pub use transaction_meta_provider::TransactionMetaProvider;
+pub use block_stapler::{BlockStapler, BlockInsertedChain};
+pub use block_provider::BlockProvider;
 
 #[cfg(feature="dev")]
 pub use test_storage::TestStorage;
