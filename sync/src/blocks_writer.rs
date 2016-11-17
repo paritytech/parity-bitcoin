@@ -25,7 +25,7 @@ impl BlocksWriter {
 
 		match self.verifier.verify(&block) {
 			Err(err) => Err(Error::Verification(err)),
-			Ok(_chain) => self.storage.insert_block(&block).map_err(Error::Database),
+			Ok(_chain) => { try!(self.storage.insert_block(&block).map_err(Error::Database)); Ok(()) }
 		}
 	}
 }

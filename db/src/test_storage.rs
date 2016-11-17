@@ -1,6 +1,6 @@
 //! Test storage
 
-use super::{BlockRef, Store, Error, BestBlock, BlockLocation};
+use super::{BlockRef, Store, Error, BestBlock, BlockLocation, BlockInsertedChain};
 use chain::{self, Block, RepresentH256};
 use primitives::hash::H256;
 use serialization;
@@ -113,13 +113,13 @@ impl Store for TestStorage {
 			.cloned()
 	}
 
-	fn insert_block(&self, block: &chain::Block) -> Result<(), Error> {
+	fn insert_block(&self, block: &chain::Block) -> Result<BlockInsertedChain, Error> {
 		let hash = block.hash();
 		let mut data = self.data.write();
 		match data.blocks.entry(hash.clone()) {
 			Entry::Occupied(mut entry) => {
 				replace(entry.get_mut(), block.clone());
-				return Ok(());
+				return Ok(BlockInsertedChain::Main);
 			},
 			Entry::Vacant(entry) => {
 				entry.insert(block.clone());
@@ -144,7 +144,7 @@ impl Store for TestStorage {
 			},
 		}
 
-		Ok(())
+		Ok(BlockInsertedChain::Main)
 	}
 
 	// just spawns new meta so far, use real store for proper tests
