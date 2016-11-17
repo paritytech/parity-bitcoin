@@ -495,11 +495,7 @@ impl<T> Client for SynchronizationClient<T> where T: TaskExecutor {
 
 				// relay block to our peers
 				if self.state.is_saturated() {
-					let mut executor = self.executor.lock();
-					for peer in self.peers.all_peers() {
-						// TODO: Task::BroadcastBlock instead of cloning
-						executor.execute(Task::SendBlock(peer, block.clone()));
-					}
+					// TODO: Task::BroadcastBlock
 				}
 
 				// deal with block transactions

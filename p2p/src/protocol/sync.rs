@@ -46,7 +46,7 @@ pub trait OutboundSyncConnection : Send + Sync {
 	fn send_transaction(&self, message: &types::Tx);
 	fn send_block(&self, message: &types::Block, id: u32, is_final: bool);
 	fn send_headers(&self, message: &types::Headers, id: u32, is_final: bool);
-	fn send_mempool(&self, message: &types::MemPool, id: u32, is_final: bool);
+	fn send_mempool(&self, message: &types::MemPool);
 	fn send_filterload(&self, message: &types::FilterLoad);
 	fn send_filteradd(&self, message: &types::FilterAdd);
 	fn send_filterclear(&self, message: &types::FilterClear);
@@ -106,8 +106,8 @@ impl OutboundSyncConnection for OutboundSync {
 		self.context.send_response(message, id, is_final);
 	}
 
-	fn send_mempool(&self, message: &types::MemPool, id: u32, is_final: bool) {
-		self.context.send_response(message, id, is_final);
+	fn send_mempool(&self, message: &types::MemPool) {
+		self.context.send_request(message);
 	}
 
 	fn send_filterload(&self, message: &types::FilterLoad) {

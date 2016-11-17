@@ -257,7 +257,7 @@ mod tests {
 		fn send_transaction(&self, _message: &types::Tx) {}
 		fn send_block(&self, _message: &types::Block, _id: u32, _is_final: bool) {}
 		fn send_headers(&self, _message: &types::Headers, _id: u32, _is_final: bool) {}
-		fn send_mempool(&self, _message: &types::MemPool, _id: u32, _is_final: bool) {}
+		fn send_mempool(&self, _message: &types::MemPool) {}
 		fn send_filterload(&self, _message: &types::FilterLoad) {}
 		fn send_filteradd(&self, _message: &types::FilterAdd) {}
 		fn send_filterclear(&self, _message: &types::FilterClear) {}
