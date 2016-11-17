@@ -592,10 +592,9 @@ impl TransactionProvider for Storage {
 	}
 
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
-		self.transaction_bytes(hash).and_then(|tx_bytes| {
-			serialization::deserialize(tx_bytes.as_ref()).map_err(
-				|e| self.db_error(format!("Error deserializing transaction, possible db corruption ({:?})", e))
-			).ok()
+		self.transaction_bytes(hash).map(|tx_bytes| {
+			serialization::deserialize(tx_bytes.as_ref())
+				.unwrap_or_else(|e| panic!("Failed to deserialize transaction: db corrupted? ({:?})", e))
 		})
 	}
 }
