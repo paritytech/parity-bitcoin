@@ -11,6 +11,9 @@ pub trait Synchronizer: Send {
 	/// Declare sending response in future.
 	fn declare_response(&mut self) -> u32;
 
+	/// Returns true if permission for response is granted, but without marking response as sent.
+	fn is_permitted(&self, id: u32) -> bool;
+
 	/// Returns true if permission for sending response is granted.
 	fn permission_for_response(&mut self, id: u32) -> bool;
 }
@@ -27,6 +30,10 @@ impl Synchronizer for FifoSynchronizer {
 		let result = self.declared_responses;
 		self.declared_responses = self.declared_responses.overflowing_add(1).0;
 		result
+	}
+
+	fn is_permitted(&self, id: u32) -> bool {
+		id == self.next_to_grant
 	}
 
 	fn permission_for_response(&mut self, id: u32) -> bool {
@@ -52,6 +59,10 @@ impl Synchronizer for NoopSynchronizer {
 		let result = self.declared_responses;
 		self.declared_responses = self.declared_responses.overflowing_add(1).0;
 		result
+	}
+
+	fn is_permitted(&self, _id: u32) -> bool {
+		true
 	}
 
 	fn permission_for_response(&mut self, _id: u32) -> bool {
@@ -81,6 +92,16 @@ impl ThresholdSynchronizer {
 			to_grant_max: declared,
 		}
 	}
+
+	fn within_threshold(&self, id: u32) -> bool {
+		if self.to_grant_min <= self.to_grant_max {
+			// if max is bigger then min, id must be in range [min, max)
+			self.to_grant_min <= id && id < self.to_grant_max
+		} else {
+			// otherwise if is in range [min, u32::max_value()] || [0, max)
+			self.to_grant_min <= id || id < self.to_grant_max
+		}
+	}
 }
 
 impl Synchronizer for ThresholdSynchronizer {
@@ -88,19 +109,12 @@ impl Synchronizer for ThresholdSynchronizer {
 		self.inner.declare_response()
 	}
 
-	fn permission_for_response(&mut self, id: u32) -> bool {
-		if self.inner.permission_for_response(id) {
-			return true;
-		}
+	fn is_permitted(&self, id: u32) -> bool {
+		self.inner.is_permitted(id) || self.within_threshold(id)
+	}
 
-		if self.to_grant_min <= self.to_grant_max {
-			// if max is bigger then min, id must be in range [min, max)
-			self.to_grant_min <= id && id < self.to_grant_max
-		} else {
-			// otherwise if is in range [min, u32::max_value()] || [0, max)
-			(self.to_grant_min <= id && id <= u32::max_value()) ||
-				id < self.to_grant_max
-		}
+	fn permission_for_response(&mut self, id: u32) -> bool {
+		self.inner.permission_for_response(id) || self.within_threshold(id)
 	}
 }
 
@@ -143,12 +157,12 @@ impl ConfigurableSynchronizer {
 	/// from last_processed response will still be granted permissions.
 	pub fn change_sync_policy(&mut self, sync: bool) {
 		let new_inner = match self.inner {
-			InnerSynchronizer::Threshold(ref s) if sync == false => {
+			InnerSynchronizer::Threshold(ref s) if !sync => {
 				InnerSynchronizer::Noop(NoopSynchronizer {
 					declared_responses: s.inner.declared_responses,
 				})
 			},
-			InnerSynchronizer::Noop(ref s) if sync == true => {
+			InnerSynchronizer::Noop(ref s) if sync => {
 				let threshold  = ThresholdSynchronizer::new(
 					s.declared_responses,
 					CONFIGURABLE_SYNCHRONIZER_THRESHOLD,
@@ -167,6 +181,13 @@ impl Synchronizer for ConfigurableSynchronizer {
 		match self.inner {
 			InnerSynchronizer::Noop(ref mut s) => s.declare_response(),
 			InnerSynchronizer::Threshold(ref mut s) => s.declare_response(),
+		}
+	}
+
+	fn is_permitted(&self, id: u32) -> bool {
+		match self.inner {
+			InnerSynchronizer::Noop(ref s) => s.is_permitted(id),
+			InnerSynchronizer::Threshold(ref s) => s.is_permitted(id),
 		}
 	}
 

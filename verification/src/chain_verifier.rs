@@ -14,6 +14,7 @@ const MAX_BLOCK_SIZE: usize = 1000000;
 
 pub struct ChainVerifier {
 	store: Arc<db::Store>,
+	verify_p2sh: bool,
 	verify_clocktimeverify: bool,
 	skip_pow: bool,
 	skip_sig: bool,
@@ -23,6 +24,7 @@ impl ChainVerifier {
 	pub fn new(store: Arc<db::Store>) -> Self {
 		ChainVerifier {
 			store: store,
+			verify_p2sh: false,
 			verify_clocktimeverify: false,
 			skip_pow: false,
 			skip_sig: false
@@ -38,6 +40,11 @@ impl ChainVerifier {
 	#[cfg(test)]
 	pub fn signatures_skip(mut self) -> Self {
 		self.skip_sig = true;
+		self
+	}
+
+	pub fn verify_p2sh(mut self, verify: bool) -> Self {
+		self.verify_p2sh = verify;
 		self
 	}
 
@@ -141,7 +148,7 @@ impl ChainVerifier {
 			let output: Script = paired_output.script_pubkey.to_vec().into();
 
 			let flags = VerificationFlags::default()
-				.verify_p2sh(true)
+				.verify_p2sh(self.verify_p2sh)
 				.verify_clocktimeverify(self.verify_clocktimeverify);
 
 			// for tests only, skips as late as possible

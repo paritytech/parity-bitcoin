@@ -9,6 +9,8 @@ use session::{SessionFactory};
 use util::{Direction, PeerInfo};
 use PeerId;
 
+const SYNCHRONOUS_RESPONSES: bool = true;
+
 #[derive(Default)]
 pub struct Connections {
 	/// Incremental peer counter.
@@ -51,7 +53,7 @@ impl Connections {
 			magic: connection.magic,
 		};
 
-		let session = T::new_session(context, peer_info.clone());
+		let session = T::new_session(context, peer_info.clone(), SYNCHRONOUS_RESPONSES);
 		let channel = Arc::new(Channel::new(connection.stream, peer_info, session));
 		self.channels.write().insert(id, channel.clone());
 		channel

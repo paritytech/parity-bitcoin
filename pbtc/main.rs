@@ -23,6 +23,9 @@ mod util;
 use app_dirs::AppInfo;
 
 pub const APP_INFO: AppInfo = AppInfo { name: "pbtc", author: "Parity" };
+pub const PROTOCOL_VERSION: u32 = 70_014;
+pub const PROTOCOL_MINIMUM: u32 = 70_001;
+pub const USER_AGENT: &'static str = "pbtc";
 
 fn main() {
 	env_logger::init().unwrap();
@@ -30,7 +33,6 @@ fn main() {
 		println!("{}", err);
 	}
 }
-
 
 fn run() -> Result<(), String> {
 	let yaml = load_yaml!("cli.yml");

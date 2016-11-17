@@ -9,7 +9,7 @@ use net::{Config, Connection};
 
 pub fn accept_connection(stream: TcpStream, handle: &Handle, config: &Config, address: net::SocketAddr) -> Deadline<AcceptConnection> {
 	let accept = AcceptConnection {
-		handshake: accept_handshake(stream, config.magic, config.version(&address)),
+		handshake: accept_handshake(stream, config.magic, config.version(&address), config.protocol_minimum),
 		magic: config.magic,
 		address: address,
 	};

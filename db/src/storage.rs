@@ -377,7 +377,7 @@ impl Storage {
 	///   all transaction meta is removed
 	///   DOES NOT update best block
 	fn decanonize_block(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
-		trace!(target: "reorg", "Decanonizing block {}", hash);
+		trace!(target: "reorg", "Decanonizing block {}", hash.to_reversed_str());
 
 		// ensure that block is of the main chain
 		try!(self.block_number(hash).ok_or(Error::not_main(hash)));
@@ -645,19 +645,34 @@ impl Store for Storage {
 				Err(Error::Consistency(consistency_error)) => {
 					match consistency_error {
 						ConsistencyError::DoubleSpend(hash) => {
-							warn!(target: "reorg", "Failed to reorganize to {} due to double-spend at {}", &block_hash, &hash);
+							warn!(
+								target: "reorg",
+								"Failed to reorganize to {} due to double-spend at {}",
+								block_hash.to_reversed_str(),
+								hash.to_reversed_str()
+							);
 							// return without any commit
 							return Err(Error::reorganize(&hash));
 						},
 						ConsistencyError::UnknownSpending(hash) => {
-							warn!(target: "reorg", "Failed to reorganize to {} due to spending unknown transaction {}", &block_hash, &hash);
+							warn!(
+								target: "reorg",
+								"Failed to reorganize to {} due to spending unknown transaction {}",
+								block_hash.to_reversed_str(),
+								hash.to_reversed_str()
+							);
 							// return without any commit
 							return Err(Error::reorganize(&hash));
 						},
 						ConsistencyError::Unknown(hash) => {
 							// this is orphan block inserted or disconnected chain head updated, we allow that (by now)
 							// so it is no-op
-							warn!(target: "reorg", "Disconnected chain head {} updated with {}", &hash, &block_hash);
+							warn!(
+								target: "reorg",
+								"Disconnected chain head {} updated with {}",
+								hash.to_reversed_str(),
+								block_hash.to_reversed_str()
+							);
 						},
 						_ => {
 							// we don't allow other errors on side chain/orphans

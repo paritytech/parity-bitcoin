@@ -56,11 +56,11 @@ impl BestHeadersChain {
 		self.best.position(hash)
 			.and_then(|pos| self.best.at(pos + 1))
 			.and_then(|child| Some(vec![child]))
-			.unwrap_or(Vec::new())
+			.unwrap_or_default()
 	}
 
 	pub fn best_block_hash(&self) -> H256 {
-		self.best.back().or(Some(self.storage_best_hash.clone())).expect("storage_best_hash is always known")
+		self.best.back().or_else(|| Some(self.storage_best_hash.clone())).expect("storage_best_hash is always known")
 	}
 
 	pub fn insert(&mut self, header: BlockHeader) {
@@ -80,7 +80,7 @@ impl BestHeadersChain {
 	}
 
 	pub fn remove(&mut self, hash: &H256) {
-		if let Some(_) = self.headers.remove(hash) {
+		if self.headers.remove(hash).is_some() {
 			match self.best.remove(hash) {
 				HashPosition::Front => self.clear(),
 				HashPosition::Inside(position) => self.clear_after(position),
@@ -89,8 +89,8 @@ impl BestHeadersChain {
 		}
 	}
 
-	pub fn remove_n<'a, I: IntoIterator<Item=H256>> (&mut self, hashes: I) {
-		for hash in hashes.into_iter() {
+	pub fn remove_n<I: IntoIterator<Item=H256>> (&mut self, hashes: I) {
+		for hash in hashes {
 			self.remove(&hash);
 		}
 	}

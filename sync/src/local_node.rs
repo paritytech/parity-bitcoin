@@ -94,23 +94,24 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		// TODO: process other inventory types
 	}
 
-	pub fn on_peer_getdata(&self, peer_index: usize, message: types::GetData) {
+	pub fn on_peer_getdata(&self, peer_index: usize, message: types::GetData, id: u32) {
 		trace!(target: "sync", "Got `getdata` message from peer#{}", peer_index);
 
-		self.server.serve_getdata(peer_index, message);
+		self.server.serve_getdata(peer_index, message, id);
 	}
 
-	pub fn on_peer_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
+	pub fn on_peer_getblocks(&self, peer_index: usize, message: types::GetBlocks, id: u32) {
 		trace!(target: "sync", "Got `getblocks` message from peer#{}", peer_index);
 
-		self.server.serve_getblocks(peer_index, message);
+		self.server.serve_getblocks(peer_index, message, id);
 	}
 
-	pub fn on_peer_getheaders(&self, peer_index: usize, message: types::GetHeaders) {
+	pub fn on_peer_getheaders(&self, peer_index: usize, message: types::GetHeaders, id: u32) {
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
 
 		// do not serve getheaders requests until we are synchronized
 		if self.client.lock().state().is_synchronizing() {
+			self.executor.lock().execute(SynchronizationTask::Ignore(peer_index, id));
 			return;
 		}
 
@@ -125,21 +126,21 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 			need_wait
 		};
 
-		self.server.serve_getheaders(peer_index, message);
+		self.server.serve_getheaders(peer_index, message, id);
 		if need_wait {
 			self.server.wait_peer_requests_completed(peer_index);
 		}
 	}
 
 	pub fn on_peer_transaction(&self, peer_index: usize, message: types::Tx) {
-		trace!(target: "sync", "Got `transaction` message from peer#{}. Transaction hash: {}", peer_index, message.transaction.hash());
+		trace!(target: "sync", "Got `transaction` message from peer#{}. Transaction hash: {}", peer_index, message.transaction.hash().to_reversed_str());
 
 		// try to process new transaction
 		self.client.lock().on_peer_transaction(peer_index, message.transaction);
 	}
 
 	pub fn on_peer_block(&self, peer_index: usize, message: types::Block) {
-		trace!(target: "sync", "Got `block` message from peer#{}. Block hash: {}", peer_index, message.block.hash());
+		trace!(target: "sync", "Got `block` message from peer#{}. Block hash: {}", peer_index, message.block.hash().to_reversed_str());
 
 		// try to process new block
 		self.client.lock().on_peer_block(peer_index, message.block);
@@ -153,10 +154,10 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		}
 	}
 
-	pub fn on_peer_mempool(&self, peer_index: usize, _message: types::MemPool) {
+	pub fn on_peer_mempool(&self, peer_index: usize, _message: types::MemPool, id: u32) {
 		trace!(target: "sync", "Got `mempool` message from peer#{}", peer_index);
 
-		self.server.serve_mempool(peer_index);
+		self.server.serve_mempool(peer_index, id);
 	}
 
 	pub fn on_peer_filterload(&self, peer_index: usize, _message: types::FilterLoad) {
@@ -206,14 +207,14 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		self.client.lock().on_peer_blocks_notfound(peer_index, blocks_inventory);
 	}
 
-	fn transactions_inventory(&self, inventory: &Vec<InventoryVector>) -> Vec<H256> {
+	fn transactions_inventory(&self, inventory: &[InventoryVector]) -> Vec<H256> {
 		inventory.iter()
 			.filter(|item| item.inv_type == InventoryType::MessageTx)
 			.map(|item| item.hash.clone())
 			.collect()
 	}
 
-	fn blocks_inventory(&self, inventory: &Vec<InventoryVector>) -> Vec<H256> {
+	fn blocks_inventory(&self, inventory: &[InventoryVector]) -> Vec<H256> {
 		inventory.iter()
 			.filter(|item| item.inv_type == InventoryType::MessageBlock)
 			.map(|item| item.hash.clone())
@@ -249,14 +250,14 @@ mod tests {
 	}
 
 	impl OutboundSyncConnection for DummyOutboundSyncConnection {
-		fn send_inventory(&self, _message: &types::Inv) {}
+		fn send_inventory(&self, _message: &types::Inv, _id: u32, _is_final: bool) {}
 		fn send_getdata(&self, _message: &types::GetData) {}
 		fn send_getblocks(&self, _message: &types::GetBlocks) {}
 		fn send_getheaders(&self, _message: &types::GetHeaders) {}
 		fn send_transaction(&self, _message: &types::Tx) {}
-		fn send_block(&self, _message: &types::Block) {}
-		fn send_headers(&self, _message: &types::Headers) {}
-		fn send_mempool(&self, _message: &types::MemPool) {}
+		fn send_block(&self, _message: &types::Block, _id: u32, _is_final: bool) {}
+		fn send_headers(&self, _message: &types::Headers, _id: u32, _is_final: bool) {}
+		fn send_mempool(&self, _message: &types::MemPool, _id: u32, _is_final: bool) {}
 		fn send_filterload(&self, _message: &types::FilterLoad) {}
 		fn send_filteradd(&self, _message: &types::FilterAdd) {}
 		fn send_filterclear(&self, _message: &types::FilterClear) {}
@@ -267,7 +268,8 @@ mod tests {
 		fn send_compact_block(&self, _message: &types::CompactBlock) {}
 		fn send_get_block_txn(&self, _message: &types::GetBlockTxn) {}
 		fn send_block_txn(&self, _message: &types::BlockTxn) {}
-		fn send_notfound(&self, _message: &types::NotFound) {}
+		fn send_notfound(&self, _message: &types::NotFound, _id: u32, _is_final: bool) {}
+		fn ignored(&self, _id: u32) {}
 	}
 
 	fn create_local_node() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor>>) {
@@ -305,9 +307,10 @@ mod tests {
 				hash: genesis_block_hash.clone(),
 			}
 		];
+		let dummy_id = 0;
 		local_node.on_peer_getdata(peer_index, types::GetData {
 			inventory: inventory.clone()
-		});
+		}, dummy_id);
 		// => `getdata` is served
 		let tasks = server.take_tasks();
 		assert_eq!(tasks, vec![(peer_index, ServerTask::ServeGetData(inventory))]);
