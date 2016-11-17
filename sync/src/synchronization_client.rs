@@ -1114,12 +1114,12 @@ pub mod tests {
 	use db;
 	use devtools::RandomTempPath;
 
-	fn create_disk_storage() -> Arc<db::Store> {
+	fn create_disk_storage() -> db::SharedStore {
 		let path = RandomTempPath::create_dir();
 		Arc::new(db::Storage::new(path.as_path()).unwrap())
 	}
 
-	fn create_sync(storage: Option<Arc<db::Store>>) -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, ChainRef, Arc<Mutex<SynchronizationClient<DummyTaskExecutor>>>) {
+	fn create_sync(storage: Option<db::SharedStore>) -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, ChainRef, Arc<Mutex<SynchronizationClient<DummyTaskExecutor>>>) {
 		let event_loop = event_loop();
 		let handle = event_loop.handle();
 		let storage = match storage {

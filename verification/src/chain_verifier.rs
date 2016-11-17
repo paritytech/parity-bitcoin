@@ -1,7 +1,5 @@
 //! Bitcoin chain verifier
 
-use std::sync::Arc;
-
 use db::{self, BlockRef, BlockLocation};
 use chain::{self, RepresentH256};
 use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
@@ -13,7 +11,7 @@ const MAX_BLOCK_SIGOPS: usize = 20000;
 const MAX_BLOCK_SIZE: usize = 1000000;
 
 pub struct ChainVerifier {
-	store: Arc<db::Store>,
+	store: db::SharedStore,
 	verify_p2sh: bool,
 	verify_clocktimeverify: bool,
 	skip_pow: bool,
@@ -21,7 +19,7 @@ pub struct ChainVerifier {
 }
 
 impl ChainVerifier {
-	pub fn new(store: Arc<db::Store>) -> Self {
+	pub fn new(store: db::SharedStore) -> Self {
 		ChainVerifier {
 			store: store,
 			verify_p2sh: false,
@@ -275,7 +273,7 @@ mod tests {
 
 	use super::ChainVerifier;
 	use super::super::{Verify, Chain, Error, TransactionError};
-	use db::{TestStorage, Storage, Store};
+	use db::{TestStorage, Storage, Store, BlockStapler};
 	use test_data;
 	use std::sync::Arc;
 	use devtools::RandomTempPath;
