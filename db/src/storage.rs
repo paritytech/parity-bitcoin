@@ -763,7 +763,7 @@ impl Store for Storage {
 #[cfg(test)]
 mod tests {
 
-	use super::{Storage, Store, UpdateContext, Error, ConsistencyError};
+	use super::{Storage, Store, UpdateContext, Error, ConsistencyError, BlockInsertedChain};
 	use devtools::RandomTempPath;
 	use chain::{Block, RepresentH256};
 	use super::super::{BlockRef, BlockLocation};
@@ -1305,6 +1305,58 @@ mod tests {
 	}
 
 	#[test]
+	fn chain_for_genesis() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let inserted_chain = store.insert_block(&test_data::genesis()).unwrap();
+
+		if let BlockInsertedChain::Main = inserted_chain { }
+		else { panic!("Genesis should become main chain"); }
+	}
+
+	#[test]
+	fn chain_for_main() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		store.insert_block(&test_data::genesis())
+			.expect("Genesis should be inserted with no issues");
+
+		let inserted_chain = store.insert_block(&test_data::block_h1()).unwrap();
+
+		if let BlockInsertedChain::Main = inserted_chain { }
+		else { panic!("h1 should become main chain"); }
+	}
+
+	#[test]
+	fn chain_for_side() {
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		store.insert_block(&test_data::genesis())
+			.expect("Genesis should be inserted with no issues");
+
+		let block1 = test_data::block_h1();
+		let block1_hash = block1.hash();
+		store.insert_block(&block1)
+			.expect("Block 1 should be inserted with no issues");
+
+		store.insert_block(&test_data::block_h2())
+			.expect("Block 2 should be inserted with no issues");
+
+		let block2_side = test_data::block_builder()
+			.header().parent(block1_hash).build()
+			.build();
+
+		let inserted_chain = store.insert_block(&block2_side).unwrap();
+
+		if let BlockInsertedChain::Side = inserted_chain { }
+		else { panic!("h1 should become main chain"); }
+	}
+
+	#[test]
 	fn accepted_location_for_genesis() {
 
 		let path = RandomTempPath::create_dir();
@@ -1329,7 +1381,6 @@ mod tests {
 
 		assert_eq!(Some(BlockLocation::Main(1)), location);
 	}
-
 
 	#[test]
 	fn accepted_location_for_branch() {
