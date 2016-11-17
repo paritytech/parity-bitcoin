@@ -34,7 +34,6 @@ fn main() {
 	}
 }
 
-
 fn run() -> Result<(), String> {
 	let yaml = load_yaml!("cli.yml");
 	let matches = clap::App::from_yaml(yaml).get_matches();

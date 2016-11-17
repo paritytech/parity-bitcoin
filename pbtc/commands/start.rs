@@ -11,9 +11,9 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 	try!(init_db(&cfg, &db));
 
 	let p2p_cfg = p2p::Config {
-		threads: 4,
-		inbound_connections: 10,
-		outbound_connections: 10,
+		threads: cfg.p2p_threads,
+		inbound_connections: cfg.inbound_connections,
+		outbound_connections: cfg.outbound_connections,
 		connection: p2p::NetConfig {
 			protocol_version: PROTOCOL_VERSION,
 			protocol_minimum: PROTOCOL_MINIMUM,

@@ -8,6 +8,9 @@ pub struct Config {
 	pub connect: Option<net::SocketAddr>,
 	pub seednode: Option<String>,
 	pub print_to_console: bool,
+	pub inbound_connections: u32,
+	pub outbound_connections: u32,
+	pub p2p_threads: usize,
 }
 
 pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
@@ -17,6 +20,16 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		(false, true) => Magic::Regtest,
 		(false, false) => Magic::Mainnet,
 		(true, true) => return Err("Only one testnet option can be used".into()),
+	};
+
+	let (in_connections, out_connections) = match magic {
+		Magic::Testnet | Magic::Mainnet => (10, 10),
+		Magic::Regtest => (1, 0),
+	};
+
+	let p2p_threads = match magic {
+		Magic::Testnet | Magic::Mainnet => 4,
+		Magic::Regtest => 1,
 	};
 
 	let port = match matches.value_of("port") {
@@ -45,6 +58,9 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		port: port,
 		connect: connect,
 		seednode: seednode,
+		inbound_connections: in_connections,
+		outbound_connections: out_connections,
+		p2p_threads: p2p_threads,
 	};
 
 	Ok(config)
