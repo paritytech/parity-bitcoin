@@ -5,7 +5,7 @@ use chain::RepresentH256;
 use {db, APP_INFO};
 use config::Config;
 
-pub fn open_db(_cfg: &Config) -> Arc<db::Store> {
+pub fn open_db(_cfg: &Config) -> db::SharedStore {
 	let db_path = app_dir(AppDataType::UserData, &APP_INFO, "db").expect("Failed to get app dir");
 	Arc::new(db::Storage::new(db_path).expect("Failed to open database"))
 }
@@ -16,7 +16,7 @@ pub fn node_table_path() -> PathBuf {
 	node_table
 }
 
-pub fn init_db(cfg: &Config, db: &Arc<db::Store>) -> Result<(), String> {
+pub fn init_db(cfg: &Config, db: &db::SharedStore) -> Result<(), String> {
 	// insert genesis block if db is empty
 	let genesis_block = cfg.magic.genesis_block();
 	match db.block_hash(0) {

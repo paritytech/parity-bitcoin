@@ -2,7 +2,7 @@
 
 use std::{self, fs};
 use std::path::Path;
-use kvdb::{DBTransaction, Database, DatabaseConfig};
+use kvdb::{Database, DatabaseConfig};
 use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
@@ -11,15 +11,21 @@ use serialization;
 use chain::{self, RepresentH256};
 use parking_lot::RwLock;
 use transaction_meta::TransactionMeta;
-use std::collections::HashMap;
 
-const COL_COUNT: u32 = 10;
-const COL_META: u32 = 0;
-const COL_BLOCK_HASHES: u32 = 1;
-const COL_BLOCK_HEADERS: u32 = 2;
-const COL_BLOCK_TRANSACTIONS: u32 = 3;
-const COL_TRANSACTIONS: u32 = 4;
-const COL_TRANSACTIONS_META: u32 = 5;
+use error::{Error, ConsistencyError, MetaError};
+use update_context::UpdateContext;
+use block_provider::BlockProvider;
+use transaction_provider::TransactionProvider;
+use transaction_meta_provider::TransactionMetaProvider;
+use block_stapler::{BlockStapler, BlockInsertedChain, Reorganization};
+
+pub const COL_COUNT: u32 = 10;
+pub const COL_META: u32 = 0;
+pub const COL_BLOCK_HASHES: u32 = 1;
+pub const COL_BLOCK_HEADERS: u32 = 2;
+pub const COL_BLOCK_TRANSACTIONS: u32 = 3;
+pub const COL_TRANSACTIONS: u32 = 4;
+pub const COL_TRANSACTIONS_META: u32 = 5;
 const COL_BLOCK_NUMBERS: u32 = 6;
 const _COL_RESERVED3: u32 = 7;
 const _COL_RESERVED4: u32 = 8;
@@ -31,52 +37,9 @@ const DB_VERSION: u32 = 1;
 const MAX_FORK_ROUTE_PRESET: usize = 128;
 
 /// Blockchain storage interface
-pub trait Store : Send + Sync {
+pub trait Store : BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider {
 	/// get best block
 	fn best_block(&self) -> Option<BestBlock>;
-
-	/// resolves number by block hash
-	fn block_number(&self, hash: &H256) -> Option<u32>;
-
-	/// resolves hash by block number
-	fn block_hash(&self, number: u32) -> Option<H256>;
-
-	/// resolves header bytes by block reference (number/hash)
-	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes>;
-
-	/// resolves list of block transactions by block reference (number/hash)
-	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256>;
-
-	/// resolves transaction body bytes by transaction hash
-	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes>;
-
-	/// resolves serialized transaction info by transaction hash
-	fn transaction(&self, hash: &H256) -> Option<chain::Transaction>;
-
-	/// returns all transactions in the block by block reference (number/hash)
-	fn block_transactions(&self, block_ref: BlockRef) -> Vec<chain::Transaction>;
-
-	/// resolves deserialized block body by block reference (number/hash)
-	fn block(&self, block_ref: BlockRef) -> Option<chain::Block>;
-
-	/// returns true if store contains given block
-	fn contains_block(&self, block_ref: BlockRef) -> bool {
-		self.block_header_bytes(block_ref).is_some()
-	}
-
-	/// returns true if store contains given transaction
-	fn contains_transaction(&self, hash: &H256) -> bool {
-		self.transaction(hash).is_some()
-	}
-
-	/// insert block in the storage
-	fn insert_block(&self, block: &chain::Block) -> Result<BlockInsertedChain, Error>;
-
-	/// get transaction metadata
-	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta>;
-
-	/// return the location of this block once if it ever gets inserted
-	fn accepted_location(&self, header: &chain::BlockHeader) -> Option<BlockLocation>;
 }
 
 /// Blockchain storage with rocksdb database
@@ -85,154 +48,14 @@ pub struct Storage {
 	best_block: RwLock<Option<BestBlock>>,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum MetaError {
-	UnsupportedVersion,
-}
-
-#[derive(Debug)]
-/// Database error
-pub enum Error {
-	/// Rocksdb error
-	DB(String),
-	/// Io error
-	Io(std::io::Error),
-	/// Invalid meta info (while opening the database)
-	Meta(MetaError),
-	/// Database blockchain consistency error
-	Consistency(ConsistencyError),
-}
-
-impl Error {
-	fn unknown_hash(h: &H256) -> Self {
-		Error::Consistency(ConsistencyError::Unknown(h.clone()))
-	}
-
-	fn unknown_number(n: u32) -> Self {
-		Error::Consistency(ConsistencyError::UnknownNumber(n))
-	}
-
-	fn double_spend(h: &H256) -> Self {
-		Error::Consistency(ConsistencyError::DoubleSpend(h.clone()))
-	}
-
-	fn not_main(h: &H256) -> Self {
-		Error::Consistency(ConsistencyError::NotMain(h.clone()))
-	}
-
-	fn reorganize(h: &H256) -> Self {
-		Error::Consistency(ConsistencyError::Reorganize(h.clone()))
-	}
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ConsistencyError {
-	/// Unknown hash
-	Unknown(H256),
-	/// Unknown number
-	UnknownNumber(u32),
-	/// Not the block from the main chain
-	NotMain(H256),
-	/// Fork too long
-	ForkTooLong,
-	/// Main chain block transaction attempts to double-spend
-	DoubleSpend(H256),
-	/// Transaction tries to spend
-	UnknownSpending(H256),
-	/// Chain has no best block
-	NoBestBlock,
-	/// Failed reorganization caused by block
-	Reorganize(H256),
-}
-
-impl From<String> for Error {
-	fn from(err: String) -> Error {
-		Error::DB(err)
-	}
-}
-
-impl From<std::io::Error> for Error {
-	fn from(err: std::io::Error) -> Error {
-		Error::Io(err)
-	}
-}
+const KEY_VERSION: &'static[u8] = b"version";
+const KEY_BEST_BLOCK_NUMBER: &'static[u8] = b"best_block_number";
+const KEY_BEST_BLOCK_HASH: &'static[u8] = b"best_block_hash";
 
 fn u32_key(num: u32) -> [u8; 4] {
 	let mut result = [0u8; 4];
 	LittleEndian::write_u32(&mut result, num);
 	result
-}
-
-const KEY_VERSION: &'static[u8] = b"version";
-const KEY_BEST_BLOCK_NUMBER: &'static[u8] = b"best_block_number";
-const KEY_BEST_BLOCK_HASH: &'static[u8] = b"best_block_hash";
-
-struct UpdateContext {
-	pub meta: HashMap<H256, TransactionMeta>,
-	pub db_transaction: DBTransaction,
-	meta_snapshot: Option<HashMap<H256, TransactionMeta>>,
-}
-
-impl UpdateContext {
-	pub fn new(db: &Database) -> Self {
-		UpdateContext {
-			meta: HashMap::new(),
-			db_transaction: db.transaction(),
-			meta_snapshot: None,
-		}
-	}
-
-	pub fn apply(mut self, db: &Database) -> Result<(), Error> {
-		// actually saving meta
-		for (hash, meta) in self.meta.drain() {
-			self.db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.into_bytes());
-		}
-
-		try!(db.write(self.db_transaction));
-		Ok(())
-	}
-
-	pub fn restore_point(&mut self) {
-		// todo: optimize clone here
-		self.meta_snapshot = Some(self.meta.clone());
-		self.db_transaction.remember();
-	}
-
-	pub fn restore(&mut self) {
-		if let Some(meta_snapshot) = std::mem::replace(&mut self.meta_snapshot, None) {
-			self.meta = meta_snapshot;
-			self.db_transaction.rollback();
-		}
-	}
-}
-
-#[derive(Debug)]
-pub struct Reorganization {
-	height: u32,
-	canonized: Vec<H256>,
-	decanonized: Vec<H256>,
-}
-
-impl Reorganization {
-	fn new(height: u32) -> Reorganization {
-		Reorganization { height: height, canonized: Vec::new(), decanonized: Vec::new() }
-	}
-
-	fn push_canonized(&mut self, hash: &H256) {
-		self.canonized.push(hash.clone());
-	}
-
-	fn push_decanonized(&mut self, hash: &H256) {
-		self.decanonized.push(hash.clone());
-	}
-}
-
-#[derive(Debug)]
-pub enum BlockInsertedChain {
-	Disconnected,
-	Main,
-	Side,
-	Reorganized(Reorganization),
 }
 
 impl Storage {
@@ -557,11 +380,7 @@ impl Storage {
 	}
 }
 
-impl Store for Storage {
-	fn best_block(&self) -> Option<BestBlock> {
-		self.best_block.read().clone()
-	}
-
+impl BlockProvider for Storage {
 	fn block_number(&self, hash: &H256) -> Option<u32> {
 		self.get(COL_BLOCK_NUMBERS, &**hash)
 			.map(|val| LittleEndian::read_u32(&val))
@@ -588,10 +407,6 @@ impl Store for Storage {
 			.unwrap_or_default()
 	}
 
-	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
-		self.get(COL_TRANSACTIONS, &**hash)
-	}
-
 	fn block(&self, block_ref: BlockRef) -> Option<chain::Block> {
 		self.resolve_hash(block_ref).and_then(|block_hash|
 			self.get(COL_BLOCK_HEADERS, &*block_hash)
@@ -608,6 +423,9 @@ impl Store for Storage {
 			})
 		)
 	}
+}
+
+impl BlockStapler for Storage {
 
 	fn insert_block(&self, block: &chain::Block) -> Result<BlockInsertedChain, Error> {
 
@@ -744,20 +562,6 @@ impl Store for Storage {
 		Ok(result)
 	}
 
-	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
-		self.transaction_bytes(hash).and_then(|tx_bytes| {
-			serialization::deserialize(tx_bytes.as_ref()).map_err(
-				|e| self.db_error(format!("Error deserializing transaction, possible db corruption ({:?})", e))
-			).ok()
-		})
-	}
-
-	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
-		self.get(COL_TRANSACTIONS_META, &**hash).map(|val|
-			TransactionMeta::from_bytes(&val).unwrap_or_else(|e| panic!("Invalid transaction metadata: db corrupted? ({:?})", e))
-		)
-	}
-
 	fn accepted_location(&self, header: &chain::BlockHeader) -> Option<BlockLocation> {
 		let best_number = match self.best_block() {
 			None => { return Some(BlockLocation::Main(0)); },
@@ -781,10 +585,46 @@ impl Store for Storage {
 	}
 }
 
+impl TransactionProvider for Storage {
+
+	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
+		self.get(COL_TRANSACTIONS, &**hash)
+	}
+
+	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
+		self.transaction_bytes(hash).map(|tx_bytes| {
+			serialization::deserialize(tx_bytes.as_ref())
+				.unwrap_or_else(|e| panic!("Failed to deserialize transaction: db corrupted? ({:?})", e))
+		})
+	}
+}
+
+impl TransactionMetaProvider for Storage {
+
+	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
+		self.get(COL_TRANSACTIONS_META, &**hash).map(|val|
+			TransactionMeta::from_bytes(&val).unwrap_or_else(|e| panic!("Invalid transaction metadata: db corrupted? ({:?})", e))
+		)
+	}
+}
+
+impl Store for Storage {
+	fn best_block(&self) -> Option<BestBlock> {
+		self.best_block.read().clone()
+	}
+}
+
 #[cfg(test)]
 mod tests {
 
-	use super::{Storage, Store, UpdateContext, Error, ConsistencyError, BlockInsertedChain};
+	use block_provider::BlockProvider;
+	use block_stapler::{BlockStapler, BlockInsertedChain};
+	use transaction_meta_provider::TransactionMetaProvider;
+	use transaction_provider::TransactionProvider;
+	use update_context::UpdateContext;
+	use error::{ConsistencyError, Error};
+
+	use super::{Storage, Store};
 	use devtools::RandomTempPath;
 	use chain::{Block, RepresentH256};
 	use super::super::{BlockRef, BlockLocation};

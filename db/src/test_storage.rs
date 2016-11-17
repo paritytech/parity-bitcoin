@@ -1,6 +1,9 @@
 //! Test storage
 
-use super::{BlockRef, Store, Error, BestBlock, BlockLocation, BlockInsertedChain};
+use super::{
+	BlockRef, Store, Error, BestBlock, BlockLocation, BlockInsertedChain, BlockProvider,
+	BlockStapler, TransactionMetaProvider, TransactionProvider,
+};
 use chain::{self, Block, RepresentH256};
 use primitives::hash::H256;
 use serialization;
@@ -59,10 +62,7 @@ impl TestStorage {
 	}
 }
 
-impl Store for TestStorage {
-	fn best_block(&self) -> Option<BestBlock> {
-		self.data.read().best_block.clone()
-	}
+impl BlockProvider for TestStorage {
 
 	fn block_number(&self, hash: &H256) -> Option<u32> {
 		let data = self.data.read();
@@ -89,17 +89,6 @@ impl Store for TestStorage {
 			.unwrap_or(Vec::new())
 	}
 
-	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
-		self.transaction(hash).map(|tx| serialization::serialize(&tx))
-	}
-
-	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
-		let data = self.data.read();
-		data.blocks.iter().flat_map(|(_, b)| b.transactions())
-			.find(|ref tx| tx.hash() == *hash)
-			.cloned()
-	}
-
 	fn block_transactions(&self, block_ref: BlockRef) -> Vec<chain::Transaction> {
 		self.block(block_ref)
 			.map(|b| b.transactions().iter().cloned().collect())
@@ -112,6 +101,9 @@ impl Store for TestStorage {
 			.and_then(|ref h| data.blocks.get(h))
 			.cloned()
 	}
+}
+
+impl BlockStapler for TestStorage {
 
 	fn insert_block(&self, block: &chain::Block) -> Result<BlockInsertedChain, Error> {
 		let hash = block.hash();
@@ -147,11 +139,6 @@ impl Store for TestStorage {
 		Ok(BlockInsertedChain::Main)
 	}
 
-	// just spawns new meta so far, use real store for proper tests
-	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
-		self.transaction(hash).map(|tx| TransactionMeta::new(0, tx.outputs.len()))
-	}
-
 	// supports only main chain in test storage
 	fn accepted_location(&self, header: &chain::BlockHeader) -> Option<BlockLocation> {
 		if self.best_block().is_none() { return Some(BlockLocation::Main(0)); }
@@ -161,6 +148,32 @@ impl Store for TestStorage {
 
 		None
 	}
+}
 
+impl TransactionProvider for TestStorage {
+
+	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
+		self.transaction(hash).map(|tx| serialization::serialize(&tx))
+	}
+
+	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
+		let data = self.data.read();
+		data.blocks.iter().flat_map(|(_, b)| b.transactions())
+			.find(|ref tx| tx.hash() == *hash)
+			.cloned()
+	}
+}
+
+impl TransactionMetaProvider for TestStorage {
+	// just spawns new meta so far, use real store for proper tests
+	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
+		self.transaction(hash).map(|tx| TransactionMeta::new(0, tx.outputs.len()))
+	}
+}
+
+impl Store for TestStorage {
+	fn best_block(&self) -> Option<BestBlock> {
+		self.data.read().best_block.clone()
+	}
 }
 
