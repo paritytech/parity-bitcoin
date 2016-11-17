@@ -232,7 +232,7 @@ pub enum BlockInsertedChain {
 	Disconnected,
 	Main,
 	Side,
-	Rorganized(Reorganization),
+	Reorganized(Reorganization),
 }
 
 impl Storage {
@@ -680,7 +680,7 @@ impl Store for Storage {
 
 					reorg.push_canonized(&new_best_hash);
 
-					BlockInsertedChain::Rorganized(reorg)
+					BlockInsertedChain::Reorganized(reorg)
 				},
 				Err(Error::Consistency(consistency_error)) => {
 					match consistency_error {
