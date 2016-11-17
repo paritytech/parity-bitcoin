@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
 use linked_hash_map::LinkedHashMap;
 use time;
@@ -42,7 +42,7 @@ impl OrphanTransactionsPool {
 	}
 
 	/// Get unknown transactions in the insertion order
-	pub fn transactions<'a>(&'a self) -> &'a LinkedHashMap<H256, OrphanTransaction> {
+	pub fn transactions(&self) -> &LinkedHashMap<H256, OrphanTransaction> {
 		&self.by_hash
 	}
 
@@ -51,7 +51,7 @@ impl OrphanTransactionsPool {
 		assert!(!self.by_hash.contains_key(&hash));
 		assert!(unknown_parents.iter().all(|h| transaction.inputs.iter().any(|i| &i.previous_output.hash == h)));
 
-		for unknown_parent in unknown_parents.iter() {
+		for unknown_parent in &unknown_parents {
 			self.by_parent.entry(unknown_parent.clone())
 				.or_insert_with(HashSet::new)
 				.insert(hash.clone());
@@ -63,26 +63,31 @@ impl OrphanTransactionsPool {
 	pub fn remove_transactions_for_parent(&mut self, hash: &H256) -> Vec<(H256, Transaction)> {
 		assert!(!self.by_hash.contains_key(hash));
 
-		// remove direct children of hash
-		let mut removed_orphans_hashes: Vec<H256> = Vec::new();
+		let mut removal_queue: VecDeque<H256> = VecDeque::new();
+		removal_queue.push_back(hash.clone());
+
 		let mut removed_orphans: Vec<(H256, Transaction)> = Vec::new();
-		if let Entry::Occupied(children_entry) = self.by_parent.entry(hash.clone()) {
-			for child in children_entry.get() {
-				if {
-					let child_entry = self.by_hash.get_mut(child).expect("every entry in by_parent.values() has corresponding entry in by_hash.keys()");
-					child_entry.remove_known_parent(hash)
-				} {
-					removed_orphans_hashes.push(child.clone());
-					removed_orphans.push((child.clone(), self.by_hash.remove(child).expect("checked couple of lines above").transaction));
-				};
+		while let Some(hash) = removal_queue.pop_front() {
+			// remove direct children of hash
+			let mut removed_orphans_hashes: Vec<H256> = Vec::new();
+			if let Entry::Occupied(children_entry) = self.by_parent.entry(hash.clone()) {
+				for child in children_entry.get() {
+					let all_parents_are_known = {
+						let child_entry = self.by_hash.get_mut(child).expect("every entry in by_parent.values() has corresponding entry in by_hash.keys()");
+						child_entry.remove_known_parent(&hash)
+					};
+					
+					if all_parents_are_known {
+						removed_orphans_hashes.push(child.clone());
+						removed_orphans.push((child.clone(), self.by_hash.remove(child).expect("checked couple of lines above").transaction));
+					}
+				}
+
+				children_entry.remove_entry();
 			}
 
-			children_entry.remove_entry();
-		}
-
-		// then also remove grandchildren of hash & so on
-		for child_hash in removed_orphans_hashes {
-			removed_orphans.extend(self.remove_transactions_for_parent(&child_hash));
+			// then also remove grandchildren of hash & so on
+			removal_queue.extend(removed_orphans_hashes);
 		}
 
 		removed_orphans

@@ -119,7 +119,7 @@ pub fn manage_unknown_orphaned_blocks(config: &ManageUnknownBlocksConfig, orphan
 		let mut unknown_to_remove: HashSet<H256> = HashSet::new();
 		let mut remove_num = if unknown_blocks.len() > config.max_number { unknown_blocks.len() - config.max_number } else { 0 };
 		let now = precise_time_s();
-		for (hash, time) in unknown_blocks.iter() {
+		for (hash, time) in unknown_blocks {
 			// remove oldest blocks if there are more unknown blocks that we can hold in memory
 			if remove_num > 0 {
 				unknown_to_remove.insert(hash.clone());
@@ -143,7 +143,7 @@ pub fn manage_unknown_orphaned_blocks(config: &ManageUnknownBlocksConfig, orphan
 		.map(|t| t.0)
 		.collect();
 
-	if unknown_to_remove.is_empty() { None } else { Some(unknown_to_remove.into_iter().collect()) }
+	if unknown_to_remove.is_empty() { None } else { Some(unknown_to_remove) }
 }
 
 /// Manage orphaned transactions
@@ -153,7 +153,7 @@ pub fn manage_orphaned_transactions(config: &ManageOrphanTransactionsConfig, orp
 		let mut orphans_to_remove: Vec<H256> = Vec::new();
 		let mut remove_num = if unknown_transactions.len() > config.max_number { unknown_transactions.len() - config.max_number } else { 0 };
 		let now = precise_time_s();
-		for (hash, orphan_tx) in unknown_transactions.iter() {
+		for (hash, orphan_tx) in unknown_transactions {
 			// remove oldest blocks if there are more unknown blocks that we can hold in memory
 			if remove_num > 0 {
 				orphans_to_remove.push(hash.clone());

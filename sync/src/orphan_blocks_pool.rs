@@ -36,7 +36,7 @@ impl OrphanBlocksPool {
 	}
 
 	/// Get unknown blocks in the insertion order
-	pub fn unknown_blocks<'a>(&'a self) -> &'a LinkedHashMap<H256, f64> {
+	pub fn unknown_blocks(&self) -> &LinkedHashMap<H256, f64> {
 		&self.unknown_blocks
 	}
 
@@ -50,8 +50,10 @@ impl OrphanBlocksPool {
 
 	/// Insert unknown block, for which we know nothing about its parent block
 	pub fn insert_unknown_block(&mut self, hash: H256, block: Block) {
-		self.insert_orphaned_block(hash.clone(), block);
-		self.unknown_blocks.insert(hash, time::precise_time_s());
+		let previous_value = self.unknown_blocks.insert(hash.clone(), time::precise_time_s());
+		assert_eq!(previous_value, None);
+
+		self.insert_orphaned_block(hash, block);
 	}
 
 	/// Remove all blocks, which are not-unknown
@@ -74,7 +76,7 @@ impl OrphanBlocksPool {
 			if let Entry::Occupied(entry) = self.orphaned_blocks.entry(parent_hash) {
 				let (_, orphaned) = entry.remove_entry();
 				for orphaned_hash in orphaned.keys() {
-					self.unknown_blocks.remove(&orphaned_hash);
+					self.unknown_blocks.remove(orphaned_hash);
 				}
 				queue.extend(orphaned.keys().cloned());
 				removed.extend(orphaned.into_iter());
@@ -88,14 +90,16 @@ impl OrphanBlocksPool {
 		// TODO: excess clone
 		let mut removed: Vec<(H256, Block)> = Vec::new();
 		let parent_orphan_keys: Vec<_> = self.orphaned_blocks.keys().cloned().collect();
-		for parent_orphan_key in parent_orphan_keys.into_iter() {
-			if let Entry::Occupied(mut orphan_entry) = self.orphaned_blocks.entry(parent_orphan_key.clone()) {
+		for parent_orphan_key in parent_orphan_keys {
+			if let Entry::Occupied(mut orphan_entry) = self.orphaned_blocks.entry(parent_orphan_key) {
 				if {
 					let mut orphans = orphan_entry.get_mut();
 					let orphans_keys: HashSet<H256> = orphans.keys().cloned().collect();
 					for orphan_to_remove in orphans_keys.intersection(&hashes) {
 						self.unknown_blocks.remove(orphan_to_remove);
-						removed.push((orphan_to_remove.clone(), orphans.remove(orphan_to_remove).unwrap()));
+						removed.push((orphan_to_remove.clone(),
+							orphans.remove(orphan_to_remove).expect("iterating by intersection of orphans keys with hashes; removing from orphans; qed")
+						));
 					}
 					orphans.is_empty()
 				} {

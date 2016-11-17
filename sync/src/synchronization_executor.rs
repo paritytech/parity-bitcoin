@@ -103,7 +103,6 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 				let mempool = types::MemPool;
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					let connection = &mut *connection;
 					trace!(target: "sync", "Querying memory pool contents from peer#{}", peer_index);
 					connection.send_mempool(&mempool);
 				}
@@ -118,7 +117,6 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					let connection = &mut *connection;
 					trace!(target: "sync", "Querying {} unknown transactions from peer#{}", getdata.inventory.len(), peer_index);
 					connection.send_getdata(&getdata);
 				}

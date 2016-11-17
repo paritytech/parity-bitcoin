@@ -378,7 +378,7 @@ impl Chain {
 
 	/// Forget in-memory blocks
 	pub fn forget_blocks(&mut self, hashes: &[H256]) {
-		for hash in hashes.iter() {
+		for hash in hashes {
 			self.forget_block(hash);
 		}
 	}
@@ -396,7 +396,7 @@ impl Chain {
 
 	/// Forget in-memory blocks, but leave their headers in the headers_chain (orphan queue)
 	pub fn forget_blocks_leave_header(&mut self, hashes: &[H256]) {
-		for hash in hashes.iter() {
+		for hash in hashes {
 			self.forget_block_leave_header(hash);
 		}
 	}
@@ -517,14 +517,15 @@ impl Chain {
 		if self.storage.contains_transaction(hash) {
 			return TransactionState::Stored;
 		}
-		return TransactionState::Unknown;
+		TransactionState::Unknown
 	}
 
 	/// Get transactions hashes with given state
 	pub fn transactions_hashes_with_state(&self, state: TransactionState) -> Vec<H256> {
 		match state {
 			TransactionState::InMemory => self.memory_pool.get_transactions_ids(),
-			_ => unimplemented!(),
+			TransactionState::Verifying => self.verifying_transactions.keys().cloned().collect(),
+			_ => panic!("wrong argument"),
 		}
 	}
 
@@ -550,7 +551,7 @@ impl Chain {
 			for h in all_keys {
 				if {
 					if let Some(entry) = self.verifying_transactions.get(&h) {
-						if entry.inputs.iter().any(|i| &i.previous_output.hash == &hash) {
+						if entry.inputs.iter().any(|i| i.previous_output.hash == hash) {
 							queue.push_back(h.clone());
 							true
 						} else {
