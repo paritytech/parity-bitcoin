@@ -1,19 +1,20 @@
 use std::{io, cmp};
 use futures::{Future, Poll, Async};
-use message::{Message, MessageResult};
+use message::{Message, MessageResult, Error};
 use message::types::{Version, Verack};
 use message::common::Magic;
 use io::{write_message, WriteMessage, ReadMessage, read_message};
 
-pub fn handshake<A>(a: A, magic: Magic, version: Version) -> Handshake<A> where A: io::Write + io::Read {
+pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> Handshake<A> where A: io::Write + io::Read {
 	Handshake {
 		version: version.version(),
 		state: HandshakeState::SendVersion(write_message(a, version_message(magic, version))),
 		magic: magic,
+		min_version: min_version,
 	}
 }
 
-pub fn accept_handshake<A>(a: A, magic: Magic, version: Version) -> AcceptHandshake<A> where A: io::Write + io::Read {
+pub fn accept_handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> AcceptHandshake<A> where A: io::Write + io::Read {
 	AcceptHandshake {
 		version: version.version(),
 		state: AcceptHandshakeState::ReceiveVersion {
@@ -21,6 +22,7 @@ pub fn accept_handshake<A>(a: A, magic: Magic, version: Version) -> AcceptHandsh
 			future: read_message(a, magic, 0),
 		},
 		magic: magic,
+		min_version: min_version,
 	}
 }
 
@@ -72,12 +74,14 @@ pub struct Handshake<A> {
 	state: HandshakeState<A>,
 	magic: Magic,
 	version: u32,
+	min_version: u32,
 }
 
 pub struct AcceptHandshake<A> {
 	state: AcceptHandshakeState<A>,
 	magic: Magic,
 	version: u32,
+	min_version: u32,
 }
 
 impl<A> Future for Handshake<A> where A: io::Read + io::Write {
@@ -96,6 +100,10 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 					Ok(version) => version,
 					Err(err) => return Ok((stream, Err(err.into())).into()),
 				};
+
+				if version.version() < self.min_version {
+					return Ok((stream, Err(Error::InvalidVersion)).into());
+				}
 
 				let next = HandshakeState::ReceiveVerack {
 					version: Some(version),
@@ -139,6 +147,10 @@ impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
 					Ok(version) => version,
 					Err(err) => return Ok((stream, Err(err.into())).into()),
 				};
+
+				if version.version() < self.min_version {
+					return Ok((stream, Err(Error::InvalidVersion)).into());
+				}
 
 				let local_version = local_version.take().expect("local version must be set");
 				let next = AcceptHandshakeState::SendVersion {
