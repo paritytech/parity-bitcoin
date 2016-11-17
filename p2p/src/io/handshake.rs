@@ -288,7 +288,7 @@ mod tests {
 			write: Bytes::default(),
 		};
 
-		let hs = handshake(test_io, magic, local_version).wait().unwrap();
+		let hs = handshake(test_io, magic, local_version, 0).wait().unwrap();
 		assert_eq!(hs.0.write, expected_stream.out());
 		assert_eq!(hs.1.unwrap(), expected);
 	}
@@ -317,7 +317,7 @@ mod tests {
 		expected_stream.append_slice(Message::new(magic, version, &local_version).unwrap().as_ref());
 		expected_stream.append_slice(Message::new(magic, version, &Verack).unwrap().as_ref());
 
-		let hs = accept_handshake(test_io, magic, local_version).wait().unwrap();
+		let hs = accept_handshake(test_io, magic, local_version, 0).wait().unwrap();
 		assert_eq!(hs.0.write, expected_stream.out());
 		assert_eq!(hs.1.unwrap(), expected);
 	}
