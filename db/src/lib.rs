@@ -34,7 +34,7 @@ pub enum BlockLocation {
 }
 
 pub use best_block::BestBlock;
-pub use storage::{Storage, Store, Error};
+pub use storage::{Storage, Store, Error, BlockInsertedChain};
 pub use kvdb::Database;
 
 #[cfg(feature="dev")]

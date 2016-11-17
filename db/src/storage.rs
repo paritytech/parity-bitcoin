@@ -65,7 +65,7 @@ pub trait Store : Send + Sync {
 	}
 
 	/// insert block in the storage
-	fn insert_block(&self, block: &chain::Block) -> Result<(), Error>;
+	fn insert_block(&self, block: &chain::Block) -> Result<BlockInsertedChain, Error>;
 
 	/// get transaction metadata
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta>;
@@ -199,6 +199,35 @@ impl UpdateContext {
 			self.db_transaction.rollback();
 		}
 	}
+}
+
+#[derive(Debug)]
+pub struct Reorganization {
+	height: u32,
+	canonized: Vec<H256>,
+	decanonized: Vec<H256>,
+}
+
+impl Reorganization {
+	fn new(height: u32) -> Reorganization {
+		Reorganization { height: height, canonized: Vec::new(), decanonized: Vec::new() }
+	}
+
+	fn push_canonized(&mut self, hash: &H256) {
+		self.canonized.push(hash.clone());
+	}
+
+	fn push_decanonized(&mut self, hash: &H256) {
+		self.decanonized.push(hash.clone());
+	}
+}
+
+#[derive(Debug)]
+pub enum BlockInsertedChain {
+    Disconnected,
+	Main,
+	Side,
+	Rorganized(Reorganization),
 }
 
 impl Storage {
@@ -465,7 +494,7 @@ impl Storage {
 
 	// maybe reorganize to the _known_ block
 	// it will actually reorganize only when side chain is at least the same length as main
-	fn maybe_reorganize(&self, context: &mut UpdateContext, hash: &H256) -> Result<Option<(u32, H256)>, Error> {
+	fn maybe_reorganize(&self, context: &mut UpdateContext, hash: &H256) -> Result<Option<Reorganization>, Error> {
 		context.restore_point();
 
 		match self.maybe_reorganize_fallable(context, hash) {
@@ -479,7 +508,7 @@ impl Storage {
 		}
 	}
 
-	fn maybe_reorganize_fallable(&self, context: &mut UpdateContext, hash: &H256) -> Result<Option<(u32, H256)>, Error> {
+	fn maybe_reorganize_fallable(&self, context: &mut UpdateContext, hash: &H256) -> Result<Option<Reorganization>, Error> {
 		if self.block_number(hash).is_some() {
 			return Ok(None); // cannot reorganize to canonical block
 		}
@@ -493,12 +522,14 @@ impl Storage {
 			return Ok(None);
 		}
 
+		let mut reorganization = Reorganization::new(at_height);
 		let mut now_best = try!(self.best_number().ok_or(Error::Consistency(ConsistencyError::NoBestBlock)));
 
 		// decanonizing main chain to the split point
 		loop {
 			let next_decanonize = try!(self.block_hash(now_best).ok_or(Error::unknown_number(now_best)));
 			try!(self.decanonize_block(context, &next_decanonize));
+			reorganization.push_decanonized(&next_decanonize);
 
 			now_best -= 1;
 
@@ -509,12 +540,14 @@ impl Storage {
 		for new_canonical_hash in &route {
 			now_best += 1;
 			try!(self.canonize_block(context, now_best, &new_canonical_hash));
+			reorganization.push_canonized(&new_canonical_hash);
 		}
 
 		// finaly canonizing the top block we are reorganizing to
 		try!(self.canonize_block(context, now_best + 1, hash));
+		reorganization.push_canonized(&hash);
 
-		Ok(Some((now_best+1, hash.clone())))
+		Ok(Some(reorganization))
 	}
 }
 
@@ -570,7 +603,7 @@ impl Store for Storage {
 		)
 	}
 
-	fn insert_block(&self, block: &chain::Block) -> Result<(), Error> {
+	fn insert_block(&self, block: &chain::Block) -> Result<BlockInsertedChain, Error> {
 
 		// ! lock will be held during the entire insert routine
 		let mut best_block = self.best_block.write();
@@ -612,13 +645,15 @@ impl Store for Storage {
 		);
 
 		// the block is continuing the main chain
-		if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
+		let result = if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
 			try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
 			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 
 			// updating main chain height reference
 			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash));
 			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&block_hash), new_best_number);
+
+			BlockInsertedChain::Main
 		}
 
 		// the block does not continue the main chain
@@ -626,9 +661,9 @@ impl Store for Storage {
 		// this can canonize the block parent if block parent + this block is longer than the main chain
 		else {
 			match self.maybe_reorganize(&mut context, &block.header().previous_header_hash) {
-				Ok(Some((reorg_number, _))) => {
+				Ok(Some(mut reorg)) => {
 					// if so, we have new best main chain block
-					new_best_number = reorg_number + 1;
+					new_best_number = reorg.height + 1;
 					new_best_hash = block_hash;
 
 					// and we canonize it also by provisioning transactions
@@ -636,6 +671,10 @@ impl Store for Storage {
 					context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 					context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&new_best_hash));
 					context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&new_best_hash), new_best_number);
+
+					reorg.push_canonized(&new_best_hash);
+
+					BlockInsertedChain::Rorganized(reorg)
 				},
 				Err(Error::Consistency(consistency_error)) => {
 					match consistency_error {
@@ -653,6 +692,7 @@ impl Store for Storage {
 							// this is orphan block inserted or disconnected chain head updated, we allow that (by now)
 							// so it is no-op
 							warn!(target: "reorg", "Disconnected chain head {} updated with {}", &hash, &block_hash);
+							BlockInsertedChain::Disconnected
 						},
 						_ => {
 							// we don't allow other errors on side chain/orphans
@@ -665,9 +705,10 @@ impl Store for Storage {
 				},
 				Ok(None) => {
 					// reorganize didn't happen but the block is ok, no-op here
+					BlockInsertedChain::Side
 				}
 			}
-		}
+		};
 
 		// we always update best hash even if it is not changed
 		context.db_transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
@@ -678,7 +719,7 @@ impl Store for Storage {
 		// updating locked best block
 		*best_block = Some(BestBlock { hash: new_best_hash, number: new_best_number });
 
-		Ok(())
+		Ok(result)
 	}
 
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
