@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
-use std::collections::{VecDeque, HashMap};
-use std::collections::hash_map::Entry;
+use std::collections::VecDeque;
+use linked_hash_map::LinkedHashMap;
 use parking_lot::RwLock;
 use chain::{Block, BlockHeader, Transaction};
 use db;
@@ -107,7 +107,7 @@ pub struct Chain {
 	/// In-memory queue of blocks headers
 	headers_chain: BestHeadersChain,
 	/// Currently verifying transactions
-	verifying_transactions: HashMap<H256, Transaction>,
+	verifying_transactions: LinkedHashMap<H256, Transaction>,
 	/// Transactions memory pool
 	memory_pool: MemoryPool,
 }
@@ -147,7 +147,7 @@ impl Chain {
 			storage: storage,
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
 			headers_chain: BestHeadersChain::new(genesis_block_hash),
-			verifying_transactions: HashMap::new(),
+			verifying_transactions: LinkedHashMap::new(),
 			memory_pool: MemoryPool::new(),
 		}
 	}
@@ -346,9 +346,19 @@ impl Chain {
 				.map(|t| (t.hash(), t))
 				.collect();
 
+			// reverify verifying transactions
+			let verifying_transactions: Vec<_> = self.verifying_transactions
+				.iter()
+				.map(|(h, t)| (h.clone(), t.clone()))
+				.collect();
+			// there's no guarantee (in docs) that LinkedHashMap::into_iter() will return values ordered by insertion time
+			self.verifying_transactions.clear();
+
 			Ok(BlockInsertionResult {
+				// order matters: db transactions, then ordered mempool transactions, then ordered verifying transactions
 				transactions_to_reverify: old_main_blocks_transactions.into_iter()
 					.chain(memory_pool_transactions.into_iter())
+					.chain(verifying_transactions.into_iter())
 					.collect(),
 			})
 		}
@@ -538,11 +548,20 @@ impl Chain {
 		while let Some(hash) = queue.pop_front() {
 			let all_keys: Vec<_> = self.verifying_transactions.keys().cloned().collect();
 			for h in all_keys {
-				if let Entry::Occupied(entry) = self.verifying_transactions.entry(h.clone()) {
-					if entry.get().inputs.iter().any(|i| &i.previous_output.hash == &hash) {
-						queue.push_back(h);
-						entry.remove_entry();
+				if {
+					if let Some(entry) = self.verifying_transactions.get(&h) {
+						if entry.inputs.iter().any(|i| &i.previous_output.hash == &hash) {
+							queue.push_back(h.clone());
+							true
+						} else {
+							false
+						}
+					} else {
+						// iterating by previously read keys
+						unreachable!()
 					}
+				} {
+					self.verifying_transactions.remove(&h);
 				}
 			}
 		}
@@ -642,6 +661,7 @@ mod tests {
 	use super::{Chain, BlockState, TransactionState, HeadersIntersection};
 	use db::{self, Store, BestBlock};
 	use primitives::hash::H256;
+	use devtools::RandomTempPath;
 	use test_data;
 
 	#[test]
@@ -905,8 +925,8 @@ mod tests {
 			.build();
 		let tx1 = b1.transactions[0].clone();
 		let tx1_hash = tx1.hash();
-		let tx2 = b1.transactions[0].clone();
-		let tx2_hash = tx1.hash();
+		let tx2 = b1.transactions[1].clone();
+		let tx2_hash = tx2.hash();
 
 		let mut chain = Chain::new(Arc::new(db::TestStorage::with_blocks(&vec![b0])));
 		chain.verify_transaction(tx1_hash.clone(), tx1);
@@ -963,5 +983,40 @@ mod tests {
 		assert!(chain_transactions.contains(&test_chain.at(1).hash()));
 		assert!(chain_transactions.contains(&test_chain.at(2).hash()));
 		assert!(chain_transactions.contains(&test_chain.at(3).hash()));
+	}
+
+	#[test]
+	fn memory_pool_transactions_are_reerified_after_reorganization() {
+		let b0 = test_data::block_builder().header().build().build();
+		let b1 = test_data::block_builder().header().nonce(1).parent(b0.hash()).build().build();
+		let b2 = test_data::block_builder().header().nonce(2).parent(b0.hash()).build().build();
+		let b3 = test_data::block_builder().header().parent(b2.hash()).build().build();
+
+		let tx1: Transaction = test_data::TransactionBuilder::with_version(1).into();
+		let tx1_hash = tx1.hash();
+		let tx2: Transaction = test_data::TransactionBuilder::with_version(2).into();
+		let tx2_hash = tx2.hash();
+
+		let path = RandomTempPath::create_dir();
+		let storage = Arc::new(db::Storage::new(path.as_path()).unwrap());
+		storage.insert_block(&b0).expect("no db error");
+
+		let mut chain = Chain::new(storage);
+		chain.verify_transaction(tx1_hash.clone(), tx1);
+		chain.insert_verified_transaction(tx2);
+
+		// no reorg
+		let result = chain.insert_best_block(b1.hash(), &b1).expect("no error");
+		assert_eq!(result.transactions_to_reverify.len(), 0);
+
+		// no reorg
+		let result = chain.insert_best_block(b2.hash(), &b2).expect("no error");
+		assert_eq!(result.transactions_to_reverify.len(), 0);
+
+		// reorg
+		let result = chain.insert_best_block(b3.hash(), &b3).expect("no error");
+		assert_eq!(result.transactions_to_reverify.len(), 2);
+		assert!(result.transactions_to_reverify.iter().any(|&(ref h, _)| h == &tx1_hash));
+		assert!(result.transactions_to_reverify.iter().any(|&(ref h, _)| h == &tx2_hash));
 	}
 }
