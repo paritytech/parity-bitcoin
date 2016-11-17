@@ -49,12 +49,12 @@ pub enum Error {
 }
 
 /// Create blocks writer.
-pub fn create_sync_blocks_writer(db: Arc<db::Store>) -> blocks_writer::BlocksWriter {
+pub fn create_sync_blocks_writer(db: db::SharedStore) -> blocks_writer::BlocksWriter {
 	blocks_writer::BlocksWriter::new(db)
 }
 
 /// Create inbound synchronization connections factory for given `db`.
-pub fn create_sync_connection_factory(handle: &Handle, consensus_params: ConsensusParams, db: Arc<db::Store>) -> p2p::LocalSyncNodeRef {
+pub fn create_sync_connection_factory(handle: &Handle, consensus_params: ConsensusParams, db: db::SharedStore) -> p2p::LocalSyncNodeRef {
 	use synchronization_chain::Chain as SyncChain;
 	use synchronization_executor::LocalSynchronizationTaskExecutor as SyncExecutor;
 	use local_node::LocalNode as SyncNode;

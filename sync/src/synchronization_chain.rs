@@ -101,7 +101,7 @@ pub struct Chain {
 	/// Best storage block (stored for optimizations)
 	best_storage_block: db::BestBlock,
 	/// Local blocks storage
-	storage: Arc<db::Store>,
+	storage: db::SharedStore,
 	/// In-memory queue of blocks hashes
 	hash_chain: HashQueueChain,
 	/// In-memory queue of blocks headers
@@ -134,7 +134,7 @@ impl BlockState {
 
 impl Chain {
 	/// Create new `Chain` with given storage
-	pub fn new(storage: Arc<db::Store>) -> Self {
+	pub fn new(storage: db::SharedStore) -> Self {
 		// we only work with storages with genesis block
 		let genesis_block_hash = storage.block_hash(0)
 			.expect("storage with genesis block is required");
@@ -165,7 +165,7 @@ impl Chain {
 	}
 
 	/// Get storage
-	pub fn storage(&self) -> Arc<db::Store> {
+	pub fn storage(&self) -> db::SharedStore {
 		self.storage.clone()
 	}
 
@@ -666,6 +666,7 @@ mod tests {
 	use primitives::hash::H256;
 	use devtools::RandomTempPath;
 	use test_data;
+	use db::BlockStapler;
 
 	#[test]
 	fn chain_empty() {

@@ -10,7 +10,7 @@ pub struct BlocksWriter {
 }
 
 impl BlocksWriter {
-	pub fn new(storage: Arc<db::Store>) -> BlocksWriter {
+	pub fn new(storage: db::SharedStore) -> BlocksWriter {
 		BlocksWriter {
 			storage: storage.clone(),
 			verifier: ChainVerifier::new(storage),
