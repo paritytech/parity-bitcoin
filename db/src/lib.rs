@@ -39,6 +39,8 @@ pub enum BlockLocation {
 	Side(u32),
 }
 
+pub type SharedStore = std::sync::Arc<Store + Send + Sync>;
+
 pub use best_block::BestBlock;
 pub use storage::{Storage, Store};
 pub use error::Error;

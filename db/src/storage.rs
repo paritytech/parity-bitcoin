@@ -2,7 +2,7 @@
 
 use std::{self, fs};
 use std::path::Path;
-use kvdb::{DBTransaction, Database, DatabaseConfig};
+use kvdb::{Database, DatabaseConfig};
 use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
@@ -11,7 +11,6 @@ use serialization;
 use chain::{self, RepresentH256};
 use parking_lot::RwLock;
 use transaction_meta::TransactionMeta;
-use std::collections::HashMap;
 
 use error::{Error, ConsistencyError, MetaError};
 use update_context::UpdateContext;
