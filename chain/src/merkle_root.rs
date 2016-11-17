@@ -26,7 +26,7 @@ pub fn merkle_root(hashes: &[H256]) -> H256 {
 	// duplicate the last element if len is not even
 	if hashes.len() % 2 == 1 {
 		let last = &hashes[hashes.len() - 1];
-		row.push(dhash256(&*concat(&last, last)));
+		row.push(dhash256(&*concat(last, last)));
 	}
 
 	merkle_root(&row)

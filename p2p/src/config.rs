@@ -6,10 +6,6 @@ use net::Config as NetConfig;
 pub struct Config {
 	/// Number of threads used by p2p thread pool.
 	pub threads: usize,
-	/// Lowest supported protocol version.
-	pub protocol_minimum: u32,
-	/// Highest supported protocol version.
-	pub protocol_maximum: u32,
 	/// Number of inbound connections.
 	pub inbound_connections: u32,
 	/// Number of outbound connections.
@@ -20,6 +16,6 @@ pub struct Config {
 	pub peers: Vec<SocketAddr>,
 	/// Connect to these nodes to retrieve peer addresses, and disconnect.
 	pub seeds: Vec<String>,
-	/// p2p module cache directory.
+	/// p2p/nodes.csv file path
 	pub node_table_path: PathBuf,
 }

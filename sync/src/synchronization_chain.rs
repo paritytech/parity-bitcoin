@@ -1,13 +1,14 @@
 use std::fmt;
 use std::sync::Arc;
 use std::collections::VecDeque;
+use linked_hash_map::LinkedHashMap;
 use parking_lot::RwLock;
-use chain::{Block, BlockHeader};
+use chain::{Block, BlockHeader, Transaction};
 use db;
 use best_headers_chain::{BestHeadersChain, Information as BestHeadersInformation};
 use primitives::hash::H256;
 use hash_queue::{HashQueueChain, HashPosition};
-use miner::MemoryPool;
+use miner::{MemoryPool, MemoryPoolOrderingStrategy, MemoryPoolInformation};
 
 /// Thread-safe reference to `Chain`
 pub type ChainRef = Arc<RwLock<Chain>>;
@@ -20,6 +21,13 @@ const REQUESTED_QUEUE: usize = 1;
 const SCHEDULED_QUEUE: usize = 2;
 /// Number of hash queues
 const NUMBER_OF_QUEUES: usize = 3;
+
+/// Block insertion result
+#[derive(Debug, Default)]
+pub struct BlockInsertionResult {
+	/// Transaction to 'reverify'
+	pub transactions_to_reverify: Vec<(H256, Transaction)>,
+}
 
 /// Block synchronization state
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -36,6 +44,19 @@ pub enum BlockState {
 	Stored,
 }
 
+/// Transactions synchronization state
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum TransactionState {
+	/// Transaction is unknown
+	Unknown,
+	/// Currently verifying
+	Verifying,
+	/// In memory pool
+	InMemory,
+	/// In storage
+	Stored,
+}
+
 /// Synchronization chain information
 pub struct Information {
 	/// Number of blocks hashes currently scheduled for requesting
@@ -46,6 +67,8 @@ pub struct Information {
 	pub verifying: u32,
 	/// Number of blocks in the storage
 	pub stored: u32,
+	/// Information on memory pool
+	pub transactions: MemoryPoolInformation,
 	/// Information on headers chain
 	pub headers: BestHeadersInformation,
 }
@@ -83,6 +106,8 @@ pub struct Chain {
 	hash_chain: HashQueueChain,
 	/// In-memory queue of blocks headers
 	headers_chain: BestHeadersChain,
+	/// Currently verifying transactions
+	verifying_transactions: LinkedHashMap<H256, Transaction>,
 	/// Transactions memory pool
 	memory_pool: MemoryPool,
 }
@@ -122,6 +147,7 @@ impl Chain {
 			storage: storage,
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
 			headers_chain: BestHeadersChain::new(genesis_block_hash),
+			verifying_transactions: LinkedHashMap::new(),
 			memory_pool: MemoryPool::new(),
 		}
 	}
@@ -133,6 +159,7 @@ impl Chain {
 			requested: self.hash_chain.len_of(REQUESTED_QUEUE),
 			verifying: self.hash_chain.len_of(VERIFYING_QUEUE),
 			stored: self.best_storage_block.number + 1,
+			transactions: self.memory_pool.information(),
 			headers: self.headers_chain.information(),
 		}
 	}
@@ -142,19 +169,8 @@ impl Chain {
 		self.storage.clone()
 	}
 
-	/// Get memory pool reference
-	pub fn memory_pool(&self) -> &MemoryPool {
-		&self.memory_pool
-	}
-
-	/// Get mutable memory pool reference
-	#[cfg(test)]
-	pub fn memory_pool_mut<'a>(&'a mut self) -> &'a mut MemoryPool {
-		&mut self.memory_pool
-	}
-
 	/// Get number of blocks in given state
-	pub fn length_of_state(&self, state: BlockState) -> u32 {
+	pub fn length_of_blocks_state(&self, state: BlockState) -> u32 {
 		match state {
 			BlockState::Stored => self.best_storage_block.number + 1,
 			_ => self.hash_chain.len_of(state.to_queue_index()),
@@ -272,7 +288,9 @@ impl Chain {
 	}
 
 	/// Insert new best block to storage
-	pub fn insert_best_block(&mut self, hash: H256, block: Block) -> Result<(), db::Error> {
+	pub fn insert_best_block(&mut self, hash: H256, block: &Block) -> Result<BlockInsertionResult, db::Error> {
+		let is_appending_to_main_branch = self.best_storage_block.hash == block.block_header.previous_header_hash;
+
 		// insert to storage
 		try!(self.storage.insert_block(&block));
 
@@ -282,41 +300,122 @@ impl Chain {
 		// remove inserted block + handle possible reorganization in headers chain
 		self.headers_chain.block_inserted_to_storage(&hash, &self.best_storage_block.hash);
 
-		Ok(())
+		// deal with transactions. we have 3 cases here:
+		// case 1: block has been added to the main branch
+		if is_appending_to_main_branch {
+			// double check
+			assert_eq!(self.best_storage_block.hash, hash);
+
+			// all transactions from this block were accepted
+			// => delete accepted transactions from verification queue and from the memory pool
+			let this_block_transactions_hashes = block.transactions.iter().map(|tx| tx.hash());
+			for transaction_accepted in this_block_transactions_hashes {
+				self.memory_pool.remove_by_hash(&transaction_accepted);
+				self.verifying_transactions.remove(&transaction_accepted);
+			}
+			// no transactions to reverify, because we have just appended new transactions to the blockchain
+
+			Ok(BlockInsertionResult {
+				transactions_to_reverify: Vec::new(),
+			})
+		}
+		// case 2: block has been added to the side branch with reorganization to this branch
+		else if self.best_storage_block.hash == hash {
+			// all transactions from this block were accepted
+			// + all transactions from previous blocks of this fork were accepted
+			// => delete accepted transactions from verification queue and from the memory pool
+			let this_block_transactions_hashes = block.transactions.iter().map(|tx| tx.hash());
+			let new_main_blocks_transactions_hashes = Vec::<H256>::new().into_iter(); // TODO need this information from storage.insert_block()
+			for transaction_accepted in this_block_transactions_hashes.chain(new_main_blocks_transactions_hashes) {
+				self.memory_pool.remove_by_hash(&transaction_accepted);
+				self.verifying_transactions.remove(&transaction_accepted);
+			}
+
+			// reverify all transactions from old main branch' blocks
+			let old_main_blocks_transactions_hashes = Vec::<H256>::new().into_iter(); // TODO need this information from storage.insert_block()
+			let old_main_blocks_transactions: Vec<(H256, Transaction)> = old_main_blocks_transactions_hashes
+				.map(|h| (h.clone(), self.storage.transaction(&h).expect("block in storage => block transaction in storage")))
+				.collect();
+
+			// reverify memory pool transactions
+			// TODO: maybe reverify only transactions, which depends on other reverifying transactions + transactions from new main branch?
+			let memory_pool_transactions_count = self.memory_pool.information().transactions_count;
+			let memory_pool_transactions: Vec<_> = self.memory_pool
+				.remove_n_with_strategy(memory_pool_transactions_count, MemoryPoolOrderingStrategy::ByTimestamp)
+				.into_iter()
+				.map(|t| (t.hash(), t))
+				.collect();
+
+			// reverify verifying transactions
+			let verifying_transactions: Vec<_> = self.verifying_transactions
+				.iter()
+				.map(|(h, t)| (h.clone(), t.clone()))
+				.collect();
+			// there's no guarantee (in docs) that LinkedHashMap::into_iter() will return values ordered by insertion time
+			self.verifying_transactions.clear();
+
+			Ok(BlockInsertionResult {
+				// order matters: db transactions, then ordered mempool transactions, then ordered verifying transactions
+				transactions_to_reverify: old_main_blocks_transactions.into_iter()
+					.chain(memory_pool_transactions.into_iter())
+					.chain(verifying_transactions.into_iter())
+					.collect(),
+			})
+		}
+		// case 3: block has been added to the side branch without reorganization to this branch
+		else {
+			// no transactions were accepted
+			// no transactions to reverify
+			Ok(BlockInsertionResult::default())
+		}
 	}
 
 	/// Forget in-memory block
-	pub fn forget(&mut self, hash: &H256) -> HashPosition {
+	pub fn forget_block(&mut self, hash: &H256) -> HashPosition {
 		self.headers_chain.remove(hash);
-		self.forget_leave_header(hash)
+		self.forget_block_leave_header(hash)
+	}
+
+	/// Forget in-memory blocks
+	pub fn forget_blocks(&mut self, hashes: &[H256]) {
+		for hash in hashes {
+			self.forget_block(hash);
+		}
 	}
 
 	/// Forget in-memory block, but leave its header in the headers_chain (orphan queue)
-	pub fn forget_leave_header(&mut self, hash: &H256) -> HashPosition {
+	pub fn forget_block_leave_header(&mut self, hash: &H256) -> HashPosition {
 		match self.hash_chain.remove_at(VERIFYING_QUEUE, hash) {
 			HashPosition::Missing => match self.hash_chain.remove_at(REQUESTED_QUEUE, hash) {
 				HashPosition::Missing => self.hash_chain.remove_at(SCHEDULED_QUEUE, hash),
-				position @ _ => position,
+				position => position,
 			},
-			position @ _ => position,
+			position => position,
+		}
+	}
+
+	/// Forget in-memory blocks, but leave their headers in the headers_chain (orphan queue)
+	pub fn forget_blocks_leave_header(&mut self, hashes: &[H256]) {
+		for hash in hashes {
+			self.forget_block_leave_header(hash);
 		}
 	}
 
 	/// Forget in-memory block by hash if it is currently in given state
 	#[cfg(test)]
-	pub fn forget_with_state(&mut self, hash: &H256, state: BlockState) -> HashPosition {
+	pub fn forget_block_with_state(&mut self, hash: &H256, state: BlockState) -> HashPosition {
 		self.headers_chain.remove(hash);
-		self.forget_with_state_leave_header(hash, state)
+		self.forget_block_with_state_leave_header(hash, state)
 	}
 
 	/// Forget in-memory block by hash if it is currently in given state
-	pub fn forget_with_state_leave_header(&mut self, hash: &H256, state: BlockState) -> HashPosition {
+	pub fn forget_block_with_state_leave_header(&mut self, hash: &H256, state: BlockState) -> HashPosition {
 		self.hash_chain.remove_at(state.to_queue_index(), hash)
 	}
 
 	/// Forget in-memory block by hash.
 	/// Also forget all its known children.
-	pub fn forget_with_children(&mut self, hash: &H256) {
+	pub fn forget_block_with_children(&mut self, hash: &H256) {
 		let mut removal_stack: VecDeque<H256> = VecDeque::new();
 		let mut removal_queue: VecDeque<H256> = VecDeque::new();
 		removal_queue.push_back(hash.clone());
@@ -327,25 +426,25 @@ impl Chain {
 			removal_stack.push_back(hash);
 		}
 		while let Some(hash) = removal_stack.pop_back() {
-			self.forget(&hash);
+			self.forget_block(&hash);
 		}
 	}
 
 	/// Forget all blocks with given state
-	pub fn forget_all_with_state(&mut self, state: BlockState) {
+	pub fn forget_all_blocks_with_state(&mut self, state: BlockState) {
 		let hashes = self.hash_chain.remove_all_at(state.to_queue_index());
 		self.headers_chain.remove_n(hashes);
 	}
 
 	/// Intersect chain with inventory
-	pub fn intersect_with_headers(&self, hashes: &Vec<H256>, headers: &Vec<BlockHeader>) -> HeadersIntersection {
+	pub fn intersect_with_blocks_headers(&self, hashes: &[H256], headers: &[BlockHeader]) -> HeadersIntersection {
 		let hashes_len = hashes.len();
 		assert!(hashes_len != 0 && hashes.len() == headers.len());
 
 		// giving that headers are ordered
 		let (is_first_known, first_state) = match self.block_state(&hashes[0]) {
 			BlockState::Unknown => (false, self.block_state(&headers[0].previous_header_hash)),
-			state @ _ => (true, state),
+			state => (true, state),
 		};
 		match first_state {
 			// if first block of inventory is unknown && its parent is unknonw => all other blocks are also unknown
@@ -353,32 +452,32 @@ impl Chain {
 				HeadersIntersection::NoKnownBlocks(0)
 			},
 			// else if first block is known
-			first_block_state @ _ => match self.block_state(&hashes[hashes_len - 1]) {
+			first_block_state => match self.block_state(&hashes[hashes_len - 1]) {
 				// if last block is known to be in db => all inventory blocks are also in db
 				BlockState::Stored => {
-					HeadersIntersection::DbAllBlocksKnown 
+					HeadersIntersection::DbAllBlocksKnown
 				},
 				// if first block is known && last block is unknown but we know block before first one => intersection with queue or with db
 				BlockState::Unknown if !is_first_known => {
 					// previous block is stored => fork from stored block
 					if first_state == BlockState::Stored {
-						return HeadersIntersection::DbForkNewBlocks(0);
+						HeadersIntersection::DbForkNewBlocks(0)
 					}
 					// previous block is best block => no fork
 					else if &self.best_block().hash == &headers[0].previous_header_hash {
-						return HeadersIntersection::InMemoryMainNewBlocks(0);
+						HeadersIntersection::InMemoryMainNewBlocks(0)
 					}
 					// previous block is not a best block => fork
 					else {
-						return HeadersIntersection::InMemoryForkNewBlocks(0);
+						HeadersIntersection::InMemoryForkNewBlocks(0)
 					}
 				},
 				// if first block is known && last block is unknown => intersection with queue or with db
 				BlockState::Unknown if is_first_known => {
 					// find last known block
 					let mut previous_state = first_block_state;
-					for index in 1..hashes_len {
-						let state = self.block_state(&hashes[index]);
+					for (index, hash) in hashes.iter().enumerate().take(hashes_len).skip(1) {
+						let state = self.block_state(hash);
 						if state == BlockState::Unknown {
 							// previous block is stored => fork from stored block
 							if previous_state == BlockState::Stored {
@@ -405,6 +504,75 @@ impl Chain {
 				}
 			}
 		}
+	}
+
+	/// Get transaction state
+	pub fn transaction_state(&self, hash: &H256) -> TransactionState {
+		if self.verifying_transactions.contains_key(hash) {
+			return TransactionState::Verifying;
+		}
+		if self.memory_pool.contains(hash) {
+			return TransactionState::InMemory;
+		}
+		if self.storage.contains_transaction(hash) {
+			return TransactionState::Stored;
+		}
+		TransactionState::Unknown
+	}
+
+	/// Get transactions hashes with given state
+	pub fn transactions_hashes_with_state(&self, state: TransactionState) -> Vec<H256> {
+		match state {
+			TransactionState::InMemory => self.memory_pool.get_transactions_ids(),
+			TransactionState::Verifying => self.verifying_transactions.keys().cloned().collect(),
+			_ => panic!("wrong argument"),
+		}
+	}
+
+	/// Add transaction to verifying queue
+	pub fn verify_transaction(&mut self, hash: H256, tx: Transaction) {
+		self.verifying_transactions.insert(hash, tx);
+	}
+
+	/// Remove verifying trasaction
+	pub fn forget_verifying_transaction(&mut self, hash: &H256) -> bool {
+		self.verifying_transactions.remove(hash).is_some()
+	}
+
+	/// Remove verifying trasaction + all dependent transactions currently verifying
+	pub fn forget_verifying_transaction_with_children(&mut self, hash: &H256) {
+		self.forget_verifying_transaction(hash);
+
+		// TODO: suboptimal
+		let mut queue: VecDeque<H256> = VecDeque::new();
+		queue.push_back(hash.clone());
+		while let Some(hash) = queue.pop_front() {
+			let all_keys: Vec<_> = self.verifying_transactions.keys().cloned().collect();
+			for h in all_keys {
+				let remove_verifying_transaction = {
+					if let Some(entry) = self.verifying_transactions.get(&h) {
+						if entry.inputs.iter().any(|i| i.previous_output.hash == hash) {
+							queue.push_back(h.clone());
+							true
+						} else {
+							false
+						}
+					} else {
+						// iterating by previously read keys
+						unreachable!()
+					}
+				};
+
+				if remove_verifying_transaction {
+					self.verifying_transactions.remove(&h);
+				}
+			}
+		}
+	}
+
+	/// Insert transaction to memory pool
+	pub fn insert_verified_transaction(&mut self, transaction: Transaction) {
+		self.memory_pool.insert_verified(transaction);
 	}
 
 	/// Calculate block locator hashes for hash queue
@@ -491,11 +659,12 @@ impl fmt::Debug for Chain {
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
-	use chain::RepresentH256;
+	use chain::{Transaction, RepresentH256};
 	use hash_queue::HashPosition;
-	use super::{Chain, BlockState, HeadersIntersection};
+	use super::{Chain, BlockState, TransactionState, HeadersIntersection};
 	use db::{self, Store, BestBlock};
 	use primitives::hash::H256;
+	use devtools::RandomTempPath;
 	use test_data;
 
 	#[test]
@@ -507,10 +676,10 @@ mod tests {
 		assert_eq!(chain.information().requested, 0);
 		assert_eq!(chain.information().verifying, 0);
 		assert_eq!(chain.information().stored, 1);
-		assert_eq!(chain.length_of_state(BlockState::Scheduled), 0);
-		assert_eq!(chain.length_of_state(BlockState::Requested), 0);
-		assert_eq!(chain.length_of_state(BlockState::Verifying), 0);
-		assert_eq!(chain.length_of_state(BlockState::Stored), 1);
+		assert_eq!(chain.length_of_blocks_state(BlockState::Scheduled), 0);
+		assert_eq!(chain.length_of_blocks_state(BlockState::Requested), 0);
+		assert_eq!(chain.length_of_blocks_state(BlockState::Verifying), 0);
+		assert_eq!(chain.length_of_blocks_state(BlockState::Stored), 1);
 		assert_eq!(&chain.best_block(), &db_best_block);
 		assert_eq!(chain.block_state(&db_best_block.hash), BlockState::Stored);
 		assert_eq!(chain.block_state(&H256::from(0)), BlockState::Unknown);
@@ -543,12 +712,12 @@ mod tests {
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 
 		// try to remove block 0 from scheduled queue => missing
-		assert_eq!(chain.forget_with_state(&hashes[0], BlockState::Scheduled), HashPosition::Missing);
+		assert_eq!(chain.forget_block_with_state(&hashes[0], BlockState::Scheduled), HashPosition::Missing);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 3
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 		// remove blocks 0 & 1 from requested queue
-		assert_eq!(chain.forget_with_state(&hashes[1], BlockState::Requested), HashPosition::Inside(1));
-		assert_eq!(chain.forget_with_state(&hashes[0], BlockState::Requested), HashPosition::Front);
+		assert_eq!(chain.forget_block_with_state(&hashes[1], BlockState::Requested), HashPosition::Inside(1));
+		assert_eq!(chain.forget_block_with_state(&hashes[0], BlockState::Requested), HashPosition::Front);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 		// mark 0 & 1 as verifying
@@ -558,11 +727,11 @@ mod tests {
 			&& chain.information().verifying == 2 && chain.information().stored == 1);
 
 		// mark block 0 as verified
-		assert_eq!(chain.forget_with_state(&hashes[1], BlockState::Verifying), HashPosition::Front);
+		assert_eq!(chain.forget_block_with_state(&hashes[1], BlockState::Verifying), HashPosition::Front);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 1);
 		// insert new best block to the chain
-		chain.insert_best_block(test_data::block_h1().hash(), test_data::block_h1()).expect("Db error");
+		chain.insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Db error");
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 2);
 		assert_eq!(db.best_block().expect("storage with genesis block is required").number, 1);
@@ -577,13 +746,13 @@ mod tests {
 		let block1 = test_data::block_h1();
 		let block1_hash = block1.hash();
 
-		chain.insert_best_block(block1_hash.clone(), block1).expect("Error inserting new block");
+		chain.insert_best_block(block1_hash.clone(), &block1).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block1_hash.clone(), genesis_hash.clone()]);
 
 		let block2 = test_data::block_h2();
 		let block2_hash = block2.hash();
 
-		chain.insert_best_block(block2_hash.clone(), block2).expect("Error inserting new block");
+		chain.insert_best_block(block2_hash.clone(), &block2).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
 
 		let blocks0 = test_data::build_n_empty_blocks_from_genesis(11, 0);
@@ -656,8 +825,8 @@ mod tests {
 	fn chain_intersect_with_inventory() {
 		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
 		// append 2 db blocks
-		chain.insert_best_block(test_data::block_h1().hash(), test_data::block_h1()).expect("Error inserting new block");
-		chain.insert_best_block(test_data::block_h2().hash(), test_data::block_h2()).expect("Error inserting new block");
+		chain.insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Error inserting new block");
+		chain.insert_best_block(test_data::block_h2().hash(), &test_data::block_h2()).expect("Error inserting new block");
 
 		// prepare blocks
 		let blocks0 = test_data::build_n_empty_blocks_from(9, 0, &test_data::block_h2().block_header);
@@ -671,9 +840,9 @@ mod tests {
 		let blocks1 = test_data::build_n_empty_blocks(2, 0);
 		let headers1: Vec<_> = blocks1.into_iter().map(|b| b.block_header).collect();
 		let hashes1: Vec<_> = headers1.iter().map(|h| h.hash()).collect();
-		assert_eq!(chain.intersect_with_headers(&hashes1, &headers1), HeadersIntersection::NoKnownBlocks(0));
+		assert_eq!(chain.intersect_with_blocks_headers(&hashes1, &headers1), HeadersIntersection::NoKnownBlocks(0));
 
-		assert_eq!(chain.intersect_with_headers(&vec![
+		assert_eq!(chain.intersect_with_blocks_headers(&vec![
 			hashes0[2].clone(),
 			hashes0[3].clone(),
 			hashes0[4].clone(),
@@ -687,7 +856,7 @@ mod tests {
 			headers0[6].clone(),
 		]), HeadersIntersection::InMemoryNoNewBlocks);
 
-		assert_eq!(chain.intersect_with_headers(&vec![
+		assert_eq!(chain.intersect_with_blocks_headers(&vec![
 			hashes0[7].clone(),
 			hashes0[8].clone(),
 			hashes1[0].clone(),
@@ -699,7 +868,7 @@ mod tests {
 			headers1[1].clone(),
 		]), HeadersIntersection::InMemoryMainNewBlocks(2));
 
-		assert_eq!(chain.intersect_with_headers(&vec![
+		assert_eq!(chain.intersect_with_blocks_headers(&vec![
 			hashes0[6].clone(),
 			hashes0[7].clone(),
 			hashes1[0].clone(),
@@ -711,7 +880,7 @@ mod tests {
 			headers1[1].clone(),
 		]), HeadersIntersection::InMemoryForkNewBlocks(2));
 
-		assert_eq!(chain.intersect_with_headers(&vec![
+		assert_eq!(chain.intersect_with_blocks_headers(&vec![
 			test_data::block_h1().hash(),
 			test_data::block_h2().hash(),
 		], &vec![
@@ -719,12 +888,138 @@ mod tests {
 			test_data::block_h2().block_header,
 		]), HeadersIntersection::DbAllBlocksKnown);
 
-		assert_eq!(chain.intersect_with_headers(&vec![
+		assert_eq!(chain.intersect_with_blocks_headers(&vec![
 			test_data::block_h2().hash(),
 			hashes1[0].clone(),
 		], &vec![
 			test_data::block_h2().block_header,
 			headers1[0].clone(),
 		]), HeadersIntersection::DbForkNewBlocks(1));
+	}
+
+	#[test]
+	fn chain_transaction_state() {
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
+		let genesis_block = test_data::genesis();
+		let block1 = test_data::block_h1();
+		let tx1: Transaction = test_data::TransactionBuilder::with_version(1).into();
+		let tx2: Transaction = test_data::TransactionBuilder::with_version(2).into();
+		let tx1_hash = tx1.hash();
+		let tx2_hash = tx2.hash();
+		chain.verify_transaction(tx1_hash.clone(), tx1);
+		chain.insert_verified_transaction(tx2);
+
+		assert_eq!(chain.transaction_state(&genesis_block.transactions[0].hash()), TransactionState::Stored);
+		assert_eq!(chain.transaction_state(&block1.transactions[0].hash()), TransactionState::Unknown);
+		assert_eq!(chain.transaction_state(&tx1_hash), TransactionState::Verifying);
+		assert_eq!(chain.transaction_state(&tx2_hash), TransactionState::InMemory);
+	}
+
+	#[test]
+	fn chain_block_transaction_is_removed_from_on_block_insert() {
+		let b0 = test_data::block_builder().header().build().build();
+		let b1 = test_data::block_builder().header().parent(b0.hash()).build()
+			.transaction().coinbase()
+				.output().value(10).build()
+				.build()
+			.transaction()
+				.input().hash(H256::from(1)).index(1).build()
+				.build()
+			.build();
+		let tx1 = b1.transactions[0].clone();
+		let tx1_hash = tx1.hash();
+		let tx2 = b1.transactions[1].clone();
+		let tx2_hash = tx2.hash();
+
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_blocks(&vec![b0])));
+		chain.verify_transaction(tx1_hash.clone(), tx1);
+		chain.insert_verified_transaction(tx2);
+
+		// only one transaction is in the memory pool
+		assert_eq!(chain.information().transactions.transactions_count, 1);
+
+		// when block is inserted to the database => all accepted transactions are removed from mempool && verifying queue
+		chain.insert_best_block(b1.hash(), &b1).expect("block accepted");
+
+		assert_eq!(chain.information().transactions.transactions_count, 0);
+		assert!(!chain.forget_verifying_transaction(&tx1_hash));
+		assert!(!chain.forget_verifying_transaction(&tx2_hash));
+	}
+
+	#[test]
+	fn chain_forget_verifying_transaction_with_children() {
+		let test_chain = &mut test_data::ChainBuilder::new();
+		test_data::TransactionBuilder::with_output(100).store(test_chain)	// t1
+			.into_input(0).add_output(200).store(test_chain)				// t1 -> t2
+			.into_input(0).add_output(300).store(test_chain)				// t1 -> t2 -> t3
+			.set_default_input(0).set_output(400).store(test_chain);		// t4
+
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
+		chain.verify_transaction(test_chain.at(0).hash(), test_chain.at(0));
+		chain.verify_transaction(test_chain.at(1).hash(), test_chain.at(1));
+		chain.verify_transaction(test_chain.at(2).hash(), test_chain.at(2));
+		chain.verify_transaction(test_chain.at(3).hash(), test_chain.at(3));
+
+		chain.forget_verifying_transaction_with_children(&test_chain.at(0).hash());
+		assert!(!chain.forget_verifying_transaction(&test_chain.at(0).hash()));
+		assert!(!chain.forget_verifying_transaction(&test_chain.at(1).hash()));
+		assert!(!chain.forget_verifying_transaction(&test_chain.at(2).hash()));
+		assert!(chain.forget_verifying_transaction(&test_chain.at(3).hash()));
+	}
+
+	#[test]
+	fn chain_transactions_hashes_with_state() {
+		let test_chain = &mut test_data::ChainBuilder::new();
+		test_data::TransactionBuilder::with_output(100).store(test_chain)	// t1
+			.into_input(0).add_output(200).store(test_chain)				// t1 -> t2
+			.into_input(0).add_output(300).store(test_chain)				// t1 -> t2 -> t3
+			.set_default_input(0).set_output(400).store(test_chain);		// t4
+
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
+		chain.insert_verified_transaction(test_chain.at(0));
+		chain.insert_verified_transaction(test_chain.at(1));
+		chain.insert_verified_transaction(test_chain.at(2));
+		chain.insert_verified_transaction(test_chain.at(3));
+
+		let chain_transactions = chain.transactions_hashes_with_state(TransactionState::InMemory);
+		assert!(chain_transactions.contains(&test_chain.at(0).hash()));
+		assert!(chain_transactions.contains(&test_chain.at(1).hash()));
+		assert!(chain_transactions.contains(&test_chain.at(2).hash()));
+		assert!(chain_transactions.contains(&test_chain.at(3).hash()));
+	}
+
+	#[test]
+	fn memory_pool_transactions_are_reverified_after_reorganization() {
+		let b0 = test_data::block_builder().header().build().build();
+		let b1 = test_data::block_builder().header().nonce(1).parent(b0.hash()).build().build();
+		let b2 = test_data::block_builder().header().nonce(2).parent(b0.hash()).build().build();
+		let b3 = test_data::block_builder().header().parent(b2.hash()).build().build();
+
+		let tx1: Transaction = test_data::TransactionBuilder::with_version(1).into();
+		let tx1_hash = tx1.hash();
+		let tx2: Transaction = test_data::TransactionBuilder::with_version(2).into();
+		let tx2_hash = tx2.hash();
+
+		let path = RandomTempPath::create_dir();
+		let storage = Arc::new(db::Storage::new(path.as_path()).unwrap());
+		storage.insert_block(&b0).expect("no db error");
+
+		let mut chain = Chain::new(storage);
+		chain.verify_transaction(tx1_hash.clone(), tx1);
+		chain.insert_verified_transaction(tx2);
+
+		// no reorg
+		let result = chain.insert_best_block(b1.hash(), &b1).expect("no error");
+		assert_eq!(result.transactions_to_reverify.len(), 0);
+
+		// no reorg
+		let result = chain.insert_best_block(b2.hash(), &b2).expect("no error");
+		assert_eq!(result.transactions_to_reverify.len(), 0);
+
+		// reorg
+		let result = chain.insert_best_block(b3.hash(), &b3).expect("no error");
+		assert_eq!(result.transactions_to_reverify.len(), 2);
+		assert!(result.transactions_to_reverify.iter().any(|&(ref h, _)| h == &tx1_hash));
+		assert!(result.transactions_to_reverify.iter().any(|&(ref h, _)| h == &tx2_hash));
 	}
 }

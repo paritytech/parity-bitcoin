@@ -96,13 +96,11 @@ impl PeerContext {
 			} else {
 				queue.push_finished_response(id, self.to_message(payload).into());
 			}
+		} else if sync.is_permitted(id) {
+			let send = Context::send_to_peer(self.context.clone(), self.info.id, payload);
+			self.context.spawn(send);
 		} else {
-			if sync.is_permitted(id) {
-				let send = Context::send_to_peer(self.context.clone(), self.info.id, payload);
-				self.context.spawn(send);
-			} else {
-				queue.push_unfinished_response(id, self.to_message(payload).into());
-			}
+			queue.push_unfinished_response(id, self.to_message(payload).into());
 		}
 	}
 

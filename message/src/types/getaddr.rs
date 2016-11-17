@@ -7,7 +7,7 @@ pub struct GetAddr;
 
 impl Payload for GetAddr {
 	fn version() -> u32 {
-		60002
+		0
 	}
 
 	fn command() -> &'static str {

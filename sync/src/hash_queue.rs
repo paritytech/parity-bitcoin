@@ -191,7 +191,7 @@ impl HashQueueChain {
 
 	/// Returns element at the given position
 	pub fn at(&self, mut index: u32) -> Option<H256> {
-		for queue in self.chain.iter() {
+		for queue in &self.chain {
 			let queue_len = queue.len();
 			if index < queue_len {
 				return queue.at(index);

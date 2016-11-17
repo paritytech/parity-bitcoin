@@ -8,7 +8,7 @@ use message::common::{InventoryVector, InventoryType};
 use db;
 use chain::BlockHeader;
 use primitives::hash::H256;
-use synchronization_chain::ChainRef;
+use synchronization_chain::{ChainRef, TransactionState};
 use synchronization_executor::{Task, TaskExecutor};
 use message::types;
 
@@ -58,8 +58,7 @@ pub enum ServerTaskIndex {
 impl ServerTaskIndex {
 	pub fn raw(&self) -> u32 {
 		match *self {
-			ServerTaskIndex::Partial(id) => id,
-			ServerTaskIndex::Final(id) => id,
+			ServerTaskIndex::Partial(id) | ServerTaskIndex::Final(id) => id,
 		}
 	}
 
@@ -230,8 +229,7 @@ impl SynchronizationServer {
 				// `mempool` => `inventory`
 				ServerTask::ServeMempool => {
 					let inventory: Vec<_> = chain.read()
-						.memory_pool()
-						.get_transactions_ids()
+						.transactions_hashes_with_state(TransactionState::InMemory)
 						.into_iter()
 						.map(|hash| InventoryVector {
 							inv_type: InventoryType::MessageTx,
@@ -282,9 +280,9 @@ impl SynchronizationServer {
 		// `max_hashes` hashes after best_block.number OR hash_stop OR blockchain end
 		(first_block_number..last_block_number).into_iter()
 			.map(|number| chain.block_hash(number))
-			.take_while(|ref hash| hash.is_some())
+			.take_while(|hash| hash.is_some())
 			.map(|hash| hash.unwrap())
-			.take_while(|ref hash| *hash != hash_stop)
+			.take_while(|hash| hash != hash_stop)
 			.collect()
 	}
 
@@ -300,16 +298,16 @@ impl SynchronizationServer {
 		// `max_hashes` hashes after best_block.number OR hash_stop OR blockchain end
 		(first_block_number..last_block_number).into_iter()
 			.map(|number| chain.block_header_by_number(number))
-			.take_while(|ref header| header.is_some())
+			.take_while(|header| header.is_some())
 			.map(|header| header.unwrap())
-			.take_while(|ref header| &header.hash() != hash_stop)
+			.take_while(|header| &header.hash() != hash_stop)
 			.collect()
 	}
 
 
 	fn locate_best_known_block_hash(chain: &ChainRef, hash: &H256) -> Option<db::BestBlock> {
 		let chain = chain.read();
-		match chain.block_number(&hash) {
+		match chain.block_number(hash) {
 			Some(number) => Some(db::BestBlock {
 				number: number,
 				hash: hash.clone(),
@@ -317,7 +315,7 @@ impl SynchronizationServer {
 			// block with hash is not in the main chain (block_number has returned None)
 			// but maybe it is in some fork? if so => we should find intersection with main chain
 			// and this would be our best common block
-			None => chain.block_header_by_hash(&hash)
+			None => chain.block_header_by_hash(hash)
 				.and_then(|block| {
 					let mut current_block_hash = block.previous_header_hash;
 					loop {
@@ -368,7 +366,7 @@ impl Server for SynchronizationServer {
 
 	fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders, id: u32) {
 		if let Some(best_common_block) = self.locate_known_block_header(message.block_locator_hashes) {
-			trace!(target: "sync", "Best common block header with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);
+			trace!(target: "sync", "Best common block header with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash.to_reversed_str());
 			let task = IndexedServerTask::new(ServerTask::ServeGetHeaders(best_common_block, message.hash_stop), ServerTaskIndex::Final(id));
 			self.queue.lock().add_task(peer_index, task);
 		}
@@ -633,7 +631,7 @@ pub mod tests {
 	#[test]
 	fn server_getblocks_responds_inventory_when_have_unknown_blocks() {
 		let (chain, executor, server) = create_synchronization_server();
-		chain.write().insert_best_block(test_data::block_h1().hash(), test_data::block_h1()).expect("Db write error");
+		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Db write error");
 		// when asking for blocks hashes
 		let dummy_id = 0;
 		server.serve_getblocks(0, types::GetBlocks {
@@ -669,7 +667,7 @@ pub mod tests {
 	#[test]
 	fn server_getheaders_responds_headers_when_have_unknown_blocks() {
 		let (chain, executor, server) = create_synchronization_server();
-		chain.write().insert_best_block(test_data::block_h1().hash(), test_data::block_h1()).expect("Db write error");
+		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Db write error");
 		// when asking for blocks hashes
 		let dummy_id = 0;
 		server.serve_getheaders(0, types::GetHeaders {
@@ -702,7 +700,7 @@ pub mod tests {
 		// when memory pool is non-empty
 		let transaction = Transaction::default();
 		let transaction_hash = transaction.hash();
-		chain.write().memory_pool_mut().insert_verified(transaction);
+		chain.write().insert_verified_transaction(transaction);
 		// when asking for memory pool transactions ids
 		let dummy_id = 0;
 		server.serve_mempool(0, dummy_id);
