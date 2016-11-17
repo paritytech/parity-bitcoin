@@ -687,7 +687,7 @@ impl<T> SynchronizationClient<T> where T: TaskExecutor {
 				let new_blocks_headers = headers.split_off(new_block_index);
 				let new_blocks_hashes_len = new_blocks_hashes.len();
 				trace!(
-					target: "sync", "Sch. {} headers from peer#{}. First {:?}, last: {:?}",
+					target: "sync", "New {} headers from peer#{}. First {:?}, last: {:?}",
 					new_blocks_hashes_len,
 					peer_index,
 					new_blocks_hashes[0].to_reversed_str(),
