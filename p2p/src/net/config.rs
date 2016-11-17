@@ -3,10 +3,11 @@ use message::common::{Magic, Services, NetAddress};
 use message::types::version::{Version, V0, V106, V70001};
 use util::time::{Time, RealTime};
 use util::nonce::{NonceGenerator, RandomNonce};
-use VERSION;
 
 #[derive(Debug, Clone)]
 pub struct Config {
+	pub protocol_version: u32,
+	pub protocol_minimum: u32,
 	pub magic: Magic,
 	pub local_address: SocketAddr,
 	pub services: Services,
@@ -18,7 +19,7 @@ pub struct Config {
 impl Config {
 	pub fn version(&self, to: &SocketAddr) -> Version {
 		Version::V70001(V0 {
-			version: VERSION,
+			version: self.protocol_version,
 			services: self.services,
 			timestamp: RealTime.get().sec,
 			receiver: NetAddress {

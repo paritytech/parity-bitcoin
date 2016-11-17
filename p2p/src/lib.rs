@@ -25,9 +25,6 @@ mod config;
 mod event_loop;
 mod p2p;
 
-pub const VERSION: u32 = 70_014;
-pub const USER_AGENT: &'static str = "pbtc";
-
 pub use primitives::{hash, bytes};
 
 pub use config::Config;
