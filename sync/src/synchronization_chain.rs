@@ -8,7 +8,7 @@ use db;
 use best_headers_chain::{BestHeadersChain, Information as BestHeadersInformation};
 use primitives::hash::H256;
 use hash_queue::{HashQueueChain, HashPosition};
-use miner::{MemoryPool, MemoryPoolInformation};
+use miner::{MemoryPool, MemoryPoolOrderingStrategy, MemoryPoolInformation};
 
 /// Thread-safe reference to `Chain`
 pub type ChainRef = Arc<RwLock<Chain>>;
@@ -333,12 +333,23 @@ impl Chain {
 
 			// reverify all transactions from old main branch' blocks
 			let old_main_blocks_transactions_hashes = Vec::<H256>::new().into_iter(); // TODO need this information from storage.insert_block()
-			let transactions_to_reverify: Vec<(H256, Transaction)> = old_main_blocks_transactions_hashes
+			let old_main_blocks_transactions: Vec<(H256, Transaction)> = old_main_blocks_transactions_hashes
 				.map(|h| (h.clone(), self.storage.transaction(&h).expect("block in storage => block transaction in storage")))
 				.collect();
 
+			// reverify memory pool transactions
+			// TODO: maybe reverify only transactions, which depends on other reverifying transactions + transactions from new main branch?
+			let memory_pool_transactions_count = self.memory_pool.information().transactions_count;
+			let memory_pool_transactions: Vec<_> = self.memory_pool
+				.remove_n_with_strategy(memory_pool_transactions_count, MemoryPoolOrderingStrategy::ByTimestamp)
+				.into_iter()
+				.map(|t| (t.hash(), t))
+				.collect();
+
 			Ok(BlockInsertionResult {
-				transactions_to_reverify: transactions_to_reverify,
+				transactions_to_reverify: old_main_blocks_transactions.into_iter()
+					.chain(memory_pool_transactions.into_iter())
+					.collect(),
 			})
 		}
 		// case 3: block has been added to the side branch without reorganization to this branch
