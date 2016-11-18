@@ -1,13 +1,13 @@
 //! Bitcoin storage
 
-use std::{self, fs};
+use std::fs;
 use std::path::Path;
 use kvdb::{Database, DatabaseConfig};
 use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use super::{BlockRef, BestBlock, BlockLocation};
-use serialization::{self, deserialize};
+use serialization::{serialize, deserialize};
 use chain::{self, RepresentH256};
 use parking_lot::RwLock;
 use transaction_meta::TransactionMeta;
@@ -160,15 +160,14 @@ impl Storage {
 	fn update_transactions_meta(&self, context: &mut UpdateContext, number: u32, accepted_txs: &[chain::Transaction])
 		-> Result<(), Error>
 	{
-		for (accepted_idx, accepted_tx) in accepted_txs.iter().enumerate() {
-			if accepted_idx == 0 {
-				context.meta.insert(
-					accepted_tx.hash(),
-					TransactionMeta::new(number, accepted_tx.outputs.len()).coinbase()
-				);
-				continue;
-			}
+		if let Some(accepted_tx) = accepted_txs.iter().next() {
+			context.meta.insert(
+				accepted_tx.hash(),
+				TransactionMeta::new(number, accepted_tx.outputs.len()).coinbase()
+			);
+		}
 
+		for accepted_tx in accepted_txs.iter().skip(1) {
 			context.meta.insert(
 				accepted_tx.hash(),
 				TransactionMeta::new(number, accepted_tx.outputs.len())
@@ -186,11 +185,8 @@ impl Storage {
 					},
 					None => false,
 				} {
-					let mut meta =
-						try!(
-							self.transaction_meta(&input.previous_output.hash)
-								.ok_or(Error::Consistency(ConsistencyError::UnknownSpending(input.previous_output.hash.clone())))
-						);
+					let mut meta = self.transaction_meta(&input.previous_output.hash)
+						.ok_or(Error::unknown_spending(&input.previous_output.hash))?;
 
 					if meta.is_spent(input.previous_output.index as usize) {
 						return Err(Error::double_spend(&input.previous_output.hash));
@@ -298,8 +294,8 @@ impl Storage {
 		try!(self.update_transactions_meta(context, at_height, &transactions));
 
 		// only canonical blocks are allowed to wield a number
-		context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(at_height), std::ops::Deref::deref(hash));
-		context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(hash), at_height);
+		context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(at_height), &**hash);
+		context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), &**hash, at_height);
 
 		Ok(())
 	}
@@ -436,7 +432,7 @@ impl BlockStapler for Storage {
 			context.db_transaction.put(
 				Some(COL_TRANSACTIONS),
 				&*tx_hash,
-				&serialization::serialize(tx),
+				&serialize(tx),
 			);
 		}
 		context.db_transaction.put(Some(COL_BLOCK_TRANSACTIONS), &*block_hash, &tx_refs);
@@ -444,7 +440,7 @@ impl BlockStapler for Storage {
 		context.db_transaction.put(
 			Some(COL_BLOCK_HEADERS),
 			&*block_hash,
-			&serialization::serialize(block.header())
+			&serialize(block.header())
 		);
 
 		// the block is continuing the main chain
@@ -453,8 +449,8 @@ impl BlockStapler for Storage {
 			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 
 			// updating main chain height reference
-			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&block_hash));
-			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&block_hash), new_best_number);
+			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), &*block_hash);
+			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), &*block_hash, new_best_number);
 
 			BlockInsertedChain::Main
 		}
@@ -472,8 +468,8 @@ impl BlockStapler for Storage {
 					// and we canonize it also by provisioning transactions
 					try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
 					context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
-					context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), std::ops::Deref::deref(&new_best_hash));
-					context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), std::ops::Deref::deref(&new_best_hash), new_best_number);
+					context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), &*new_best_hash);
+					context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), &*new_best_hash, new_best_number);
 
 					reorg.push_canonized(&new_best_hash);
 
@@ -530,7 +526,7 @@ impl BlockStapler for Storage {
 		};
 
 		// we always update best hash even if it is not changed
-		context.db_transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, std::ops::Deref::deref(&new_best_hash));
+		context.db_transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, &*new_best_hash);
 
 		// write accumulated transactions meta
 		try!(context.apply(&self.database));
@@ -572,8 +568,7 @@ impl TransactionProvider for Storage {
 
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
 		self.transaction_bytes(hash).map(|tx_bytes| {
-			serialization::deserialize(tx_bytes.as_ref())
-				.unwrap_or_else(|e| panic!("Failed to deserialize transaction: db corrupted? ({:?})", e))
+			deserialize(tx_bytes.as_ref()).expect("Failed to deserialize transaction: db corrupted?")
 		})
 	}
 }
@@ -582,7 +577,7 @@ impl TransactionMetaProvider for Storage {
 
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
 		self.get(COL_TRANSACTIONS_META, &**hash).map(|val|
-			TransactionMeta::from_bytes(&val).unwrap_or_else(|e| panic!("Invalid transaction metadata: db corrupted? ({:?})", e))
+			TransactionMeta::from_bytes(&val).expect("Invalid transaction metadata: db corrupted?")
 		)
 	}
 }
@@ -1151,8 +1146,7 @@ mod tests {
 
 		let inserted_chain = store.insert_block(&test_data::genesis()).unwrap();
 
-		if let BlockInsertedChain::Main = inserted_chain { }
-		else { panic!("Genesis should become main chain"); }
+		assert_eq!(inserted_chain, BlockInsertedChain::Main, "Genesis should become main chain");
 	}
 
 	#[test]
@@ -1165,8 +1159,7 @@ mod tests {
 
 		let inserted_chain = store.insert_block(&test_data::block_h1()).unwrap();
 
-		if let BlockInsertedChain::Main = inserted_chain { }
-		else { panic!("h1 should become main chain"); }
+		assert_eq!(inserted_chain, BlockInsertedChain::Main, "h1 should become main chain");
 	}
 
 	#[test]
@@ -1192,8 +1185,7 @@ mod tests {
 
 		let inserted_chain = store.insert_block(&block2_side).unwrap();
 
-		if let BlockInsertedChain::Side = inserted_chain { }
-		else { panic!("h1 should become main chain"); }
+		assert_eq!(inserted_chain, BlockInsertedChain::Side, "h1 should become main chain");
 	}
 
 	#[test]
