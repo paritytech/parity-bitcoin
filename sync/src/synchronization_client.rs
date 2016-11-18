@@ -803,6 +803,13 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				| HeadersIntersection::InMemoryForkNewBlocks(new_block_index)
 				| HeadersIntersection::DbForkNewBlocks(new_block_index)
 				| HeadersIntersection::NoKnownBlocks(new_block_index) => {
+				// check that we do not know all blocks in range [new_block_index..]
+				// if we know some block => there has been verification error => all headers should be ignored
+				// see when_previous_block_verification_failed_fork_is_not_requested for details
+				if hashes.iter().skip(new_block_index).any(|h| chain.block_state(h) != BlockState::Unknown) {
+					return;
+				}
+
 				// schedule new blocks
 				let new_blocks_hashes = hashes.split_off(new_block_index);
 				let new_blocks_headers = headers.split_off(new_block_index);
@@ -1739,7 +1746,6 @@ pub mod tests {
 	}
 
 	#[test]
-	#[ignore] // TODO: causes panic currently
 	// https://github.com/ethcore/parity-bitcoin/issues/121
 	fn when_previous_block_verification_failed_fork_is_not_requested() {
 		// got headers [b10, b11, b12] - some fork
@@ -1754,7 +1760,7 @@ pub mod tests {
 		//
 		// block queue is empty => new tasks => requesting [b21, b22] => panic in hash_queue
 		//
-		// TODO: do not trust first intersection point - check each hash when scheduling hashes.
+		// => do not trust first intersection point - check each hash when scheduling hashes.
 		// If at least one hash is known => previous verification failed => drop all headers.
 
 		let genesis = test_data::genesis();
@@ -1767,7 +1773,7 @@ pub mod tests {
 		let b22 = test_data::block_builder().header().parent(b21.hash()).build().build();
 		let b23 = test_data::block_builder().header().parent(b22.hash()).build().build();
 
-		// TODO: simulate verification during b21 verification
+		// simulate verification during b21 verification
 		let mut dummy_verifier = DummyVerifier::new();
 		dummy_verifier.error_when_verifying(b21.hash(), "simulated");
 
