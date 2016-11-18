@@ -7,7 +7,7 @@ use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use super::{BlockRef, BestBlock, BlockLocation};
-use serialization;
+use serialization::{self, deserialize};
 use chain::{self, RepresentH256};
 use parking_lot::RwLock;
 use transaction_meta::TransactionMeta;
@@ -110,21 +110,11 @@ impl Storage {
 		self.read_meta(key).map(|val| LittleEndian::read_u32(&val))
 	}
 
-	/// is invoked on database non-fatal query errors
-	fn db_error(&self, msg: String) {
-		println!("Low-level database error: {}", &msg);
-	}
-
 	/// get the value of the key in the database
-	/// if the key is not present, reports non-fatal error and returns nothing
 	fn get(&self, col: u32, key: &[u8]) -> Option<Bytes> {
-		let res = self.database.get(Some(col), key);
-		match res {
-			Err(msg) => {
-				self.db_error(msg);
-				None
-			},
-			Ok(val) => val.map(|v| v.into()),
+		match self.database.get(Some(col), key) {
+			Ok(val) => val,
+			Err(msg) => panic!("{}", msg),
 		}
 	}
 
@@ -140,7 +130,7 @@ impl Storage {
 	/// loads block transaction list by the provided block hash
 	fn block_transaction_hashes_by_hash(&self, h: &H256) -> Vec<H256> {
 		self.get(COL_BLOCK_TRANSACTIONS, &**h)
-			.unwrap_or(Vec::new().into())
+			.unwrap_or_else(Bytes::new)
 			.chunks(H256::size())
 			.map(H256::from)
 			.collect()
@@ -150,25 +140,19 @@ impl Storage {
 		self.block_transaction_hashes_by_hash(h)
 			.into_iter()
 			.filter_map(|tx_hash| {
-				self.transaction_bytes(&tx_hash).and_then(|tx_bytes| {
-					match serialization::deserialize::<_, chain::Transaction>(tx_bytes.as_ref()) {
-						Ok(tx) => Some(tx),
-						Err(e) => {
-							self.db_error(format!("Error deserializing transaction, possible db corruption ({:?})", e));
-							None
-						}
-					}
-				})
+				self.transaction_bytes(&tx_hash)
+					.map(|tx_bytes| {
+						deserialize::<_, chain::Transaction>(tx_bytes.as_ref())
+							.expect("Error deserializing transaction, possible db corruption")
+					})
 			})
 			.collect()
 	}
 
 	fn block_header_by_hash(&self, h: &H256) -> Option<chain::BlockHeader> {
-		self.get(COL_BLOCK_HEADERS, &**h).and_then(|val|
-			serialization::deserialize(val.as_ref()).map_err(
-				|e| self.db_error(format!("Error deserializing block header, possible db corruption ({:?})", e))
-			).ok()
-		)
+		self.get(COL_BLOCK_HEADERS, &**h).map(|val| {
+			deserialize(val.as_ref()).expect("Error deserializing block header, possible db corruption")
+		})
 	}
 
 
@@ -330,7 +314,7 @@ impl Storage {
 			Err(e) => {
 				// todo: log error here
 				context.restore();
-				println!("Error while reorganizing to {}: {:?}", hash, e);
+				error!("Error while reorganizing to {}: {:?}", hash, e);
 				Err(e)
 			}
 		}
@@ -410,16 +394,11 @@ impl BlockProvider for Storage {
 	fn block(&self, block_ref: BlockRef) -> Option<chain::Block> {
 		self.resolve_hash(block_ref).and_then(|block_hash|
 			self.get(COL_BLOCK_HEADERS, &*block_hash)
-				.and_then(|header_bytes| {
-					let transactions = self.block_transactions_by_hash(&block_hash);;
-					let maybe_header = match serialization::deserialize::<_, chain::BlockHeader>(header_bytes.as_ref()) {
-						Ok(header) => Some(header),
-						Err(e) => {
-							self.db_error(format!("Error deserializing header, possible db corruption ({:?})", e));
-							None
-						}
-					};
-					maybe_header.map(|header| chain::Block::new(header, transactions))
+				.map(|header_bytes| {
+					let transactions = self.block_transactions_by_hash(&block_hash);
+					let header = deserialize::<_, chain::BlockHeader>(header_bytes.as_ref())
+						.expect("Error deserializing header, possible db corruption");
+					chain::Block::new(header, transactions)
 			})
 		)
 	}
