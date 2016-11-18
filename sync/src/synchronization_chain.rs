@@ -280,6 +280,13 @@ impl Chain {
 		self.hash_chain.push_back_at(VERIFYING_QUEUE, hash);
 	}
 
+	/// Add blocks to verifying queue
+	pub fn verify_blocks(&mut self, blocks: Vec<(H256, BlockHeader)>) {
+		for (hash, header) in blocks {
+			self.verify_block(hash, header);
+		}
+	}
+
 	/// Moves n blocks from requested queue to verifying queue
 	#[cfg(test)]
 	pub fn verify_blocks_hashes(&mut self, n: u32) -> Vec<H256> {

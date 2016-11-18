@@ -9,9 +9,10 @@ use message::types;
 use synchronization_client::{Client, SynchronizationClient};
 use synchronization_executor::{Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor, LocalSynchronizationTaskExecutor};
 use synchronization_server::{Server, SynchronizationServer};
+use synchronization_verifier::AsyncVerifier;
 use primitives::hash::H256;
 
-pub type LocalNodeRef = Arc<LocalNode<LocalSynchronizationTaskExecutor, SynchronizationServer, SynchronizationClient<LocalSynchronizationTaskExecutor>>>;
+pub type LocalNodeRef = Arc<LocalNode<LocalSynchronizationTaskExecutor, SynchronizationServer, SynchronizationClient<LocalSynchronizationTaskExecutor, AsyncVerifier>>>;
 
 /// Local synchronization node
 pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections,
@@ -233,12 +234,13 @@ mod tests {
 	use synchronization_chain::Chain;
 	use p2p::{event_loop, OutboundSyncConnection, OutboundSyncConnectionRef};
 	use message::types;
-	use message::common::{Magic, ConsensusParams, InventoryVector, InventoryType};
+	use message::common::{InventoryVector, InventoryType};
 	use db;
 	use super::LocalNode;
 	use test_data;
 	use synchronization_server::ServerTask;
 	use synchronization_server::tests::DummyServer;
+	use synchronization_verifier::tests::DummyVerifier;
 	use tokio_core::reactor::{Core, Handle};
 
 	struct DummyOutboundSyncConnection;
@@ -272,14 +274,19 @@ mod tests {
 		fn ignored(&self, _id: u32) {}
 	}
 
-	fn create_local_node() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor>>) {
+	fn create_local_node() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
 		let event_loop = event_loop();
 		let handle = event_loop.handle();
 		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
-		let config = Config { consensus_params: ConsensusParams::with_magic(Magic::Mainnet), threads_num: 1, skip_verification: true };
-		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain);
+		let config = Config { threads_num: 1 };
+		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain.clone());
+		{
+			let verifier_sink = client.lock().core();
+			let verifier = DummyVerifier::new(verifier_sink);
+			client.lock().set_verifier(verifier);
+		}
 		let local_node = LocalNode::new(server.clone(), client, executor.clone());
 		(event_loop, handle, executor, server, local_node)
 	}
