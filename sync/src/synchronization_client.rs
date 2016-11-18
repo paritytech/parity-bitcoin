@@ -1106,7 +1106,7 @@ pub mod tests {
 		Arc::new(db::Storage::new(path.as_path()).unwrap())
 	}
 
-	fn create_sync(storage: Option<db::SharedStore>) -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, ChainRef, Arc<Mutex<SynchronizationClient<DummyTaskExecutor, DummyVerifier>>>) {
+	fn create_sync(storage: Option<db::SharedStore>, verifier: Option<DummyVerifier>) -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, ChainRef, Arc<Mutex<SynchronizationClient<DummyTaskExecutor, DummyVerifier>>>) {
 		let event_loop = event_loop();
 		let handle = event_loop.handle();
 		let storage = match storage {
@@ -1120,7 +1120,11 @@ pub mod tests {
 		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain.clone());
 		{
 			let verifier_sink = client.lock().core();
-			let verifier = DummyVerifier::new(verifier_sink);
+			let mut verifier = match verifier {
+				Some(verifier) => verifier,
+				None => DummyVerifier::new(),
+			};
+			verifier.set_sink(verifier_sink);
 			client.lock().set_verifier(verifier);
 		}
 		(event_loop, handle, executor, chain, client)
@@ -1128,7 +1132,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_saturated_on_start() {
-		let (_, _, _, _, sync) = create_sync(None);
+		let (_, _, _, _, sync) = create_sync(None, None);
 		let sync = sync.lock();
 		let info = sync.information();
 		assert!(!info.state.is_synchronizing());
@@ -1138,7 +1142,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_in_order_block_path_nearly_saturated() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 
 		let mut sync = sync.lock();
 		let block1: Block = test_data::block_h1();
@@ -1179,7 +1183,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_out_of_order_block_path() {
-		let (_, _, _, _, sync) = create_sync(None);
+		let (_, _, _, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		sync.on_new_blocks_headers(5, vec![test_data::block_h1().block_header.clone(), test_data::block_h2().block_header.clone()]);
@@ -1199,7 +1203,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_parallel_peers() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 
 		let block1: Block = test_data::block_h1();
 		let block2: Block = test_data::block_h2();
@@ -1245,7 +1249,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_reset_when_peer_is_disconnected() {
-		let (_, _, _, _, sync) = create_sync(None);
+		let (_, _, _, _, sync) = create_sync(None, None);
 
 		// request new blocks
 		{
@@ -1264,7 +1268,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_not_starting_when_receiving_known_blocks() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 		// saturated => receive inventory with known blocks only
 		sync.on_new_blocks_headers(1, vec![test_data::genesis().block_header]);
@@ -1277,7 +1281,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_asks_for_inventory_after_saturating() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 		let block = test_data::block_h1();
 		sync.on_new_blocks_headers(1, vec![block.block_header.clone()]);
@@ -1295,7 +1299,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_remembers_correct_block_headers_in_order() {
-		let (_, _, executor, chain, sync) = create_sync(None);
+		let (_, _, executor, chain, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		let b1 = test_data::block_h1();
@@ -1338,7 +1342,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_remembers_correct_block_headers_out_of_order() {
-		let (_, _, executor, chain, sync) = create_sync(None);
+		let (_, _, executor, chain, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		let b1 = test_data::block_h1();
@@ -1381,7 +1385,7 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_ignores_unknown_block_headers() {
-		let (_, _, executor, chain, sync) = create_sync(None);
+		let (_, _, executor, chain, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		let b169 = test_data::block_h169();
@@ -1401,7 +1405,7 @@ pub mod tests {
 		let genesis = test_data::genesis();
 		storage.insert_block(&genesis).expect("no db error");
 
-		let (_, _, executor, chain, sync) = create_sync(Some(storage));
+		let (_, _, executor, chain, sync) = create_sync(Some(storage), None);
 		let genesis_header = &genesis.block_header;
 		let fork1 = test_data::build_n_empty_blocks_from(2, 100, &genesis_header);
 		let fork2 = test_data::build_n_empty_blocks_from(3, 200, &genesis_header);
@@ -1459,7 +1463,7 @@ pub mod tests {
 		let genesis = test_data::genesis();
 		storage.insert_block(&genesis).expect("no db error");
 
-		let (_, _, executor, chain, sync) = create_sync(Some(storage));
+		let (_, _, executor, chain, sync) = create_sync(Some(storage), None);
 		let common_block = test_data::block_builder().header().parent(genesis.hash()).build().build();
 		let fork1 = test_data::build_n_empty_blocks_from(2, 100, &common_block.block_header);
 		let fork2 = test_data::build_n_empty_blocks_from(3, 200, &common_block.block_header);
@@ -1499,7 +1503,7 @@ pub mod tests {
 
 	#[test]
 	fn accept_out_of_order_blocks_when_saturated() {
-		let (_, _, _, chain, sync) = create_sync(None);
+		let (_, _, _, chain, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		sync.on_peer_block(1, test_data::block_h2());
@@ -1521,7 +1525,7 @@ pub mod tests {
 
 	#[test]
 	fn do_not_rerequest_unknown_block_in_inventory() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		sync.on_peer_block(1, test_data::block_h2());
@@ -1533,7 +1537,7 @@ pub mod tests {
 
 	#[test]
 	fn blocks_rerequested_on_peer_disconnect() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 
 		let block1: Block = test_data::block_h1();
 		let block2: Block = test_data::block_h2();
@@ -1573,7 +1577,7 @@ pub mod tests {
 
 	#[test]
 	fn peer_removed_from_sync_after_responding_with_requested_block_notfound() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		let b1 = test_data::block_h1();
@@ -1599,7 +1603,7 @@ pub mod tests {
 
 	#[test]
 	fn peer_not_removed_from_sync_after_responding_with_requested_block_notfound() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		let b1 = test_data::block_h1();
@@ -1625,7 +1629,7 @@ pub mod tests {
 
 	#[test]
 	fn transaction_is_not_requested_when_synchronizing() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		let b1 = test_data::block_h1();
@@ -1643,7 +1647,7 @@ pub mod tests {
 
 	#[test]
 	fn transaction_is_requested_when_not_synchronizing() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		sync.on_new_transactions_inventory(0, vec![H256::from(0)]);
@@ -1667,7 +1671,7 @@ pub mod tests {
 
 	#[test]
 	fn same_transaction_can_be_requested_twice() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		sync.on_new_transactions_inventory(0, vec![H256::from(0)]);
@@ -1687,7 +1691,7 @@ pub mod tests {
 
 	#[test]
 	fn known_transaction_is_not_requested() {
-		let (_, _, executor, _, sync) = create_sync(None);
+		let (_, _, executor, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		sync.on_new_transactions_inventory(0, vec![test_data::genesis().transactions[0].hash(), H256::from(0)]);
@@ -1696,7 +1700,7 @@ pub mod tests {
 
 	#[test]
 	fn transaction_is_not_accepted_when_synchronizing() {
-		let (_, _, _, _, sync) = create_sync(None);
+		let (_, _, _, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		let b1 = test_data::block_h1();
@@ -1712,7 +1716,7 @@ pub mod tests {
 
 	#[test]
 	fn transaction_is_accepted_when_not_synchronizing() {
-		let (_, _, _, _, sync) = create_sync(None);
+		let (_, _, _, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		sync.on_peer_transaction(1, test_data::TransactionBuilder::with_version(1).into());
@@ -1729,7 +1733,7 @@ pub mod tests {
 
 	#[test]
 	fn transaction_is_orphaned_when_input_is_unknown() {
-		let (_, _, _, _, sync) = create_sync(None);
+		let (_, _, _, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		sync.on_peer_transaction(1, test_data::TransactionBuilder::with_default_input(0).into());
@@ -1743,7 +1747,7 @@ pub mod tests {
 		test_data::TransactionBuilder::with_output(10).store(chain)		// t0
 			.set_input(&chain.at(0), 0).set_output(20).store(chain);	// t0 -> t1
 
-		let (_, _, _, _, sync) = create_sync(None);
+		let (_, _, _, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
 		sync.on_peer_transaction(1, chain.at(1));
@@ -1753,5 +1757,56 @@ pub mod tests {
 		sync.on_peer_transaction(1, chain.at(0));
 		assert_eq!(sync.information().chain.transactions.transactions_count, 2);
 		assert_eq!(sync.information().orphaned_transactions, 0);
+	}
+
+	#[test]
+	#[ignore] // TODO: causes panic currently
+	// https://github.com/ethcore/parity-bitcoin/issues/121
+	fn when_previous_block_verification_failed_fork_is_not_requested() {
+		// got headers [b10, b11, b12] - some fork
+		// got headers [b10, b21, b22] - main branch
+		// got b10, b11, b12, b21. b22 is requested
+		//
+		// verifying: [b10, b11, b12, b21]
+		// headers_chain: [b10, b11, b12]
+		//
+		// b21 verification failed => b22 is not removed (since it is not in headers_chain)
+		// got new headers [b10, b21, b22, b23] => intersection point is b10 => scheduling [b21, b22, b23]
+		//
+		// block queue is empty => new tasks => requesting [b21, b22] => panic in hash_queue
+		//
+		// TODO: do not trust first intersection point - check each hash when scheduling hashes.
+		// If at least one hash is known => previous verification failed => drop all headers.
+
+		let genesis = test_data::genesis();
+		let b10 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+
+		let b11 = test_data::block_builder().header().nonce(1).parent(b10.hash()).build().build();
+		let b12 = test_data::block_builder().header().parent(b11.hash()).build().build();
+
+		let b21 = test_data::block_builder().header().nonce(2).parent(b10.hash()).build().build();
+		let b22 = test_data::block_builder().header().parent(b21.hash()).build().build();
+		let b23 = test_data::block_builder().header().parent(b22.hash()).build().build();
+
+		// TODO: simulate verification during b21 verification
+		let mut dummy_verifier = DummyVerifier::new();
+		dummy_verifier.error_when_verifying(b21.hash(), "simulated");
+
+		let (_, _, _, _, sync) = create_sync(None, Some(dummy_verifier));
+
+		let mut sync = sync.lock();
+
+		sync.on_new_blocks_headers(1, vec![b10.block_header.clone(), b11.block_header.clone(), b12.block_header.clone()]);
+		sync.on_new_blocks_headers(2, vec![b10.block_header.clone(), b21.block_header.clone(), b22.block_header.clone()]);
+
+		sync.on_peer_block(1, b10.clone());
+		sync.on_peer_block(1, b11);
+		sync.on_peer_block(1, b12);
+
+		sync.on_peer_block(2, b21.clone());
+
+		// should not panic here
+		sync.on_new_blocks_headers(2, vec![b10.block_header.clone(), b21.block_header.clone(),
+			b22.block_header.clone(), b23.block_header.clone()]);
 	}
 }

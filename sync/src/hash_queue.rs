@@ -15,13 +15,14 @@ pub enum HashPosition {
 }
 
 /// Ordered queue with O(1) contains() && random access operations cost.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct HashQueue {
 	queue: VecDeque<H256>,
 	set: HashSet<H256>,
 }
 
 /// Chain of linked queues. First queue has index zero.
+#[derive(Debug)]
 pub struct HashQueueChain {
 	chain: Vec<HashQueue>,
 }

@@ -149,31 +149,55 @@ impl Verifier for AsyncVerifier {
 #[cfg(test)]
 pub mod tests {
 	use std::sync::Arc;
+	use std::collections::HashMap;
 	use parking_lot::Mutex;
-	use chain::{Block, Transaction};
+	use chain::{Block, Transaction, RepresentH256};
 	use synchronization_client::SynchronizationClientCore;
 	use synchronization_executor::tests::DummyTaskExecutor;
+	use primitives::hash::H256;
 	use super::{Verifier, VerificationSink};
 
 	pub struct DummyVerifier {
-		sink: Arc<Mutex<SynchronizationClientCore<DummyTaskExecutor>>>,
+		sink: Option<Arc<Mutex<SynchronizationClientCore<DummyTaskExecutor>>>>,
+		errors: HashMap<H256, String>
 	}
 
 	impl DummyVerifier {
-		pub fn new(sink: Arc<Mutex<SynchronizationClientCore<DummyTaskExecutor>>>) -> Self {
+		pub fn new() -> Self {
 			DummyVerifier {
-				sink: sink,
+				sink: None,
+				errors: HashMap::new(),
 			}
+		}
+
+		pub fn set_sink(&mut self, sink: Arc<Mutex<SynchronizationClientCore<DummyTaskExecutor>>>) {
+			self.sink = Some(sink);
+		}
+
+		pub fn error_when_verifying(&mut self, hash: H256, err: &str) {
+			self.errors.insert(hash, err.into());
 		}
 	}
 
 	impl Verifier for DummyVerifier {
 		fn verify_block(&self, block: Block) {
-			self.sink.lock().on_block_verification_success(block);
+			match self.sink {
+				Some(ref sink) => match self.errors.get(&block.hash()) {
+					Some(err) => sink.lock().on_block_verification_error(&err, &block.hash()),
+					None => sink.lock().on_block_verification_success(block),
+				},
+				None => panic!("call set_sink"),
+			}
 		}
 
 		fn verify_transaction(&self, transaction: Transaction) {
-			self.sink.lock().on_transaction_verification_success(transaction);
+			match self.sink {
+				Some(ref sink) => match self.errors.get(&transaction.hash()) {
+					Some(err) => sink.lock().on_transaction_verification_error(&err, &transaction.hash()),
+					None => sink.lock().on_transaction_verification_success(transaction),
+				},
+				None => panic!("call set_sink"),
+			}
 		}
 	}
 }

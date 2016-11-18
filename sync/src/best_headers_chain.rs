@@ -14,6 +14,7 @@ pub struct Information {
 
 // TODO: currently it supports first chain only (so whatever headers sequence came first, it is best)
 /// Builds the block-header-chain of in-memory blocks, for which only headers are currently known
+#[derive(Debug)]
 pub struct BestHeadersChain {
 	/// Best hash in storage
 	storage_best_hash: H256,

@@ -284,7 +284,8 @@ mod tests {
 		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain.clone());
 		{
 			let verifier_sink = client.lock().core();
-			let verifier = DummyVerifier::new(verifier_sink);
+			let mut verifier = DummyVerifier::new();
+			verifier.set_sink(verifier_sink);
 			client.lock().set_verifier(verifier);
 		}
 		let local_node = LocalNode::new(server.clone(), client, executor.clone());
