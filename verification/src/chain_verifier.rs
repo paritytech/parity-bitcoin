@@ -56,7 +56,7 @@ impl ChainVerifier {
 		let coinbase_spends = block.transactions()[0].total_spends();
 
 		let mut total_unspent = 0u64;
-		for (tx_index, tx) in block.transactions().iter().skip(1).enumerate() {
+		for (tx_index, tx) in block.transactions().iter().enumerate().skip(1) {
 
 			let mut total_claimed: u64 = 0;
 
@@ -66,11 +66,10 @@ impl ChainVerifier {
 				if let Some(previous_meta) = self.store.transaction_meta(&input.previous_output.hash) {
 					// check if it exists only
 					// it will fail a little later if there is no transaction at all
-					if previous_meta.is_coinbase()
-						&& (at_height < COINBASE_MATURITY ||
-							at_height - COINBASE_MATURITY < previous_meta.height())
+					if previous_meta.is_coinbase() &&
+						(at_height < COINBASE_MATURITY || at_height - COINBASE_MATURITY < previous_meta.height())
 					{
-						return Err(Error::Transaction(tx_index+1, TransactionError::Maturity));
+						return Err(Error::Transaction(tx_index, TransactionError::Maturity));
 					}
 				}
 
@@ -80,13 +79,13 @@ impl ChainVerifier {
 						// todo: optimize block decomposition vec<transaction> -> hashmap<h256, transaction>
 						.or(block.transactions().iter().find(|tx| !tx.is_coinbase() && tx.hash() == input.previous_output.hash).cloned())
 						.ok_or(
-							Error::Transaction(tx_index+1, TransactionError::UnknownReference(input.previous_output.hash.clone()))
+							Error::Transaction(tx_index, TransactionError::UnknownReference(input.previous_output.hash.clone()))
 						)
 				);
 
 				let output = try!(reference_tx.outputs.get(input.previous_output.index as usize)
 					.ok_or(
-						Error::Transaction(tx_index+1, TransactionError::Input(input.previous_output.index as usize))
+						Error::Transaction(tx_index, TransactionError::Input(input.previous_output.index as usize))
 					)
 				);
 
@@ -96,7 +95,7 @@ impl ChainVerifier {
 			let total_spends = tx.total_spends();
 
 			if total_claimed < total_spends {
-				return Err(Error::Transaction(tx_index+1, TransactionError::Overspend));
+				return Err(Error::Transaction(tx_index, TransactionError::Overspend));
 			}
 
 			// total_claimed is greater than total_spends, checked above and returned otherwise, cannot overflow; qed

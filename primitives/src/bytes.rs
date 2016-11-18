@@ -5,6 +5,10 @@ use hex::{ToHex, FromHex, FromHexError};
 pub struct Bytes(Vec<u8>);
 
 impl Bytes {
+	pub fn new() -> Self {
+		Bytes::default()
+	}
+
 	pub fn new_with_len(len: usize) -> Self {
 		Bytes(vec![0; len])
 	}

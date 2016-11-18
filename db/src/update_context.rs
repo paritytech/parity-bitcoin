@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use storage::COL_TRANSACTIONS_META;
 use primitives::hash::H256;
 use error::Error;
-use std;
 
 pub struct UpdateContext {
 	pub meta: HashMap<H256, TransactionMeta>,
@@ -38,7 +37,7 @@ impl UpdateContext {
 	}
 
 	pub fn restore(&mut self) {
-		if let Some(meta_snapshot) = std::mem::replace(&mut self.meta_snapshot, None) {
+		if let Some(meta_snapshot) = self.meta_snapshot.take() {
 			self.meta = meta_snapshot;
 			self.db_transaction.rollback();
 		}
