@@ -29,12 +29,12 @@ impl InboundSyncConnection for InboundConnection {
 		self.local_node.on_peer_inventory(self.peer_index, message);
 	}
 
-	fn on_getdata(&self, message: types::GetData, id: u32) {
-		self.local_node.on_peer_getdata(self.peer_index, message, id);
+	fn on_getdata(&self, message: types::GetData) {
+		self.local_node.on_peer_getdata(self.peer_index, message);
 	}
 
-	fn on_getblocks(&self, message: types::GetBlocks, id: u32) {
-		self.local_node.on_peer_getblocks(self.peer_index, message, id);
+	fn on_getblocks(&self, message: types::GetBlocks) {
+		self.local_node.on_peer_getblocks(self.peer_index, message);
 	}
 
 	fn on_getheaders(&self, message: types::GetHeaders, id: u32) {
@@ -53,8 +53,8 @@ impl InboundSyncConnection for InboundConnection {
 		self.local_node.on_peer_headers(self.peer_index, message);
 	}
 
-	fn on_mempool(&self, message: types::MemPool, id: u32) {
-		self.local_node.on_peer_mempool(self.peer_index, message, id);
+	fn on_mempool(&self, message: types::MemPool) {
+		self.local_node.on_peer_mempool(self.peer_index, message);
 	}
 
 	fn on_filterload(&self, message: types::FilterLoad) {
