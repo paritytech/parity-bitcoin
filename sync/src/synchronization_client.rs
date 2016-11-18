@@ -223,10 +223,10 @@ pub struct Config {
 
 /// Synchronization client facade
 pub struct SynchronizationClient<T: TaskExecutor, U: Verifier> {
-	/// Client
-	client: Arc<Mutex<SynchronizationClientCore<T>>>,
+	/// Client core
+	core: Arc<Mutex<SynchronizationClientCore<T>>>,
 	/// Verifier
-	verifier: Option<Box<U>>,
+	verifier: U,
 }
 
 /// Synchronization client.
@@ -286,46 +286,42 @@ impl State {
 
 impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Verifier {
 	fn best_block(&self) -> db::BestBlock {
-		self.client.lock().best_block()
+		self.core.lock().best_block()
 	}
 
 	fn state(&self) -> State {
-		self.client.lock().state()
+		self.core.lock().state()
 	}
 
 	fn on_new_blocks_inventory(&mut self, peer_index: usize, blocks_hashes: Vec<H256>) {
-		self.client.lock().on_new_blocks_inventory(peer_index, blocks_hashes)
+		self.core.lock().on_new_blocks_inventory(peer_index, blocks_hashes)
 	}
 
 	fn on_new_transactions_inventory(&mut self, peer_index: usize, transactions_hashes: Vec<H256>) {
-		self.client.lock().on_new_transactions_inventory(peer_index, transactions_hashes)
+		self.core.lock().on_new_transactions_inventory(peer_index, transactions_hashes)
 	}
 
 	fn on_new_blocks_headers(&mut self, peer_index: usize, blocks_headers: Vec<BlockHeader>) {
-		self.client.lock().on_new_blocks_headers(peer_index, blocks_headers);
+		self.core.lock().on_new_blocks_headers(peer_index, blocks_headers);
 	}
 
 	fn on_peer_blocks_notfound(&mut self, peer_index: usize, blocks_hashes: Vec<H256>) {
-		self.client.lock().on_peer_blocks_notfound(peer_index, blocks_hashes);
+		self.core.lock().on_peer_blocks_notfound(peer_index, blocks_hashes);
 	}
 
 	fn on_peer_block(&mut self, peer_index: usize, block: Block) {
-		let blocks_to_verify = { self.client.lock().on_peer_block(peer_index, block) };
+		let blocks_to_verify = { self.core.lock().on_peer_block(peer_index, block) };
 
 		// verify selected blocks
 		if let Some(mut blocks_to_verify) = blocks_to_verify {
 			while let Some((_, block)) = blocks_to_verify.pop_front() {
-				// schedule verification
-				match self.verifier {
-					Some(ref verifier) => verifier.verify_block(block),
-					None => panic!("call set_verifier after construction"),
-				}
+				self.verifier.verify_block(block);
 			}
 		}
 
 		// try to switch to saturated state OR execute sync tasks
 		{
-			let mut client = self.client.lock();
+			let mut client = self.core.lock();
 			if !client.try_switch_to_saturated_state() {
 				client.execute_synchronization_tasks(None);
 			}
@@ -333,53 +329,39 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 	}
 
 	fn on_peer_transaction(&mut self, peer_index: usize, transaction: Transaction) {
-		let transactions_to_verify = { self.client.lock().on_peer_transaction(peer_index, transaction) };
+		let transactions_to_verify = { self.core.lock().on_peer_transaction(peer_index, transaction) };
 
 		if let Some(mut transactions_to_verify) = transactions_to_verify {
 			while let Some((_, tx)) = transactions_to_verify.pop_front() {
-				// schedule verification
-				match self.verifier {
-					Some(ref verifier) => verifier.verify_transaction(tx),
-					None => panic!("call set_verifier after construction"),
-				}
+				self.verifier.verify_transaction(tx);
 			}
 		}
 	}
 
 	fn on_peer_disconnected(&mut self, peer_index: usize) {
-		self.client.lock().on_peer_disconnected(peer_index);
+		self.core.lock().on_peer_disconnected(peer_index);
 	}
 
 	fn get_peers_nearly_blocks_waiter(&mut self, peer_index: usize) -> (bool, Option<Arc<PeersBlocksWaiter>>) {
-		self.client.lock().get_peers_nearly_blocks_waiter(peer_index)
+		self.core.lock().get_peers_nearly_blocks_waiter(peer_index)
 	}
 }
 
 impl<T, U> SynchronizationClient<T, U> where T: TaskExecutor, U: Verifier {
 	/// Create new synchronization client
-	pub fn new(config: Config, handle: &Handle, executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
+	pub fn new(core: Arc<Mutex<SynchronizationClientCore<T>>>, verifier: U) -> Arc<Mutex<Self>> {
 		Arc::new(Mutex::new(
 			SynchronizationClient {
-				client: SynchronizationClientCore::new(config, handle, executor, chain),
-				verifier: None,
+				core: core,
+				verifier: verifier,
 			}
 		))
-	}
-
-	/// Get client core
-	pub fn core(&self) -> Arc<Mutex<SynchronizationClientCore<T>>> {
-		self.client.clone()
-	}
-
-	/// Set verifier (TODO: use builder && check in build instead)
-	pub fn set_verifier(&mut self, verifier: U) {
-		self.verifier = Some(Box::new(verifier));
 	}
 
 	/// Get information on current synchronization state.
 	#[cfg(test)]
 	pub fn information(&self) -> Information {
-		self.client.lock().information()
+		self.core.lock().information()
 	}
 }
 
@@ -1090,7 +1072,7 @@ pub mod tests {
 	use parking_lot::{Mutex, RwLock};
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, Transaction, RepresentH256};
-	use super::{Client, Config, SynchronizationClient};
+	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore};
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
 	use synchronization_executor::tests::DummyTaskExecutor;
@@ -1117,16 +1099,13 @@ pub mod tests {
 		let executor = DummyTaskExecutor::new();
 		let config = Config { threads_num: 1 };
 
-		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain.clone());
-		{
-			let verifier_sink = client.lock().core();
-			let mut verifier = match verifier {
-				Some(verifier) => verifier,
-				None => DummyVerifier::new(),
-			};
-			verifier.set_sink(verifier_sink);
-			client.lock().set_verifier(verifier);
-		}
+		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone());
+		let mut verifier = match verifier {
+			Some(verifier) => verifier,
+			None => DummyVerifier::new(),
+		};
+		verifier.set_sink(client_core.clone());
+		let client = SynchronizationClient::new(client_core, verifier);
 		(event_loop, handle, executor, chain, client)
 	}
 

@@ -230,7 +230,7 @@ mod tests {
 	use chain::RepresentH256;
 	use synchronization_executor::Task;
 	use synchronization_executor::tests::DummyTaskExecutor;
-	use synchronization_client::{Config, SynchronizationClient};
+	use synchronization_client::{Config, SynchronizationClient, SynchronizationClientCore};
 	use synchronization_chain::Chain;
 	use p2p::{event_loop, OutboundSyncConnection, OutboundSyncConnectionRef};
 	use message::types;
@@ -281,13 +281,10 @@ mod tests {
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
 		let config = Config { threads_num: 1 };
-		let client = SynchronizationClient::new(config, &handle, executor.clone(), chain.clone());
-		{
-			let verifier_sink = client.lock().core();
-			let mut verifier = DummyVerifier::new();
-			verifier.set_sink(verifier_sink);
-			client.lock().set_verifier(verifier);
-		}
+		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone());
+		let mut verifier = DummyVerifier::new();
+		verifier.set_sink(client_core.clone());
+		let client = SynchronizationClient::new(client_core, verifier);
 		let local_node = LocalNode::new(server.clone(), client, executor.clone());
 		(event_loop, handle, executor, server, local_node)
 	}
