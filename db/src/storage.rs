@@ -112,10 +112,7 @@ impl Storage {
 
 	/// get the value of the key in the database
 	fn get(&self, col: u32, key: &[u8]) -> Option<Bytes> {
-		match self.database.get(Some(col), key) {
-			Ok(val) => val,
-			Err(msg) => panic!("{}", msg),
-		}
+		self.database.get(Some(col), key).expect("fatal db error")
 	}
 
 	/// resolves hash for the block reference (which can be referenced by number or
