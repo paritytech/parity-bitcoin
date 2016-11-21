@@ -156,6 +156,7 @@ pub fn checksum(data: &[u8]) -> H32 {
 
 #[cfg(test)]
 mod tests {
+	use primitives::bytes::Bytes;
 	use super::{ripemd160, sha1, sha256, dhash160, dhash256, checksum};
 
 	#[test]
@@ -183,6 +184,11 @@ mod tests {
 	fn test_dhash160() {
 		let expected = "b6a9c8c230722b7c748331a8b450f05566dc7d0f".into();
 		let result = dhash160(b"hello");
+		assert_eq!(result, expected);
+
+		let expected = "865c71bfc7e314709207ab9e7e205c6f8e453d08".into();
+		let bytes: Bytes = "210292be03ed9475445cc24a34a115c641a67e4ff234ccb08cb4c5cea45caa526cb26ead6ead6ead6ead6eadac".into();
+		let result = dhash160(&bytes);
 		assert_eq!(result, expected);
 	}
 

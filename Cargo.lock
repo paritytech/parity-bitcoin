@@ -594,6 +594,7 @@ dependencies = [
  "bitcrypto 0.1.0",
  "chain 0.1.0",
  "keys 0.1.0",
+ "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
  "serialization 0.1.0",
 ]

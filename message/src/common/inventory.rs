@@ -77,7 +77,7 @@ mod tests {
 
 	#[test]
 	fn test_inventory_serialize() {
-		let expected = "020000000000000000000000000000000000000000000000000000000000000000000004".into();
+		let expected = "020000000400000000000000000000000000000000000000000000000000000000000000".into();
 
 		let inventory = InventoryVector {
 			inv_type: InventoryType::MessageBlock,
@@ -89,7 +89,7 @@ mod tests {
 
 	#[test]
 	fn test_inventory_deserialize() {
-		let raw: Bytes = "020000000000000000000000000000000000000000000000000000000000000000000004".into();
+		let raw: Bytes = "020000000400000000000000000000000000000000000000000000000000000000000000".into();
 
 		let expected = InventoryVector {
 			inv_type: InventoryType::MessageBlock,
