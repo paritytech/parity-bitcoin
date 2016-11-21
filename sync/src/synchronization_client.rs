@@ -1107,10 +1107,7 @@ pub mod tests {
 		let config = Config { threads_num: 1 };
 
 		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone());
-		let mut verifier = match verifier {
-			Some(verifier) => verifier,
-			None => DummyVerifier::new(),
-		};
+		let mut verifier = verifier.unwrap_or_default();
 		verifier.set_sink(client_core.clone());
 		let client = SynchronizationClient::new(client_core, verifier);
 		(event_loop, handle, executor, chain, client)
@@ -1773,8 +1770,8 @@ pub mod tests {
 		let b22 = test_data::block_builder().header().parent(b21.hash()).build().build();
 		let b23 = test_data::block_builder().header().parent(b22.hash()).build().build();
 
-		// simulate verification during b21 verification
-		let mut dummy_verifier = DummyVerifier::new();
+		// TODO: simulate verification during b21 verification
+		let mut dummy_verifier = DummyVerifier::default();
 		dummy_verifier.error_when_verifying(b21.hash(), "simulated");
 
 		let (_, _, _, _, sync) = create_sync(None, Some(dummy_verifier));

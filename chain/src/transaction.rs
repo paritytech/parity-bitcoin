@@ -69,6 +69,10 @@ impl OutPoint {
 	pub fn index(&self) -> u32 {
 		self.index
 	}
+
+	pub fn is_null(&self) -> bool {
+		self.hash.is_zero() && self.index == u32::max_value()
+	}
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -247,8 +251,7 @@ impl Transaction {
 	}
 
 	pub fn is_coinbase(&self) -> bool {
-		if self.inputs.len() != 1 { return false; }
-		self.inputs[0].previous_output.hash.is_zero() && self.inputs[0].previous_output.index == 0xffffffff
+		self.inputs.len() == 1 && self.inputs[0].previous_output.is_null()
 	}
 
 	pub fn total_spends(&self) -> u64 {

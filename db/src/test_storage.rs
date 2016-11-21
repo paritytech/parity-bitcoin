@@ -141,12 +141,11 @@ impl BlockStapler for TestStorage {
 
 	// supports only main chain in test storage
 	fn accepted_location(&self, header: &chain::BlockHeader) -> Option<BlockLocation> {
-		if self.best_block().is_none() { return Some(BlockLocation::Main(0)); }
-
-		let best = self.best_block().unwrap();
-		if best.hash == header.previous_header_hash { return Some(BlockLocation::Main(best.number + 1)); }
-
-		None
+		match self.best_block() {
+			None => Some(BlockLocation::Main(0)),
+			Some(ref best) if best.hash == header.previous_header_hash => Some(BlockLocation::Main(best.number + 1)),
+			_ => None
+		}
 	}
 }
 

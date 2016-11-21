@@ -157,19 +157,13 @@ pub mod tests {
 	use primitives::hash::H256;
 	use super::{Verifier, VerificationSink};
 
+	#[derive(Default)]
 	pub struct DummyVerifier {
 		sink: Option<Arc<Mutex<SynchronizationClientCore<DummyTaskExecutor>>>>,
 		errors: HashMap<H256, String>
 	}
 
 	impl DummyVerifier {
-		pub fn new() -> Self {
-			DummyVerifier {
-				sink: None,
-				errors: HashMap::new(),
-			}
-		}
-
 		pub fn set_sink(&mut self, sink: Arc<Mutex<SynchronizationClientCore<DummyTaskExecutor>>>) {
 			self.sink = Some(sink);
 		}

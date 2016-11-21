@@ -23,6 +23,10 @@ impl Error {
 		Error::Consistency(ConsistencyError::UnknownNumber(n))
 	}
 
+	pub fn unknown_spending(h: &H256) -> Self {
+		Error::Consistency(ConsistencyError::UnknownSpending(h.clone()))
+	}
+
 	pub fn double_spend(h: &H256) -> Self {
 		Error::Consistency(ConsistencyError::DoubleSpend(h.clone()))
 	}
