@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::cmp::{min, max};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
-use parking_lot::{Mutex, Condvar};
+use parking_lot::Mutex;
 use futures::{BoxFuture, Future, finished};
 use futures::stream::Stream;
 use tokio_core::reactor::{Handle, Interval};
@@ -187,7 +187,7 @@ pub trait Client : Send + 'static {
 	fn on_peer_block(&mut self, peer_index: usize, block: Block);
 	fn on_peer_transaction(&mut self, peer_index: usize, transaction: Transaction);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
-	fn get_peers_nearly_blocks_waiter(&mut self, peer_index: usize) -> (bool, Option<Arc<PeersBlocksWaiter>>);
+	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
 }
 
 /// Synchronization client trait
@@ -201,19 +201,11 @@ pub trait ClientCore : VerificationSink {
 	fn on_peer_block(&mut self, peer_index: usize, block: Block) -> Option<VecDeque<(H256, Block)>>;
 	fn on_peer_transaction(&mut self, peer_index: usize, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>>;
 	fn on_peer_disconnected(&mut self, peer_index: usize);
-	fn get_peers_nearly_blocks_waiter(&mut self, peer_index: usize) -> (bool, Option<Arc<PeersBlocksWaiter>>);
+	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>);
 	fn try_switch_to_saturated_state(&mut self) -> bool;
 }
 
-/// Synchronization peer blocks waiter
-#[derive(Default)]
-pub struct PeersBlocksWaiter {
-	/// Awake mutex
-	peer_blocks_lock: Mutex<bool>,
-	/// Awake event
-	peer_blocks_done: Condvar,
-}
 
 /// Synchronization client configuration options.
 pub struct Config {
@@ -249,8 +241,8 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	orphaned_transactions_pool: OrphanTransactionsPool,
 	/// Verifying blocks by peer
 	verifying_blocks_by_peer: HashMap<H256, usize>,
-	/// Verifying blocks waiters
-	verifying_blocks_waiters: HashMap<usize, (HashSet<H256>, Option<Arc<PeersBlocksWaiter>>)>,
+	/// Verifying blocks futures
+	verifying_blocks_futures: HashMap<usize, (HashSet<H256>, Vec<BoxFuture<(), ()>>)>,
 }
 
 impl Config {
@@ -342,8 +334,8 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().on_peer_disconnected(peer_index);
 	}
 
-	fn get_peers_nearly_blocks_waiter(&mut self, peer_index: usize) -> (bool, Option<Arc<PeersBlocksWaiter>>) {
-		self.core.lock().get_peers_nearly_blocks_waiter(peer_index)
+	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>) {
+		self.core.lock().after_peer_nearly_blocks_verified(peer_index, future);
 	}
 }
 
@@ -511,23 +503,21 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 	}
 
-	/// Get waiter for verifying blocks
-	fn get_peers_nearly_blocks_waiter(&mut self, peer_index: usize) -> (bool, Option<Arc<PeersBlocksWaiter>>) {
+	/// Execute after last block from this peer in NearlySaturated state is verified.
+	/// If there are no verifying blocks from this peer or we are not in the NearlySaturated state => execute immediately.
+	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>) {
 		// if we are currently synchronizing => no need to wait
 		if self.state.is_synchronizing() {
-			return (false, None);
+			future.wait().expect("no-error future");
+			return;
 		}
 
 		// we have to wait until all previous peer requests are server
-		match self.verifying_blocks_waiters.entry(peer_index) {
+		match self.verifying_blocks_futures.entry(peer_index) {
 			Entry::Occupied(mut entry) => {
-				if entry.get().1.is_none() {
-					entry.get_mut().1 = Some(Arc::new(PeersBlocksWaiter::default()));
-				}
-				// also wait until all blocks, supplied by this peer are verified
-				(true, entry.get().1.clone())
+				entry.get_mut().1.push(future);
 			},
-			_ => (true, None),
+			_ => future.wait().expect("no-error future"),
 		}
 	}
 
@@ -721,7 +711,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				orphaned_blocks_pool: OrphanBlocksPool::new(),
 				orphaned_transactions_pool: OrphanTransactionsPool::new(),
 				verifying_blocks_by_peer: HashMap::new(),
-				verifying_blocks_waiters: HashMap::new(),
+				verifying_blocks_futures: HashMap::new(),
 			}
 		));
 
@@ -887,14 +877,14 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 						chain.verify_blocks(blocks_headers_to_verify);
 						// remember that we are verifying block from this peer
 						self.verifying_blocks_by_peer.insert(block_hash.clone(), peer_index);
-						match self.verifying_blocks_waiters.entry(peer_index) {
+						match self.verifying_blocks_futures.entry(peer_index) {
 							Entry::Occupied(mut entry) => {
 								entry.get_mut().0.insert(block_hash.clone());
 							},
 							Entry::Vacant(entry) => {
 								let mut block_hashes = HashSet::new();
 								block_hashes.insert(block_hash.clone());
-								entry.insert((block_hashes, None));
+								entry.insert((block_hashes, Vec::new()));
 							}
 						}
 						result = Some(blocks_to_verify);
@@ -1012,15 +1002,15 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		if let Entry::Occupied(block_entry) = self.verifying_blocks_by_peer.entry(hash.clone()) {
 			let peer_index = *block_entry.get();
 			// find a # of blocks, which this thread has supplied
-			if let Entry::Occupied(mut entry) = self.verifying_blocks_waiters.entry(peer_index) {
+			if let Entry::Occupied(mut entry) = self.verifying_blocks_futures.entry(peer_index) {
 				let is_last_block = {
-					let &mut (ref mut waiting, ref waiter) = entry.get_mut();
+					let &mut (ref mut waiting, ref mut futures) = entry.get_mut();
 					waiting.remove(hash);
 					// if this is the last block => awake waiting threads
 					let is_last_block = waiting.is_empty();
 					if is_last_block {
-						if let Some(ref waiter) = *waiter {
-							waiter.awake();
+						for future in futures.drain(..) {
+							future.wait().expect("no-error future");
 						}
 					}
 					is_last_block
@@ -1053,23 +1043,6 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 					, chain.information());
 			}
 		}
-	}
-}
-
-impl PeersBlocksWaiter {
-	pub fn wait(&self) {
-		let mut locker = self.peer_blocks_lock.lock();
-		if *locker {
-			return;
-		}
-
-		self.peer_blocks_done.wait(&mut locker);
-	}
-
-	pub fn awake(&self) {
-		let mut locker = self.peer_blocks_lock.lock();
-		*locker = true;
-		self.peer_blocks_done.notify_all();
 	}
 }
 

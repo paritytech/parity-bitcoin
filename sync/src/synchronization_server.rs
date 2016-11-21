@@ -1,8 +1,9 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::collections::{VecDeque, HashMap};
 use std::collections::hash_map::Entry;
+use futures::{Future, Poll, Async};
 use parking_lot::{Mutex, Condvar};
 use message::common::{InventoryVector, InventoryType};
 use db;
@@ -13,11 +14,12 @@ use synchronization_executor::{Task, TaskExecutor};
 use message::types;
 
 /// Synchronization requests server trait
-pub trait Server : Send + 'static {
-	fn serve_getdata(&self, peer_index: usize, message: types::GetData);
-	fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks);
-	fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders, id: Option<u32>);
-	fn serve_mempool(&self, peer_index: usize);
+pub trait Server : Send + Sync + 'static {
+	fn serve_getdata(&self, peer_index: usize, message: types::GetData) -> Option<IndexedServerTask>;
+	fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) -> Option<IndexedServerTask>;
+	fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders, id: Option<u32>) -> Option<IndexedServerTask>;
+	fn serve_mempool(&self, peer_index: usize) -> Option<IndexedServerTask>;
+	fn add_task(&self, peer_index: usize, task: IndexedServerTask);
 }
 
 /// Synchronization requests server
@@ -28,6 +30,7 @@ pub struct SynchronizationServer {
 	worker_thread: Option<thread::JoinHandle<()>>,
 }
 
+/// Server tasks queue
 struct ServerQueue {
 	is_stopping: AtomicBool,
 	queue_ready: Arc<Condvar>,
@@ -84,6 +87,37 @@ impl IndexedServerTask {
 impl IndexedServerTask {
 	fn ignore(id: u32) -> Self {
 		IndexedServerTask::new(ServerTask::Ignore, ServerTaskIndex::Final(id))
+	}
+
+	pub fn future<T: Server>(self, peer_index: usize, server: Weak<T>) -> IndexedServerTaskFuture<T> {
+		IndexedServerTaskFuture::<T>::new(server, peer_index, self)
+	}
+}
+
+/// Future server task execution
+pub struct IndexedServerTaskFuture<T: Server> {
+	server: Weak<T>,
+	peer_index: usize,
+	task: Option<IndexedServerTask>,
+}
+
+impl<T> IndexedServerTaskFuture<T> where T: Server {
+	pub fn new(server: Weak<T>, peer_index: usize, task: IndexedServerTask) -> Self {
+		IndexedServerTaskFuture {
+			server: server,
+			peer_index: peer_index,
+			task: Some(task),
+		}
+	}
+}
+
+impl<T> Future for IndexedServerTaskFuture<T> where T: Server {
+	type Item = ();
+	type Error = ();
+
+	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+		self.task.take().map(|t| self.server.upgrade().map(|s| s.add_task(self.peer_index, t)));
+		Ok(Async::Ready(()))
 	}
 }
 
@@ -335,39 +369,46 @@ impl Drop for SynchronizationServer {
 }
 
 impl Server for SynchronizationServer {
-	fn serve_getdata(&self, peer_index: usize, message: types::GetData) {
+	fn serve_getdata(&self, _peer_index: usize, message: types::GetData) -> Option<IndexedServerTask> {
 		let task = IndexedServerTask::new(ServerTask::ServeGetData(message.inventory), ServerTaskIndex::None);
-		self.queue.lock().add_task(peer_index, task);
+		Some(task)
 	}
 
-	fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
+	fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) -> Option<IndexedServerTask> {
 		if let Some(best_common_block) = self.locate_known_block_hash(message.block_locator_hashes) {
 			trace!(target: "sync", "Best common block with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);
 			let task = IndexedServerTask::new(ServerTask::ServeGetBlocks(best_common_block, message.hash_stop), ServerTaskIndex::None);
-			self.queue.lock().add_task(peer_index, task);
+			Some(task)
 		}
 		else {
 			trace!(target: "sync", "No common blocks with peer#{}", peer_index);
+			None
 		}
 	}
 
-	fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders, id: Option<u32>) {
+	fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders, id: Option<u32>) -> Option<IndexedServerTask> {
 		if let Some(best_common_block) = self.locate_known_block_header(message.block_locator_hashes) {
 			trace!(target: "sync", "Best common block header with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash.to_reversed_str());
 			let server_task_index = id.map_or_else(|| ServerTaskIndex::None, |id| ServerTaskIndex::Final(id));
 			let task = IndexedServerTask::new(ServerTask::ServeGetHeaders(best_common_block, message.hash_stop), server_task_index);
-			self.queue.lock().add_task(peer_index, task);
+			Some(task)
 		}
 		else {
 			trace!(target: "sync", "No common blocks headers with peer#{}", peer_index);
 			if let Some(id) = id {
-				self.queue.lock().add_task(peer_index, IndexedServerTask::ignore(id));
+				Some(IndexedServerTask::ignore(id))
+			} else {
+				None
 			}
 		}
 	}
 
-	fn serve_mempool(&self, peer_index: usize) {
+	fn serve_mempool(&self, _peer_index: usize) -> Option<IndexedServerTask> {
 		let task = IndexedServerTask::new(ServerTask::ServeMempool, ServerTaskIndex::None);
+		Some(task)
+	}
+
+	fn add_task(&self, peer_index: usize, task: IndexedServerTask) {
 		self.queue.lock().add_task(peer_index, task);
 	}
 }
@@ -461,7 +502,7 @@ pub mod tests {
 	use synchronization_executor::Task;
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use synchronization_chain::Chain;
-	use super::{Server, ServerTask, SynchronizationServer, ServerTaskIndex};
+	use super::{Server, ServerTask, SynchronizationServer, ServerTaskIndex, IndexedServerTask};
 
 	pub struct DummyServer {
 		tasks: Mutex<Vec<(usize, ServerTask)>>,
@@ -480,26 +521,33 @@ pub mod tests {
 	}
 
 	impl Server for DummyServer {
-		fn serve_getdata(&self, peer_index: usize, message: types::GetData) {
+		fn serve_getdata(&self, peer_index: usize, message: types::GetData) -> Option<IndexedServerTask> {
 			self.tasks.lock().push((peer_index, ServerTask::ServeGetData(message.inventory)));
+			None
 		}
 
-		fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
+		fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) -> Option<IndexedServerTask> {
 			self.tasks.lock().push((peer_index, ServerTask::ServeGetBlocks(db::BestBlock {
 				number: 0,
 				hash: message.block_locator_hashes[0].clone(),
 			}, message.hash_stop)));
+			None
 		}
 
-		fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders, _id: Option<u32>) {
+		fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders, _id: Option<u32>) -> Option<IndexedServerTask> {
 			self.tasks.lock().push((peer_index, ServerTask::ServeGetHeaders(db::BestBlock {
 				number: 0,
 				hash: message.block_locator_hashes[0].clone(),
 			}, message.hash_stop)));
+			None
 		}
 
-		fn serve_mempool(&self, peer_index: usize) {
+		fn serve_mempool(&self, peer_index: usize) -> Option<IndexedServerTask> {
 			self.tasks.lock().push((peer_index, ServerTask::ServeMempool));
+			None
+		}
+
+		fn add_task(&self, _peer_index: usize, _task: IndexedServerTask) {
 		}
 	}
 
@@ -522,7 +570,7 @@ pub mod tests {
 		];
 		server.serve_getdata(0, types::GetData {
 			inventory: inventory.clone(),
-		});
+		}).map(|t| server.add_task(0, t));
 		// => respond with notfound
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![Task::SendNotFound(0, inventory, ServerTaskIndex::None)]);
@@ -540,7 +588,7 @@ pub mod tests {
 		];
 		server.serve_getdata(0, types::GetData {
 			inventory: inventory.clone(),
-		});
+		}).map(|t| server.add_task(0, t));
 		// => respond with block
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![Task::SendBlock(0, test_data::genesis(), ServerTaskIndex::None)]);
@@ -555,7 +603,7 @@ pub mod tests {
 			version: 0,
 			block_locator_hashes: vec![genesis_block_hash.clone()],
 			hash_stop: H256::default(),
-		});
+		}).map(|t| server.add_task(0, t));
 		// => no response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
 		assert_eq!(tasks, vec![]);
@@ -570,7 +618,7 @@ pub mod tests {
 			version: 0,
 			block_locator_hashes: vec![test_data::genesis().hash()],
 			hash_stop: H256::default(),
-		});
+		}).map(|t| server.add_task(0, t));
 		// => responds with inventory
 		let inventory = vec![InventoryVector {
 			inv_type: InventoryType::MessageBlock,
@@ -590,7 +638,7 @@ pub mod tests {
 			version: 0,
 			block_locator_hashes: vec![genesis_block_hash.clone()],
 			hash_stop: H256::default(),
-		}, Some(dummy_id));
+		}, Some(dummy_id)).map(|t| server.add_task(0, t));
 		// => no response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
 		assert_eq!(tasks, vec![Task::Ignore(0, dummy_id)]);
@@ -606,7 +654,7 @@ pub mod tests {
 			version: 0,
 			block_locator_hashes: vec![test_data::genesis().hash()],
 			hash_stop: H256::default(),
-		}, Some(dummy_id));
+		}, Some(dummy_id)).map(|t| server.add_task(0, t));
 		// => responds with headers
 		let headers = vec![
 			test_data::block_h1().block_header,
@@ -619,7 +667,7 @@ pub mod tests {
 	fn server_mempool_do_not_responds_inventory_when_empty_memory_pool() {
 		let (_, executor, server) = create_synchronization_server();
 		// when asking for memory pool transactions ids
-		server.serve_mempool(0);
+		server.serve_mempool(0).map(|t| server.add_task(0, t));
 		// => no response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
 		assert_eq!(tasks, vec![]);
@@ -633,7 +681,7 @@ pub mod tests {
 		let transaction_hash = transaction.hash();
 		chain.write().insert_verified_transaction(transaction);
 		// when asking for memory pool transactions ids
-		server.serve_mempool(0);
+		server.serve_mempool(0).map(|t| server.add_task(0, t));
 		// => respond with inventory
 		let inventory = vec![InventoryVector {
 			inv_type: InventoryType::MessageTx,
