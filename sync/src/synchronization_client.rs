@@ -911,9 +911,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	/// Process new peer transaction
 	fn process_peer_transaction(&mut self, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>> {
 		// if we are in synchronization state, we will ignore this message
-println!("=== AAA");
 		if self.state.is_synchronizing() {
-println!("=== BBB");
 			return None;
 		}
 
@@ -927,7 +925,6 @@ println!("=== BBB");
 			.map(|input| input.previous_output.hash.clone())
 			.collect();
 		if !unknown_parents.is_empty() {
-println!("=== CCC");
 			self.orphaned_transactions_pool.insert(hash, transaction, unknown_parents);
 			return None;
 		}
@@ -940,7 +937,6 @@ println!("=== CCC");
 		for &(ref h, ref tx) in &transactons {
 			chain.verify_transaction(h.clone(), tx.clone());
 		}
-println!("=== DDD: {:?}", transactons);
 		Some(transactons)
 	}
 
