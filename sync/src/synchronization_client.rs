@@ -629,8 +629,10 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 				self.execute_synchronization_tasks(None);
 
 				// relay block to our peers
-				if self.state.is_saturated() {
-					// TODO: Task::BroadcastBlock
+				if self.state.is_saturated() || self.state.is_nearly_saturated() {
+					// TODO: remember peer' last N blocks and send only if peer has no canonized blocks
+					// TODO: send `headers` if peer has not send `sendheaders` command
+					self.executor.lock().execute(Task::BroadcastBlocksHashes(insert_result.canonized_blocks_hashes));
 				}
 
 				// deal with block transactions
@@ -1243,14 +1245,15 @@ pub mod tests {
 		sync.on_new_blocks_headers(1, vec![block.block_header.clone()]);
 		sync.on_new_blocks_headers(2, vec![block.block_header.clone()]);
 		executor.lock().take_tasks();
-		sync.on_peer_block(2, block);
+		sync.on_peer_block(2, block.clone());
 
 		let tasks = executor.lock().take_tasks();
-		assert_eq!(tasks.len(), 4);
+		assert_eq!(tasks.len(), 5);
 		assert!(tasks.iter().any(|t| t == &Task::RequestBlocksHeaders(1)));
 		assert!(tasks.iter().any(|t| t == &Task::RequestBlocksHeaders(2)));
 		assert!(tasks.iter().any(|t| t == &Task::RequestMemoryPool(1)));
 		assert!(tasks.iter().any(|t| t == &Task::RequestMemoryPool(2)));
+		assert!(tasks.iter().any(|t| t == &Task::BroadcastBlocksHashes(vec![block.hash()])));
 	}
 
 	#[test]
@@ -1763,5 +1766,52 @@ pub mod tests {
 		// should not panic here
 		sync.on_new_blocks_headers(2, vec![b10.block_header.clone(), b21.block_header.clone(),
 			b22.block_header.clone(), b23.block_header.clone()]);
+	}
+
+	#[test]
+	fn relay_new_block_when_in_saturated_state() {
+		let (_, _, executor, _, sync) = create_sync(None, None);
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+		let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
+		let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
+		let b3 = test_data::block_builder().header().parent(b2.hash()).build().build();
+
+		let mut sync = sync.lock();
+		sync.on_new_blocks_headers(1, vec![b0.block_header.clone(), b1.block_header.clone()]);
+		sync.on_peer_block(1, b0.clone());
+		sync.on_peer_block(1, b1.clone());
+
+		// we were in synchronization state => block is not relayed
+		{
+			let tasks = executor.lock().take_tasks();
+			assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1),
+				Task::RequestBlocks(1, vec![b0.hash(), b1.hash()]),
+				Task::RequestBlocksHeaders(1),
+				Task::RequestMemoryPool(1)
+			]);
+		}
+
+		sync.on_peer_block(1, b2.clone());
+
+		// we were in saturated state => block is relayed
+		{
+			let tasks = executor.lock().take_tasks();
+			assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::BroadcastBlocksHashes(vec![b2.hash()])]);
+		}
+
+		sync.on_new_blocks_headers(1, vec![b3.block_header.clone()]);
+		sync.on_peer_block(1, b3.clone());
+
+		// we were in nearly saturated state => block is relayed
+		{
+			let tasks = executor.lock().take_tasks();
+			assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1),
+				Task::RequestBlocks(1, vec![b3.hash()]),
+				Task::BroadcastBlocksHashes(vec![b3.hash()]),
+				Task::RequestBlocksHeaders(1),
+				Task::RequestMemoryPool(1)
+			]);
+		}
 	}
 }
