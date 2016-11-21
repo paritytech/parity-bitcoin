@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::collections::{VecDeque, HashMap};
 use std::collections::hash_map::Entry;
-use futures::{Future, Poll, Async};
+use futures::{Future, BoxFuture, lazy, finished};
 use parking_lot::{Mutex, Condvar};
 use message::common::{InventoryVector, InventoryType};
 use db;
@@ -89,35 +89,11 @@ impl IndexedServerTask {
 		IndexedServerTask::new(ServerTask::Ignore, ServerTaskIndex::Final(id))
 	}
 
-	pub fn future<T: Server>(self, peer_index: usize, server: Weak<T>) -> IndexedServerTaskFuture<T> {
-		IndexedServerTaskFuture::<T>::new(server, peer_index, self)
-	}
-}
-
-/// Future server task execution
-pub struct IndexedServerTaskFuture<T: Server> {
-	server: Weak<T>,
-	peer_index: usize,
-	task: Option<IndexedServerTask>,
-}
-
-impl<T> IndexedServerTaskFuture<T> where T: Server {
-	pub fn new(server: Weak<T>, peer_index: usize, task: IndexedServerTask) -> Self {
-		IndexedServerTaskFuture {
-			server: server,
-			peer_index: peer_index,
-			task: Some(task),
-		}
-	}
-}
-
-impl<T> Future for IndexedServerTaskFuture<T> where T: Server {
-	type Item = ();
-	type Error = ();
-
-	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-		self.task.take().map(|t| self.server.upgrade().map(|s| s.add_task(self.peer_index, t)));
-		Ok(Async::Ready(()))
+	pub fn future<T: Server>(self, peer_index: usize, server: Weak<T>) -> BoxFuture<(), ()> {
+		lazy(move || {
+			server.upgrade().map(|s| s.add_task(peer_index, self));
+			finished::<(), ()>(())
+		}).boxed()
 	}
 }
 
