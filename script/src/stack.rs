@@ -88,7 +88,7 @@ impl<T> Stack<T> {
 		try!(self.require(i));
 		let mut j = i;
 		while j > 0 {
-			let v = self.data[self.data.len() - j].clone();
+			let v = self.data[self.data.len() - i].clone();
 			self.data.push(v);
 			j -= 1;
 		}
@@ -263,9 +263,8 @@ mod tests {
 		assert_eq!(stack.dup(2), Ok(()));
 		assert_eq!(stack, vec![0, 0, 0, 0].into());
 		let mut stack: Stack<u8> = vec![0, 1].into();
-		assert_eq!(stack.dup(1), Ok(()));
 		assert_eq!(stack.dup(2), Ok(()));
-		assert_eq!(stack, vec![0, 1, 1, 1, 1].into());
+		assert_eq!(stack, vec![0, 1, 0, 1].into());
 	}
 
 	#[test]

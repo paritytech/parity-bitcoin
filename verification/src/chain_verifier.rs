@@ -121,15 +121,11 @@ impl ChainVerifier {
 
 		for (input_index, input) in transaction.inputs().iter().enumerate() {
 			let store_parent_transaction = self.store.transaction(&input.previous_output.hash);
-			let parent_transaction = match store_parent_transaction {
-				Some(ref tx) => tx,
-				None => {
-					match block.transactions.iter().filter(|t| t.hash() == input.previous_output.hash).nth(0) {
-						Some(tx) => tx,
-						None => { return Err(TransactionError::Inconclusive(input.previous_output.hash.clone())); },
-					}
-				},
-			};
+			let parent_transaction = store_parent_transaction
+				.as_ref()
+				.or_else(|| block.transactions.iter().find(|t| t.hash() == input.previous_output.hash))
+				.ok_or_else(|| TransactionError::Inconclusive(input.previous_output.hash.clone()))?;
+
 			if parent_transaction.outputs.len() <= input.previous_output.index as usize {
 				return Err(TransactionError::Input(input_index));
 			}
@@ -152,7 +148,9 @@ impl ChainVerifier {
 			if self.skip_sig { continue; }
 
 			if let Err(e) = verify_script(&input, &output, &flags, &checker) {
-				trace!(target: "verification", "transaction signature verification failure: {}", e);
+				trace!(target: "verification", "transaction signature verification failure: {:?}", e);
+				trace!(target: "verification", "input:\n{}", input);
+				trace!(target: "verification", "output:\n{}", output);
 				// todo: log error here
 				return Err(TransactionError::Signature(input_index))
 			}
@@ -160,10 +158,8 @@ impl ChainVerifier {
 
 		Ok(())
 	}
-}
 
-impl Verify for ChainVerifier {
-	fn verify(&self, block: &chain::Block) -> VerificationResult {
+	fn verify_block(&self, block: &chain::Block) -> VerificationResult {
 		let hash = block.hash();
 
 		// There should be at least 1 transaction
@@ -206,31 +202,20 @@ impl Verify for ChainVerifier {
 		}
 
 		// verify transactions (except coinbase)
-		let mut block_sigops = try!(
-			utils::transaction_sigops(&block.transactions()[0])
-				.map_err(|e| Error::Transaction(1, TransactionError::SignatureMallformed(format!("{}", e))))
-		);
+		let mut block_sigops = utils::transaction_sigops(&block.transactions()[0])
+				.map_err(|e| Error::Transaction(1, TransactionError::SignatureMallformed(e.to_string())))?;
 
-		for (idx, transaction) in block.transactions().iter().skip(1).enumerate() {
+		for (idx, transaction) in block.transactions().iter().enumerate().skip(1) {
 
-			block_sigops += try!(
-				utils::transaction_sigops(transaction)
-					.map_err(|e| Error::Transaction(idx+1, TransactionError::SignatureMallformed(format!("{}", e))))
-			);
+			block_sigops += utils::transaction_sigops(transaction)
+				.map_err(|e| Error::Transaction(idx, TransactionError::SignatureMallformed(e.to_string())))?;
 
 			if block_sigops > MAX_BLOCK_SIGOPS {
 				return Err(Error::MaximumSigops);
 			}
 
-			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx+1, e)));
+			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
 		}
-
-		trace!(
-			target: "verification", "Block {} (transactons: {}, sigops: {}) verification finished",
-			&hash,
-			block.transactions().len(),
-			&block_sigops
-		);
 
 		// todo: pre-process projected block number once verification is parallel!
 		match self.store.accepted_location(block.header()) {
@@ -249,15 +234,27 @@ impl Verify for ChainVerifier {
 	}
 }
 
+impl Verify for ChainVerifier {
+	fn verify(&self, block: &chain::Block) -> VerificationResult {
+		let result = self.verify_block(block);
+		trace!(
+			target: "verification", "Block {} (transactions: {}) verification finished. Result {:?}",
+			block.hash().to_reversed_str(),
+			block.transactions().len(),
+			result,
+		);
+		result
+	}
+}
+
 impl ContinueVerify for ChainVerifier {
 	type State = usize;
 
 	fn continue_verify(&self, block: &chain::Block, state: usize) -> VerificationResult {
 		// verify transactions (except coinbase)
-		for (idx, transaction) in block.transactions().iter().skip(state-1).enumerate() {
+		for (idx, transaction) in block.transactions().iter().enumerate().skip(state - 1) {
 			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
 		}
-
 
 		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
 			Some(b) => b,
