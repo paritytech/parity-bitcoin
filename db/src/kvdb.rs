@@ -297,7 +297,7 @@ impl Database {
 								cfs = cfnames.iter().enumerate().map(|(i, n)| db.create_cf(n, &cf_options[i]).unwrap()).collect();
 								Ok(db)
 							},
-							err @ Err(_) => err,
+							err => err,
 						}
 					}
 				}

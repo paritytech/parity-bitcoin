@@ -288,7 +288,7 @@ mod tests {
 		let server = Arc::new(DummyServer::new());
 		let config = Config { threads_num: 1 };
 		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone());
-		let mut verifier = DummyVerifier::new();
+		let mut verifier = DummyVerifier::default();
 		verifier.set_sink(client_core.clone());
 		let client = SynchronizationClient::new(client_core, verifier);
 		let local_node = LocalNode::new(server.clone(), client, executor.clone());
