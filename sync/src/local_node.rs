@@ -98,20 +98,21 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 	pub fn on_peer_getdata(&self, peer_index: usize, message: types::GetData) {
 		trace!(target: "sync", "Got `getdata` message from peer#{}", peer_index);
 
-		self.server.serve_getdata(peer_index, message);
+		self.server.serve_getdata(peer_index, message).map(|t| self.server.add_task(peer_index, t));
 	}
 
 	pub fn on_peer_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
 		trace!(target: "sync", "Got `getblocks` message from peer#{}", peer_index);
 
-		self.server.serve_getblocks(peer_index, message);
+		self.server.serve_getblocks(peer_index, message).map(|t| self.server.add_task(peer_index, t));
 	}
 
 	pub fn on_peer_getheaders(&self, peer_index: usize, message: types::GetHeaders, id: u32) {
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
 
 		// do not serve getheaders requests until we are synchronized
-		if self.client.lock().state().is_synchronizing() {
+		let mut client = self.client.lock();
+		if client.state().is_synchronizing() {
 			self.executor.lock().execute(SynchronizationTask::Ignore(peer_index, id));
 			return;
 		}
@@ -119,23 +120,12 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		// simulating bitcoind for passing tests: if we are in nearly-saturated state
 		// and peer, which has just provided a new blocks to us, is asking for headers
 		// => do not serve getheaders until we have fully process his blocks + wait until headers are served before returning
-		let need_wait = {
-			let (need_wait, waiter) = { self.client.lock().get_peers_nearly_blocks_waiter(peer_index) };
-			if let Some(waiter) = waiter {
-				waiter.wait();
-			}
-			need_wait
-		};
-
-		// if we do not need synchronized responses => inform p2p that we have processed this request
-		let id = if !need_wait {
-			self.executor.lock().execute(SynchronizationTask::Ignore(peer_index, id));
-			None
-		} else {
-			Some(id)
-		};
-
-		self.server.serve_getheaders(peer_index, message, id);
+		self.server.serve_getheaders(peer_index, message, Some(id))
+			.map(|task| {
+				let weak_server = Arc::downgrade(&self.server);
+				let task = task.future::<U>(peer_index, weak_server);
+				client.after_peer_nearly_blocks_verified(peer_index, Box::new(task));
+			});
 	}
 
 	pub fn on_peer_transaction(&self, peer_index: usize, message: types::Tx) {
@@ -163,7 +153,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 	pub fn on_peer_mempool(&self, peer_index: usize, _message: types::MemPool) {
 		trace!(target: "sync", "Got `mempool` message from peer#{}", peer_index);
 
-		self.server.serve_mempool(peer_index);
+		self.server.serve_mempool(peer_index).map(|t| self.server.add_task(peer_index, t));
 	}
 
 	pub fn on_peer_filterload(&self, peer_index: usize, _message: types::FilterLoad) {
