@@ -26,7 +26,7 @@ pub const COL_BLOCK_HEADERS: u32 = 2;
 pub const COL_BLOCK_TRANSACTIONS: u32 = 3;
 pub const COL_TRANSACTIONS: u32 = 4;
 pub const COL_TRANSACTIONS_META: u32 = 5;
-const COL_BLOCK_NUMBERS: u32 = 6;
+pub const COL_BLOCK_NUMBERS: u32 = 6;
 const _COL_RESERVED3: u32 = 7;
 const _COL_RESERVED4: u32 = 8;
 const _COL_RESERVED5: u32 = 9;
@@ -62,9 +62,18 @@ impl Storage {
 
 	/// new storage at the selected path
 	/// if no directory exists, it will be created
-	pub fn new<P: AsRef<Path>>(path: P) -> Result<Storage, Error> {
+	pub fn with_cache<P: AsRef<Path>>(path: P, total_cache: usize) -> Result<Storage, Error> {
 		try!(fs::create_dir_all(path.as_ref()));
-		let cfg = DatabaseConfig::with_columns(Some(COL_COUNT));
+		let mut cfg = DatabaseConfig::with_columns(Some(COL_COUNT));
+
+		cfg.set_cache(Some(COL_TRANSACTIONS), total_cache / 4);
+		cfg.set_cache(Some(COL_TRANSACTIONS_META), total_cache / 4);
+		cfg.set_cache(Some(COL_BLOCK_HEADERS), total_cache / 4);
+
+		cfg.set_cache(Some(COL_BLOCK_HASHES), total_cache / 12);
+		cfg.set_cache(Some(COL_BLOCK_TRANSACTIONS), total_cache / 12);
+		cfg.set_cache(Some(COL_BLOCK_NUMBERS), total_cache / 12);
+
 		let db = try!(Database::open(&cfg, &*path.as_ref().to_string_lossy()));
 
 		let storage = Storage {
@@ -100,6 +109,10 @@ impl Storage {
 		}
 
 		Ok(storage)
+	}
+
+	pub fn new<P: AsRef<Path>>(path: P) -> Result<Storage, Error> {
+		Self::with_cache(path, 256)
 	}
 
 	fn read_meta(&self, key: &[u8]) -> Option<Bytes> {

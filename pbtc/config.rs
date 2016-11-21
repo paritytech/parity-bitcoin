@@ -11,7 +11,10 @@ pub struct Config {
 	pub inbound_connections: u32,
 	pub outbound_connections: u32,
 	pub p2p_threads: usize,
+	pub db_cache: usize,
 }
+
+pub const DEFAULT_DB_CACHE: usize = 512;
 
 pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	let print_to_console = matches.is_present("printtoconsole");
@@ -52,6 +55,11 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => None,
 	};
 
+	let db_cache = match matches.value_of("db-cache") {
+		Some(s) => try!(s.parse().map_err(|_| "Invalid cache size - should be number in MB".to_owned())),
+		None => DEFAULT_DB_CACHE,
+	};
+
 	let config = Config {
 		print_to_console: print_to_console,
 		magic: magic,
@@ -61,6 +69,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		inbound_connections: in_connections,
 		outbound_connections: out_connections,
 		p2p_threads: p2p_threads,
+		db_cache: db_cache,
 	};
 
 	Ok(config)
