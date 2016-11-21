@@ -73,6 +73,11 @@ pub fn transaction_sigops(transaction: &chain::Transaction) -> Result<usize, scr
 	Ok(result)
 }
 
+pub fn p2sh_sigops(input: &Script, ref_output: &Script) -> usize {
+	// todo: not always skip malformed output?
+	input.sigop_count_p2sh(ref_output).unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
 

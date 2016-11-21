@@ -10,6 +10,8 @@ const COINBASE_MATURITY: u32 = 100; // 2 hours
 const MAX_BLOCK_SIGOPS: usize = 20000;
 const MAX_BLOCK_SIZE: usize = 1000000;
 
+const BIP16_TIME: u32 = 1333238400;
+
 pub struct ChainVerifier {
 	store: db::SharedStore,
 	verify_p2sh: bool,
@@ -110,7 +112,11 @@ impl ChainVerifier {
 		Ok(())
 	}
 
-	fn verify_transaction(&self, block: &chain::Block, transaction: &chain::Transaction) -> Result<(), TransactionError> {
+	fn verify_transaction(&self,
+		block: &chain::Block,
+		transaction: &chain::Transaction,
+		sequence: usize,
+	) -> Result<usize, TransactionError> {
 		use script::{
 			TransactionInputSigner,
 			TransactionSignatureChecker,
@@ -118,6 +124,17 @@ impl ChainVerifier {
 			Script,
 			verify_script,
 		};
+
+		let mut sigops = utils::transaction_sigops(transaction)
+			.map_err(|e| TransactionError::SignatureMallformed(e.to_string()))?;
+
+		if sequence == 0 { return Ok(sigops); }
+
+		if sigops >= MAX_BLOCK_SIGOPS { return Err(TransactionError::Sigops(sigops)); }
+
+		// strict pay-to-script-hash signature operations count toward block
+		// signature operations limit is enforced with BIP16
+		let is_strict_p2sh = block.header().time >= BIP16_TIME;
 
 		for (input_index, input) in transaction.inputs().iter().enumerate() {
 			let store_parent_transaction = self.store.transaction(&input.previous_output.hash);
@@ -140,6 +157,12 @@ impl ChainVerifier {
 			let input: Script = input.script_sig().to_vec().into();
 			let output: Script = paired_output.script_pubkey.to_vec().into();
 
+			if is_strict_p2sh && input.is_pay_to_script_hash() {
+				sigops += utils::p2sh_sigops(&input, &output);
+
+				if sigops >= MAX_BLOCK_SIGOPS { return Err(TransactionError::SigopsP2SH(sigops)); }
+			}
+
 			let flags = VerificationFlags::default()
 				.verify_p2sh(self.verify_p2sh)
 				.verify_clocktimeverify(self.verify_clocktimeverify);
@@ -156,7 +179,7 @@ impl ChainVerifier {
 			}
 		}
 
-		Ok(())
+		Ok(sigops)
 	}
 
 	fn verify_block(&self, block: &chain::Block) -> VerificationResult {
@@ -201,20 +224,20 @@ impl ChainVerifier {
 			return Err(Error::CoinbaseSignatureLength(coinbase_script_len));
 		}
 
-		// verify transactions (except coinbase)
-		let mut block_sigops = utils::transaction_sigops(&block.transactions()[0])
-				.map_err(|e| Error::Transaction(1, TransactionError::SignatureMallformed(e.to_string())))?;
-
-		for (idx, transaction) in block.transactions().iter().enumerate().skip(1) {
-
-			block_sigops += utils::transaction_sigops(transaction)
-				.map_err(|e| Error::Transaction(idx, TransactionError::SignatureMallformed(e.to_string())))?;
+		// transaction verification including number of signature operations checking
+		let mut block_sigops = 0;
+		for (idx, transaction) in block.transactions().iter().enumerate() {
+			block_sigops += try!(
+				self.verify_transaction(
+					block,
+					transaction,
+					idx,
+				).map_err(|e| Error::Transaction(idx, e))
+			);
 
 			if block_sigops > MAX_BLOCK_SIGOPS {
 				return Err(Error::MaximumSigops);
 			}
-
-			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
 		}
 
 		// todo: pre-process projected block number once verification is parallel!
@@ -253,7 +276,7 @@ impl ContinueVerify for ChainVerifier {
 	fn continue_verify(&self, block: &chain::Block, state: usize) -> VerificationResult {
 		// verify transactions (except coinbase)
 		for (idx, transaction) in block.transactions().iter().enumerate().skip(state - 1) {
-			try!(self.verify_transaction(block, transaction).map_err(|e| Error::Transaction(idx, e)));
+			try!(self.verify_transaction(block, transaction, idx).map_err(|e| Error::Transaction(idx, e)));
 		}
 
 		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {

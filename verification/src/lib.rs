@@ -73,6 +73,10 @@ pub enum TransactionError {
 	Overspend,
 	/// Signature script can't be properly parsed
 	SignatureMallformed(String),
+	/// Too many signature operations
+	Sigops(usize),
+	/// Too many signature operations once p2sh operations included
+	SigopsP2SH(usize),
 }
 
 #[derive(PartialEq, Debug)]
