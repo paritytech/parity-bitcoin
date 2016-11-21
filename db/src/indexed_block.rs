@@ -57,7 +57,9 @@ impl<'a> Iterator for IndexedTransactions<'a> {
 			None
 		}
 		else {
-			Some((&self.block.transaction_hashes[self.position], &self.block.transactions[self.position]))
+			let result = Some((&self.block.transaction_hashes[self.position], &self.block.transactions[self.position]));
+			self.position += 1;
+			result
 		}
 	}
 }
@@ -73,5 +75,17 @@ mod tests {
 		let indexed_block: IndexedBlock = block.clone().into();
 
 		assert_eq!(*indexed_block.transactions().nth(0).unwrap().0, block.transactions()[0].hash());
+	}
+
+	#[test]
+	fn iter() {
+		let block = test_data::block_builder()
+			.header().build()
+			.transaction().coinbase().output().value(3).build().build()
+			.transaction().coinbase().output().value(5).build().build()
+			.build();
+		let indexed_block: IndexedBlock = block.clone().into();
+
+		assert_eq!(*indexed_block.transactions().nth(1).unwrap().0, block.transactions()[1].hash());
 	}
 }
