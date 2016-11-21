@@ -127,8 +127,9 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					assert_eq!(id.raw(), None);
 					trace!(target: "sync", "Sending block {:?} to peer#{}", block_message.block.hash(), peer_index);
-					connection.send_block(&block_message, id.raw(), id.is_final());
+					connection.send_block(&block_message);
 				}
 			},
 			Task::SendNotFound(peer_index, unknown_inventory, id) => {
@@ -137,8 +138,9 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					assert_eq!(id.raw(), None);
 					trace!(target: "sync", "Sending notfound to peer#{} with {} items", peer_index, notfound.inventory.len());
-					connection.send_notfound(&notfound, id.raw(), id.is_final());
+					connection.send_notfound(&notfound);
 				}
 			},
 			Task::SendInventory(peer_index, inventory, id) => {
@@ -147,8 +149,9 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					assert_eq!(id.raw(), None);
 					trace!(target: "sync", "Sending inventory to peer#{} with {} items", peer_index, inventory.inventory.len());
-					connection.send_inventory(&inventory, id.raw(), id.is_final());
+					connection.send_inventory(&inventory);
 				}
 			},
 			Task::SendHeaders(peer_index, headers, id) => {
@@ -158,7 +161,10 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
 					trace!(target: "sync", "Sending headers to peer#{} with {} items", peer_index, headers.headers.len());
-					connection.send_headers(&headers, id.raw(), id.is_final());
+					match id.raw() {
+						Some(id) => connection.respond_headers(&headers, id),
+						None => connection.send_headers(&headers),
+					}
 				}
 			},
 			Task::Ignore(peer_index, id) => {

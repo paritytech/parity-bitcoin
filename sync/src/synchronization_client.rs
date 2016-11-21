@@ -1770,7 +1770,7 @@ pub mod tests {
 		let b22 = test_data::block_builder().header().parent(b21.hash()).build().build();
 		let b23 = test_data::block_builder().header().parent(b22.hash()).build().build();
 
-		// TODO: simulate verification during b21 verification
+		// simulate verification during b21 verification
 		let mut dummy_verifier = DummyVerifier::default();
 		dummy_verifier.error_when_verifying(b21.hash(), "simulated");
 
