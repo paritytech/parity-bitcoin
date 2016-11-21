@@ -18,14 +18,7 @@
 
 
 extern crate rand;
-extern crate log;
 
 mod random_path;
-mod test_socket;
-mod stop_guard;
-mod test_logger;
 
 pub use random_path::*;
-pub use test_socket::*;
-pub use stop_guard::*;
-pub use test_logger::init as test_logger;
