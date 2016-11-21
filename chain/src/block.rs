@@ -64,6 +64,10 @@ impl Block {
 	pub fn header(&self) -> &BlockHeader {
 		&self.block_header
 	}
+
+	pub fn drain(self) -> (BlockHeader, Vec<Transaction>) {
+		(self.block_header, self.transactions)
+	}
 }
 
 #[cfg(test)]

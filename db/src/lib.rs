@@ -27,6 +27,7 @@ mod transaction_provider;
 mod transaction_meta_provider;
 mod error;
 mod update_context;
+mod indexed_block;
 
 pub enum BlockRef {
 	Number(u32),
@@ -49,6 +50,7 @@ pub use transaction_provider::TransactionProvider;
 pub use transaction_meta_provider::TransactionMetaProvider;
 pub use block_stapler::{BlockStapler, BlockInsertedChain};
 pub use block_provider::BlockProvider;
+pub use indexed_block::{IndexedBlock, IndexedTransactions};
 
 #[cfg(feature="dev")]
 pub use test_storage::TestStorage;
