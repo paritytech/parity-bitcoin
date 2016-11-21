@@ -8,9 +8,6 @@ authors = ["Ethcore <admin@ethcore.io>"]
 
 [dependencies]
 rand = "0.3"
-log = "0.3"
-
-[features]
 
 [lib]
 path = "src/lib.rs"
