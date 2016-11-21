@@ -10,7 +10,7 @@ mod merkle_root;
 mod transaction;
 
 pub trait RepresentH256 {
-	fn hash(&self) -> primitives::hash::H256;
+	fn h256(&self) -> primitives::hash::H256;
 }
 
 pub use rustc_serialize::hex;

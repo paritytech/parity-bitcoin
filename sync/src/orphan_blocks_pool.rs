@@ -103,7 +103,7 @@ impl OrphanBlocksPool {
 					}
 					orphans.is_empty()
 				};
-				
+
 				if remove_entry {
 					orphan_entry.remove_entry();
 				}
@@ -124,7 +124,6 @@ mod tests {
 	use std::collections::HashSet;
 	use test_data;
 	use primitives::hash::H256;
-	use chain::RepresentH256;
 	use super::OrphanBlocksPool;
 
 	#[test]

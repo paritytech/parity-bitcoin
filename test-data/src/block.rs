@@ -1,7 +1,7 @@
 //! Block builder
 
 use super::genesis;
-use chain::{self, RepresentH256};
+use chain;
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use invoke::{Invoke, Identity};

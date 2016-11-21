@@ -1,6 +1,6 @@
 //! Blocks verification queue
 
-use chain::{Block, RepresentH256};
+use chain::Block;
 use primitives::hash::H256;
 use super::{Chain, ContinueVerify, BlockStatus, Error as VerificationError, TransactionError};
 use linked_hash_map::LinkedHashMap;
@@ -204,7 +204,7 @@ impl Queue {
 mod tests {
 	use super::Queue;
 	use super::super::{BlockStatus, VerificationResult, Verify, ContinueVerify, Chain, Error as VerificationError, TransactionError};
-	use chain::{Block, RepresentH256};
+	use chain::Block;
 	use primitives::hash::H256;
 	use test_data;
 	use std::collections::HashMap;
