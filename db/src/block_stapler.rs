@@ -22,6 +22,14 @@ impl Reorganization {
 	pub fn push_decanonized(&mut self, hash: &H256) {
 		self.decanonized.push(hash.clone());
 	}
+
+	pub fn pop_canonized(&mut self) -> Option<H256> {
+		self.canonized.pop()
+	}
+
+	pub fn pop_decanonized(&mut self) -> Option<H256> {
+		self.decanonized.pop()
+	}
 }
 
 #[derive(Debug, PartialEq)]

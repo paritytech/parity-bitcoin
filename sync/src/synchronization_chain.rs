@@ -23,7 +23,7 @@ const SCHEDULED_QUEUE: usize = 2;
 const NUMBER_OF_QUEUES: usize = 3;
 
 /// Block insertion result
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct BlockInsertionResult {
 	/// Transaction to 'reverify'
 	pub transactions_to_reverify: Vec<(H256, Transaction)>,
@@ -300,7 +300,7 @@ impl Chain {
 		let is_appending_to_main_branch = self.best_storage_block.hash == block.block_header.previous_header_hash;
 
 		// insert to storage
-		try!(self.storage.insert_block(&block));
+		let storage_insertion = try!(self.storage.insert_block(&block));
 
 		// remember new best block hash
 		self.best_storage_block = self.storage.best_block().expect("Inserted block above");
@@ -308,7 +308,6 @@ impl Chain {
 		// remove inserted block + handle possible reorganization in headers chain
 		self.headers_chain.block_inserted_to_storage(&hash, &self.best_storage_block.hash);
 
-		// deal with transactions. we have 3 cases here:
 		// case 1: block has been added to the main branch
 		if is_appending_to_main_branch {
 			// double check
@@ -329,19 +328,35 @@ impl Chain {
 		}
 		// case 2: block has been added to the side branch with reorganization to this branch
 		else if self.best_storage_block.hash == hash {
+			let mut reorganization = match storage_insertion {
+				db::BlockInsertedChain::Reorganized(reorganization) => reorganization,
+				// we have just inserted block to side chain (!is_appending_to_main_branch)
+				// && it became best block (self.best_storage_block.hash == hash)
+				// => we expect db::BlockInsertedChain::Reorganized here
+				_ => unreachable!(),
+			};
+
 			// all transactions from this block were accepted
 			// + all transactions from previous blocks of this fork were accepted
 			// => delete accepted transactions from verification queue and from the memory pool
 			let this_block_transactions_hashes = block.transactions.iter().map(|tx| tx.hash());
-			let new_main_blocks_transactions_hashes = Vec::<H256>::new().into_iter(); // TODO need this information from storage.insert_block()
-			for transaction_accepted in this_block_transactions_hashes.chain(new_main_blocks_transactions_hashes) {
+			let mut new_main_blocks_transactions_hashes: Vec<H256> = Vec::new();
+			while let Some(canonized_block_hash) = reorganization.pop_canonized() {
+				let canonized_transactions_hashes = self.storage.block_transaction_hashes(db::BlockRef::Hash(canonized_block_hash));
+				new_main_blocks_transactions_hashes.extend(canonized_transactions_hashes);
+			}
+			for transaction_accepted in this_block_transactions_hashes.chain(new_main_blocks_transactions_hashes.into_iter()) {
 				self.memory_pool.remove_by_hash(&transaction_accepted);
 				self.verifying_transactions.remove(&transaction_accepted);
 			}
 
 			// reverify all transactions from old main branch' blocks
-			let old_main_blocks_transactions_hashes = Vec::<H256>::new().into_iter(); // TODO need this information from storage.insert_block()
-			let old_main_blocks_transactions: Vec<(H256, Transaction)> = old_main_blocks_transactions_hashes
+			let mut old_main_blocks_transactions_hashes: Vec<H256> = Vec::new();
+			while let Some(decanonized_block_hash) = reorganization.pop_decanonized() {
+				let decanonized_transactions_hashes = self.storage.block_transaction_hashes(db::BlockRef::Hash(decanonized_block_hash));
+				old_main_blocks_transactions_hashes.extend(decanonized_transactions_hashes);
+			}
+			let old_main_blocks_transactions: Vec<(H256, Transaction)> = old_main_blocks_transactions_hashes.into_iter()
 				.map(|h| (h.clone(), self.storage.transaction(&h).expect("block in storage => block transaction in storage")))
 				.collect();
 
@@ -669,7 +684,7 @@ mod tests {
 	use std::sync::Arc;
 	use chain::{Transaction, RepresentH256};
 	use hash_queue::HashPosition;
-	use super::{Chain, BlockState, TransactionState, HeadersIntersection};
+	use super::{Chain, BlockState, TransactionState, HeadersIntersection, BlockInsertionResult};
 	use db::{self, Store, BestBlock};
 	use primitives::hash::H256;
 	use devtools::RandomTempPath;
@@ -1030,5 +1045,64 @@ mod tests {
 		assert_eq!(result.transactions_to_reverify.len(), 2);
 		assert!(result.transactions_to_reverify.iter().any(|&(ref h, _)| h == &tx1_hash));
 		assert!(result.transactions_to_reverify.iter().any(|&(ref h, _)| h == &tx2_hash));
+	}
+
+	#[test]
+	fn fork_chain_block_transaction_is_removed_from_on_block_insert() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build(); // genesis -> b0
+		let b1 = test_data::block_builder().header().nonce(1).parent(b0.hash()).build()
+			.transaction().output().value(10).build().build()
+			.build(); // genesis -> b0 -> b1[tx1]
+		let b2 = test_data::block_builder().header().parent(b1.hash()).build()
+			.transaction().output().value(20).build().build()
+			.build(); // genesis -> b0 -> b1[tx1] -> b2[tx2]
+		let b3 = test_data::block_builder().header().nonce(2).parent(b0.hash()).build()
+			.transaction().output().value(30).build().build()
+			.build(); // genesis -> b0 -> b3[tx3]
+		let b4 = test_data::block_builder().header().parent(b3.hash()).build()
+			.transaction().output().value(40).build().build()
+			.build(); // genesis -> b0 -> b3[tx3] -> b4[tx4]
+		let b5 = test_data::block_builder().header().parent(b4.hash()).build()
+			.transaction().output().value(50).build().build()
+			.build(); // genesis -> b0 -> b3[tx3] -> b4[tx4] -> b5[tx5]
+
+		let tx1 = b1.transactions[0].clone();
+		let tx1_hash = tx1.hash();
+		let tx2 = b2.transactions[0].clone();
+		let tx2_hash = tx2.hash();
+		let tx3 = b3.transactions[0].clone();
+		let tx4 = b4.transactions[0].clone();
+		let tx5 = b5.transactions[0].clone();
+
+		let path = RandomTempPath::create_dir();
+		let storage = Arc::new(db::Storage::new(path.as_path()).unwrap());
+		storage.insert_block(&genesis).expect("no db error");
+
+		let mut chain = Chain::new(storage);
+
+		chain.insert_verified_transaction(tx3);
+		chain.insert_verified_transaction(tx4);
+		chain.insert_verified_transaction(tx5);
+
+		assert_eq!(chain.insert_best_block(b0.hash(), &b0).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.information().transactions.transactions_count, 3);
+		assert_eq!(chain.insert_best_block(b1.hash(), &b1).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.information().transactions.transactions_count, 3);
+		assert_eq!(chain.insert_best_block(b2.hash(), &b2).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.information().transactions.transactions_count, 3);
+		assert_eq!(chain.insert_best_block(b3.hash(), &b3).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.information().transactions.transactions_count, 3);
+		assert_eq!(chain.insert_best_block(b4.hash(), &b4).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.information().transactions.transactions_count, 3);
+		// order matters
+		let transactions_to_reverify_hashes: Vec<_> = chain.insert_best_block(b5.hash(), &b5)
+			.expect("block accepted")
+			.transactions_to_reverify
+			.into_iter()
+			.map(|(h, _)| h)
+			.collect();
+		assert_eq!(transactions_to_reverify_hashes, vec![tx1_hash, tx2_hash]);
+		assert_eq!(chain.information().transactions.transactions_count, 0); // tx3, tx4, tx5 are added to the database
 	}
 }
