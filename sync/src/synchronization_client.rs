@@ -671,17 +671,23 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 	/// Process successful transaction verification
 	fn on_transaction_verification_success(&mut self, transaction: Transaction) {
 		let hash = transaction.hash();
-		// insert transaction to the memory pool
-		let mut chain = self.chain.write();
 
-		// remove transaction from verification queue
-		// if it is not in the queue => it was removed due to error or reorganization
-		if !chain.forget_verifying_transaction(&hash) {
-			return;
+		{
+			// insert transaction to the memory pool
+			let mut chain = self.chain.write();
+
+			// remove transaction from verification queue
+			// if it is not in the queue => it was removed due to error or reorganization
+			if !chain.forget_verifying_transaction(&hash) {
+				return;
+			}
+
+			// transaction was in verification queue => insert to memory pool
+			chain.insert_verified_transaction(transaction);
 		}
 
-		// transaction was in verification queue => insert to memory pool
-		chain.insert_verified_transaction(transaction);
+		// relay transaction to peers
+		self.executor.lock().execute(Task::BroadcastTransactionsHashes(vec![hash]));
 	}
 
 	/// Process failed transaction verification
@@ -905,7 +911,9 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	/// Process new peer transaction
 	fn process_peer_transaction(&mut self, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>> {
 		// if we are in synchronization state, we will ignore this message
+println!("=== AAA");
 		if self.state.is_synchronizing() {
+println!("=== BBB");
 			return None;
 		}
 
@@ -919,6 +927,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			.map(|input| input.previous_output.hash.clone())
 			.collect();
 		if !unknown_parents.is_empty() {
+println!("=== CCC");
 			self.orphaned_transactions_pool.insert(hash, transaction, unknown_parents);
 			return None;
 		}
@@ -931,7 +940,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		for &(ref h, ref tx) in &transactons {
 			chain.verify_transaction(h.clone(), tx.clone());
 		}
-
+println!("=== DDD: {:?}", transactons);
 		Some(transactons)
 	}
 
@@ -1763,5 +1772,19 @@ pub mod tests {
 		// should not panic here
 		sync.on_new_blocks_headers(2, vec![b10.block_header.clone(), b21.block_header.clone(),
 			b22.block_header.clone(), b23.block_header.clone()]);
+	}
+
+	#[test]
+	fn relay_new_transaction_when_in_saturated_state() {
+		let (_, _, executor, _, sync) = create_sync(None, None);
+
+		let tx: Transaction = test_data::TransactionBuilder::with_output(10).into();
+		let tx_hash = tx.hash();
+
+		let mut sync = sync.lock();
+		sync.on_peer_transaction(1, tx);
+
+		let tasks = { executor.lock().take_tasks() };
+		assert_eq!(tasks, vec![Task::BroadcastTransactionsHashes(vec![tx_hash])]);
 	}
 }
