@@ -1,7 +1,7 @@
 //! Bitcoin chain verifier
 
 use db::{self, BlockRef, BlockLocation};
-use chain::{self, RepresentH256};
+use chain;
 use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
 use utils;
 
@@ -277,7 +277,6 @@ mod tests {
 	use test_data;
 	use std::sync::Arc;
 	use devtools::RandomTempPath;
-	use chain::RepresentH256;
 	use script;
 
 	#[test]

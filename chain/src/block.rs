@@ -41,9 +41,7 @@ impl From<&'static str> for Block {
 }
 
 impl RepresentH256 for Block {
-	fn hash(&self) -> H256 {
-		self.block_header.hash()
-	}
+	fn h256(&self) -> H256 { self.hash() }
 }
 
 impl Block {
@@ -68,13 +66,16 @@ impl Block {
 	pub fn drain(self) -> (BlockHeader, Vec<Transaction>) {
 		(self.block_header, self.transactions)
 	}
+
+	pub fn hash(&self) -> H256 {
+		self.block_header.hash()
+	}
 }
 
 #[cfg(test)]
 mod tests {
 	use hash::H256;
 	use super::Block;
-	use super::super::RepresentH256;
 
 	// Block 80000
 	// https://blockchain.info/rawblock/000000000043a8c0fd1d6f726790caa2a406010d19efd2780db27bdbbd93baf6
