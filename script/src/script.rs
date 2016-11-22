@@ -359,6 +359,33 @@ impl Script {
 
 		Ok(result)
 	}
+
+	pub fn sigop_count_p2sh(&self, input_ref: &Script) -> Result<usize, Error> {
+		if !self.is_pay_to_script_hash() { return self.sigop_count(true); }
+
+		let mut script_data: Option<&[u8]> = None;
+		// we need last command
+		for next in input_ref.iter() {
+			let instruction = match next {
+				Err(_) => return Ok(0),
+				Ok(i) => i,
+			};
+
+			if instruction.opcode as u8 > Opcode::OP_16 as u8 {
+				return Ok(0);
+			}
+
+			script_data = instruction.data;
+		}
+
+		match script_data {
+			Some(slc) => {
+				let nested_script: Script = slc.to_vec().into();
+				nested_script.sigop_count(true)
+			},
+			None => Ok(0),
+		}
+	}
 }
 
 pub struct Instructions<'a> {
