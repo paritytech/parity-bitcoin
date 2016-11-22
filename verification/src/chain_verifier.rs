@@ -54,6 +54,12 @@ impl ChainVerifier {
 	}
 
 	fn ordered_verify(&self, block: &chain::Block, at_height: u32) -> Result<(), Error> {
+		// check that difficulty matches the adjusted level
+		if let Some(expected_nbits) = self.expected_nbits() {
+			if !self.skip_pow && expected_nbits != block.header().nbits {
+				return Err(Error::Difficulty);
+			}
+		}
 
 		let coinbase_spends = block.transactions()[0].total_spends();
 
@@ -257,6 +263,22 @@ impl ChainVerifier {
 				Ok(Chain::Side)
 			},
 		}
+	}
+
+	fn expected_nbits(&self) -> Option<u32> {
+
+		let best_header = match self.store.best_header() {
+			Some(bb) => bb,
+			None => { return None; }
+		};
+
+		if self.store.best_block().expect("At least genesis should exist at this point").number < 2016 {
+			return Some(best_header.nbits);
+		}
+
+		// todo: calculate difficulty adjustment
+
+		Some(best_header.nbits)
 	}
 }
 
