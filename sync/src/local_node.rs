@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use parking_lot::Mutex;
 use db;
-use chain::RepresentH256;
 use p2p::OutboundSyncConnectionRef;
 use message::common::{InventoryType, InventoryVector};
 use message::types;
@@ -224,7 +223,6 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 mod tests {
 	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
-	use chain::RepresentH256;
 	use synchronization_executor::Task;
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use synchronization_client::{Config, SynchronizationClient, SynchronizationClientCore};

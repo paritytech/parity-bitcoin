@@ -4,7 +4,11 @@ use byteorder::{BigEndian, ByteOrder};
 use chain;
 use script::{self, Script};
 
+const MAX_NBITS: u32 = 0x207fffff;
+
 pub fn check_nbits(hash: &H256, n_bits: u32) -> bool {
+	if n_bits > MAX_NBITS { return false; }
+
 	let hash_bytes: &[u8] = &**hash;
 
 	let mut nb = [0u8; 4];
@@ -71,6 +75,11 @@ pub fn transaction_sigops(transaction: &chain::Transaction) -> Result<usize, scr
 	}
 
 	Ok(result)
+}
+
+pub fn p2sh_sigops(output: &Script, input_ref: &Script) -> usize {
+	// todo: not always skip malformed output?
+	output.sigop_count_p2sh(input_ref).unwrap_or(0)
 }
 
 #[cfg(test)]
