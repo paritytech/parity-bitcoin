@@ -1895,3 +1895,4 @@ mod tests {
 		assert_eq!(verify_script(&input, &output, &flags, &checker), Err(Error::NumberOverflow));
 	}
 }
+

@@ -6,6 +6,8 @@ use time::precise_time_s;
 
 /// Max peer failures # before excluding from sync process
 const MAX_PEER_FAILURES: usize = 2;
+/// Max last blocks to store for given peer
+const MAX_LAST_BLOCKS_TO_STORE: usize = 64;
 
 /// Set of peers selected for synchronization.
 #[derive(Debug)]
@@ -24,6 +26,8 @@ pub struct Peers {
 	inventory_requests: HashSet<usize>,
 	/// Last inventory message time from peer.
 	inventory_requests_order: LinkedHashMap<usize, f64>,
+	/// Last blocks from peer
+	last_block_responses: HashMap<usize, LinkedHashMap<H256, ()>>,
 }
 
 /// Information on synchronization peers
@@ -48,6 +52,7 @@ impl Peers {
 			blocks_requests_order: LinkedHashMap::new(),
 			inventory_requests: HashSet::new(),
 			inventory_requests_order: LinkedHashMap::new(),
+			last_block_responses: HashMap::new(),
 		}
 	}
 
@@ -73,19 +78,27 @@ impl Peers {
 
 	/// Get all peers
 	pub fn all_peers(&self) -> Vec<usize> {
-		self.idle.iter().cloned()
+		let mut unique: Vec<_> = self.idle.iter().cloned()
 			.chain(self.unuseful.iter().cloned())
 			.chain(self.blocks_requests.keys().cloned())
 			.chain(self.inventory_requests.iter().cloned())
-			.collect()
+			.collect();
+		// need stable (for tests) && unique peers here, as blocks_requests can intersect with inventory_requests
+		unique.sort();
+		unique.dedup();
+		unique
 	}
 
 	/// Get useful peers
 	pub fn useful_peers(&self) -> Vec<usize> {
-		self.idle.iter().cloned()
+		let mut unique: Vec<_> = self.idle.iter().cloned()
 			.chain(self.blocks_requests.keys().cloned())
 			.chain(self.inventory_requests.iter().cloned())
-			.collect()
+			.collect();
+		// need stable (for tests) && unique peers here, as blocks_requests can intersect with inventory_requests
+		unique.sort();
+		unique.dedup();
+		unique
 	}
 
 	/// Get idle peers for inventory request.
@@ -125,6 +138,14 @@ impl Peers {
 		self.blocks_requests.get(&peer_index).cloned()
 	}
 
+	/// True if peer already has block with this hash
+	pub fn has_block_with_hash(&self, peer_index: usize, hash: &H256) -> bool {
+		self.last_block_responses
+			.get(&peer_index)
+			.map(|h| h.contains_key(hash))
+			.unwrap_or(false)
+	}
+
 	/// Mark peer as useful.
 	pub fn useful_peer(&mut self, peer_index: usize) {
 		// if peer is unknown => insert to idle queue
@@ -162,6 +183,7 @@ impl Peers {
 		self.blocks_requests_order.remove(&peer_index);
 		self.inventory_requests.remove(&peer_index);
 		self.inventory_requests_order.remove(&peer_index);
+		self.last_block_responses.remove(&peer_index);
 		peer_blocks_requests
 			.map(|hs| hs.into_iter().collect())
 	}
@@ -187,6 +209,16 @@ impl Peers {
 		// try to mark as idle
 		if try_mark_as_idle {
 			self.try_mark_idle(peer_index);
+		}
+
+		// TODO: add test for it
+		// remember that peer knows about this block
+		let last_block_responses_entry = self.last_block_responses.entry(peer_index).or_insert_with(LinkedHashMap::default);
+		if !last_block_responses_entry.contains_key(block_hash) {
+			if last_block_responses_entry.len() == MAX_LAST_BLOCKS_TO_STORE {
+				last_block_responses_entry.pop_front();
+			}
+			last_block_responses_entry.insert(block_hash.clone(), ());
 		}
 	}
 

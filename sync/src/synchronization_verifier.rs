@@ -2,7 +2,7 @@ use std::thread;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use parking_lot::Mutex;
-use chain::{Block, Transaction, RepresentH256};
+use chain::{Block, Transaction};
 use message::common::ConsensusParams;
 use primitives::hash::H256;
 use verification::{ChainVerifier, Verify as VerificationVerify};
@@ -151,7 +151,7 @@ pub mod tests {
 	use std::sync::Arc;
 	use std::collections::HashMap;
 	use parking_lot::Mutex;
-	use chain::{Block, Transaction, RepresentH256};
+	use chain::{Block, Transaction};
 	use synchronization_client::SynchronizationClientCore;
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use primitives::hash::H256;

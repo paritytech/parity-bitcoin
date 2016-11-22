@@ -4,7 +4,7 @@ use super::{
 	BlockRef, Store, Error, BestBlock, BlockLocation, BlockInsertedChain, BlockProvider,
 	BlockStapler, TransactionMetaProvider, TransactionProvider,
 };
-use chain::{self, Block, RepresentH256};
+use chain::{self, Block};
 use primitives::hash::H256;
 use serialization;
 use chain::bytes::Bytes;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use parking_lot::Mutex;
-use chain::{Block, BlockHeader, RepresentH256};
+use chain::{Block, BlockHeader};
 use message::common::{InventoryVector, InventoryType};
 use message::types;
 use primitives::hash::H256;

@@ -50,7 +50,7 @@ macro_rules! impl_hash {
 		impl From<u8> for $name {
 			fn from(v: u8) -> Self {
 				let mut result = Self::default();
-				result.0[$size - 1] = v;
+				result.0[0] = v;
 				result
 			}
 		}

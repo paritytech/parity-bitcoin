@@ -8,7 +8,7 @@ use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use super::{BlockRef, BestBlock, BlockLocation};
 use serialization::{serialize, deserialize};
-use chain::{self, RepresentH256};
+use chain;
 use parking_lot::RwLock;
 use transaction_meta::TransactionMeta;
 
@@ -610,7 +610,7 @@ mod tests {
 
 	use super::{Storage, Store};
 	use devtools::RandomTempPath;
-	use chain::{Block, RepresentH256};
+	use chain::Block;
 	use super::super::{BlockRef, BlockLocation};
 	use test_data;
 
