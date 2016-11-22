@@ -157,8 +157,8 @@ impl ChainVerifier {
 			let input: Script = input.script_sig().to_vec().into();
 			let output: Script = paired_output.script_pubkey.to_vec().into();
 
-			if is_strict_p2sh && input.is_pay_to_script_hash() {
-				sigops += utils::p2sh_sigops(&input, &output);
+			if is_strict_p2sh && output.is_pay_to_script_hash() {
+				sigops += utils::p2sh_sigops(&output, &input);
 
 				if sigops >= MAX_BLOCK_SIGOPS { return Err(TransactionError::SigopsP2SH(sigops)); }
 			}
