@@ -8,6 +8,8 @@ use time::precise_time_s;
 const MAX_PEER_FAILURES: usize = 2;
 /// Max last blocks to store for given peer
 const MAX_LAST_BLOCKS_TO_STORE: usize = 64;
+/// Max last transactions to store for given peer
+const MAX_LAST_TRANSACTIONS_TO_STORE: usize = 64;
 
 /// Set of peers selected for synchronization.
 #[derive(Debug)]
@@ -26,8 +28,10 @@ pub struct Peers {
 	inventory_requests: HashSet<usize>,
 	/// Last inventory message time from peer.
 	inventory_requests_order: LinkedHashMap<usize, f64>,
-	/// Last blocks from peer
-	last_block_responses: HashMap<usize, LinkedHashMap<H256, ()>>,
+	/// Last blocks from peer.
+	last_blocks: HashMap<usize, LinkedHashMap<H256, ()>>,
+	/// Last transactions from peer.
+	last_transactions: HashMap<usize, LinkedHashMap<H256, ()>>,
 }
 
 /// Information on synchronization peers
@@ -52,7 +56,8 @@ impl Peers {
 			blocks_requests_order: LinkedHashMap::new(),
 			inventory_requests: HashSet::new(),
 			inventory_requests_order: LinkedHashMap::new(),
-			last_block_responses: HashMap::new(),
+			last_blocks: HashMap::new(),
+			last_transactions: HashMap::new(),
 		}
 	}
 
@@ -140,7 +145,15 @@ impl Peers {
 
 	/// True if peer already has block with this hash
 	pub fn has_block_with_hash(&self, peer_index: usize, hash: &H256) -> bool {
-		self.last_block_responses
+		self.last_blocks
+			.get(&peer_index)
+			.map(|h| h.contains_key(hash))
+			.unwrap_or(false)
+	}
+
+	/// True if peer already has transaction with this hash
+	pub fn has_transaction_with_hash(&self, peer_index: usize, hash: &H256) -> bool {
+		self.last_transactions
 			.get(&peer_index)
 			.map(|h| h.contains_key(hash))
 			.unwrap_or(false)
@@ -183,7 +196,8 @@ impl Peers {
 		self.blocks_requests_order.remove(&peer_index);
 		self.inventory_requests.remove(&peer_index);
 		self.inventory_requests_order.remove(&peer_index);
-		self.last_block_responses.remove(&peer_index);
+		self.last_blocks.remove(&peer_index);
+		self.last_transactions.remove(&peer_index);
 		peer_blocks_requests
 			.map(|hs| hs.into_iter().collect())
 	}
@@ -213,12 +227,25 @@ impl Peers {
 
 		// TODO: add test for it
 		// remember that peer knows about this block
-		let last_block_responses_entry = self.last_block_responses.entry(peer_index).or_insert_with(LinkedHashMap::default);
-		if !last_block_responses_entry.contains_key(block_hash) {
-			if last_block_responses_entry.len() == MAX_LAST_BLOCKS_TO_STORE {
-				last_block_responses_entry.pop_front();
+		let last_blocks_entry = self.last_blocks.entry(peer_index).or_insert_with(LinkedHashMap::default);
+		if !last_blocks_entry.contains_key(block_hash) {
+			if last_blocks_entry.len() == MAX_LAST_BLOCKS_TO_STORE {
+				last_blocks_entry.pop_front();
 			}
-			last_block_responses_entry.insert(block_hash.clone(), ());
+			last_blocks_entry.insert(block_hash.clone(), ());
+		}
+	}
+
+	/// Transaction is received from peer.
+	pub fn on_transaction_received(&mut self, peer_index: usize, transaction_hash: &H256) {
+		// TODO: add test for it
+		// remember that peer knows about this transaction
+		let last_transactions_entry = self.last_transactions.entry(peer_index).or_insert_with(LinkedHashMap::default);
+		if !last_transactions_entry.contains_key(transaction_hash) {
+			if last_transactions_entry.len() == MAX_LAST_TRANSACTIONS_TO_STORE {
+				last_transactions_entry.pop_front();
+			}
+			last_transactions_entry.insert(transaction_hash.clone(), ());
 		}
 	}
 

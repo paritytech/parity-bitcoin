@@ -490,8 +490,13 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Process new transaction.
-	fn on_peer_transaction(&mut self, _peer_index: usize, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>> {
-		self.process_peer_transaction(transaction)
+	fn on_peer_transaction(&mut self, peer_index: usize, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>> {
+		let transaction_hash = transaction.hash();
+
+		// remember that peer has this transaction
+		self.peers.on_transaction_received(peer_index, &transaction_hash);
+
+		self.process_peer_transaction(Some(peer_index), transaction_hash, transaction)
 	}
 
 	/// Peer disconnected.
@@ -636,8 +641,9 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 				}
 
 				// deal with block transactions
-				for (_, tx) in insert_result.transactions_to_reverify {
-					self.process_peer_transaction(tx);
+				for (hash, tx) in insert_result.transactions_to_reverify {
+					// TODO: transactions from this blocks will be relayed. Do we need this?
+					self.process_peer_transaction(None, hash, tx);
 				}
 			},
 			Err(db::Error::Consistency(e)) => {
@@ -673,17 +679,23 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 	/// Process successful transaction verification
 	fn on_transaction_verification_success(&mut self, transaction: Transaction) {
 		let hash = transaction.hash();
-		// insert transaction to the memory pool
-		let mut chain = self.chain.write();
 
-		// remove transaction from verification queue
-		// if it is not in the queue => it was removed due to error or reorganization
-		if !chain.forget_verifying_transaction(&hash) {
-			return;
+		{
+			// insert transaction to the memory pool
+			let mut chain = self.chain.write();
+
+			// remove transaction from verification queue
+			// if it is not in the queue => it was removed due to error or reorganization
+			if !chain.forget_verifying_transaction(&hash) {
+				return;
+			}
+
+			// transaction was in verification queue => insert to memory pool
+			chain.insert_verified_transaction(transaction);
 		}
 
-		// transaction was in verification queue => insert to memory pool
-		chain.insert_verified_transaction(transaction);
+		// relay transaction to peers
+		self.relay_new_transactions(vec![hash]);
 	}
 
 	/// Process failed transaction verification
@@ -781,6 +793,26 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				.cloned()
 				.map(|h| InventoryVector {
 					inv_type: InventoryType::MessageBlock,
+					hash: h,
+				})
+				.collect();
+			if !inventory.is_empty() {
+				executor.execute(Task::SendInventory(peer_index, inventory, ServerTaskIndex::None));
+			}
+		}
+	}
+
+	/// Relay new transactions
+	fn relay_new_transactions(&self, new_transactions_hashes: Vec<H256>) {
+
+		let mut executor = self.executor.lock();
+		// TODO: use all peers here (currently sync only)
+		for peer_index in self.peers.all_peers() {
+			let inventory: Vec<_> = new_transactions_hashes.iter()
+				.filter(|h| !self.peers.has_transaction_with_hash(peer_index, h))
+				.cloned()
+				.map(|h| InventoryVector {
+					inv_type: InventoryType::MessageTx,
 					hash: h,
 				})
 				.collect();
@@ -925,14 +957,18 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Process new peer transaction
-	fn process_peer_transaction(&mut self, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>> {
+	fn process_peer_transaction(&mut self, peer_index: Option<usize>, hash: H256, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>> {
 		// if we are in synchronization state, we will ignore this message
 		if self.state.is_synchronizing() {
 			return None;
 		}
 
+		// mark peer as useful (TODO: remove after self.all_peers() would be all peers, not sync one)
+		if let Some(peer_index) = peer_index {
+			self.peers.useful_peer(peer_index);
+		}
+
 		// else => verify transaction + it's orphans and then add to the memory pool
-		let hash = transaction.hash();
 		let mut chain = self.chain.write();
 
 		// if any parent transaction is unknown => we have orphan transaction => remember in orphan pool
@@ -953,7 +989,6 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		for &(ref h, ref tx) in &transactons {
 			chain.verify_transaction(h.clone(), tx.clone());
 		}
-
 		Some(transactons)
 	}
 
@@ -1834,5 +1869,22 @@ pub mod tests {
 			let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: b3.hash() }];
 			assert!(tasks.iter().any(|t| t == &Task::SendInventory(2, inventory.clone(), ServerTaskIndex::None)));
 		}
+	}
+
+	#[test]
+	fn relay_new_transaction_when_in_saturated_state() {
+		let (_, _, executor, _, sync) = create_sync(None, None);
+
+		let tx1: Transaction = test_data::TransactionBuilder::with_output(10).into();
+		let tx2: Transaction = test_data::TransactionBuilder::with_output(20).into();
+		let tx2_hash = tx2.hash();
+
+		let mut sync = sync.lock();
+		sync.on_peer_transaction(1, tx1);
+		sync.on_peer_transaction(2, tx2);
+
+		let tasks = { executor.lock().take_tasks() };
+		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageTx, hash: tx2_hash }];
+		assert_eq!(tasks, vec![Task::SendInventory(1, inventory, ServerTaskIndex::None)]);
 	}
 }
