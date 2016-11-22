@@ -1,35 +1,3 @@
-// Copyright 2015, 2016 Ethcore (UK) Ltd.
-// This file is part of Parity.
-
-// Parity is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-
-// Parity is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-
-// You should have received a copy of the GNU General Public License
-// along with Parity.  If not, see <http://www.gnu.org/licenses/>.
-
-// Code derived from original work by Andrew Poelstra <apoelstra@wpsoftware.net>
-
-// Rust Bitcoin Library
-// Written in 2014 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
-
 //! Big unsigned integer types.
 //!
 //! Implementation of a various large-but-fixed sized unsigned integer types.
@@ -37,9 +5,7 @@
 //! implementations for even more speed, hidden behind the `x64_arithmetic`
 //! feature flag.
 
-use std::{mem, fmt};
-use std::str::{FromStr};
-use std::hash::Hash;
+use std::{str, fmt};
 use std::ops::{Shr, Shl, BitAnd, BitOr, BitXor, Not, Div, Rem, Mul, Add, Sub};
 use std::cmp::Ordering;
 use hex::{FromHex, FromHexError};
@@ -93,7 +59,7 @@ macro_rules! uint_overflowing_add_reg {
 #[cfg(all(asm_available, target_arch="x86_64"))]
 macro_rules! uint_overflowing_add {
 	(U256, $n_words: expr, $self_expr: expr, $other: expr) => ({
-		let mut result: [u64; $n_words] = unsafe { mem::uninitialized() };
+		let mut result = [0u64; $n_words];
 		let self_t: &[u64; $n_words] = &$self_expr.0;
 		let other_t: &[u64; $n_words] = &$other.0;
 
@@ -151,7 +117,7 @@ macro_rules! uint_overflowing_sub_reg {
 #[cfg(all(asm_available, target_arch="x86_64"))]
 macro_rules! uint_overflowing_sub {
 	(U256, $n_words: expr, $self_expr: expr, $other: expr) => ({
-		let mut result: [u64; $n_words] = unsafe { mem::uninitialized() };
+		let mut result = [0u64; $n_words];
 		let self_t: &[u64; $n_words] = &$self_expr.0;
 		let other_t: &[u64; $n_words] = &$other.0;
 
@@ -180,7 +146,7 @@ macro_rules! uint_overflowing_sub {
 #[cfg(all(asm_available, target_arch="x86_64"))]
 macro_rules! uint_overflowing_mul {
 	(U256, $n_words: expr, $self_expr: expr, $other: expr) => ({
-		let mut result: [u64; $n_words] = unsafe { mem::uninitialized() };
+		let mut result = [0u64; $n_words];
 		let self_t: &[u64; $n_words] = &$self_expr.0;
 		let other_t: &[u64; $n_words] = &$other.0;
 
@@ -398,68 +364,6 @@ fn split(a: u64) -> (u64, u64) {
 	(a >> 32, a & 0xFFFFFFFF)
 }
 
-/// Large, fixed-length unsigned integer type.
-pub trait Uint: Sized + Default + FromStr + From<u64> + fmt::Debug + fmt::Display + PartialOrd + Ord + PartialEq + Eq + Hash {
-
-	/// Returns new instance equalling zero.
-	fn zero() -> Self;
-	/// Returns new instance equalling one.
-	fn one() -> Self;
-	/// Returns the largest value that can be represented by this integer type.
-	fn max_value() -> Self;
-
-	/// Convert from a decimal string.
-	fn from_dec_str(value: &str) -> Result<Self, FromDecStrErr>;
-
-	/// Conversion to u32
-	fn low_u32(&self) -> u32;
-
-	/// Conversion to u64
-	fn low_u64(&self) -> u64;
-
-	/// Conversion to u32 with overflow checking
-	fn as_u32(&self) -> u32;
-
-	/// Conversion to u64 with overflow checking
-	fn as_u64(&self) -> u64;
-
-	/// Return the least number of bits needed to represent the number
-	fn bits(&self) -> usize;
-	/// Return if specific bit is set
-	fn bit(&self, index: usize) -> bool;
-	/// Return single byte
-	fn byte(&self, index: usize) -> u8;
-	/// Convert U256 to the sequence of bytes with a big endian
-	fn to_big_endian(&self, bytes: &mut[u8]);
-	/// Create `Uint(10**n)`
-	fn exp10(n: usize) -> Self;
-	/// Return eponentation `self**other`. Panic on overflow.
-	fn pow(self, other: Self) -> Self;
-	/// Return wrapped eponentation `self**other` and flag if there was an overflow
-	fn overflowing_pow(self, other: Self) -> (Self, bool);
-
-	/// Add this `Uint` to other returning result and possible overflow
-	fn overflowing_add(self, other: Self) -> (Self, bool);
-
-	/// Subtract another `Uint` from this returning result and possible overflow
-	fn overflowing_sub(self, other: Self) -> (Self, bool);
-
-	/// Multiple this `Uint` with other returning result and possible overflow
-	fn overflowing_mul(self, other: Self) -> (Self, bool);
-
-	/// Divide this `Uint` by other returning result and possible overflow
-	fn overflowing_div(self, other: Self) -> (Self, bool);
-
-	/// Returns reminder of division of this `Uint` by other and possible overflow
-	fn overflowing_rem(self, other: Self) -> (Self, bool);
-
-	/// Returns negation of this `Uint` and overflow (always true)
-	fn overflowing_neg(self) -> (Self, bool);
-
-	/// Returns
-	fn is_zero(&self) -> bool;
-}
-
 macro_rules! construct_uint {
 	($name:ident, $n_words:expr) => (
 		/// Little-endian large integer type
@@ -467,9 +371,9 @@ macro_rules! construct_uint {
 		#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 		pub struct $name(pub [u64; $n_words]);
 
-		impl Uint for $name {
+		impl $name {
 
-			fn from_dec_str(value: &str) -> Result<Self, FromDecStrErr> {
+			pub fn from_dec_str(value: &str) -> Result<Self, FromDecStrErr> {
 				if !value.bytes().all(|b| b >= 48 && b <= 57) {
 					return Err(FromDecStrErr::InvalidCharacter)
 				}
@@ -490,20 +394,20 @@ macro_rules! construct_uint {
 			}
 
 			#[inline]
-			fn low_u32(&self) -> u32 {
+			pub fn low_u32(&self) -> u32 {
 				let &$name(ref arr) = self;
 				arr[0] as u32
 			}
 
 			#[inline]
-			fn low_u64(&self) -> u64 {
+			pub fn low_u64(&self) -> u64 {
 				let &$name(ref arr) = self;
 				arr[0]
 			}
 
 			/// Conversion to u32 with overflow checking
 			#[inline]
-			fn as_u32(&self) -> u32 {
+			pub fn as_u32(&self) -> u32 {
 				let &$name(ref arr) = self;
 				if (arr[0] & (0xffffffffu64 << 32)) != 0 {
 					panic!("Integer overflow when casting U256")
@@ -513,7 +417,7 @@ macro_rules! construct_uint {
 
 			/// Conversion to u64 with overflow checking
 			#[inline]
-			fn as_u64(&self) -> u64 {
+			pub fn as_u64(&self) -> u64 {
 				let &$name(ref arr) = self;
 				for i in 1..$n_words {
 					if arr[i] != 0 {
@@ -524,7 +428,7 @@ macro_rules! construct_uint {
 			}
 
 			#[inline]
-			fn is_zero(&self) -> bool {
+			pub fn is_zero(&self) -> bool {
 				let &$name(ref arr) = self;
 				for i in 0..$n_words { if arr[i] != 0 { return false; } }
 				return true;
@@ -532,7 +436,7 @@ macro_rules! construct_uint {
 
 			/// Return the least number of bits needed to represent the number
 			#[inline]
-			fn bits(&self) -> usize {
+			pub fn bits(&self) -> usize {
 				let &$name(ref arr) = self;
 				for i in 1..$n_words {
 					if arr[$n_words - i] > 0 { return (0x40 * ($n_words - i + 1)) - arr[$n_words - i].leading_zeros() as usize; }
@@ -541,60 +445,19 @@ macro_rules! construct_uint {
 			}
 
 			#[inline]
-			fn bit(&self, index: usize) -> bool {
+			pub fn bit(&self, index: usize) -> bool {
 				let &$name(ref arr) = self;
 				arr[index / 64] & (1 << (index % 64)) != 0
 			}
 
 			#[inline]
-			fn byte(&self, index: usize) -> u8 {
+			pub fn byte(&self, index: usize) -> u8 {
 				let &$name(ref arr) = self;
 				(arr[index / 8] >> (((index % 8)) * 8)) as u8
 			}
 
-			#[cfg(any(
-				target_arch = "arm",
-				target_arch = "mips",
-				target_arch = "powerpc",
-				target_arch = "x86",
-				target_arch = "x86_64",
-				target_arch = "aarch64",
-				target_arch = "powerpc64"))]
 			#[inline]
-			fn to_big_endian(&self, bytes: &mut[u8]) {
-				debug_assert!($n_words * 8 == bytes.len());
-				let &$name(ref arr) = self;
-				unsafe {
-					let mut out: *mut u64 = mem::transmute(bytes.as_mut_ptr());
-					out = out.offset($n_words);
-					for i in 0..$n_words {
-						out = out.offset(-1);
-						*out = arr[i].swap_bytes();
-					}
-				}
-			}
-
-			#[cfg(not(any(
-				target_arch = "arm",
-				target_arch = "mips",
-				target_arch = "powerpc",
-				target_arch = "x86",
-				target_arch = "x86_64",
-				target_arch = "aarch64",
-				target_arch = "powerpc64")))]
-			#[inline]
-			fn to_big_endian(&self, bytes: &mut[u8]) {
-				debug_assert!($n_words * 8 == bytes.len());
-				let &$name(ref arr) = self;
-				for i in 0..bytes.len() {
- 					let rev = bytes.len() - 1 - i;
- 					let pos = rev / 8;
- 					bytes[i] = (arr[pos] >> ((rev % 8) * 8)) as u8;
-				}
-			}
-
-			#[inline]
-			fn exp10(n: usize) -> Self {
+			pub fn exp10(n: usize) -> Self {
 				match n {
 					0 => Self::from(1u64),
 					_ => Self::exp10(n - 1).mul_u32(10)
@@ -602,17 +465,17 @@ macro_rules! construct_uint {
 			}
 
 			#[inline]
-			fn zero() -> Self {
-				From::from(0u64)
+			pub fn zero() -> Self {
+				0u64.into()
 			}
 
 			#[inline]
-			fn one() -> Self {
-				From::from(1u64)
+			pub fn one() -> Self {
+				1u64.into()
 			}
 
 			#[inline]
-			fn max_value() -> Self {
+			pub fn max_value() -> Self {
 				let mut result = [0; $n_words];
 				for i in 0..$n_words {
 					result[i] = u64::max_value();
@@ -622,7 +485,7 @@ macro_rules! construct_uint {
 
 			/// Fast exponentation by squaring
 			/// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
-			fn pow(self, expon: Self) -> Self {
+			pub fn pow(self, expon: Self) -> Self {
 				if expon.is_zero() {
 					return Self::one()
 				}
@@ -649,7 +512,7 @@ macro_rules! construct_uint {
 
 			/// Fast exponentation by squaring
 			/// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
-			fn overflowing_pow(self, expon: Self) -> (Self, bool) {
+			pub fn overflowing_pow(self, expon: Self) -> (Self, bool) {
 				if expon.is_zero() { return (Self::one(), false) }
 
 				let is_even = |x : &Self| x.low_u64() & 1 == 0;
@@ -676,34 +539,32 @@ macro_rules! construct_uint {
 
 			/// Optimized instructions
 			#[inline(always)]
-			fn overflowing_add(self, other: $name) -> ($name, bool) {
+			pub fn overflowing_add(self, other: $name) -> ($name, bool) {
 				uint_overflowing_add!($name, $n_words, self, other)
 			}
 
 			#[inline(always)]
-			fn overflowing_sub(self, other: $name) -> ($name, bool) {
+			pub fn overflowing_sub(self, other: $name) -> ($name, bool) {
 				uint_overflowing_sub!($name, $n_words, self, other)
 			}
 
 			#[inline(always)]
-			fn overflowing_mul(self, other: $name) -> ($name, bool) {
+			pub fn overflowing_mul(self, other: $name) -> ($name, bool) {
 				uint_overflowing_mul!($name, $n_words, self, other)
 			}
 
-			fn overflowing_div(self, other: $name) -> ($name, bool) {
+			pub fn overflowing_div(self, other: $name) -> ($name, bool) {
 				(self / other, false)
 			}
 
-			fn overflowing_rem(self, other: $name) -> ($name, bool) {
+			pub fn overflowing_rem(self, other: $name) -> ($name, bool) {
 				(self % other, false)
 			}
 
-			fn overflowing_neg(self) -> ($name, bool) {
+			pub fn overflowing_neg(self) -> ($name, bool) {
 				(!self, true)
 			}
-		}
 
-		impl $name {
 			/// Multiplication by u32
 			#[allow(dead_code)] // not used when multiplied with inline assembly
 			fn mul_u32(self, other: u32) -> Self {
@@ -778,7 +639,7 @@ macro_rules! construct_uint {
 			}
 		}
 
-		impl FromStr for $name {
+		impl str::FromStr for $name {
 			type Err = FromHexError;
 
 			fn from_str(value: &str) -> Result<$name, Self::Err> {
@@ -1088,7 +949,7 @@ known_heap_size!(0, U128, U256);
 
 #[cfg(test)]
 mod tests {
-	use uint::{Uint, U128, U256};
+	use uint::{U128, U256};
 	use std::str::FromStr;
 	use super::FromDecStrErr;
 
@@ -1134,16 +995,6 @@ mod tests {
 		assert_eq!(U256([0x12f0, 0 , 0, 0]), U256::from_str("0000000012f0").unwrap());
 		assert_eq!(U256([0x12f0, 1 , 0, 0]), U256::from_str("0100000000000012f0").unwrap());
 		assert_eq!(U256([0x12f0, 1 , 0x0910203040506077, 0x8090a0b0c0d0e0f0]), U256::from_str("8090a0b0c0d0e0f00910203040506077000000000000000100000000000012f0").unwrap());
-	}
-
-	#[test]
-	pub fn uint256_to() {
-		let hex = "8090a0b0c0d0e0f00910203040506077583a2cf8264910e1436bda32571012f0";
-		let uint = U256::from_str(hex).unwrap();
-		let mut bytes = [0u8; 32];
-		uint.to_big_endian(&mut bytes);
-		let uint2 = U256::from(&bytes[..]);
-		assert_eq!(uint, uint2);
 	}
 
 	#[test]
@@ -1475,11 +1326,11 @@ mod tests {
         assert_eq!(result, U256([0, 0, 5, 2]));
         assert!(!overflow);
 
-        let (_, overflow) = U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX])
-			.overflowing_add(U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX]));
+        let (_, overflow) = U256([u64::max_value(), u64::max_value(), u64::max_value(), u64::max_value()])
+			.overflowing_add(U256([u64::max_value(), u64::max_value(), u64::max_value(), u64::max_value()]));
         assert!(overflow);
 
-        let (_, overflow) = U256([0, 0, 0, ::std::u64::MAX]).overflowing_add(U256([0, 0, 0, ::std::u64::MAX]));
+        let (_, overflow) = U256([0, 0, 0, u64::max_value()]).overflowing_add(U256([0, 0, 0, u64::max_value()]));
         assert!(overflow);
     }
 
@@ -1494,88 +1345,88 @@ mod tests {
 		let (_, overflow) = U256([0, 0, 2, 1]).overflowing_sub(U256([0, 0, 3, 1]));
 		assert!(overflow);
 
-		let (result, overflow) = U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX])
-								.overflowing_sub(U256([::std::u64::MAX/2, ::std::u64::MAX/2, ::std::u64::MAX/2, ::std::u64::MAX/2]));
+		let (result, overflow) = U256([u64::max_value(), u64::max_value(), u64::max_value(), u64::max_value()])
+								.overflowing_sub(U256([u64::max_value()/2, u64::max_value()/2, u64::max_value()/2, u64::max_value()/2]));
 		assert!(!overflow);
-		assert_eq!(U256([::std::u64::MAX/2+1, ::std::u64::MAX/2+1, ::std::u64::MAX/2+1, ::std::u64::MAX/2+1]), result);
+		assert_eq!(U256([u64::max_value()/2+1, u64::max_value()/2+1, u64::max_value()/2+1, u64::max_value()/2+1]), result);
 
 		let (result, overflow) = U256([0, 0, 0, 1]).overflowing_sub(U256([0, 0, 1, 0]));
 		assert!(!overflow);
-		assert_eq!(U256([0, 0, ::std::u64::MAX, 0]), result);
+		assert_eq!(U256([0, 0, u64::max_value(), 0]), result);
 
 		let (result, overflow) = U256([0, 0, 0, 1]).overflowing_sub(U256([1, 0, 0, 0]));
 		assert!(!overflow);
-		assert_eq!(U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, 0]), result);
+		assert_eq!(U256([u64::max_value(), u64::max_value(), u64::max_value(), 0]), result);
 	}
 
 	#[test]
 	fn u256_multi_carry_all() {
-		let (result, _) = U256([::std::u64::MAX, 0, 0, 0]).overflowing_mul(U256([::std::u64::MAX, 0, 0, 0]));
-		assert_eq!(U256([1, ::std::u64::MAX-1, 0, 0]), result);
+		let (result, _) = U256([u64::max_value(), 0, 0, 0]).overflowing_mul(U256([u64::max_value(), 0, 0, 0]));
+		assert_eq!(U256([1, u64::max_value()-1, 0, 0]), result);
 
-		let (result, _) = U256([0, ::std::u64::MAX, 0, 0]).overflowing_mul(U256([::std::u64::MAX, 0, 0, 0]));
-		assert_eq!(U256([0, 1, ::std::u64::MAX-1, 0]), result);
+		let (result, _) = U256([0, u64::max_value(), 0, 0]).overflowing_mul(U256([u64::max_value(), 0, 0, 0]));
+		assert_eq!(U256([0, 1, u64::max_value()-1, 0]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, 0, 0]).overflowing_mul(U256([::std::u64::MAX, 0, 0, 0]));
-		assert_eq!(U256([1, ::std::u64::MAX, ::std::u64::MAX-1, 0]), result);
+		let (result, _) = U256([u64::max_value(), u64::max_value(), 0, 0]).overflowing_mul(U256([u64::max_value(), 0, 0, 0]));
+		assert_eq!(U256([1, u64::max_value(), u64::max_value()-1, 0]), result);
 
-		let (result, _) = U256([::std::u64::MAX, 0, 0, 0]).overflowing_mul(U256([::std::u64::MAX, ::std::u64::MAX, 0, 0]));
-		assert_eq!(U256([1, ::std::u64::MAX, ::std::u64::MAX-1, 0]), result);
+		let (result, _) = U256([u64::max_value(), 0, 0, 0]).overflowing_mul(U256([u64::max_value(), u64::max_value(), 0, 0]));
+		assert_eq!(U256([1, u64::max_value(), u64::max_value()-1, 0]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, 0, 0])
-			.overflowing_mul(U256([::std::u64::MAX, ::std::u64::MAX, 0, 0]));
-		assert_eq!(U256([1, 0, ::std::u64::MAX-1, ::std::u64::MAX]), result);
+		let (result, _) = U256([u64::max_value(), u64::max_value(), 0, 0])
+			.overflowing_mul(U256([u64::max_value(), u64::max_value(), 0, 0]));
+		assert_eq!(U256([1, 0, u64::max_value()-1, u64::max_value()]), result);
 
-		let (result, _) = U256([::std::u64::MAX, 0, 0, 0]).overflowing_mul(U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, 0]));
-		assert_eq!(U256([1, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX-1]), result);
+		let (result, _) = U256([u64::max_value(), 0, 0, 0]).overflowing_mul(U256([u64::max_value(), u64::max_value(), u64::max_value(), 0]));
+		assert_eq!(U256([1, u64::max_value(), u64::max_value(), u64::max_value()-1]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, 0]).overflowing_mul(U256([::std::u64::MAX, 0, 0, 0]));
-		assert_eq!(U256([1, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX-1]), result);
+		let (result, _) = U256([u64::max_value(), u64::max_value(), u64::max_value(), 0]).overflowing_mul(U256([u64::max_value(), 0, 0, 0]));
+		assert_eq!(U256([1, u64::max_value(), u64::max_value(), u64::max_value()-1]), result);
 
-		let (result, _) = U256([::std::u64::MAX, 0, 0, 0]).overflowing_mul(
-			U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX]));
-		assert_eq!(U256([1, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX]), result);
+		let (result, _) = U256([u64::max_value(), 0, 0, 0]).overflowing_mul(
+			U256([u64::max_value(), u64::max_value(), u64::max_value(), u64::max_value()]));
+		assert_eq!(U256([1, u64::max_value(), u64::max_value(), u64::max_value()]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX])
-			.overflowing_mul(U256([::std::u64::MAX, 0, 0, 0]));
-		assert_eq!(U256([1, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX]), result);
+		let (result, _) = U256([u64::max_value(), u64::max_value(), u64::max_value(), u64::max_value()])
+			.overflowing_mul(U256([u64::max_value(), 0, 0, 0]));
+		assert_eq!(U256([1, u64::max_value(), u64::max_value(), u64::max_value()]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, 0])
-			.overflowing_mul(U256([::std::u64::MAX, ::std::u64::MAX, 0, 0]));
-		assert_eq!(U256([1, 0, ::std::u64::MAX, ::std::u64::MAX-1]), result);
+		let (result, _) = U256([u64::max_value(), u64::max_value(), u64::max_value(), 0])
+			.overflowing_mul(U256([u64::max_value(), u64::max_value(), 0, 0]));
+		assert_eq!(U256([1, 0, u64::max_value(), u64::max_value()-1]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, 0, 0])
-			.overflowing_mul(U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, 0]));
-		assert_eq!(U256([1, 0, ::std::u64::MAX, ::std::u64::MAX-1]), result);
+		let (result, _) = U256([u64::max_value(), u64::max_value(), 0, 0])
+			.overflowing_mul(U256([u64::max_value(), u64::max_value(), u64::max_value(), 0]));
+		assert_eq!(U256([1, 0, u64::max_value(), u64::max_value()-1]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX])
-			.overflowing_mul(U256([::std::u64::MAX, ::std::u64::MAX, 0, 0]));
-		assert_eq!(U256([1, 0, ::std::u64::MAX, ::std::u64::MAX]), result);
+		let (result, _) = U256([u64::max_value(), u64::max_value(), u64::max_value(), u64::max_value()])
+			.overflowing_mul(U256([u64::max_value(), u64::max_value(), 0, 0]));
+		assert_eq!(U256([1, 0, u64::max_value(), u64::max_value()]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, 0, 0])
-			.overflowing_mul(U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX]));
-		assert_eq!(U256([1, 0, ::std::u64::MAX, ::std::u64::MAX]), result);
+		let (result, _) = U256([u64::max_value(), u64::max_value(), 0, 0])
+			.overflowing_mul(U256([u64::max_value(), u64::max_value(), u64::max_value(), u64::max_value()]));
+		assert_eq!(U256([1, 0, u64::max_value(), u64::max_value()]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, 0])
-			.overflowing_mul(U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, 0]));
-		assert_eq!(U256([1, 0, 0, ::std::u64::MAX-1]), result);
+		let (result, _) = U256([u64::max_value(), u64::max_value(), u64::max_value(), 0])
+			.overflowing_mul(U256([u64::max_value(), u64::max_value(), u64::max_value(), 0]));
+		assert_eq!(U256([1, 0, 0, u64::max_value()-1]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, 0])
-			.overflowing_mul(U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX]));
-		assert_eq!(U256([1, 0, 0, ::std::u64::MAX]), result);
+		let (result, _) = U256([u64::max_value(), u64::max_value(), u64::max_value(), 0])
+			.overflowing_mul(U256([u64::max_value(), u64::max_value(), u64::max_value(), u64::max_value()]));
+		assert_eq!(U256([1, 0, 0, u64::max_value()]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX])
-			.overflowing_mul(U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, 0]));
-		assert_eq!(U256([1, 0, 0, ::std::u64::MAX]), result);
+		let (result, _) = U256([u64::max_value(), u64::max_value(), u64::max_value(), u64::max_value()])
+			.overflowing_mul(U256([u64::max_value(), u64::max_value(), u64::max_value(), 0]));
+		assert_eq!(U256([1, 0, 0, u64::max_value()]), result);
 
-		let (result, _) = U256([0, 0, 0, ::std::u64::MAX]).overflowing_mul(U256([0, 0, 0, ::std::u64::MAX]));
+		let (result, _) = U256([0, 0, 0, u64::max_value()]).overflowing_mul(U256([0, 0, 0, u64::max_value()]));
 		assert_eq!(U256([0, 0, 0, 0]), result);
 
-		let (result, _) = U256([1, 0, 0, 0]).overflowing_mul(U256([0, 0, 0, ::std::u64::MAX]));
-		assert_eq!(U256([0, 0, 0, ::std::u64::MAX]), result);
+		let (result, _) = U256([1, 0, 0, 0]).overflowing_mul(U256([0, 0, 0, u64::max_value()]));
+		assert_eq!(U256([0, 0, 0, u64::max_value()]), result);
 
-		let (result, _) = U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX])
-			.overflowing_mul(U256([::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX, ::std::u64::MAX]));
+		let (result, _) = U256([u64::max_value(), u64::max_value(), u64::max_value(), u64::max_value()])
+			.overflowing_mul(U256([u64::max_value(), u64::max_value(), u64::max_value(), u64::max_value()]));
 		assert_eq!(U256([1, 0, 0, 0]), result);
 	}
 
@@ -1608,8 +1459,8 @@ mod tests {
 		let (result, _) = U256([2, 0, 0, 0]).overflowing_mul(U256([0, 5, 0, 0]));
 		assert_eq!(U256([0, 10, 0, 0]), result);
 
-		let (result, _) = U256([1, 0, 0, 0]).overflowing_mul(U256([0, 0, 0, ::std::u64::MAX]));
-		assert_eq!(U256([0, 0, 0, ::std::u64::MAX]), result);
+		let (result, _) = U256([1, 0, 0, 0]).overflowing_mul(U256([0, 0, 0, u64::max_value()]));
+		assert_eq!(U256([0, 0, 0, u64::max_value()]), result);
 	}
 
     #[test]
@@ -1617,69 +1468,30 @@ mod tests {
 		let (_, overflow) = U256([1, 0, 0, 0]).overflowing_mul(U256([0, 0, 0, 0]));
 		assert!(!overflow);
 
-		let (_, overflow) = U256([1, 0, 0, 0]).overflowing_mul(U256([0, 0, 0, ::std::u64::MAX]));
+		let (_, overflow) = U256([1, 0, 0, 0]).overflowing_mul(U256([0, 0, 0, u64::max_value()]));
 		assert!(!overflow);
 
-		let (_, overflow) = U256([0, 1, 0, 0]).overflowing_mul(U256([0, 0, 0, ::std::u64::MAX]));
+		let (_, overflow) = U256([0, 1, 0, 0]).overflowing_mul(U256([0, 0, 0, u64::max_value()]));
 		assert!(overflow);
 
 		let (_, overflow) = U256([0, 1, 0, 0]).overflowing_mul(U256([0, 1, 0, 0]));
 		assert!(!overflow);
 
-		let (_, overflow) = U256([0, 1, 0, ::std::u64::MAX]).overflowing_mul(U256([0, 1, 0, ::std::u64::MAX]));
+		let (_, overflow) = U256([0, 1, 0, u64::max_value()]).overflowing_mul(U256([0, 1, 0, u64::max_value()]));
 		assert!(overflow);
 
-		let (_, overflow) = U256([0, ::std::u64::MAX, 0, 0]).overflowing_mul(U256([0, ::std::u64::MAX, 0, 0]));
+		let (_, overflow) = U256([0, u64::max_value(), 0, 0]).overflowing_mul(U256([0, u64::max_value(), 0, 0]));
 		assert!(!overflow);
 
 		let (_, overflow) = U256([1, 0, 0, 0]).overflowing_mul(U256([10, 0, 0, 0]));
 		assert!(!overflow);
 
-		let (_, overflow) = U256([2, 0, 0, 0]).overflowing_mul(U256([0, 0, 0, ::std::u64::MAX / 2]));
+		let (_, overflow) = U256([2, 0, 0, 0]).overflowing_mul(U256([0, 0, 0, u64::max_value() / 2]));
 		assert!(!overflow);
 
 		let (_, overflow) = U256([0, 0, 8, 0]).overflowing_mul(U256([0, 0, 7, 0]));
 		assert!(overflow);
     }
-
-	#[test]
-	fn big_endian() {
-		let source = U256([1, 0, 0, 0]);
-		let mut target = vec![0u8; 32];
-
-		assert_eq!(source, U256::from(1));
-
-		source.to_big_endian(&mut target);
-		assert_eq!(
-			vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
-				0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8],
-			target);
-
-		let source = U256([512, 0, 0, 0]);
-		let mut target = vec![0u8; 32];
-
-		source.to_big_endian(&mut target);
-		assert_eq!(
-			vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
-				0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 2u8, 0u8],
-			target);
-
-		let source = U256([0, 512, 0, 0]);
-		let mut target = vec![0u8; 32];
-
-		source.to_big_endian(&mut target);
-		assert_eq!(
-			vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
-				0u8, 0u8, 0u8, 0u8, 0u8, 2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-			target);
-
-		let source = U256::from_str("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20").unwrap();
-		source.to_big_endian(&mut target);
-		assert_eq!(
-			vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11,
-				0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20],
-			target);
-	}
 
 	#[test]
 	fn u256_multi_muls2() {

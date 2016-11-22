@@ -1,3 +1,5 @@
+#![cfg_attr(asm_available, feature(asm))]
+
 extern crate rustc_serialize;
 #[macro_use] extern crate heapsize;
 
