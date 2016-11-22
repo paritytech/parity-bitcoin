@@ -30,6 +30,8 @@ pub enum Task {
 	RequestMemoryPool(usize),
 	/// Send block.
 	SendBlock(usize, Block, ServerTaskIndex),
+	/// Broadcast transactions.
+	BroadcastTransactionsHashes(Vec<H256>),
 	/// Send notfound
 	SendNotFound(usize, Vec<InventoryVector>, ServerTaskIndex),
 	/// Send inventory
@@ -130,6 +132,20 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					assert_eq!(id.raw(), None);
 					trace!(target: "sync", "Sending block {:?} to peer#{}", block_message.block.hash(), peer_index);
 					connection.send_block(&block_message);
+				}
+			},
+			Task::BroadcastTransactionsHashes(transactions_hashes) => {
+				let inventory = types::Inv {
+						inventory: transactions_hashes.into_iter().map(|h| InventoryVector {
+							inv_type: InventoryType::MessageTx,
+							hash: h,
+						})
+						.collect(),
+				};
+
+				for (peer_index, connection) in self.peers.iter() {
+					trace!(target: "sync", "Sending inventory with {} transactions hashes to peer#{}", inventory.inventory.len(), peer_index);
+					connection.send_inventory(&inventory);
 				}
 			},
 			Task::SendNotFound(peer_index, unknown_inventory, id) => {
