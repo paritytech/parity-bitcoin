@@ -77,6 +77,8 @@ pub enum TransactionError {
 	Sigops(usize),
 	/// Too many signature operations once p2sh operations included
 	SigopsP2SH(usize),
+	/// Coinbase transaction is found at position that is not 0
+	MisplacedCoinbase(usize),
 }
 
 #[derive(PartialEq, Debug)]

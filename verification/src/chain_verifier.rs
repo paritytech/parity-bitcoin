@@ -130,6 +130,9 @@ impl ChainVerifier {
 
 		if sequence == 0 { return Ok(sigops); }
 
+		// must not be coinbase (sequence = 0 is returned above)
+		if transaction.is_coinbase() { return Err(TransactionError::MisplacedCoinbase(sequence)); }
+
 		if sigops >= MAX_BLOCK_SIGOPS { return Err(TransactionError::Sigops(sigops)); }
 
 		// strict pay-to-script-hash signature operations count toward block
