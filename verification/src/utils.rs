@@ -4,7 +4,11 @@ use byteorder::{BigEndian, ByteOrder};
 use chain;
 use script::{self, Script};
 
+const MAX_NBITS: u32 = 0x207fffff;
+
 pub fn check_nbits(hash: &H256, n_bits: u32) -> bool {
+	if n_bits > MAX_NBITS { return false; }
+
 	let hash_bytes: &[u8] = &**hash;
 
 	let mut nb = [0u8; 4];
