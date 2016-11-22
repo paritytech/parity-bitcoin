@@ -37,7 +37,6 @@ mod tests {
 	use std::sync::Arc;
 	use super::super::Error;
 	use super::BlocksWriter;
-	use chain::RepresentH256;
 	use test_data;
 	use verification;
 

@@ -185,7 +185,6 @@ mod tests {
 	use std::collections::HashSet;
 	use super::{ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig, manage_synchronization_peers_blocks,
 		manage_unknown_orphaned_blocks, manage_orphaned_transactions};
-	use chain::RepresentH256;
 	use synchronization_peers::Peers;
 	use primitives::hash::H256;
 	use test_data;
