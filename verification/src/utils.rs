@@ -1,11 +1,13 @@
 //! Verification utilities
-use primitives::hash::H256;
+use primitives::{H256, U256};
+use primitives::uint::Uint;
 use byteorder::{BigEndian, ByteOrder};
 use chain;
 use script::{self, Script};
 
 const MAX_NBITS: u32 = 0x207fffff;
 
+/// Simple nbits check that does not require 256-bit arithmetic
 pub fn check_nbits(hash: &H256, n_bits: u32) -> bool {
 	if n_bits > MAX_NBITS { return false; }
 
@@ -82,11 +84,28 @@ pub fn p2sh_sigops(output: &Script, input_ref: &Script) -> usize {
 	output.sigop_count_p2sh(input_ref).unwrap_or(0)
 }
 
+/// Converts difficulty threshold to the compact representation (nbits)
+pub fn threshold_to_nbits(val: U256) -> u32 {
+	let mut nb = [0u8; 4];
+	let bits = val.bits() as u8;
+	nb[0] = (bits + 7) / 8;
+	if val.byte(nb[0] as usize - 1) > 0x7f { nb[0] += 1 }
+
+	nb[1] = val.byte((nb[0]-1) as usize);
+	nb[2] = val.byte((nb[0]-2) as usize);
+	if nb[0] > 2  {
+		nb[3] = val.byte((nb[0]-3) as usize);
+	}
+
+	BigEndian::read_u32(&nb)
+}
+
 #[cfg(test)]
 mod tests {
 
-	use super::{block_reward_satoshi, check_nbits};
-	use primitives::hash::H256;
+	use super::{block_reward_satoshi, check_nbits, threshold_to_nbits};
+	use primitives::{H256, U256};
+	use primitives::uint::Uint;
 
 	#[test]
 	fn reward() {
@@ -126,5 +145,14 @@ mod tests {
 		let hash = H256::from_reversed_str("00000000000000000e753ef636075711efd2cbf5a8473c7c5b67755a3701e0c2");
 		let nbits = 404129525;
 		assert!(check_nbits(&hash, nbits));
+	}
+
+	#[test]
+	fn threshold() {
+		let test1 = U256::from(1000u64);
+		assert_eq!(0x0203e800, threshold_to_nbits(test1));
+
+		let test2 = U256::from(2).pow(U256::from(256-32))-U256::from(1);
+		assert_eq!(0x1d00ffff, threshold_to_nbits(test2));
 	}
 }
