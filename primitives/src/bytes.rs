@@ -14,6 +14,12 @@ impl Bytes {
 	}
 }
 
+impl<'a> From<&'a [u8]> for Bytes {
+	fn from(v: &[u8]) -> Self {
+		Bytes(v.into())
+	}
+}
+
 impl From<Vec<u8>> for Bytes {
 	fn from(v: Vec<u8>) -> Self {
 		Bytes(v)

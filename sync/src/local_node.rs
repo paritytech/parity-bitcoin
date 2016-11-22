@@ -12,6 +12,8 @@ use synchronization_server::{Server, SynchronizationServer};
 use synchronization_verifier::AsyncVerifier;
 use primitives::hash::H256;
 
+// TODO: check messages before processing (filterload' filter is max 36000, nHashFunc is <= 50, etc)
+
 pub type LocalNodeRef = Arc<LocalNode<LocalSynchronizationTaskExecutor, SynchronizationServer, SynchronizationClient<LocalSynchronizationTaskExecutor, AsyncVerifier>>>;
 
 /// Local synchronization node
