@@ -28,6 +28,8 @@ pub enum ScriptType {
 	ScriptHash,
 	Multisig,
 	NullData,
+	WitnessScript,
+	WitnessKey,
 }
 
 /// Serialized script, used inside transaction inputs and outputs.
@@ -97,6 +99,13 @@ impl Script {
 			self.data[0] == Opcode::OP_HASH160 as u8 &&
 			self.data[1] == Opcode::OP_PUSHBYTES_20 as u8 &&
 			self.data[22] == Opcode::OP_EQUAL as u8
+	}
+
+	/// Extra-fast test for pay-to-witness-key-hash scripts.
+	pub fn is_pay_to_witness_key_hash(&self) -> bool {
+		self.data.len() == 22 &&
+			self.data[0] == Opcode::OP_0 as u8 &&
+			self.data[1] == Opcode::OP_PUSHBYTES_20 as u8
 	}
 
 	/// Extra-fast test for pay-to-witness-script-hash scripts.
@@ -495,6 +504,14 @@ mod tests {
 		let script2: Script = "a9143b80842f4ea32806ce5e723a255ddd6490cfd28d88".into();
 		assert!(script.is_pay_to_script_hash());
 		assert!(!script2.is_pay_to_script_hash());
+	}
+
+	#[test]
+	fn test_is_pay_to_witness_key_hash() {
+		let script: Script = "00140000000000000000000000000000000000000000".into();
+		let script2: Script = "01140000000000000000000000000000000000000000".into();
+		assert!(script.is_pay_to_witness_key_hash());
+		assert!(!script2.is_pay_to_witness_key_hash());
 	}
 
 	#[test]
