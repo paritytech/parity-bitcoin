@@ -699,7 +699,7 @@ impl fmt::Debug for Chain {
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
-	use chain::{Transaction, RepresentH256};
+	use chain::Transaction;
 	use hash_queue::HashPosition;
 	use super::{Chain, BlockState, TransactionState, HeadersIntersection, BlockInsertionResult};
 	use db::{self, Store, BestBlock};

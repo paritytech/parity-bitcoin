@@ -472,7 +472,7 @@ pub mod tests {
 	use db;
 	use test_data;
 	use primitives::hash::H256;
-	use chain::{Transaction, RepresentH256};
+	use chain::Transaction;
 	use message::types;
 	use message::common::{InventoryVector, InventoryType};
 	use synchronization_executor::Task;

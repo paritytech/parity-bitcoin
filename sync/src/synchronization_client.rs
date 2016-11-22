@@ -8,7 +8,8 @@ use futures::stream::Stream;
 use tokio_core::reactor::{Handle, Interval};
 use futures_cpupool::CpuPool;
 use db;
-use chain::{Block, BlockHeader, Transaction, RepresentH256};
+use chain::{Block, BlockHeader, Transaction};
+use message::common::{InventoryVector, InventoryType};
 use primitives::hash::H256;
 use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers::{Information as PeersInformation};
@@ -18,6 +19,7 @@ use synchronization_chain::{Information as ChainInformation};
 use synchronization_executor::{Task, TaskExecutor};
 use orphan_blocks_pool::OrphanBlocksPool;
 use orphan_transactions_pool::OrphanTransactionsPool;
+use synchronization_server::ServerTaskIndex;
 use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchronization_peers_inventory,
 	manage_unknown_orphaned_blocks, manage_orphaned_transactions, MANAGEMENT_INTERVAL_MS,
 	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
@@ -630,9 +632,7 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 
 				// relay block to our peers
 				if self.state.is_saturated() || self.state.is_nearly_saturated() {
-					// TODO: remember peer' last N blocks and send only if peer has no canonized blocks
-					// TODO: send `headers` if peer has not send `sendheaders` command
-					self.executor.lock().execute(Task::BroadcastBlocksHashes(insert_result.canonized_blocks_hashes));
+					self.relay_new_blocks(insert_result.canonized_blocks_hashes);
 				}
 
 				// deal with block transactions
@@ -767,6 +767,26 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			chain: self.chain.read().information(),
 			orphaned_blocks: self.orphaned_blocks_pool.len(),
 			orphaned_transactions: self.orphaned_transactions_pool.len(),
+		}
+	}
+
+	/// Relay new blocks
+	fn relay_new_blocks(&self, new_blocks_hashes: Vec<H256>) {
+		let mut executor = self.executor.lock();
+		// TODO: use all peers here (currently sync only)
+		// TODO: send `headers` if peer has not send `sendheaders` command
+		for peer_index in self.peers.all_peers() {
+			let inventory: Vec<_> = new_blocks_hashes.iter()
+				.filter(|h| !self.peers.has_block_with_hash(peer_index, h))
+				.cloned()
+				.map(|h| InventoryVector {
+					inv_type: InventoryType::MessageBlock,
+					hash: h,
+				})
+				.collect();
+			if !inventory.is_empty() {
+				executor.execute(Task::SendInventory(peer_index, inventory, ServerTaskIndex::None));
+			}
 		}
 	}
 
@@ -1053,12 +1073,14 @@ pub mod tests {
 	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
 	use tokio_core::reactor::{Core, Handle};
-	use chain::{Block, Transaction, RepresentH256};
+	use chain::{Block, Transaction};
+	use message::common::{InventoryVector, InventoryType};
 	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore};
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use synchronization_verifier::tests::DummyVerifier;
+	use synchronization_server::ServerTaskIndex;
 	use primitives::hash::H256;
 	use p2p::event_loop;
 	use test_data;
@@ -1253,7 +1275,9 @@ pub mod tests {
 		assert!(tasks.iter().any(|t| t == &Task::RequestBlocksHeaders(2)));
 		assert!(tasks.iter().any(|t| t == &Task::RequestMemoryPool(1)));
 		assert!(tasks.iter().any(|t| t == &Task::RequestMemoryPool(2)));
-		assert!(tasks.iter().any(|t| t == &Task::BroadcastBlocksHashes(vec![block.hash()])));
+
+		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: block.hash() }];
+		assert!(tasks.iter().any(|t| t == &Task::SendInventory(1, inventory.clone(), ServerTaskIndex::None)));
 	}
 
 	#[test]
@@ -1792,12 +1816,13 @@ pub mod tests {
 			]);
 		}
 
-		sync.on_peer_block(1, b2.clone());
+		sync.on_peer_block(2, b2.clone());
 
 		// we were in saturated state => block is relayed
 		{
 			let tasks = executor.lock().take_tasks();
-			assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::BroadcastBlocksHashes(vec![b2.hash()])]);
+			let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: b2.hash() }];
+			assert_eq!(tasks, vec![Task::RequestBlocksHeaders(2), Task::SendInventory(1, inventory, ServerTaskIndex::None)]);
 		}
 
 		sync.on_new_blocks_headers(1, vec![b3.block_header.clone()]);
@@ -1806,11 +1831,14 @@ pub mod tests {
 		// we were in nearly saturated state => block is relayed
 		{
 			let tasks = executor.lock().take_tasks();
+			let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: b3.hash() }];
 			assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1),
-				Task::RequestBlocks(1, vec![b3.hash()]),
-				Task::BroadcastBlocksHashes(vec![b3.hash()]),
+				Task::RequestBlocks(2, vec![b3.hash()]),
+				Task::SendInventory(2, inventory, ServerTaskIndex::None),
 				Task::RequestBlocksHeaders(1),
-				Task::RequestMemoryPool(1)
+				Task::RequestMemoryPool(1),
+				Task::RequestBlocksHeaders(2),
+				Task::RequestMemoryPool(2),
 			]);
 		}
 	}
