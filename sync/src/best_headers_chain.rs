@@ -123,7 +123,6 @@ impl BestHeadersChain {
 #[cfg(test)]
 mod tests {
 	use super::BestHeadersChain;
-	use chain::RepresentH256;
 	use primitives::hash::H256;
 	use test_data;
 
