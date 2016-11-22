@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // TODO: remove after connecting with Client
 
 use bit_vec::BitVec;
 use murmur3::murmur3_32;
@@ -7,16 +7,16 @@ use ser::serialize;
 use message::types;
 use script::Script;
 
-/// Constant optimized to create large differences in the seed for different values of hash_functions_num.
+/// Constant optimized to create large differences in the seed for different values of `hash_functions_num`.
 const SEED_OFFSET: u32 = 0xFBA4C795;
 
 /// Filter, which controls data relayed over connection.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ConnectionFilter {
 	/// Bloom filter, if set.
 	bloom: Option<ConnectionBloom>,
 	/// Filter update type.
-	filter_flags: u8,
+	filter_flags: types::FilterFlags,
 }
 
 /// Connection bloom filter
@@ -28,6 +28,15 @@ struct ConnectionBloom {
 	hash_functions_num: u32,
 	/// Value to add to Murmur3 hash seed when calculating hash.
 	tweak: u32,
+}
+
+impl Default for ConnectionFilter {
+	fn default() -> Self {
+		ConnectionFilter {
+			bloom: None,
+			filter_flags: types::FilterFlags::None,
+		}
+	}
 }
 
 impl ConnectionFilter {
@@ -58,8 +67,8 @@ impl ConnectionFilter {
 							if bloom.contains(instruction_data) {
 								is_match = true;
 
-								let is_update_needed = self.filter_flags == 1
-									|| (self.filter_flags == 2 && (script.is_pay_to_public_key() || script.is_multisig_script()));
+								let is_update_needed = self.filter_flags == types::FilterFlags::All
+									|| (self.filter_flags == types::FilterFlags::PubKeyOnly && (script.is_pay_to_public_key() || script.is_multisig_script()));
 								if is_update_needed {
 									bloom.insert(&serialize(&OutPoint {
 										hash: transaction_hash.clone(),
@@ -163,7 +172,7 @@ mod tests {
 	use std::iter::{Iterator, repeat};
 	use test_data;
 	use message::types;
-	use chain::{Transaction, RepresentH256};
+	use chain::Transaction;
 	use primitives::hash::H256;
 	use primitives::bytes::Bytes;
 	use super::{ConnectionFilter, ConnectionBloom};
@@ -173,7 +182,7 @@ mod tests {
 			filter: Bytes::from(repeat(0u8).take(1024).collect::<Vec<_>>()),
 			hash_functions: 10,
 			tweak: 5,
-			flags: 0,
+			flags: types::FilterFlags::None,
 		}
 	}
 
