@@ -1,14 +1,18 @@
-#![allow(dead_code)] // TODO: remove after connecting with Client
-
+use linked_hash_map::LinkedHashMap;
 use bit_vec::BitVec;
 use murmur3::murmur3_32;
 use chain::{Transaction, OutPoint};
 use ser::serialize;
 use message::types;
+use primitives::hash::H256;
 use script::Script;
 
 /// Constant optimized to create large differences in the seed for different values of `hash_functions_num`.
 const SEED_OFFSET: u32 = 0xFBA4C795;
+/// Max last blocks to store for given peer
+const MAX_LAST_BLOCKS_TO_STORE: usize = 64;
+/// Max last transactions to store for given peer
+const MAX_LAST_TRANSACTIONS_TO_STORE: usize = 64;
 
 /// Filter, which controls data relayed over connection.
 #[derive(Debug)]
@@ -17,6 +21,10 @@ pub struct ConnectionFilter {
 	bloom: Option<ConnectionBloom>,
 	/// Filter update type.
 	filter_flags: types::FilterFlags,
+	/// Last blocks from peer.
+	last_blocks: LinkedHashMap<H256, ()>,
+	/// Last transactions from peer.
+	last_transactions: LinkedHashMap<H256, ()>,
 }
 
 /// Connection bloom filter
@@ -35,6 +43,8 @@ impl Default for ConnectionFilter {
 		ConnectionFilter {
 			bloom: None,
 			filter_flags: types::FilterFlags::None,
+			last_blocks: LinkedHashMap::new(),
+			last_transactions: LinkedHashMap::new(),
 		}
 	}
 }
@@ -46,17 +56,56 @@ impl ConnectionFilter {
 		ConnectionFilter {
 			bloom: Some(ConnectionBloom::new(message)),
 			filter_flags: message.flags,
+			last_blocks: LinkedHashMap::new(),
+			last_transactions: LinkedHashMap::new(),
 		}
 	}
 
-	/// Check if transaction is matched && update filter
-	pub fn match_update_transaction(&mut self, transaction: &Transaction) -> bool {
+	/// We have a knowledge that block with given hash is known to this connection
+	pub fn known_block(&mut self, block_hash: &H256) {
+		// TODO: add test for it
+		// remember that peer knows about this block
+		if !self.last_blocks.contains_key(block_hash) {
+			if self.last_blocks.len() == MAX_LAST_BLOCKS_TO_STORE {
+				self.last_blocks.pop_front();
+			}
+
+			self.last_blocks.insert(block_hash.clone(), ());
+		}
+	}
+
+	/// We have a knowledge that transaction with given hash is known to this connection
+	pub fn known_transaction(&mut self, transaction_hash: &H256) {
+		// TODO: add test for it
+		// remember that peer knows about this block
+		if !self.last_transactions.contains_key(transaction_hash) {
+			if self.last_transactions.len() == MAX_LAST_TRANSACTIONS_TO_STORE {
+				self.last_transactions.pop_front();
+			}
+
+			self.last_transactions.insert(transaction_hash.clone(), ());
+		}
+	}
+
+	/// Check if block should be sent to this connection
+	pub fn filter_block(&self, block_hash: &H256) -> bool {
+		// check if block is known
+		!self.last_blocks.contains_key(block_hash)
+	}
+
+	/// Check if transaction should be sent to this connection && optionally update filter
+	pub fn filter_transaction(&mut self, transaction_hash: &H256, transaction: &Transaction) -> bool {
+		// check if transaction is known
+		if self.last_transactions.contains_key(transaction_hash) {
+			return false;
+		}
+
+		// check with bloom filter, if set
 		match self.bloom {
 			/// if no filter is set for the connection => match everything
 			None => true,
 			/// filter using bloom filter, then update
 			Some(ref mut bloom) => {
-				let transaction_hash = transaction.hash();
 				let mut is_match = false;
 
 				// match if filter contains any arbitrary script data element in any scriptPubKey in tx
@@ -84,7 +133,7 @@ impl ConnectionFilter {
 				}
 
 				// match if filter contains transaction itself
-				if bloom.contains(&*transaction_hash) {
+				if bloom.contains(&**transaction_hash) {
 					return true;
 				}
 
@@ -168,7 +217,7 @@ impl ConnectionBloom {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
 	use std::iter::{Iterator, repeat};
 	use test_data;
 	use message::types;
@@ -178,7 +227,7 @@ mod tests {
 	use ser::serialize;
 	use super::{ConnectionFilter, ConnectionBloom};
 
-	fn default_filterload() -> types::FilterLoad {
+	pub fn default_filterload() -> types::FilterLoad {
 		types::FilterLoad {
 			filter: Bytes::from(repeat(0u8).take(1024).collect::<Vec<_>>()),
 			hash_functions: 10,
@@ -187,7 +236,7 @@ mod tests {
 		}
 	}
 
-	fn make_filteradd(data: &[u8]) -> types::FilterAdd {
+	pub fn make_filteradd(data: &[u8]) -> types::FilterAdd {
 		types::FilterAdd {
 			data: data.into(),
 		}
@@ -210,13 +259,13 @@ mod tests {
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.match_update_transaction(&tx1));
-		assert!(!filter.match_update_transaction(&tx2));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
 
 		filter.add(&make_filteradd(&*tx1.hash()));
 
-		assert!(filter.match_update_transaction(&tx1));
-		assert!(!filter.match_update_transaction(&tx2));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
 	}
 
 	#[test]
@@ -229,50 +278,49 @@ mod tests {
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.match_update_transaction(&tx1));
-		assert!(!filter.match_update_transaction(&tx2));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
 
 		filter.add(&make_filteradd(&tx1_out_data));
 
-		assert!(filter.match_update_transaction(&tx1));
-		assert!(!filter.match_update_transaction(&tx2));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
 	}
 
 	#[test]
 	fn connection_filter_matches_transaction_by_previous_output_point() {
 		// https://webbtc.com/tx/eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb
-		// output script: OP_DUP OP_HASH160 380cb3c594de4e7e9b8e18db182987bebb5a4f70 OP_EQUALVERIFY OP_CHECKSIG
 		let tx1: Transaction = "01000000024de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8000000006b48304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b0121035aa98d5f77cd9a2d88710e6fc66212aff820026f0dad8f32d1f7ce87457dde50ffffffff4de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8010000006f004730440220276d6dad3defa37b5f81add3992d510d2f44a317fd85e04f93a1e2daea64660202200f862a0da684249322ceb8ed842fb8c859c0cb94c81e1c5308b4868157a428ee01ab51210232abdc893e7f0631364d7fd01cb33d24da45329a00357b3a7886211ab414d55a51aeffffffff02e0fd1c00000000001976a914380cb3c594de4e7e9b8e18db182987bebb5a4f7088acc0c62d000000000017142a9bc5447d664c1d0141392a842d23dba45c4f13b17500000000".into();
 		let tx1_previous_output: Bytes = serialize(&tx1.inputs[0].previous_output);
 		let tx2 = Transaction::default();
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.match_update_transaction(&tx1));
-		assert!(!filter.match_update_transaction(&tx2));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
 
 		filter.add(&make_filteradd(&tx1_previous_output));
 
-		assert!(filter.match_update_transaction(&tx1));
-		assert!(!filter.match_update_transaction(&tx2));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
 	}
 
 	#[test]
 	fn connection_filter_matches_transaction_by_input_script_data_element() {
 		// https://webbtc.com/tx/eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb
-		// output script: OP_DUP OP_HASH160 380cb3c594de4e7e9b8e18db182987bebb5a4f70 OP_EQUALVERIFY OP_CHECKSIG
+		// input script: PUSH DATA 304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b01
 		let tx1: Transaction = "01000000024de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8000000006b48304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b0121035aa98d5f77cd9a2d88710e6fc66212aff820026f0dad8f32d1f7ce87457dde50ffffffff4de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8010000006f004730440220276d6dad3defa37b5f81add3992d510d2f44a317fd85e04f93a1e2daea64660202200f862a0da684249322ceb8ed842fb8c859c0cb94c81e1c5308b4868157a428ee01ab51210232abdc893e7f0631364d7fd01cb33d24da45329a00357b3a7886211ab414d55a51aeffffffff02e0fd1c00000000001976a914380cb3c594de4e7e9b8e18db182987bebb5a4f7088acc0c62d000000000017142a9bc5447d664c1d0141392a842d23dba45c4f13b17500000000".into();
 		let tx1_input_data: Bytes = "304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b01".into();
 		let tx2 = Transaction::default();
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.match_update_transaction(&tx1));
-		assert!(!filter.match_update_transaction(&tx2));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
 
 		filter.add(&make_filteradd(&tx1_input_data));
 
-		assert!(filter.match_update_transaction(&tx1));
-		assert!(!filter.match_update_transaction(&tx2));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
 	}
 }

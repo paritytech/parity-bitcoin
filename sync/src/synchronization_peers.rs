@@ -3,13 +3,10 @@ use std::collections::hash_map::Entry;
 use primitives::hash::H256;
 use linked_hash_map::LinkedHashMap;
 use time::precise_time_s;
+use connection_filter::ConnectionFilter;
 
 /// Max peer failures # before excluding from sync process
 const MAX_PEER_FAILURES: usize = 2;
-/// Max last blocks to store for given peer
-const MAX_LAST_BLOCKS_TO_STORE: usize = 64;
-/// Max last transactions to store for given peer
-const MAX_LAST_TRANSACTIONS_TO_STORE: usize = 64;
 
 /// Set of peers selected for synchronization.
 #[derive(Debug)]
@@ -28,10 +25,8 @@ pub struct Peers {
 	inventory_requests: HashSet<usize>,
 	/// Last inventory message time from peer.
 	inventory_requests_order: LinkedHashMap<usize, f64>,
-	/// Last blocks from peer.
-	last_blocks: HashMap<usize, LinkedHashMap<H256, ()>>,
-	/// Last transactions from peer.
-	last_transactions: HashMap<usize, LinkedHashMap<H256, ()>>,
+	/// Peer connections filters.
+	filters: HashMap<usize, ConnectionFilter>,
 }
 
 /// Information on synchronization peers
@@ -56,8 +51,7 @@ impl Peers {
 			blocks_requests_order: LinkedHashMap::new(),
 			inventory_requests: HashSet::new(),
 			inventory_requests_order: LinkedHashMap::new(),
-			last_blocks: HashMap::new(),
-			last_transactions: HashMap::new(),
+			filters: HashMap::new(),
 		}
 	}
 
@@ -72,6 +66,14 @@ impl Peers {
 			unuseful: total_unuseful_peers,
 			active: total_active_peers,
 		}
+	}
+
+	/// Is known peer
+	pub fn is_known_peer(&self, peer_index: usize) -> bool {
+		self.idle.contains(&peer_index)
+			|| self.unuseful.contains(&peer_index)
+			|| self.blocks_requests.contains_key(&peer_index)
+			|| self.inventory_requests.contains(&peer_index)
 	}
 
 	/// Has any useful peers?
@@ -143,20 +145,16 @@ impl Peers {
 		self.blocks_requests.get(&peer_index).cloned()
 	}
 
-	/// True if peer already has block with this hash
-	pub fn has_block_with_hash(&self, peer_index: usize, hash: &H256) -> bool {
-		self.last_blocks
-			.get(&peer_index)
-			.map(|h| h.contains_key(hash))
-			.unwrap_or(false)
+	/// Get filter reference for given peer
+	pub fn filter(&mut self, peer_index: usize) -> &ConnectionFilter {
+		assert!(self.is_known_peer(peer_index));
+		&*self.filters.entry(peer_index).or_insert_with(ConnectionFilter::default)
 	}
 
-	/// True if peer already has transaction with this hash
-	pub fn has_transaction_with_hash(&self, peer_index: usize, hash: &H256) -> bool {
-		self.last_transactions
-			.get(&peer_index)
-			.map(|h| h.contains_key(hash))
-			.unwrap_or(false)
+	/// Get mutable filter reference for given peer
+	pub fn filter_mut(&mut self, peer_index: usize) -> &mut ConnectionFilter {
+		assert!(self.is_known_peer(peer_index));
+		self.filters.entry(peer_index).or_insert_with(ConnectionFilter::default)
 	}
 
 	/// Mark peer as useful.
@@ -196,8 +194,7 @@ impl Peers {
 		self.blocks_requests_order.remove(&peer_index);
 		self.inventory_requests.remove(&peer_index);
 		self.inventory_requests_order.remove(&peer_index);
-		self.last_blocks.remove(&peer_index);
-		self.last_transactions.remove(&peer_index);
+		self.filters.remove(&peer_index);
 		peer_blocks_requests
 			.map(|hs| hs.into_iter().collect())
 	}
@@ -225,28 +222,13 @@ impl Peers {
 			self.try_mark_idle(peer_index);
 		}
 
-		// TODO: add test for it
 		// remember that peer knows about this block
-		let last_blocks_entry = self.last_blocks.entry(peer_index).or_insert_with(LinkedHashMap::default);
-		if !last_blocks_entry.contains_key(block_hash) {
-			if last_blocks_entry.len() == MAX_LAST_BLOCKS_TO_STORE {
-				last_blocks_entry.pop_front();
-			}
-			last_blocks_entry.insert(block_hash.clone(), ());
-		}
+		self.filters.entry(peer_index).or_insert_with(ConnectionFilter::default).known_block(block_hash);
 	}
 
 	/// Transaction is received from peer.
 	pub fn on_transaction_received(&mut self, peer_index: usize, transaction_hash: &H256) {
-		// TODO: add test for it
-		// remember that peer knows about this transaction
-		let last_transactions_entry = self.last_transactions.entry(peer_index).or_insert_with(LinkedHashMap::default);
-		if !last_transactions_entry.contains_key(transaction_hash) {
-			if last_transactions_entry.len() == MAX_LAST_TRANSACTIONS_TO_STORE {
-				last_transactions_entry.pop_front();
-			}
-			last_transactions_entry.insert(transaction_hash.clone(), ());
-		}
+		self.filters.entry(peer_index).or_insert_with(ConnectionFilter::default).known_transaction(transaction_hash);
 	}
 
 	/// Inventory received from peer.

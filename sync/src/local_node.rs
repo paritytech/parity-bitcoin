@@ -58,6 +58,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		let peer_index = self.peer_counter.fetch_add(1, Ordering::SeqCst) + 1;
 		trace!(target: "sync", "Creating new sync session with peer#{}", peer_index);
 
+		self.client.lock().on_peer_connected(peer_index);
 		self.executor.lock().add_peer_connection(peer_index, outbound_connection);
 		peer_index
 	}
