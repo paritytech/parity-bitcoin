@@ -21,6 +21,5 @@ use rustc_version::{version_meta, Channel};
 fn main() {
 	if let Channel::Nightly = version_meta().channel {
 		println!("cargo:rustc-cfg=asm_available");
-		println!("cargo:rustc-feature=asm");
 	}
 }
