@@ -8,6 +8,7 @@
 use std::{str, fmt};
 use std::ops::{Shr, Shl, BitAnd, BitOr, BitXor, Not, Div, Rem, Mul, Add, Sub};
 use std::cmp::Ordering;
+use byteorder::{WriteBytesExt, LittleEndian, BigEndian};
 use hex::{FromHex, FromHexError};
 
 /// Conversion from decimal string error
@@ -391,6 +392,28 @@ macro_rules! construct_uint {
 					res = r;
 				}
 				Ok(res)
+			}
+
+			pub fn to_little_endian(&self) -> [u8; $n_words * 8] {
+				let mut result = [0u8; $n_words * 8];
+				{
+					let mut result_ref: &mut [u8] = &mut result;
+					for word in self.0.into_iter() {
+						result_ref.write_u64::<LittleEndian>(*word).expect("sizeof($n_words * u8 * 8) == sizeof($n_words * u64); qed");
+					}
+				}
+				result
+			}
+
+			pub fn to_big_endian(&self) -> [u8; $n_words * 8] {
+				let mut result = [0u8; $n_words * 8];
+				{
+					let mut result_ref: &mut [u8] = &mut result;
+					for word in self.0.into_iter().rev() {
+						result_ref.write_u64::<BigEndian>(*word).expect("sizeof($n_words * u8 * 8) == sizeof($n_words * u64); qed");
+					}
+				}
+				result
 			}
 
 			#[inline]

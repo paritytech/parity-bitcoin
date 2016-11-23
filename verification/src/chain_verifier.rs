@@ -194,7 +194,8 @@ impl ChainVerifier {
 		}
 
 		// target difficulty threshold
-		if !self.skip_pow && !utils::check_nbits(&hash, block.header().nbits) {
+		//if !self.skip_pow && !utils::check_nbits(&hash, block.header().nbits) {
+		if !self.skip_pow && !block.header().is_valid_proof_of_work() {
 			return Err(Error::Pow);
 		}
 

@@ -7,6 +7,7 @@ extern crate serialization as ser;
 mod block;
 mod block_header;
 mod merkle_root;
+mod nbits;
 mod transaction;
 
 pub trait RepresentH256 {
@@ -14,7 +15,7 @@ pub trait RepresentH256 {
 }
 
 pub use rustc_serialize::hex;
-pub use primitives::{hash, bytes};
+pub use primitives::{hash, bytes, uint};
 
 pub use self::block::Block;
 pub use self::block_header::BlockHeader;
