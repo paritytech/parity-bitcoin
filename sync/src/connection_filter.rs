@@ -1,7 +1,8 @@
+use std::cmp::min;
 use linked_hash_map::LinkedHashMap;
 use bit_vec::BitVec;
 use murmur3::murmur3_32;
-use chain::{Transaction, OutPoint};
+use chain::{Block, Transaction, OutPoint, merkle_root};
 use ser::serialize;
 use message::types;
 use primitives::hash::H256;
@@ -36,6 +37,20 @@ struct ConnectionBloom {
 	hash_functions_num: u32,
 	/// Value to add to Murmur3 hash seed when calculating hash.
 	tweak: u32,
+}
+
+/// Service structure to construct `merkleblock` message.
+pub struct PartialMerkleTree {
+	/// All transactions length.
+	all_len: usize,
+	/// All transactions hashes.
+	all_hashes: Vec<H256>,
+	/// Match flags for all transactions.
+	all_matches: BitVec,
+	/// Partial hashes.
+	hashes: Vec<H256>,
+	/// Partial match flags.
+	matches: BitVec,
 }
 
 impl Default for ConnectionFilter {
@@ -182,6 +197,32 @@ impl ConnectionFilter {
 	pub fn clear(&mut self) {
 		self.bloom = None;
 	}
+
+	/// Convert `Block` to `MerkleBlock` using this filter
+	pub fn make_merkle_block(&mut self, block: &Block) -> Option<types::MerkleBlock> {
+		if self.bloom.is_none() {
+			return None;
+		}
+
+		// calculate hashes && match flags for all transactions
+		let all_len = block.transactions.len();
+		let (all_hashes, all_flags) = block.transactions.iter()
+			.fold((Vec::<H256>::with_capacity(all_len), BitVec::with_capacity(all_len)), |(mut all_hashes, mut all_flags), t| {
+				let hash = t.hash();
+				all_flags.push(self.filter_transaction(&hash, t));
+				all_hashes.push(hash);
+				(all_hashes, all_flags)
+			});
+
+		// build partial merkle tree
+		let (hashes, flags) = PartialMerkleTree::build(all_hashes, all_flags);
+		Some(types::MerkleBlock {
+			block_header: block.block_header.clone(),
+			total_transactions: all_len as u32,
+			hashes: hashes,
+			flags: flags.to_bytes().into(),
+		})
+	}
 }
 
 impl ConnectionBloom {
@@ -213,6 +254,65 @@ impl ConnectionBloom {
 			let murmur_hash = murmur3_32(&mut data.as_ref(), murmur_seed) as usize % self.filter.len();
 			self.filter.set(murmur_hash, true);
 		}
+	}
+}
+
+impl PartialMerkleTree {
+	/// Build partial merkle tree as described here:
+	/// https://bitcoin.org/en/developer-reference#creating-a-merkleblock-message
+	pub fn build(all_hashes: Vec<H256>, all_matches: BitVec) -> (Vec<H256>, BitVec) {
+		let mut partial_merkle_tree = PartialMerkleTree {
+			all_len: all_hashes.len(),
+			all_hashes: all_hashes,
+			all_matches: all_matches,
+			hashes: Vec::new(),
+			matches: BitVec::new(),
+		};
+		partial_merkle_tree.build_tree();
+		(partial_merkle_tree.hashes, partial_merkle_tree.matches)
+	}
+
+	fn build_tree(&mut self) {
+		let tree_height = {
+			let mut height = 0usize;
+			while self.level_width(height) > 1 {
+				height += 1;
+			}
+			height
+		};
+		self.build_branch(tree_height, 0)
+	}
+
+	fn build_branch(&mut self, pos: usize, height: usize) {
+		// determine whether this node is the parent of at least one matched txid
+		let transactions_begin = pos << height;
+		let transactions_end = min(self.all_len, (pos + 1) << height);
+		let flag = (transactions_begin..transactions_end).any(|idx| self.all_matches[idx]);
+		// remember flag
+		self.matches.push(flag);
+		// proceeed with descendants
+		if height == 0 || !flag {
+			// we're at the leaf level || there is no match
+			let hash = self.merkle_hash(height, pos);
+			self.hashes.push(hash);
+		} else {
+			// proceed with left child
+			self.build_branch(pos << 1, height - 1);
+			// proceed with right child if any
+			if (pos << 1) + 1 < self.level_width(height - 1) {
+				self.build_branch((pos << 1) + 1, height - 1);
+			}
+		}
+	}
+
+	fn level_width(&self, height: usize) -> usize {
+		(self.all_len + (1 << height) - 1) >> height
+	}
+
+	fn merkle_hash(&self, height: usize, pos: usize) -> H256 {
+		let transactions_begin = pos << height;
+		let transactions_end = min(self.all_len, (pos + 1) << height);
+		merkle_root(&self.all_hashes[transactions_begin..transactions_end])
 	}
 }
 
