@@ -175,6 +175,7 @@ mod tests {
 	use chain::Transaction;
 	use primitives::hash::H256;
 	use primitives::bytes::Bytes;
+	use ser::serialize;
 	use super::{ConnectionFilter, ConnectionBloom};
 
 	fn default_filterload() -> types::FilterLoad {
@@ -220,16 +221,58 @@ mod tests {
 
 	#[test]
 	fn connection_filter_matches_transaction_by_output_script_data_element() {
-		// TODO
+		// https://webbtc.com/tx/eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb
+		// output script: OP_DUP OP_HASH160 380cb3c594de4e7e9b8e18db182987bebb5a4f70 OP_EQUALVERIFY OP_CHECKSIG
+		let tx1: Transaction = "01000000024de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8000000006b48304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b0121035aa98d5f77cd9a2d88710e6fc66212aff820026f0dad8f32d1f7ce87457dde50ffffffff4de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8010000006f004730440220276d6dad3defa37b5f81add3992d510d2f44a317fd85e04f93a1e2daea64660202200f862a0da684249322ceb8ed842fb8c859c0cb94c81e1c5308b4868157a428ee01ab51210232abdc893e7f0631364d7fd01cb33d24da45329a00357b3a7886211ab414d55a51aeffffffff02e0fd1c00000000001976a914380cb3c594de4e7e9b8e18db182987bebb5a4f7088acc0c62d000000000017142a9bc5447d664c1d0141392a842d23dba45c4f13b17500000000".into();
+		let tx1_out_data: Bytes = "380cb3c594de4e7e9b8e18db182987bebb5a4f70".into();
+		let tx2 = Transaction::default();
+
+		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
+
+		assert!(!filter.match_update_transaction(&tx1));
+		assert!(!filter.match_update_transaction(&tx2));
+
+		filter.add(&make_filteradd(&tx1_out_data));
+
+		assert!(filter.match_update_transaction(&tx1));
+		assert!(!filter.match_update_transaction(&tx2));
 	}
 
 	#[test]
 	fn connection_filter_matches_transaction_by_previous_output_point() {
-		// TODO
+		// https://webbtc.com/tx/eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb
+		// output script: OP_DUP OP_HASH160 380cb3c594de4e7e9b8e18db182987bebb5a4f70 OP_EQUALVERIFY OP_CHECKSIG
+		let tx1: Transaction = "01000000024de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8000000006b48304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b0121035aa98d5f77cd9a2d88710e6fc66212aff820026f0dad8f32d1f7ce87457dde50ffffffff4de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8010000006f004730440220276d6dad3defa37b5f81add3992d510d2f44a317fd85e04f93a1e2daea64660202200f862a0da684249322ceb8ed842fb8c859c0cb94c81e1c5308b4868157a428ee01ab51210232abdc893e7f0631364d7fd01cb33d24da45329a00357b3a7886211ab414d55a51aeffffffff02e0fd1c00000000001976a914380cb3c594de4e7e9b8e18db182987bebb5a4f7088acc0c62d000000000017142a9bc5447d664c1d0141392a842d23dba45c4f13b17500000000".into();
+		let tx1_previous_output: Bytes = serialize(&tx1.inputs[0].previous_output);
+		let tx2 = Transaction::default();
+
+		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
+
+		assert!(!filter.match_update_transaction(&tx1));
+		assert!(!filter.match_update_transaction(&tx2));
+
+		filter.add(&make_filteradd(&tx1_previous_output));
+
+		assert!(filter.match_update_transaction(&tx1));
+		assert!(!filter.match_update_transaction(&tx2));
 	}
 
 	#[test]
 	fn connection_filter_matches_transaction_by_input_script_data_element() {
-		// TODO
+		// https://webbtc.com/tx/eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb
+		// output script: OP_DUP OP_HASH160 380cb3c594de4e7e9b8e18db182987bebb5a4f70 OP_EQUALVERIFY OP_CHECKSIG
+		let tx1: Transaction = "01000000024de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8000000006b48304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b0121035aa98d5f77cd9a2d88710e6fc66212aff820026f0dad8f32d1f7ce87457dde50ffffffff4de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8010000006f004730440220276d6dad3defa37b5f81add3992d510d2f44a317fd85e04f93a1e2daea64660202200f862a0da684249322ceb8ed842fb8c859c0cb94c81e1c5308b4868157a428ee01ab51210232abdc893e7f0631364d7fd01cb33d24da45329a00357b3a7886211ab414d55a51aeffffffff02e0fd1c00000000001976a914380cb3c594de4e7e9b8e18db182987bebb5a4f7088acc0c62d000000000017142a9bc5447d664c1d0141392a842d23dba45c4f13b17500000000".into();
+		let tx1_input_data: Bytes = "304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b01".into();
+		let tx2 = Transaction::default();
+
+		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
+
+		assert!(!filter.match_update_transaction(&tx1));
+		assert!(!filter.match_update_transaction(&tx2));
+
+		filter.add(&make_filteradd(&tx1_input_data));
+
+		assert!(filter.match_update_transaction(&tx1));
+		assert!(!filter.match_update_transaction(&tx2));
 	}
 }
