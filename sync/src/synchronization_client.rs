@@ -864,7 +864,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		let tasks: Vec<_> = self.peers.all_peers().into_iter()
 			.filter_map(|peer_index| {
 				let inventory: Vec<_> = new_transactions.iter()
-					.filter(|&&(ref h, tx)| self.peers.filter_mut(peer_index).filter_transaction(&h, tx))
+					.filter(|&&(ref h, tx)| self.peers.filter_mut(peer_index).filter_transaction(h, tx))
 					.map(|&(ref h, _)| InventoryVector {
 						inv_type: InventoryType::MessageTx,
 						hash: h.clone(),
