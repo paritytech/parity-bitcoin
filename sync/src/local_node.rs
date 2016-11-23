@@ -158,16 +158,19 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		self.server.serve_mempool(peer_index).map(|t| self.server.add_task(peer_index, t));
 	}
 
-	pub fn on_peer_filterload(&self, peer_index: usize, _message: types::FilterLoad) {
+	pub fn on_peer_filterload(&self, peer_index: usize, message: types::FilterLoad) {
 		trace!(target: "sync", "Got `filterload` message from peer#{}", peer_index);
+		self.client.lock().on_peer_filterload(peer_index, &message);
 	}
 
-	pub fn on_peer_filteradd(&self, peer_index: usize, _message: types::FilterAdd) {
+	pub fn on_peer_filteradd(&self, peer_index: usize, message: types::FilterAdd) {
 		trace!(target: "sync", "Got `filteradd` message from peer#{}", peer_index);
+		self.client.lock().on_peer_filteradd(peer_index, &message);
 	}
 
 	pub fn on_peer_filterclear(&self, peer_index: usize, _message: types::FilterClear) {
 		trace!(target: "sync", "Got `filterclear` message from peer#{}", peer_index);
+		self.client.lock().on_peer_filterclear(peer_index);
 	}
 
 	pub fn on_peer_merkleblock(&self, peer_index: usize, _message: types::MerkleBlock) {
