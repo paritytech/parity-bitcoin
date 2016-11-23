@@ -14,6 +14,9 @@ pub trait BlockProvider {
 	/// resolves header bytes by block reference (number/hash)
 	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes>;
 
+	/// resolves header bytes by block reference (number/hash)
+	fn block_header(&self, block_ref: BlockRef) -> Option<chain::BlockHeader>;
+
 	/// resolves deserialized block body by block reference (number/hash)
 	fn block(&self, block_ref: BlockRef) -> Option<chain::Block>;
 

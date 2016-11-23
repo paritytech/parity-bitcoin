@@ -81,6 +81,13 @@ impl BlockProvider for TestStorage {
 			.map(|ref block| serialization::serialize(block.header()))
 	}
 
+	fn block_header(&self, block_ref: BlockRef) -> Option<chain::BlockHeader> {
+		let data = self.data.read();
+		self.resolve_hash(block_ref)
+			.and_then(|ref h| data.blocks.get(h))
+			.map(|ref block| block.header().clone())
+	}
+
 	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256> {
 		let data = self.data.read();
 		self.resolve_hash(block_ref)
@@ -173,6 +180,12 @@ impl TransactionMetaProvider for TestStorage {
 impl Store for TestStorage {
 	fn best_block(&self) -> Option<BestBlock> {
 		self.data.read().best_block.clone()
+	}
+
+	fn best_header(&self) -> Option<chain::BlockHeader> {
+		self.data.read().best_block.as_ref().and_then(
+			|bb| Some(self.block_header(BlockRef::Hash(bb.hash.clone())).expect("Best block exists but no such header. Race condition?"))
+		)
 	}
 }
 
