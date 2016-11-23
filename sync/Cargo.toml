@@ -12,6 +12,8 @@ futures-cpupool = "0.1"
 tokio-core = { git = "https://github.com/debris/tokio-core" }
 linked-hash-map = "0.3"
 ethcore-devtools = { path = "../devtools" }
+bit-vec = "0.4.3"
+murmur3 = "0.3"
 
 chain = { path = "../chain" }
 db = { path = "../db" }
@@ -19,6 +21,8 @@ message = { path = "../message" }
 miner = { path = "../miner" }
 p2p = { path = "../p2p" }
 primitives = { path = "../primitives" }
+script = { path = "../script" }
+serialization = { path = "../serialization" }
 test-data = { path = "../test-data" }
 verification = { path = "../verification" }
 
