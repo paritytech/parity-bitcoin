@@ -57,4 +57,5 @@ fn main() {
 	benchmark!(database::fetch);
 	benchmark!(database::write);
 	benchmark!(database::reorg_short);
+	benchmark!(database::write_heavy);
 }
