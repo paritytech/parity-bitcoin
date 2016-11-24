@@ -441,7 +441,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		let mut unfiltered: Vec<InventoryVector> = Vec::new();
 		let mut notfound: Vec<InventoryVector> = Vec::new();
 
-		for item in inventory.into_iter() {
+		for item in inventory {
 			match item.inv_type {
 				// if peer asks for filtered block => we should:
 				// 1) check if block has any transactions, matching connection bloom filter
