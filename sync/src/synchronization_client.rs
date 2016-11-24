@@ -194,6 +194,7 @@ pub trait Client : Send + 'static {
 	fn on_peer_filterload(&mut self, peer_index: usize, message: &types::FilterLoad);
 	fn on_peer_filteradd(&mut self, peer_index: usize, message: &types::FilterAdd);
 	fn on_peer_filterclear(&mut self, peer_index: usize);
+	fn on_peer_sendheaders(&mut self, peer_index: usize);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
 }
@@ -213,6 +214,7 @@ pub trait ClientCore : VerificationSink {
 	fn on_peer_filterload(&mut self, peer_index: usize, message: &types::FilterLoad);
 	fn on_peer_filteradd(&mut self, peer_index: usize, message: &types::FilterAdd);
 	fn on_peer_filterclear(&mut self, peer_index: usize);
+	fn on_peer_sendheaders(&mut self, peer_index: usize);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>);
@@ -393,6 +395,10 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 
 	fn on_peer_filterclear(&mut self, peer_index: usize) {
 		self.core.lock().on_peer_filterclear(peer_index);
+	}
+
+	fn on_peer_sendheaders(&mut self, peer_index: usize) {
+		self.core.lock().on_peer_sendheaders(peer_index);
 	}
 
 	fn on_peer_disconnected(&mut self, peer_index: usize) {
@@ -621,6 +627,13 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 	fn on_peer_filterclear(&mut self, peer_index: usize) {
 		if self.peers.is_known_peer(peer_index) {
 			self.peers.filter_mut(peer_index).clear();
+		}
+	}
+
+	/// Peer wants to get blocks headers instead of blocks hashes when announcing new blocks
+	fn on_peer_sendheaders(&mut self, peer_index: usize) {
+		if self.peers.is_known_peer(peer_index) {
+			self.peers.on_peer_sendheaders(peer_index);
 		}
 	}
 
@@ -914,22 +927,42 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 
 	/// Relay new blocks
 	fn relay_new_blocks(&mut self, new_blocks_hashes: Vec<H256>) {
-		let tasks: Vec<_> = self.peers.all_peers().into_iter()
-			.filter_map(|peer_index| {
-				let inventory: Vec<_> = new_blocks_hashes.iter()
-					.filter(|h| self.peers.filter(peer_index).filter_block(h))
-					.map(|h| InventoryVector {
-						inv_type: InventoryType::MessageBlock,
-						hash: h.clone(),
-					})
-					.collect();
-				if !inventory.is_empty() {
-					Some(Task::SendInventory(peer_index, inventory, ServerTaskIndex::None))
-				} else {
-					None
-				}
-			})
-			.collect();
+		let tasks: Vec<_> = {
+			self.peers.all_peers().into_iter()
+				.filter_map(|peer_index| {
+					let send_headers = self.peers.send_headers(peer_index);
+
+					if send_headers {
+						let filtered_blocks_hashes: Vec<_> = new_blocks_hashes.iter()
+							.filter(|h| self.peers.filter(peer_index).filter_block(h))
+							.collect();
+						let chain = self.chain.read();
+						let headers: Vec<_> = filtered_blocks_hashes.into_iter()
+							.filter_map(|h| chain.block_header_by_hash(&h))
+							.collect();
+						if !headers.is_empty() {
+							Some(Task::SendHeaders(peer_index, headers, ServerTaskIndex::None))
+						}
+						else {
+							None
+						}
+					} else {
+						let inventory: Vec<_> = new_blocks_hashes.iter()
+							.filter(|h| self.peers.filter(peer_index).filter_block(h))
+							.map(|h| InventoryVector {
+								inv_type: InventoryType::MessageBlock,
+								hash: h.clone(),
+							})
+							.collect();
+						if !inventory.is_empty() {
+							Some(Task::SendInventory(peer_index, inventory, ServerTaskIndex::None))
+						} else {
+							None
+						}
+					}
+				})
+				.collect()
+		};
 
 		let mut executor = self.executor.lock();
 		for task in tasks {
@@ -2081,6 +2114,32 @@ pub mod tests {
 			Task::SendInventory(2, inventory.clone(), ServerTaskIndex::None),
 			Task::SendInventory(3, inventory.clone(), ServerTaskIndex::None),
 			Task::SendInventory(4, inventory.clone(), ServerTaskIndex::None),
+		]);
+	}
+
+	#[test]
+	fn relay_new_block_after_sendheaders() {
+		let (_, _, executor, _, sync) = create_sync(None, None);
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+
+		let mut sync = sync.lock();
+		sync.on_peer_connected(1);
+		sync.on_peer_connected(2);
+		sync.on_peer_sendheaders(2);
+		sync.on_peer_connected(3);
+
+		// igonore tasks
+		{ executor.lock().take_tasks(); }
+
+		sync.on_peer_block(1, b0.clone());
+
+		let tasks = executor.lock().take_tasks();
+		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: b0.hash() }];
+		let headers = vec![b0.block_header.clone()];
+		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1),
+			Task::SendHeaders(2, headers, ServerTaskIndex::None),
+			Task::SendInventory(3, inventory, ServerTaskIndex::None),
 		]);
 	}
 }

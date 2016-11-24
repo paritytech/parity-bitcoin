@@ -27,6 +27,8 @@ pub struct Peers {
 	inventory_requests_order: LinkedHashMap<usize, f64>,
 	/// Peer connections filters.
 	filters: HashMap<usize, ConnectionFilter>,
+	/// Flags, informing that peer wants `headers` message instead of `inventory` when announcing new blocks
+	send_headers: HashSet<usize>,
 }
 
 /// Information on synchronization peers
@@ -52,6 +54,7 @@ impl Peers {
 			inventory_requests: HashSet::new(),
 			inventory_requests_order: LinkedHashMap::new(),
 			filters: HashMap::new(),
+			send_headers: HashSet::new(),
 		}
 	}
 
@@ -157,6 +160,12 @@ impl Peers {
 		self.filters.entry(peer_index).or_insert_with(ConnectionFilter::default)
 	}
 
+	/// Does peer wants `headers` message instead of `inventory` when announcing new blocks
+	pub fn send_headers(&self, peer_index: usize) -> bool {
+		assert!(self.is_known_peer(peer_index));
+		self.send_headers.contains(&peer_index)
+	}
+
 	/// Mark peer as useful.
 	pub fn useful_peer(&mut self, peer_index: usize) {
 		// if peer is unknown => insert to idle queue
@@ -184,6 +193,11 @@ impl Peers {
 		self.inventory_requests_order.remove(&peer_index);
 	}
 
+	/// Peer wants `headers` message instead of `inventory` when announcing new blocks
+	pub fn on_peer_sendheaders(&mut self, peer_index: usize) {
+		self.send_headers.insert(peer_index);
+	}
+
 	/// Peer has been disconnected
 	pub fn on_peer_disconnected(&mut self, peer_index: usize) -> Option<Vec<H256>> {
 		// forget this peer without any chances to reuse
@@ -195,6 +209,7 @@ impl Peers {
 		self.inventory_requests.remove(&peer_index);
 		self.inventory_requests_order.remove(&peer_index);
 		self.filters.remove(&peer_index);
+		self.send_headers.remove(&peer_index);
 		peer_blocks_requests
 			.map(|hs| hs.into_iter().collect())
 	}
