@@ -243,7 +243,18 @@ impl ConnectionFilter {
 		// build partial merkle tree
 		let (hashes, flags) = PartialMerkleTree::build(all_hashes, all_flags);
 		result.merkleblock.hashes.extend(hashes);
-		result.merkleblock.flags = flags.to_bytes().into();
+		// to_bytes() converts [true, false, true] to 0b10100000
+		// while protocol requires [true, false, true] to be serialized as 0x00000101
+		result.merkleblock.flags = flags.to_bytes().into_iter()
+			.map(|b|
+				((b & 0b10000000) >> 7) |
+				((b & 0b01000000) >> 5) |
+				((b & 0b00100000) >> 3) |
+				((b & 0b00010000) >> 1) |
+				((b & 0b00001000) << 1) |
+				((b & 0b00000100) << 3) |
+				((b & 0b00000010) << 5) |
+				((b & 0b00000001) << 7)).collect::<Vec<u8>>().into();
 		Some(result)
 	}
 }

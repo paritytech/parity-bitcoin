@@ -346,7 +346,7 @@ mod tests {
 		let match_tx1 = vec![(tx1_hash.clone(), tx1)];
 		let match_tx2 = vec![(tx2_hash.clone(), tx2)];
 		let no_match_bytes = Bytes::from(vec![0x00]);
-		let match_bytes = Bytes::from(vec![0x80]);
+		let match_bytes = Bytes::from(vec![0x01]);
 
 		// This peer will provide blocks
 		let peer_index1 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
