@@ -19,6 +19,7 @@ pub use primitives::{hash, bytes, uint};
 pub use self::block::Block;
 pub use self::block_header::BlockHeader;
 pub use self::merkle_root::merkle_root;
+pub use self::merkle_root::merkle_node_hash;
 pub use self::transaction::{
 	Transaction, TransactionInput, TransactionOutput, OutPoint,
 	SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_FINAL,

@@ -31,6 +31,7 @@ pub use self::blocktxn::BlockTxn;
 pub use self::compactblock::CompactBlock;
 pub use self::feefilter::FeeFilter;
 pub use self::filterload::FilterLoad;
+pub use self::filterload::FilterFlags;
 pub use self::filterclear::FilterClear;
 pub use self::filteradd::FilterAdd;
 pub use self::getaddr::GetAddr;

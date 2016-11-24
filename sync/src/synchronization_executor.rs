@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use parking_lot::Mutex;
-use chain::{Block, BlockHeader};
+use chain::{Block, BlockHeader, Transaction};
 use message::common::{InventoryVector, InventoryType};
 use message::types;
 use primitives::hash::H256;
@@ -30,6 +30,10 @@ pub enum Task {
 	RequestMemoryPool(usize),
 	/// Send block.
 	SendBlock(usize, Block, ServerTaskIndex),
+	/// Send merkleblock
+	SendMerkleBlock(usize, types::MerkleBlock),
+	/// Send transaction
+	SendTransaction(usize, Transaction),
 	/// Send notfound
 	SendNotFound(usize, Vec<InventoryVector>, ServerTaskIndex),
 	/// Send inventory
@@ -128,8 +132,24 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
 					assert_eq!(id.raw(), None);
-					trace!(target: "sync", "Sending block {:?} to peer#{}", block_message.block.hash(), peer_index);
+					trace!(target: "sync", "Sending block {:?} to peer#{}", block_message.block.hash().to_reversed_str(), peer_index);
 					connection.send_block(&block_message);
+				}
+			},
+			Task::SendMerkleBlock(peer_index, merkleblock) => {
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					trace!(target: "sync", "Sending merkleblock {:?} to peer#{}", merkleblock.block_header.hash().to_reversed_str(), peer_index);
+					connection.send_merkleblock(&merkleblock);
+				}
+			},
+			Task::SendTransaction(peer_index, transaction) => {
+				let transaction_message = types::Tx {
+					transaction: transaction,
+				};
+
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					trace!(target: "sync", "Sending transaction {:?} to peer#{}", transaction_message.transaction.hash().to_reversed_str(), peer_index);
+					connection.send_transaction(&transaction_message);
 				}
 			},
 			Task::SendNotFound(peer_index, unknown_inventory, id) => {
