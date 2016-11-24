@@ -761,6 +761,11 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 				self.execute_synchronization_tasks(None);
 
 				// relay block to our peers
+				// TODO:
+				// SPV clients that wish to use Bloom filtering would normally set version.fRelay to false in the version message,
+				// then set a filter based on their wallet (or a subset of it, if they are overlapping different peers).
+				// Being able to opt-out of inv messages until the filter is set prevents a client being flooded with traffic in
+				// the brief window of time between finishing version handshaking and setting the filter.
 				if self.state.is_saturated() || self.state.is_nearly_saturated() {
 					self.relay_new_blocks(insert_result.canonized_blocks_hashes);
 				}
