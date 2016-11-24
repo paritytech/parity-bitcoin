@@ -7,7 +7,6 @@ extern crate serialization as ser;
 mod block;
 mod block_header;
 mod merkle_root;
-mod nbits;
 mod transaction;
 
 pub trait RepresentH256 {

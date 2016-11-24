@@ -1,9 +1,8 @@
 //! Bitcoin chain verifier
 
 use db::{self, BlockRef, BlockLocation};
-use chain;
 use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
-use utils;
+use {chain, utils};
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
 const COINBASE_MATURITY: u32 = 100; // 2 hours
@@ -55,8 +54,11 @@ impl ChainVerifier {
 
 	fn ordered_verify(&self, block: &chain::Block, at_height: u32) -> Result<(), Error> {
 		// check that difficulty matches the adjusted level
-		if let Some(expected_nbits) = self.expected_nbits() {
-			if !self.skip_pow && expected_nbits != block.header().nbits {
+		if let Some(work) = self.work_required(block, at_height) {
+			if !self.skip_pow && work != block.header().nbits {
+				trace!(target: "verification", "pow verification error at height: {}", at_height);
+				trace!(target: "verification", "block: {:?}", block);
+				trace!(target: "verification", "expected work: {}, got {}", work, block.header().nbits);
 				return Err(Error::Difficulty);
 			}
 		}
@@ -200,8 +202,7 @@ impl ChainVerifier {
 		}
 
 		// target difficulty threshold
-		//if !self.skip_pow && !utils::check_nbits(&hash, block.header().nbits) {
-		if !self.skip_pow && !block.header().is_valid_proof_of_work() {
+		if !self.skip_pow && !utils::check_nbits(&hash, block.header().nbits) {
 			return Err(Error::Pow);
 		}
 
@@ -266,20 +267,30 @@ impl ChainVerifier {
 		}
 	}
 
-	fn expected_nbits(&self) -> Option<u32> {
-
-		let best_header = match self.store.best_header() {
-			Some(bb) => bb,
-			None => { return None; }
-		};
-
-		if self.store.best_block().expect("At least genesis should exist at this point").number < 2016 {
-			return Some(best_header.nbits);
+	fn work_required(&self, block: &chain::Block, height: u32) -> Option<u32> {
+		if height == 0 {
+			return None;
 		}
 
-		// todo: calculate difficulty adjustment
+		let parent_ref = block.block_header.previous_header_hash.clone().into();
+		let previous_header = self.store.block_header(parent_ref).expect("expected to find parent header in database");
 
-		Some(best_header.nbits)
+		if utils::is_retarget_height(height) {
+			let retarget_ref = (height - utils::RETARGETING_INTERVAL).into();
+			let retarget_header = self.store.block_header(retarget_ref).expect("self.height != 0 && self.height % RETARGETING_INTERVAL == 0; qed");
+			// timestamp of block(height - RETARGETING_INTERVAL)
+			let retarget_timestamp = retarget_header.time;
+			// timestamp of parent block
+			let last_timestamp = previous_header.time;
+			// nbits of last block
+			let last_nbits = previous_header.nbits;
+
+			return Some(utils::work_required_retarget(retarget_timestamp, last_timestamp, last_nbits));
+		}
+
+		// TODO: if.testnet
+
+		Some(previous_header.nbits)
 	}
 }
 

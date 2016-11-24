@@ -17,9 +17,12 @@ extern crate ethcore_devtools as devtools;
 #[cfg(test)]
 extern crate test_data;
 
+mod chain_verifier;
+mod compact;
 mod queue;
 mod utils;
-mod chain_verifier;
+
+pub use primitives::{uint, hash};
 
 pub use queue::Queue;
 pub use chain_verifier::ChainVerifier;

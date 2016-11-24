@@ -34,6 +34,18 @@ pub enum BlockRef {
 	Hash(primitives::hash::H256),
 }
 
+impl From<u32> for BlockRef {
+	fn from(u: u32) -> Self {
+		BlockRef::Number(u)
+	}
+}
+
+impl From<primitives::hash::H256> for BlockRef {
+	fn from(hash: primitives::hash::H256) -> Self {
+		BlockRef::Hash(hash)
+	}
+}
+
 #[derive(PartialEq, Debug)]
 pub enum BlockLocation {
 	Main(u32),

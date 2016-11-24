@@ -5,8 +5,6 @@ use ser::{
 };
 use crypto::dhash256;
 use hash::H256;
-use uint::U256;
-use nbits::{NBits, MAX_NBITS_MAINNET, MAX_NBITS_REGTEST};
 
 #[derive(PartialEq, Clone)]
 pub struct BlockHeader {
@@ -21,36 +19,6 @@ pub struct BlockHeader {
 impl BlockHeader {
 	pub fn hash(&self) -> H256 {
 		dhash256(&serialize(self))
-	}
-
-	/// Returns the total work of the block
-	//pub fn work(&self) -> U256 {
-		//// 2**256 / (target + 1) == ~target / (target+1) + 1    (eqn shamelessly stolen from bitcoind)
-		//let mut ret = !self.target();
-		//let mut ret1 = self.target();
-		//ret1 = ret1 + 1.into();
-		//ret = ret / ret1;
-		//ret = ret + 1.into();
-		//ret
-	//}
-
-	pub fn is_valid_proof_of_work(&self) -> bool {
-		let max = match NBits::new(MAX_NBITS_REGTEST).target() {
-			Some(max) => max,
-			None => return false,
-		};
-
-		let target = match NBits::new(self.nbits).target() {
-			Some(target) => target,
-			None => return false,
-		};
-
-		if target > max {
-			return false;
-		}
-
-		let target = H256::from(target.to_little_endian());
-		self.hash() <= target
 	}
 }
 
@@ -98,7 +66,6 @@ impl Deserializable for BlockHeader {
 mod tests {
 	use ser::{Reader, Error as ReaderError, Stream};
 	use super::BlockHeader;
-	use nbits::MAX_NBITS_REGTEST;
 
 	#[test]
 	fn test_block_header_stream() {
@@ -150,12 +117,5 @@ mod tests {
 
 		assert_eq!(expected, reader.read().unwrap());
 		assert_eq!(ReaderError::UnexpectedEnd, reader.read::<BlockHeader>().unwrap_err());
-	}
-
-	#[test]
-	fn test_is_valid_proof_of_work() {
-		let mut header = BlockHeader::default();
-		header.nbits = MAX_NBITS_REGTEST;
-		assert!(header.is_valid_proof_of_work());
 	}
 }
