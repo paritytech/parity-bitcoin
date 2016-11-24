@@ -100,7 +100,11 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 	pub fn on_peer_getdata(&self, peer_index: usize, message: types::GetData) {
 		trace!(target: "sync", "Got `getdata` message from peer#{}", peer_index);
 
-		self.server.serve_getdata(peer_index, message).map(|t| self.server.add_task(peer_index, t));
+		let filtered_inventory = {
+			let mut client = self.client.lock();
+			client.filter_getdata_inventory(peer_index, message.inventory)
+		};
+		self.server.serve_getdata(peer_index, filtered_inventory).map(|t| self.server.add_task(peer_index, t));
 	}
 
 	pub fn on_peer_getblocks(&self, peer_index: usize, message: types::GetBlocks) {
@@ -227,9 +231,10 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 mod tests {
 	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
+	use connection_filter::tests::make_filterload;
 	use synchronization_executor::Task;
 	use synchronization_executor::tests::DummyTaskExecutor;
-	use synchronization_client::{Config, SynchronizationClient, SynchronizationClientCore};
+	use synchronization_client::{Config, SynchronizationClient, SynchronizationClientCore, FilteredInventory};
 	use synchronization_chain::Chain;
 	use p2p::{event_loop, OutboundSyncConnection, OutboundSyncConnectionRef};
 	use message::types;
@@ -241,6 +246,7 @@ mod tests {
 	use synchronization_server::tests::DummyServer;
 	use synchronization_verifier::tests::DummyVerifier;
 	use tokio_core::reactor::{Core, Handle};
+	use primitives::bytes::Bytes;
 
 	struct DummyOutboundSyncConnection;
 
@@ -317,6 +323,75 @@ mod tests {
 		});
 		// => `getdata` is served
 		let tasks = server.take_tasks();
-		assert_eq!(tasks, vec![(peer_index, ServerTask::ServeGetData(inventory))]);
+		assert_eq!(tasks, vec![(peer_index, ServerTask::ServeGetData(FilteredInventory::with_unfiltered(inventory)))]);
 	}
+
+	/*#[test]
+	fn local_node_serves_merkleblock() {
+		let (_, _, _, server, local_node) = create_local_node();
+
+		let genesis = test_data::genesis();
+		let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
+			.transaction().output().value(10).build().build()
+			.build(); // genesis -> b1
+		let b2 = test_data::block_builder().header().parent(b1.hash()).build()
+			.transaction().output().value(20).build().build()
+			.build(); // genesis -> b1 -> b2
+		let b1_hash = b1.hash();
+		let b2_hash = b1.hash();
+		let match_bytes = Bytes::from(vec![0x80]);
+
+		// This peer will provide blocks
+		let peer_index1 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		local_node.on_peer_block(peer_index1, types::Block { block: b1.clone() });
+		local_node.on_peer_block(peer_index1, types::Block { block: b2.clone() });
+
+		// This peer won't get any blocks, because it has not set filter for the connection
+		let peer_index2 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		local_node.on_peer_getdata(peer_index2, types::GetData {inventory: vec![
+				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
+				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
+			]});
+		assert_eq!(server.take_tasks(), vec![(peer_index2, ServerTask::ServeGetData(FilteredInventory::with_notfound(vec![
+			InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
+			InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
+		])))]);
+
+		// This peer will get filtered b1
+		let peer_index3 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		local_node.on_peer_filterload(peer_index3, make_filterload(&*b1.transactions[0].hash()));
+		local_node.on_peer_getdata(peer_index3, types::GetData {inventory: vec![
+				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
+				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
+			]});
+		assert_eq!(server.take_tasks(), vec![(3, ServerTask::ServeGetData(FilteredInventory {
+			filtered: vec![
+				(
+					types::MerkleBlock {
+						block_header: b1.block_header.clone(),
+						total_transactions: 1,
+						hashes: vec!["48de599e797bc0aee90c09f32aead1fce19bd8857c9407d76c8809ad076bbe98".into()],
+						flags: Bytes::new_with_len(1)
+					}, vec![]
+				),
+				(
+					types::MerkleBlock {
+						block_header: b2.block_header.clone(),
+						total_transactions: 1,
+						hashes: vec!["48de599e797bc0aee90c09f32aead1fce19bd8857c9407d76c8809ad076bbe98".into()],
+						flags: Bytes::new_with_len(1)
+					}, vec![]
+				)
+			],
+			unfiltered: vec![],
+			notfound: vec![]
+		}))]);
+
+		// This peer will consume filtered b2
+		//let peer_index4 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		// This peer will consume filtered b1 + b2
+		//let peer_index5 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		// This peer will consume some other filtered block
+		//let peer_index6 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+	}*/
 }

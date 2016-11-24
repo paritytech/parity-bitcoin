@@ -5,6 +5,7 @@ use murmur3::murmur3_32;
 use chain::{Block, Transaction, OutPoint, merkle_root};
 use ser::serialize;
 use message::types;
+use primitives::bytes::Bytes;
 use primitives::hash::H256;
 use script::Script;
 
@@ -37,6 +38,14 @@ struct ConnectionBloom {
 	hash_functions_num: u32,
 	/// Value to add to Murmur3 hash seed when calculating hash.
 	tweak: u32,
+}
+
+/// `merkleblock` build artefacts
+pub struct MerkleBlockArtefacts {
+	/// `merkleblock` message
+	pub merkleblock: types::MerkleBlock,
+	/// All matching transactions
+	pub matching_transactions: Vec<(H256, Transaction)>,
 }
 
 /// Service structure to construct `merkleblock` message.
@@ -199,29 +208,42 @@ impl ConnectionFilter {
 	}
 
 	/// Convert `Block` to `MerkleBlock` using this filter
-	pub fn make_merkle_block(&mut self, block: &Block) -> Option<types::MerkleBlock> {
+	pub fn build_merkle_block(&mut self, block: Block) -> Option<MerkleBlockArtefacts> {
 		if self.bloom.is_none() {
 			return None;
 		}
 
-		// calculate hashes && match flags for all transactions
+		// prepare result
 		let all_len = block.transactions.len();
-		let (all_hashes, all_flags) = block.transactions.iter()
+		let mut result = MerkleBlockArtefacts {
+			merkleblock: types::MerkleBlock {
+				block_header: block.block_header.clone(),
+				total_transactions: all_len as u32,
+				hashes: Vec::default(),
+				flags: Bytes::default(),
+			},
+			matching_transactions: Vec::new(),
+		};
+
+		// calculate hashes && match flags for all transactions
+		let (all_hashes, all_flags) = block.transactions.into_iter()
 			.fold((Vec::<H256>::with_capacity(all_len), BitVec::with_capacity(all_len)), |(mut all_hashes, mut all_flags), t| {
 				let hash = t.hash();
-				all_flags.push(self.filter_transaction(&hash, t));
+				let flag = self.filter_transaction(&hash, &t);
+				if flag {
+					result.matching_transactions.push((hash.clone(), t));
+				}
+
+				all_flags.push(flag);
 				all_hashes.push(hash);
 				(all_hashes, all_flags)
 			});
 
 		// build partial merkle tree
 		let (hashes, flags) = PartialMerkleTree::build(all_hashes, all_flags);
-		Some(types::MerkleBlock {
-			block_header: block.block_header.clone(),
-			total_transactions: all_len as u32,
-			hashes: hashes,
-			flags: flags.to_bytes().into(),
-		})
+		result.merkleblock.hashes.extend(hashes);
+		result.merkleblock.flags = flags.to_bytes().into();
+		Some(result)
 	}
 }
 
@@ -254,6 +276,11 @@ impl ConnectionBloom {
 			let murmur_hash = murmur3_32(&mut data.as_ref(), murmur_seed) as usize % self.filter.len();
 			self.filter.set(murmur_hash, true);
 		}
+	}
+
+	#[cfg(test)]
+	pub fn bytes(&self) -> Bytes {
+		self.filter.to_bytes().into()
 	}
 }
 
@@ -334,6 +361,14 @@ pub mod tests {
 			tweak: 5,
 			flags: types::FilterFlags::None,
 		}
+	}
+
+	pub fn make_filterload(data: &[u8]) -> types::FilterLoad {
+		let mut filterload = default_filterload();
+		let mut bloom = ConnectionBloom::new(&filterload);
+		bloom.insert(data);
+		filterload.filter = bloom.bytes();
+		filterload
 	}
 
 	pub fn make_filteradd(data: &[u8]) -> types::FilterAdd {
