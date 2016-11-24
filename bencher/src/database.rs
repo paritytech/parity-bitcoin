@@ -8,6 +8,8 @@ pub fn fetch(benchmark: &mut Benchmark) {
 	// params
 	const BLOCKS: usize = 1000;
 
+	benchmark.samples(BLOCKS);
+
 	// test setup
 	let path = RandomTempPath::create_dir();
 	let store = Storage::new(path.as_path()).unwrap();
@@ -49,6 +51,7 @@ pub fn fetch(benchmark: &mut Benchmark) {
 pub fn write(benchmark: &mut Benchmark) {
 	// params
 	const BLOCKS: usize = 1000;
+	benchmark.samples(BLOCKS);
 
 	// setup
 	let path = RandomTempPath::create_dir();
@@ -84,6 +87,7 @@ pub fn write(benchmark: &mut Benchmark) {
 pub fn reorg_short(benchmark: &mut Benchmark) {
 	// params
 	const BLOCKS: usize = 1000;
+	benchmark.samples(BLOCKS);
 
 	// setup
 	let path = RandomTempPath::create_dir();
@@ -165,6 +169,8 @@ pub fn write_heavy(benchmark: &mut Benchmark) {
 	const BLOCKS_INITIAL: usize = 12000;
 	const BLOCKS: usize = 100;
 	const TRANSACTIONS: usize = 100;
+
+	benchmark.samples(BLOCKS);
 
 	// test setup
 	let path = RandomTempPath::create_dir();

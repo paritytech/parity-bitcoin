@@ -14,6 +14,7 @@ use std::str;
 pub struct Benchmark {
 	start: Option<PreciseTime>,
 	end: Option<PreciseTime>,
+	samples: Option<usize>,
 }
 
 impl Benchmark {
@@ -27,6 +28,10 @@ impl Benchmark {
 
 	pub fn evaluate(&self) -> Duration {
 		self.start.expect("benchmarch never ended").to(self.end.expect("benchmark never started"))
+	}
+
+	pub fn samples(&mut self, samples: usize) {
+		self.samples = Some(samples);
 	}
 }
 
@@ -44,7 +49,14 @@ fn run_benchmark<F>(name: &str, f: F) where F: FnOnce(&mut Benchmark) {
 
 	let mut benchmark = Benchmark::default();
 	f(&mut benchmark);
-	println!("{} ns", decimal_mark(format!("{}", benchmark.evaluate().num_nanoseconds().unwrap())));
+	if let Some(samples) = benchmark.samples {
+		println!("{} ns/sample",
+			decimal_mark(format!("{}", benchmark.evaluate().num_nanoseconds().unwrap() / samples as i64)),
+		);
+	}
+	else {
+		println!("{} ns", decimal_mark(format!("{}", benchmark.evaluate().num_nanoseconds().unwrap())));
+	}
 }
 
 macro_rules! benchmark {
