@@ -24,8 +24,10 @@ pub fn fetch(benchmark: &mut Benchmark) {
 
 	for x in 0..BLOCKS {
 		let next_block = test_data::block_builder()
-			.transaction().coinbase().build()
-			.transaction().output().value(5000000000).build().build()
+			.transaction()
+				.coinbase()
+				.output().value(5000000000).build()
+				.build()
 			.merkled_header().parent(rolling_hash.clone()).nonce(x as u32).build()
 			.build();
 		rolling_hash = next_block.hash();
@@ -61,8 +63,10 @@ pub fn write(benchmark: &mut Benchmark) {
 
 	for x in 0..BLOCKS {
 		let next_block = test_data::block_builder()
-			.transaction().coinbase().build()
-			.transaction().output().value(5000000000).build().build()
+			.transaction()
+				.coinbase()
+				.output().value(5000000000).build()
+				.build()
 			.merkled_header().parent(rolling_hash.clone()).nonce(x as u32).build()
 			.build();
 		rolling_hash = next_block.hash();
@@ -96,31 +100,39 @@ pub fn reorg_short(benchmark: &mut Benchmark) {
 		let base = rolling_hash.clone();
 
 		let next_block = test_data::block_builder()
-			.transaction().coinbase().build()
-			.transaction().output().value(5000000000).build().build()
+			.transaction()
+				.coinbase()
+				.output().value(5000000000).build()
+				.build()
 			.merkled_header().parent(rolling_hash.clone()).nonce(x as u32 * 4).build()
 			.build();
 		rolling_hash = next_block.hash();
 		blocks.push(next_block);
 
 		let next_block_side = test_data::block_builder()
-			.transaction().coinbase().build()
-			.transaction().output().value(5000000000).build().build()
+			.transaction()
+				.coinbase()
+				.output().value(5000000000).build()
+				.build()
 			.merkled_header().parent(base).nonce(x as u32 * 4 + 2).build()
 			.build();
 		let next_base = next_block_side.hash();
 		blocks.push(next_block_side);
 
 		let next_block_side_continue = test_data::block_builder()
-			.transaction().coinbase().build()
-			.transaction().output().value(5000000000).build().build()
+			.transaction()
+				.coinbase()
+				.output().value(5000000000).build()
+				.build()
 			.merkled_header().parent(next_base).nonce(x as u32 * 4 + 3).build()
 			.build();
 		blocks.push(next_block_side_continue);
 
 		let next_block_continue = test_data::block_builder()
-			.transaction().coinbase().build()
-			.transaction().output().value(5000000000).build().build()
+			.transaction()
+				.coinbase()
+				.output().value(5000000000).build()
+				.build()
 			.merkled_header().parent(rolling_hash.clone()).nonce(x as u32 * 4 + 1).build()
 			.build();
 		rolling_hash = next_block_continue.hash();
