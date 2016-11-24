@@ -231,7 +231,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 mod tests {
 	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
-	use connection_filter::tests::make_filterload;
+	use connection_filter::tests::{default_filterload, make_filteradd};
 	use synchronization_executor::Task;
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use synchronization_client::{Config, SynchronizationClient, SynchronizationClientCore, FilteredInventory};
@@ -326,7 +326,7 @@ mod tests {
 		assert_eq!(tasks, vec![(peer_index, ServerTask::ServeGetData(FilteredInventory::with_unfiltered(inventory)))]);
 	}
 
-	/*#[test]
+	#[test]
 	fn local_node_serves_merkleblock() {
 		let (_, _, _, server, local_node) = create_local_node();
 
@@ -337,8 +337,15 @@ mod tests {
 		let b2 = test_data::block_builder().header().parent(b1.hash()).build()
 			.transaction().output().value(20).build().build()
 			.build(); // genesis -> b1 -> b2
+		let tx1 = b1.transactions[0].clone();
+		let tx2 = b2.transactions[0].clone();
+		let tx1_hash = tx1.hash();
+		let tx2_hash = tx2.hash();
 		let b1_hash = b1.hash();
-		let b2_hash = b1.hash();
+		let b2_hash = b2.hash();
+		let match_tx1 = vec![(tx1_hash.clone(), tx1)];
+		let match_tx2 = vec![(tx2_hash.clone(), tx2)];
+		let no_match_bytes = Bytes::from(vec![0x00]);
 		let match_bytes = Bytes::from(vec![0x80]);
 
 		// This peer will provide blocks
@@ -357,41 +364,65 @@ mod tests {
 			InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
 		])))]);
 
-		// This peer will get filtered b1
-		let peer_index3 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
-		local_node.on_peer_filterload(peer_index3, make_filterload(&*b1.transactions[0].hash()));
-		local_node.on_peer_getdata(peer_index3, types::GetData {inventory: vec![
-				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
-				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
-			]});
-		assert_eq!(server.take_tasks(), vec![(3, ServerTask::ServeGetData(FilteredInventory {
-			filtered: vec![
-				(
-					types::MerkleBlock {
+		let peers_config = vec![
+			(true, false), // will get tx1
+			(false, true), // will get tx2
+			(true, true), // will get both tx
+			(false, false), // won't get any tx
+		];
+
+		for (get_tx1, get_tx2) in peers_config {
+			let peer_index = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+			// setup filter
+			local_node.on_peer_filterload(peer_index, default_filterload());
+			if get_tx1 {
+				local_node.on_peer_filteradd(peer_index, make_filteradd(&*tx1_hash));
+			}
+			if get_tx2 {
+				local_node.on_peer_filteradd(peer_index, make_filteradd(&*tx2_hash));
+			}
+
+			// ask for data
+			local_node.on_peer_getdata(peer_index, types::GetData {inventory: vec![
+					InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
+					InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
+				]});
+
+			// get server tasks
+			let tasks = server.take_tasks();
+			assert_eq!(tasks.len(), 1);
+			match tasks[0] {
+				(_, ServerTask::ServeGetData(ref filtered_inventory)) => {
+					assert_eq!(filtered_inventory.unfiltered.len(), 0);
+					assert_eq!(filtered_inventory.notfound.len(), 0);
+					assert_eq!(filtered_inventory.filtered.len(), 2);
+
+					assert_eq!(filtered_inventory.filtered[0].0, types::MerkleBlock {
 						block_header: b1.block_header.clone(),
 						total_transactions: 1,
-						hashes: vec!["48de599e797bc0aee90c09f32aead1fce19bd8857c9407d76c8809ad076bbe98".into()],
-						flags: Bytes::new_with_len(1)
-					}, vec![]
-				),
-				(
-					types::MerkleBlock {
+						hashes: vec![tx1_hash.clone()],
+						flags: if get_tx1 { match_bytes.clone() } else { no_match_bytes.clone() },
+					});
+					if get_tx1 {
+						assert_eq!(filtered_inventory.filtered[0].1, match_tx1);
+					} else {
+						assert_eq!(filtered_inventory.filtered[0].1, vec![]);
+					}
+
+					assert_eq!(filtered_inventory.filtered[1].0, types::MerkleBlock {
 						block_header: b2.block_header.clone(),
 						total_transactions: 1,
-						hashes: vec!["48de599e797bc0aee90c09f32aead1fce19bd8857c9407d76c8809ad076bbe98".into()],
-						flags: Bytes::new_with_len(1)
-					}, vec![]
-				)
-			],
-			unfiltered: vec![],
-			notfound: vec![]
-		}))]);
-
-		// This peer will consume filtered b2
-		//let peer_index4 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
-		// This peer will consume filtered b1 + b2
-		//let peer_index5 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
-		// This peer will consume some other filtered block
-		//let peer_index6 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
-	}*/
+						hashes: vec![tx2_hash.clone()],
+						flags: if get_tx2 { match_bytes.clone() } else { no_match_bytes.clone() },
+					});
+					if get_tx2 {
+						assert_eq!(filtered_inventory.filtered[1].1, match_tx2);
+					} else {
+						assert_eq!(filtered_inventory.filtered[1].1, vec![]);
+					}
+				},
+				_ => panic!("unexpected"),
+			}
+		}
+	}
 }

@@ -2,7 +2,7 @@ use std::cmp::min;
 use linked_hash_map::LinkedHashMap;
 use bit_vec::BitVec;
 use murmur3::murmur3_32;
-use chain::{Block, Transaction, OutPoint, merkle_root, merkle_node_hash};
+use chain::{Block, Transaction, OutPoint, merkle_node_hash};
 use ser::serialize;
 use message::types;
 use primitives::bytes::Bytes;
@@ -278,11 +278,6 @@ impl ConnectionBloom {
 			self.filter.set(murmur_hash, true);
 		}
 	}
-
-	#[cfg(test)]
-	pub fn bytes(&self) -> Bytes {
-		self.filter.to_bytes().into()
-	}
 }
 
 impl PartialMerkleTree {
@@ -311,6 +306,7 @@ impl PartialMerkleTree {
 			hashes: hashes,
 			matches: matches,
 		};
+
 		let merkle_root = try!(partial_merkle_tree.parse_tree());
 		Ok((merkle_root, partial_merkle_tree.all_hashes, partial_merkle_tree.all_matches))
 	}
@@ -463,14 +459,6 @@ pub mod tests {
 		}
 	}
 
-	pub fn make_filterload(data: &[u8]) -> types::FilterLoad {
-		let mut filterload = default_filterload();
-		let mut bloom = ConnectionBloom::new(&filterload);
-		bloom.insert(data);
-		filterload.filter = bloom.bytes();
-		filterload
-	}
-
 	pub fn make_filteradd(data: &[u8]) -> types::FilterAdd {
 		types::FilterAdd {
 			data: data.into(),
@@ -560,7 +548,7 @@ pub mod tests {
 	}
 
 	#[test]
-	// test from core implementation
+	// test from core implementation (slow)
 	fn test_build_merkle_block() {
 		use bit_vec::BitVec;
 		use rand::{Rng, SeedableRng, StdRng};
