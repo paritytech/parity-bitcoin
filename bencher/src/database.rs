@@ -92,7 +92,7 @@ pub fn reorg_short(benchmark: &mut Benchmark) {
 
 	let mut blocks = Vec::new();
 
-	for x in 0..1000 {
+	for x in 0..BLOCKS {
 		let base = rolling_hash.clone();
 
 		let next_block = test_data::block_builder()
