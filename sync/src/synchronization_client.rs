@@ -183,6 +183,7 @@ pub struct Information {
 pub trait Client : Send + 'static {
 	fn best_block(&self) -> db::BestBlock;
 	fn state(&self) -> State;
+	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory;
 	fn on_peer_connected(&mut self, peer_index: usize);
 	fn on_new_blocks_inventory(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
 	fn on_new_transactions_inventory(&mut self, peer_index: usize, transactions_hashes: Vec<H256>);
@@ -201,6 +202,7 @@ pub trait Client : Send + 'static {
 pub trait ClientCore : VerificationSink {
 	fn best_block(&self) -> db::BestBlock;
 	fn state(&self) -> State;
+	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory;
 	fn on_peer_connected(&mut self, peer_index: usize);
 	fn on_new_blocks_inventory(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
 	fn on_new_transactions_inventory(&mut self, peer_index: usize, transactions_hashes: Vec<H256>);
@@ -219,9 +221,21 @@ pub trait ClientCore : VerificationSink {
 
 
 /// Synchronization client configuration options.
+#[derive(Debug)]
 pub struct Config {
 	/// Number of threads to allocate in synchronization CpuPool.
 	pub threads_num: usize,
+}
+
+/// Filtered `getdata` inventory.
+#[derive(Debug, PartialEq)]
+pub struct FilteredInventory {
+	/// Merkleblock messages + transactions to send after
+	pub filtered: Vec<(types::MerkleBlock, Vec<(H256, Transaction)>)>,
+	/// Rest of inventory with MessageTx, MessageBlock, MessageCompactBlock inventory types
+	pub unfiltered: Vec<InventoryVector>,
+	/// Items that were supposed to be filtered, but we know nothing about these
+	pub notfound: Vec<InventoryVector>,
 }
 
 /// Synchronization client facade
@@ -264,6 +278,26 @@ impl Config {
 	}
 }
 
+impl FilteredInventory {
+	#[cfg(test)]
+	pub fn with_unfiltered(unfiltered: Vec<InventoryVector>) -> Self {
+		FilteredInventory {
+			filtered: Vec::new(),
+			unfiltered: unfiltered,
+			notfound: Vec::new(),
+		}
+	}
+
+	#[cfg(test)]
+	pub fn with_notfound(notfound: Vec<InventoryVector>) -> Self {
+		FilteredInventory {
+			filtered: Vec::new(),
+			unfiltered: Vec::new(),
+			notfound: notfound,
+		}
+	}
+}
+
 impl State {
 	pub fn is_saturated(&self) -> bool {
 		match *self {
@@ -294,6 +328,10 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 
 	fn state(&self) -> State {
 		self.core.lock().state()
+	}
+
+	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory {
+		self.core.lock().filter_getdata_inventory(peer_index, inventory)
 	}
 
 	fn on_peer_connected(&mut self, peer_index: usize) {
@@ -393,6 +431,41 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 	/// Get synchronization state
 	fn state(&self) -> State {
 		self.state
+	}
+
+	/// Filter inventory from `getdata` message for given peer
+	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory {
+		let chain = self.chain.read();
+		let mut filter = self.peers.filter_mut(peer_index);
+		let mut filtered: Vec<(types::MerkleBlock, Vec<(H256, Transaction)>)> = Vec::new();
+		let mut unfiltered: Vec<InventoryVector> = Vec::new();
+		let mut notfound: Vec<InventoryVector> = Vec::new();
+
+		for item in inventory {
+			match item.inv_type {
+				// if peer asks for filtered block => we should:
+				// 1) check if block has any transactions, matching connection bloom filter
+				// 2) build && send `merkleblock` message for this block
+				// 3) send all matching transactions after this block
+				InventoryType::MessageFilteredBlock => {
+					match chain.storage().block(db::BlockRef::Hash(item.hash.clone())) {
+						None => notfound.push(item),
+						Some(block) => match filter.build_merkle_block(block) {
+							None => notfound.push(item),
+							Some(merkleblock) => filtered.push((merkleblock.merkleblock, merkleblock.matching_transactions)),
+						}
+					}
+				},
+				// these will be filtered (found/not found) in sync server
+				_ => unfiltered.push(item),
+			}
+		}
+
+		FilteredInventory {
+			filtered: filtered,
+			unfiltered: unfiltered,
+			notfound: notfound,
+		}
 	}
 
 	/// Called when new peer connection is established
@@ -688,6 +761,11 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 				self.execute_synchronization_tasks(None);
 
 				// relay block to our peers
+				// TODO:
+				// SPV clients that wish to use Bloom filtering would normally set version.fRelay to false in the version message,
+				// then set a filter based on their wallet (or a subset of it, if they are overlapping different peers).
+				// Being able to opt-out of inv messages until the filter is set prevents a client being flooded with traffic in
+				// the brief window of time between finishing version handshaking and setting the filter.
 				if self.state.is_saturated() || self.state.is_nearly_saturated() {
 					self.relay_new_blocks(insert_result.canonized_blocks_hashes);
 				}

@@ -7,15 +7,16 @@ use futures::{Future, BoxFuture, lazy, finished};
 use parking_lot::{Mutex, Condvar};
 use message::common::{InventoryVector, InventoryType};
 use db;
-use chain::BlockHeader;
+use chain::{BlockHeader, Transaction};
 use primitives::hash::H256;
 use synchronization_chain::{ChainRef, TransactionState};
 use synchronization_executor::{Task, TaskExecutor};
+use synchronization_client::FilteredInventory;
 use message::types;
 
 /// Synchronization requests server trait
 pub trait Server : Send + Sync + 'static {
-	fn serve_getdata(&self, peer_index: usize, message: types::GetData) -> Option<IndexedServerTask>;
+	fn serve_getdata(&self, peer_index: usize, inventory: FilteredInventory) -> Option<IndexedServerTask>;
 	fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) -> Option<IndexedServerTask>;
 	fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders, id: Option<u32>) -> Option<IndexedServerTask>;
 	fn serve_mempool(&self, peer_index: usize) -> Option<IndexedServerTask>;
@@ -99,12 +100,14 @@ impl IndexedServerTask {
 
 #[derive(Debug, PartialEq)]
 pub enum ServerTask {
-	ServeGetData(Vec<InventoryVector>),
+	ServeGetData(FilteredInventory),
 	ServeGetBlocks(db::BestBlock, H256),
 	ServeGetHeaders(db::BestBlock, H256),
 	ServeMempool,
 	ReturnNotFound(Vec<InventoryVector>),
 	ReturnBlock(H256),
+	ReturnMerkleBlock(types::MerkleBlock),
+	ReturnTransaction(Transaction),
 	Ignore,
 }
 
@@ -164,7 +167,16 @@ impl SynchronizationServer {
 					{
 						let chain = chain.read();
 						let storage = chain.storage();
-						for item in inventory {
+						// process merkleblock items
+						for (merkleblock, transactions) in inventory.filtered {
+							new_tasks.push(IndexedServerTask::new(ServerTask::ReturnMerkleBlock(merkleblock), ServerTaskIndex::None));
+							new_tasks.extend(transactions.into_iter().map(|(_, t)|
+								IndexedServerTask::new(ServerTask::ReturnTransaction(t), ServerTaskIndex::None)));
+						}
+						// extend with unknown merkleitems
+						unknown_items.extend(inventory.notfound);
+						// process unfiltered items
+						for item in inventory.unfiltered {
 							match item.inv_type {
 								InventoryType::MessageBlock => {
 									match storage.block_number(&item.hash) {
@@ -256,6 +268,14 @@ impl SynchronizationServer {
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
 				},
+				// `merkleblock`
+				ServerTask::ReturnMerkleBlock(merkleblock) => {
+					executor.lock().execute(Task::SendMerkleBlock(peer_index, merkleblock));
+				},
+				// `tx`
+				ServerTask::ReturnTransaction(transaction) => {
+					executor.lock().execute(Task::SendTransaction(peer_index, transaction));
+				}
 				// ignore
 				ServerTask::Ignore => {
 					let response_id = indexed_task.id.raw().expect("do not schedule redundant ignore task");
@@ -345,8 +365,8 @@ impl Drop for SynchronizationServer {
 }
 
 impl Server for SynchronizationServer {
-	fn serve_getdata(&self, _peer_index: usize, message: types::GetData) -> Option<IndexedServerTask> {
-		let task = IndexedServerTask::new(ServerTask::ServeGetData(message.inventory), ServerTaskIndex::None);
+	fn serve_getdata(&self, _peer_index: usize, inventory: FilteredInventory) -> Option<IndexedServerTask> {
+		let task = IndexedServerTask::new(ServerTask::ServeGetData(inventory), ServerTaskIndex::None);
 		Some(task)
 	}
 
@@ -478,6 +498,7 @@ pub mod tests {
 	use synchronization_executor::Task;
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use synchronization_chain::Chain;
+	use synchronization_client::FilteredInventory;
 	use super::{Server, ServerTask, SynchronizationServer, ServerTaskIndex, IndexedServerTask};
 
 	pub struct DummyServer {
@@ -497,8 +518,8 @@ pub mod tests {
 	}
 
 	impl Server for DummyServer {
-		fn serve_getdata(&self, peer_index: usize, message: types::GetData) -> Option<IndexedServerTask> {
-			self.tasks.lock().push((peer_index, ServerTask::ServeGetData(message.inventory)));
+		fn serve_getdata(&self, peer_index: usize, inventory: FilteredInventory) -> Option<IndexedServerTask> {
+			self.tasks.lock().push((peer_index, ServerTask::ServeGetData(inventory)));
 			None
 		}
 
@@ -544,9 +565,7 @@ pub mod tests {
 				hash: H256::default(),
 			}
 		];
-		server.serve_getdata(0, types::GetData {
-			inventory: inventory.clone(),
-		}).map(|t| server.add_task(0, t));
+		server.serve_getdata(0, FilteredInventory::with_unfiltered(inventory.clone())).map(|t| server.add_task(0, t));
 		// => respond with notfound
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![Task::SendNotFound(0, inventory, ServerTaskIndex::None)]);
@@ -562,9 +581,7 @@ pub mod tests {
 				hash: test_data::genesis().hash(),
 			}
 		];
-		server.serve_getdata(0, types::GetData {
-			inventory: inventory.clone(),
-		}).map(|t| server.add_task(0, t));
+		server.serve_getdata(0, FilteredInventory::with_unfiltered(inventory)).map(|t| server.add_task(0, t));
 		// => respond with block
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![Task::SendBlock(0, test_data::genesis(), ServerTaskIndex::None)]);

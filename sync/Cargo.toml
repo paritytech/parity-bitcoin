@@ -14,6 +14,7 @@ linked-hash-map = "0.3"
 ethcore-devtools = { path = "../devtools" }
 bit-vec = "0.4.3"
 murmur3 = "0.3"
+rand = "0.3"
 
 chain = { path = "../chain" }
 db = { path = "../db" }
