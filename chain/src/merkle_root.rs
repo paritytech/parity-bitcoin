@@ -19,17 +19,22 @@ pub fn merkle_root(hashes: &[H256]) -> H256 {
 	let mut row = vec![];
 	let mut i = 0;
 	while i + 1 < hashes.len() {
-		row.push(dhash256(&*concat(&hashes[i], &hashes[i + 1])));
+		row.push(merkle_node_hash(&hashes[i], &hashes[i + 1]));
 		i += 2
 	}
 
 	// duplicate the last element if len is not even
 	if hashes.len() % 2 == 1 {
 		let last = &hashes[hashes.len() - 1];
-		row.push(dhash256(&*concat(last, last)));
+		row.push(merkle_node_hash(last, last));
 	}
 
 	merkle_root(&row)
+}
+
+/// Calculate merkle tree node hash
+pub fn merkle_node_hash(left: &H256, right: &H256) -> H256 {
+	dhash256(&*concat(left, right))
 }
 
 #[cfg(test)]

@@ -20,6 +20,7 @@ extern crate script;
 extern crate serialization as ser;
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
+extern crate rand;
 
 mod best_headers_chain;
 mod blocks_writer;
