@@ -50,7 +50,7 @@ pub struct MerkleBlockArtefacts {
 }
 
 /// Service structure to construct `merkleblock` message.
-pub struct PartialMerkleTree {
+struct PartialMerkleTree {
 	/// All transactions length.
 	all_len: usize,
 	/// All transactions hashes.
@@ -549,6 +549,7 @@ pub mod tests {
 
 	#[test]
 	// test from core implementation (slow)
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/pmt_tests.cpp
 	fn test_build_merkle_block() {
 		use bit_vec::BitVec;
 		use rand::{Rng, SeedableRng, StdRng};
