@@ -8,8 +8,7 @@ pub fn transaction_fee(store: &TransactionProvider, transaction: &Transaction) -
 				.expect("transaction must be verified by caller");
 			accumulator + input_transaction.outputs[input.previous_output.index as usize].value
 		});
-	let outputs_sum = transaction.outputs.iter()
-		.fold(0, |accumulator, output| accumulator + output.value);
+	let outputs_sum = transaction.outputs.iter().map(|output| output.value).sum();
 	inputs_sum.saturating_sub(outputs_sum)
 }
 
