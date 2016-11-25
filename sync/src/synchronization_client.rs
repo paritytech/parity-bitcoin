@@ -1303,6 +1303,7 @@ pub mod tests {
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, Transaction};
 	use message::common::{InventoryVector, InventoryType};
+	use message::types;
 	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore};
 	use connection_filter::tests::*;
 	use synchronization_executor::Task;
@@ -2160,6 +2161,56 @@ pub mod tests {
 		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1),
 			Task::SendHeaders(2, headers, ServerTaskIndex::None),
 			Task::SendInventory(3, inventory, ServerTaskIndex::None),
+		]);
+	}
+
+	#[test]
+	fn relay_new_transaction_with_feefilter() {
+		let (_, _, executor, chain, sync) = create_sync(None, None);
+
+		let b1 = test_data::block_builder().header().parent(test_data::genesis().hash()).build()
+			.transaction().output().value(1_000_000).build().build()
+			.build(); // genesis -> b1
+		let tx0 = b1.transactions[0].clone();
+		let tx1: Transaction = test_data::TransactionBuilder::with_output(800_000).add_input(&tx0, 0).into();
+		let tx1_hash = tx1.hash();
+
+		let mut sync = sync.lock();
+		sync.on_peer_connected(1);
+		sync.on_peer_connected(2);
+		sync.on_peer_connected(3);
+		sync.on_peer_connected(4);
+
+		sync.on_peer_block(1, b1);
+
+		{
+			use miner::transaction_fee_rate;
+			let chain = chain.read();
+			assert_eq!(transaction_fee_rate(&*chain, &tx1), 3333); // 200_000 / 60
+		}
+
+		sync.on_peer_feefilter(2, &types::FeeFilter { fee_rate: 3000, });
+		sync.on_peer_feefilter(3, &types::FeeFilter { fee_rate: 4000, });
+
+		// forget previous tasks
+		{ executor.lock().take_tasks(); }
+
+		sync.on_peer_transaction(1, tx1);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![
+			Task::SendInventory(2, vec![
+				InventoryVector {
+					inv_type: InventoryType::MessageTx,
+					hash: tx1_hash.clone(),
+				}
+			], ServerTaskIndex::None),
+			Task::SendInventory(4, vec![
+				InventoryVector {
+					inv_type: InventoryType::MessageTx,
+					hash: tx1_hash.clone(),
+				}
+			], ServerTaskIndex::None),
 		]);
 	}
 }
