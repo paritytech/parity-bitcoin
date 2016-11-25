@@ -182,6 +182,11 @@ impl Chain {
 		self.storage.clone()
 	}
 
+	/// Get storage, which contains all storage transaction && mempool transactions
+	// pub fn mempool_transaction_storage() -> db::SharedStore {
+	//		TODO: implement TransactionProvider Storage + MemoryPool
+	//}
+
 	/// Get number of blocks in given state
 	pub fn length_of_blocks_state(&self, state: BlockState) -> u32 {
 		match state {

@@ -198,6 +198,11 @@ impl Peers {
 		self.send_headers.insert(peer_index);
 	}
 
+	/// Peer wants to limit transaction announcing by transaction fee
+	pub fn on_peer_feefilter(&mut self, peer_index: usize, fee_rate: u64) {
+		self.filter_mut(peer_index).set_fee_rate(fee_rate);
+	}
+
 	/// Peer has been disconnected
 	pub fn on_peer_disconnected(&mut self, peer_index: usize) -> Option<Vec<H256>> {
 		// forget this peer without any chances to reuse
