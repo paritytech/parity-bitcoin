@@ -78,7 +78,7 @@ impl ChainVerifier {
 
 			let mut total_claimed: u64 = 0;
 
-			for (_, input) in tx.inputs.iter().enumerate() {
+			for input in &tx.inputs {
 
 				// Coinbase maturity check
 				if let Some(previous_meta) = self.store.transaction_meta(&input.previous_output.hash) {
