@@ -1,7 +1,8 @@
 use std::io;
 use futures::{Future, Poll, Async};
 use tokio_core::io::{ReadExact, read_exact};
-use message::{MessageHeader, MessageResult, Magic};
+use message::{MessageHeader, MessageResult};
+use network::Magic;
 
 pub fn read_header<A>(a: A, magic: Magic) -> ReadHeader<A> where A: io::Read {
 	ReadHeader {
@@ -30,7 +31,8 @@ impl<A> Future for ReadHeader<A> where A: io::Read {
 mod tests {
 	use futures::Future;
 	use bytes::Bytes;
-	use message::{Magic, MessageHeader, Error};
+	use network::Magic;
+	use message::{MessageHeader, Error};
 	use super::read_header;
 
 	#[test]
@@ -44,7 +46,7 @@ mod tests {
 		};
 
 		assert_eq!(read_header(raw.as_ref(), Magic::Mainnet).wait().unwrap().1, Ok(expected));
-		assert_eq!(read_header(raw.as_ref(), Magic::Testnet).wait().unwrap().1, Err(Error::WrongMagic));
+		assert_eq!(read_header(raw.as_ref(), Magic::Testnet).wait().unwrap().1, Err(Error::InvalidMagic));
 	}
 
 	#[test]

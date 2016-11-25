@@ -14,7 +14,7 @@ pub struct ConsensusParams {
 impl ConsensusParams {
 	pub fn with_magic(magic: Magic) -> Self {
 		match magic {
-			Magic::Mainnet => ConsensusParams {
+			Magic::Mainnet | Magic::Other(_) => ConsensusParams {
 				bip16_time: 1333238400,	// Apr 1 2012
 				bip65_height: 388381,	// 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
 			},

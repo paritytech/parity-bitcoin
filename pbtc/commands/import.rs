@@ -8,7 +8,7 @@ pub fn import(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 	// TODO: this might be unnecessary here!
 	try!(init_db(&cfg, &db));
 
-	let mut writer = create_sync_blocks_writer(db);
+	let mut writer = create_sync_blocks_writer(db, cfg.magic);
 
 	let blk_path = matches.value_of("PATH").expect("PATH is required in cli.yml; qed");
 	let blk_dir = try!(::import::open_blk_dir(blk_path).map_err(|_| "Import directory does not exist".to_owned()));

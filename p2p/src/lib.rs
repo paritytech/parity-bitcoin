@@ -15,6 +15,7 @@ extern crate bitcrypto as crypto;
 extern crate message;
 extern crate primitives;
 extern crate serialization as ser;
+extern crate network;
 
 mod io;
 mod net;

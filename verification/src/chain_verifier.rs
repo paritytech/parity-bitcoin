@@ -1,7 +1,8 @@
 //! Bitcoin chain verifier
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use db::{self, BlockRef, BlockLocation};
+use network::Magic;
 use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
 use {chain, utils};
 
@@ -18,16 +19,18 @@ pub struct ChainVerifier {
 	verify_clocktimeverify: bool,
 	skip_pow: bool,
 	skip_sig: bool,
+	network: Magic,
 }
 
 impl ChainVerifier {
-	pub fn new(store: db::SharedStore) -> Self {
+	pub fn new(store: db::SharedStore, network: Magic) -> Self {
 		ChainVerifier {
 			store: store,
 			verify_p2sh: false,
 			verify_clocktimeverify: false,
 			skip_pow: false,
-			skip_sig: false
+			skip_sig: false,
+			network: network,
 		}
 	}
 
@@ -55,7 +58,7 @@ impl ChainVerifier {
 
 	fn ordered_verify(&self, block: &chain::Block, at_height: u32) -> Result<(), Error> {
 		// check that difficulty matches the adjusted level
-		if let Some(work) = self.work_required(at_height) {
+		if let Some(work) = self.work_required(block, at_height) {
 			if !self.skip_pow && work != block.header().nbits {
 				trace!(target: "verification", "pow verification error at height: {}", at_height);
 				trace!(target: "verification", "expected work: {}, got {}", work, block.header().nbits);
@@ -202,7 +205,7 @@ impl ChainVerifier {
 		}
 
 		// target difficulty threshold
-		if !self.skip_pow && !utils::check_nbits(&hash, block.header().nbits) {
+		if !self.skip_pow && !utils::check_nbits(self.network.max_nbits(), &hash, block.header().nbits) {
 			return Err(Error::Pow);
 		}
 
@@ -275,7 +278,7 @@ impl ChainVerifier {
 	}
 
 	fn median_timestamp(&self, block: &chain::Block) -> Option<u32> {
-		let mut timestamps = HashSet::new();
+		let mut timestamps = BTreeSet::new();
 		let mut block_ref = block.block_header.previous_header_hash.clone().into();
 		// TODO: optimize it, so it does not make 11 redundant queries each time
 		for _ in 0..11 {
@@ -288,21 +291,19 @@ impl ChainVerifier {
 		}
 
 		if timestamps.len() > 2 {
-			let mut timestamps: Vec<_> = timestamps.into_iter().collect();
-			timestamps.sort();
+			let timestamps: Vec<_> = timestamps.into_iter().collect();
 			Some(timestamps[timestamps.len() / 2])
 		}
 		else { None }
 	}
 
-	fn work_required(&self, height: u32) -> Option<u32> {
+	fn work_required(&self, block: &chain::Block, height: u32) -> Option<u32> {
 		if height == 0 {
 			return None;
 		}
 
-		// should this be best_header or parent header?
-		// regtest do not pass with previous header, but, imo checking with best is a bit weird, mk
-		let	previous_header = self.store.best_header().expect("self.height != 0; qed");
+		let previous_ref = block.block_header.previous_header_hash.clone().into();
+		let previous_header = self.store.block_header(previous_ref).expect("self.height != 0; qed");
 
 		if utils::is_retarget_height(height) {
 			let retarget_ref = (height - utils::RETARGETING_INTERVAL).into();
@@ -314,7 +315,7 @@ impl ChainVerifier {
 			// nbits of last block
 			let last_nbits = previous_header.nbits;
 
-			return Some(utils::work_required_retarget(retarget_timestamp, last_timestamp, last_nbits));
+			return Some(utils::work_required_retarget(self.network.max_nbits(), retarget_timestamp, last_timestamp, last_nbits));
 		}
 
 		// TODO: if.testnet
@@ -356,20 +357,19 @@ impl ContinueVerify for ChainVerifier {
 
 #[cfg(test)]
 mod tests {
-
+	use std::sync::Arc;
+	use db::{TestStorage, Storage, Store, BlockStapler};
+	use network::Magic;
+	use devtools::RandomTempPath;
+	use {script, test_data};
 	use super::ChainVerifier;
 	use super::super::{Verify, Chain, Error, TransactionError};
-	use db::{TestStorage, Storage, Store, BlockStapler};
-	use test_data;
-	use std::sync::Arc;
-	use devtools::RandomTempPath;
-	use script;
 
 	#[test]
 	fn verify_orphan() {
 		let storage = TestStorage::with_blocks(&vec![test_data::genesis()]);
 		let b2 = test_data::block_h2();
-		let verifier = ChainVerifier::new(Arc::new(storage));
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
 
 		assert_eq!(Chain::Orphan, verifier.verify(&b2).unwrap());
 	}
@@ -378,7 +378,7 @@ mod tests {
 	fn verify_smoky() {
 		let storage = TestStorage::with_blocks(&vec![test_data::genesis()]);
 		let b1 = test_data::block_h1();
-		let verifier = ChainVerifier::new(Arc::new(storage));
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
 		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
 	}
 
@@ -391,7 +391,7 @@ mod tests {
 			]
 		);
 		let b1 = test_data::block_h170();
-		let verifier = ChainVerifier::new(Arc::new(storage));
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
 		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
 	}
 
@@ -403,7 +403,7 @@ mod tests {
 			]
 		);
 		let b170 = test_data::block_h170();
-		let verifier = ChainVerifier::new(Arc::new(storage));
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
 
 		let should_be = Err(Error::Transaction(
 			1,
@@ -437,7 +437,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
 		let expected = Err(Error::Transaction(
 			1,
@@ -473,7 +473,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
 		let expected = Ok(Chain::Main);
 		assert_eq!(expected, verifier.verify(&block));
@@ -511,7 +511,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
 		let expected = Ok(Chain::Main);
 		assert_eq!(expected, verifier.verify(&block));
@@ -548,7 +548,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
 		let expected = Err(Error::Transaction(2, TransactionError::Overspend));
 		assert_eq!(expected, verifier.verify(&block));
@@ -592,7 +592,7 @@ mod tests {
 			.merkled_header().parent(best_hash).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
 		let expected = Ok(Chain::Main);
 
@@ -644,7 +644,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
 		let expected = Err(Error::MaximumSigops);
 		assert_eq!(expected, verifier.verify(&block));
@@ -670,7 +670,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage)).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
 		let expected = Err(Error::CoinbaseOverspend {
 			expected_max: 5000000000,
