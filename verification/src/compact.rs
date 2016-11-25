@@ -27,7 +27,7 @@ impl Compact {
 		let mut word = self.0 & 0x007fffff;
 
 		let result = if size <= 3 {
-			word >>= (8 * (3 - size as usize));
+			word >>= 8 * (3 - size as usize);
 			word.into()
 		} else {
 			U256::from(word) << (8 * (size as usize - 3))

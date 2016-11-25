@@ -56,7 +56,7 @@ impl ChainVerifier {
 
 	fn ordered_verify(&self, block: &chain::Block, at_height: u32) -> Result<(), Error> {
 		// check that difficulty matches the adjusted level
-		if let Some(work) = self.work_required(block, at_height) {
+		if let Some(work) = self.work_required(at_height) {
 			if !self.skip_pow && work != block.header().nbits {
 				trace!(target: "verification", "pow verification error at height: {}", at_height);
 				trace!(target: "verification", "expected work: {}, got {}", work, block.header().nbits);
@@ -295,7 +295,7 @@ impl ChainVerifier {
 		Some(timestamps[timestamps.len() / 2])
 	}
 
-	fn work_required(&self, block: &chain::Block, height: u32) -> Option<u32> {
+	fn work_required(&self, height: u32) -> Option<u32> {
 		if height == 0 {
 			return None;
 		}
