@@ -5,6 +5,11 @@ use chain;
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use invoke::{Invoke, Identity};
+use std::cell::Cell;
+
+thread_local! {
+	pub static TIMESTAMP_COUNTER: Cell<u32> = Cell::new(0);
+}
 
 pub struct BlockHashBuilder<F=Identity> {
 	callback: F,
@@ -182,7 +187,7 @@ impl<F> BlockHeaderBuilder<F> where F: Invoke<chain::BlockHeader> {
 	pub fn with_callback(callback: F) -> Self {
 		BlockHeaderBuilder {
 			callback: callback,
-			time: 0,
+			time: TIMESTAMP_COUNTER.with(|counter| { let val = counter.get(); counter.set(val+1); val }),
 			nonce: 0,
 			merkle_root: H256::from(0),
 			parent: H256::from(0),

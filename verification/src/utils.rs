@@ -1,13 +1,66 @@
+#![allow(dead_code)]
 //! Verification utilities
-use primitives::hash::H256;
+use std::cmp;
+use hash::H256;
+use uint::U256;
 use byteorder::{BigEndian, ByteOrder};
-use chain;
 use script::{self, Script};
+use chain;
+use compact::Compact;
 
-const MAX_NBITS: u32 = 0x207fffff;
+// Timespan constants
+const RETARGETING_FACTOR: u32 = 4;
+const TARGET_SPACING_SECONDS: u32 = 10 * 60;
+const DOUBLE_SPACING_SECONDS: u32 = 2 * TARGET_SPACING_SECONDS;
+const TARGET_TIMESPAN_SECONDS: u32 = 2 * 7 * 24 * 60 * 60;
 
+// The upper and lower bounds for retargeting timespan
+const MIN_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS / RETARGETING_FACTOR;
+const MAX_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS * RETARGETING_FACTOR;
+
+// Target number of blocks, 2 weaks, 2016
+pub const RETARGETING_INTERVAL: u32 = TARGET_TIMESPAN_SECONDS / TARGET_SPACING_SECONDS;
+
+pub const MAX_NBITS_MAINNET: u32 = 0x1d00ffff;
+pub const MAX_NBITS_TESTNET: u32 = 0x1d00ffff;
+pub const MAX_NBITS_REGTEST: u32 = 0x207fffff;
+
+pub fn is_retarget_height(height: u32) -> bool {
+	height % RETARGETING_INTERVAL == 0
+}
+
+fn retarget_timespan(retarget_timestamp: u32, last_timestamp: u32) -> u32 {
+	let timespan = last_timestamp - retarget_timestamp;
+	range_constrain(timespan as u32, MIN_TIMESPAN, MAX_TIMESPAN)
+}
+
+pub fn work_required_retarget(retarget_timestamp: u32, last_timestamp: u32, last_nbits: u32) -> u32 {
+	// ignore overflows here
+	let mut retarget = Compact::new(last_nbits).to_u256().unwrap_or_else(|x| x);
+	let maximum = Compact::new(MAX_NBITS_MAINNET).to_u256().unwrap_or_else(|x| x);
+
+	// multiplication overflow potential
+	retarget = retarget * U256::from(retarget_timespan(retarget_timestamp, last_timestamp));
+	retarget = retarget / U256::from(TARGET_TIMESPAN_SECONDS);
+
+	if retarget > maximum {
+		Compact::from_u256(maximum).into()
+	} else {
+		Compact::from_u256(retarget).into()
+	}
+}
+
+pub fn work_required_testnet() -> u32 {
+	unimplemented!();
+}
+
+fn range_constrain(value: u32, min: u32, max: u32) -> u32 {
+	cmp::min(cmp::max(value, min), max)
+}
+
+/// Simple nbits check that does not require 256-bit arithmetic
 pub fn check_nbits(hash: &H256, n_bits: u32) -> bool {
-	if n_bits > MAX_NBITS { return false; }
+	if n_bits > MAX_NBITS_REGTEST { return false; }
 
 	let hash_bytes: &[u8] = &**hash;
 
@@ -84,9 +137,8 @@ pub fn p2sh_sigops(output: &Script, input_ref: &Script) -> usize {
 
 #[cfg(test)]
 mod tests {
-
 	use super::{block_reward_satoshi, check_nbits};
-	use primitives::hash::H256;
+	use hash::H256;
 
 	#[test]
 	fn reward() {
