@@ -182,7 +182,7 @@ impl<F> BlockHeaderBuilder<F> where F: Invoke<chain::BlockHeader> {
 	pub fn with_callback(callback: F) -> Self {
 		BlockHeaderBuilder {
 			callback: callback,
-			time: 0,
+			time: ::time::get_time().sec as u32,
 			nonce: 0,
 			merkle_root: H256::from(0),
 			parent: H256::from(0),
