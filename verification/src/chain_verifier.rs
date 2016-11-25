@@ -275,11 +275,10 @@ impl ChainVerifier {
 	}
 
 	fn median_timestamp(&self, block: &chain::Block) -> Option<u32> {
-		// TODO: make 11 a const
 		let mut timestamps = HashSet::new();
 		let mut block_ref = block.block_header.previous_header_hash.clone().into();
 		// TODO: optimize it, so it does not make 11 redundant queries each time
-		for _ in 0..10 {
+		for _ in 0..11 {
 			let previous_header = match self.store.block_header(block_ref) {
 				Some(h) => h,
 				None => { break; }
