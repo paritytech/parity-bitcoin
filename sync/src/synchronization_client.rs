@@ -851,7 +851,6 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 			chain.insert_verified_transaction(transaction.clone());
 
 			// calculate transaction fee rate
-			// TODO: uncomment me: after implementation
 			transaction_fee_rate(&*chain, &transaction)
 		};
 
