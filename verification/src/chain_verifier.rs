@@ -1,6 +1,5 @@
 //! Bitcoin chain verifier
 
-use std::cmp;
 use std::collections::HashSet;
 use db::{self, BlockRef, BlockLocation};
 use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
@@ -61,13 +60,6 @@ impl ChainVerifier {
 				trace!(target: "verification", "pow verification error at height: {}", at_height);
 				trace!(target: "verification", "expected work: {}, got {}", work, block.header().nbits);
 				return Err(Error::Difficulty);
-			}
-		}
-
-		if let Some(median_timestamp) = self.ordered_median_timestamp(block, at_height) {
-			if median_timestamp > block.block_header.time {
-				trace!(target: "verification", "median timestamp verification failed, median: {}, current: {}", median_timestamp, block.block_header.time);
-				return Err(Error::Timestamp);
 			}
 		}
 
@@ -219,6 +211,13 @@ impl ChainVerifier {
 			return Err(Error::Timestamp);
 		}
 
+		if let Some(median_timestamp) = self.median_timestamp(block) {
+			if median_timestamp > block.block_header.time {
+				trace!(target: "verification", "median timestamp verification failed, median: {}, current: {}", median_timestamp, block.block_header.time);
+				return Err(Error::Timestamp);
+			}
+		}
+
 		// todo: serialized_size function is at least suboptimal
 		let size = ::serialization::Serializable::serialized_size(block);
 		if size > MAX_BLOCK_SIZE {
@@ -275,24 +274,25 @@ impl ChainVerifier {
 		}
 	}
 
-	fn ordered_median_timestamp(&self, block: &chain::Block, height: u32) -> Option<u32> {
-		if height == 0 {
-			return None;
-		}
-
+	fn median_timestamp(&self, block: &chain::Block) -> Option<u32> {
 		// TODO: make 11 a const
-		let max = cmp::min(height, 11);
 		let mut timestamps = HashSet::new();
 		let mut block_ref = block.block_header.previous_header_hash.clone().into();
 		// TODO: optimize it, so it does not make 11 redundant queries each time
-		for _ in 0..max {
-			let previous_header = self.store.block_header(block_ref).expect("block_ref < height; qed");
+		for _ in 0..10 {
+			let previous_header = match self.store.block_header(block_ref) {
+				Some(h) => h,
+				None => { break; }
+			};
 			timestamps.insert(previous_header.time);
 			block_ref = previous_header.previous_header_hash.into();
 		}
 
-		let timestamps: Vec<_> = timestamps.into_iter().collect();
-		Some(timestamps[timestamps.len() / 2])
+		if timestamps.len() > 2 {
+			let timestamps: Vec<_> = timestamps.into_iter().collect();
+			Some(timestamps[timestamps.len() / 2])
+		}
+		else { None }
 	}
 
 	fn work_required(&self, height: u32) -> Option<u32> {
