@@ -5,7 +5,7 @@ use db;
 use p2p::OutboundSyncConnectionRef;
 use message::common::{InventoryType, InventoryVector};
 use message::types;
-use synchronization_client::{Client, SynchronizationClient};
+use synchronization_client::{Client, SynchronizationClient, BlockAnnouncementType};
 use synchronization_executor::{Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor, LocalSynchronizationTaskExecutor};
 use synchronization_server::{Server, SynchronizationServer};
 use synchronization_verifier::AsyncVerifier;
@@ -183,15 +183,30 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 
 	pub fn on_peer_sendheaders(&self, peer_index: usize, _message: types::SendHeaders) {
 		trace!(target: "sync", "Got `sendheaders` message from peer#{}", peer_index);
-		self.client.lock().on_peer_sendheaders(peer_index);
+		self.client.lock().on_peer_block_announcement_type(peer_index, BlockAnnouncementType::SendHeader);
 	}
 
 	pub fn on_peer_feefilter(&self, peer_index: usize, _message: types::FeeFilter) {
 		trace!(target: "sync", "Got `feefilter` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_send_compact(&self, peer_index: usize, _message: types::SendCompact) {
+	pub fn on_peer_send_compact(&self, peer_index: usize, message: types::SendCompact) {
 		trace!(target: "sync", "Got `sendcmpct` message from peer#{}", peer_index);
+
+		// The second integer SHALL be interpreted as a little-endian version number. Nodes sending a sendcmpct message MUST currently set this value to 1.
+		// TODO: version 2 supports segregated witness transactions
+		if message.second != 1 {
+			return;
+		}
+
+		// Upon receipt of a "sendcmpct" message with the first and second integers set to 1, the node SHOULD announce new blocks by sending a cmpctblock message.
+		if message.first {
+			self.client.lock().on_peer_block_announcement_type(peer_index, BlockAnnouncementType::SendCompactBlock);
+		}
+		// else:
+		// Upon receipt of a "sendcmpct" message with the first integer set to 0, the node SHOULD NOT announce new blocks by sending a cmpctblock message,
+		// but SHOULD announce new blocks by sending invs or headers, as defined by BIP130.
+		// => work as before
 	}
 
 	pub fn on_peer_compact_block(&self, peer_index: usize, _message: types::CompactBlock) {

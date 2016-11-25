@@ -1,10 +1,13 @@
 extern crate crypto as rcrypto;
 extern crate primitives;
+extern crate siphasher;
 
+use std::hash::Hasher;
 use rcrypto::sha1::Sha1;
 use rcrypto::sha2::Sha256;
 use rcrypto::ripemd160::Ripemd160;
 use rcrypto::digest::Digest;
+use siphasher::sip::SipHasher24;
 use primitives::hash::{H32, H160, H256};
 
 pub struct DHash160 {
@@ -144,6 +147,14 @@ pub fn dhash256(input: &[u8]) -> H256 {
 	hasher.input(input);
 	hasher.result(&mut *result);
 	result
+}
+
+/// SipHash-2-4
+#[inline]
+pub fn siphash24(key0: u64, key1: u64, input: &[u8]) -> u64 {
+	let mut hasher = SipHasher24::new_with_keys(key0, key1);
+	hasher.write(input);
+	hasher.finish()
 }
 
 /// Data checksum

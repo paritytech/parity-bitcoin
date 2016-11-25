@@ -25,6 +25,7 @@ use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchr
 	manage_unknown_orphaned_blocks, manage_orphaned_transactions, MANAGEMENT_INTERVAL_MS,
 	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
 use synchronization_verifier::{Verifier, VerificationSink};
+use compact_block_builder::build_compact_block;
 use hash_queue::HashPosition;
 use time;
 use std::time::Duration;
@@ -194,7 +195,7 @@ pub trait Client : Send + 'static {
 	fn on_peer_filterload(&mut self, peer_index: usize, message: &types::FilterLoad);
 	fn on_peer_filteradd(&mut self, peer_index: usize, message: &types::FilterAdd);
 	fn on_peer_filterclear(&mut self, peer_index: usize);
-	fn on_peer_sendheaders(&mut self, peer_index: usize);
+	fn on_peer_block_announcement_type(&mut self, peer_index: usize, announcement_type: BlockAnnouncementType);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
 }
@@ -214,7 +215,7 @@ pub trait ClientCore : VerificationSink {
 	fn on_peer_filterload(&mut self, peer_index: usize, message: &types::FilterLoad);
 	fn on_peer_filteradd(&mut self, peer_index: usize, message: &types::FilterAdd);
 	fn on_peer_filterclear(&mut self, peer_index: usize);
-	fn on_peer_sendheaders(&mut self, peer_index: usize);
+	fn on_peer_block_announcement_type(&mut self, peer_index: usize, announcement_type: BlockAnnouncementType);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>);
@@ -238,6 +239,17 @@ pub struct FilteredInventory {
 	pub unfiltered: Vec<InventoryVector>,
 	/// Items that were supposed to be filtered, but we know nothing about these
 	pub notfound: Vec<InventoryVector>,
+}
+
+#[derive(Debug, Clone, Copy)]
+/// New block announcement type
+pub enum BlockAnnouncementType {
+	/// Send inventory with block hash
+	SendInventory,
+	/// Send block header
+	SendHeader,
+	/// Send compact block
+	SendCompactBlock,
 }
 
 /// Synchronization client facade
@@ -397,8 +409,8 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().on_peer_filterclear(peer_index);
 	}
 
-	fn on_peer_sendheaders(&mut self, peer_index: usize) {
-		self.core.lock().on_peer_sendheaders(peer_index);
+	fn on_peer_block_announcement_type(&mut self, peer_index: usize, announcement_type: BlockAnnouncementType) {
+		self.core.lock().on_peer_block_announcement_type(peer_index, announcement_type);
 	}
 
 	fn on_peer_disconnected(&mut self, peer_index: usize) {
@@ -630,10 +642,10 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 	}
 
-	/// Peer wants to get blocks headers instead of blocks hashes when announcing new blocks
-	fn on_peer_sendheaders(&mut self, peer_index: usize) {
+	/// Change the way peer is informed about new blocks
+	fn on_peer_block_announcement_type(&mut self, peer_index: usize, announcement_type: BlockAnnouncementType) {
 		if self.peers.is_known_peer(peer_index) {
-			self.peers.on_peer_sendheaders(peer_index);
+			self.peers.set_block_announcement_type(peer_index, announcement_type);
 		}
 	}
 
@@ -930,35 +942,61 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		let tasks: Vec<_> = {
 			self.peers.all_peers().into_iter()
 				.filter_map(|peer_index| {
-					let send_headers = self.peers.send_headers(peer_index);
+					let block_announcement_type = self.peers.block_announcement_type(peer_index);
 
-					if send_headers {
-						let filtered_blocks_hashes: Vec<_> = new_blocks_hashes.iter()
-							.filter(|h| self.peers.filter(peer_index).filter_block(h))
-							.collect();
-						let chain = self.chain.read();
-						let headers: Vec<_> = filtered_blocks_hashes.into_iter()
-							.filter_map(|h| chain.block_header_by_hash(&h))
-							.collect();
-						if !headers.is_empty() {
-							Some(Task::SendHeaders(peer_index, headers, ServerTaskIndex::None))
-						}
-						else {
-							None
-						}
-					} else {
-						let inventory: Vec<_> = new_blocks_hashes.iter()
-							.filter(|h| self.peers.filter(peer_index).filter_block(h))
-							.map(|h| InventoryVector {
-								inv_type: InventoryType::MessageBlock,
-								hash: h.clone(),
-							})
-							.collect();
-						if !inventory.is_empty() {
-							Some(Task::SendInventory(peer_index, inventory, ServerTaskIndex::None))
-						} else {
-							None
-						}
+					match block_announcement_type {
+						BlockAnnouncementType::SendHeader => {
+							let filtered_blocks_hashes: Vec<_> = new_blocks_hashes.iter()
+								.filter(|h| self.peers.filter(peer_index).filter_block(h))
+								.collect();
+							let chain = self.chain.read();
+							let headers: Vec<_> = filtered_blocks_hashes.into_iter()
+								.filter_map(|h| chain.block_header_by_hash(&h))
+								.collect();
+							if !headers.is_empty() {
+								Some(Task::SendHeaders(peer_index, headers, ServerTaskIndex::None))
+							}
+							else {
+								None
+							}
+						},
+						BlockAnnouncementType::SendCompactBlock => {
+							let indexed_blocks: Vec<db::IndexedBlock> = {
+								let chain = self.chain.read();
+								new_blocks_hashes.iter()
+									.filter_map(|h| chain.storage().block(db::BlockRef::Hash(h.clone())))
+									.map(|b| b.into())
+									.collect()
+							};
+
+							let block_header_and_ids: Vec<_> = indexed_blocks.into_iter()
+								.filter_map(|b| if self.peers.filter(peer_index).filter_block(&b.hash()) {
+									let prefilled_transactions_indexes = b.transactions().enumerate()
+										.filter(|&(_, (h, t))| self.peers.filter_mut(peer_index).filter_transaction(h, t))
+										.map(|(idx, _)| idx)
+										.collect();
+									Some(build_compact_block(b, prefilled_transactions_indexes))
+								} else {
+									None
+								})
+								.collect();
+
+							Some(Task::SendCompactBlocks(peer_index, block_header_and_ids, ServerTaskIndex::None))
+						},
+						BlockAnnouncementType::SendInventory => {
+							let inventory: Vec<_> = new_blocks_hashes.iter()
+								.filter(|h| self.peers.filter(peer_index).filter_block(h))
+								.map(|h| InventoryVector {
+									inv_type: InventoryType::MessageBlock,
+									hash: h.clone(),
+								})
+								.collect();
+							if !inventory.is_empty() {
+								Some(Task::SendInventory(peer_index, inventory, ServerTaskIndex::None))
+							} else {
+								None
+							}
+						},
 					}
 				})
 				.collect()
@@ -1283,7 +1321,7 @@ pub mod tests {
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, Transaction};
 	use message::common::{InventoryVector, InventoryType};
-	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore};
+	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore, BlockAnnouncementType};
 	use connection_filter::tests::*;
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
@@ -2126,7 +2164,7 @@ pub mod tests {
 		let mut sync = sync.lock();
 		sync.on_peer_connected(1);
 		sync.on_peer_connected(2);
-		sync.on_peer_sendheaders(2);
+		sync.on_peer_block_announcement_type(2, BlockAnnouncementType::SendHeader);
 		sync.on_peer_connected(3);
 
 		// igonore tasks
