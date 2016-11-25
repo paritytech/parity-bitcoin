@@ -2180,4 +2180,9 @@ pub mod tests {
 			Task::SendInventory(3, inventory, ServerTaskIndex::None),
 		]);
 	}
+
+	#[test]
+	fn relay_new_block_after_sendcmpct() {
+		// TODO
+	}
 }

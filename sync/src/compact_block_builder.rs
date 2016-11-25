@@ -61,3 +61,16 @@ fn short_transaction_id(nonce: u64, block_header: &BlockHeader, transaction_hash
 
 	siphash_transaction_hash_bytes[2..8].into()
 }
+
+#[cfg(test)]
+mod tests {
+	#[test]
+	fn short_transaction_id_is_correct() {
+		// TODO
+	}
+
+	#[test]
+	fn compact_block_is_built_correctly() {
+		// TODO
+	}	
+}
