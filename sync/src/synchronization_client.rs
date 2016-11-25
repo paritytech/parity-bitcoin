@@ -1105,7 +1105,9 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 							// remove this block from the queue
 							chain.forget_block_leave_header(&block_hash);
 							// remember this block as unknown
-							self.orphaned_blocks_pool.insert_unknown_block(block_hash, block);
+							if !self.orphaned_blocks_pool.contains_unknown_block(&block_hash) {
+								self.orphaned_blocks_pool.insert_unknown_block(block_hash, block);
+							}
 						}
 					},
 					BlockState::Verifying | BlockState::Stored => {
@@ -2211,5 +2213,16 @@ pub mod tests {
 				}
 			], ServerTaskIndex::None),
 		]);
+	}
+
+	#[test]
+	fn receive_same_unknown_block_twice() {
+		let (_, _, _, _, sync) = create_sync(None, None);
+
+		let mut sync = sync.lock();
+
+		sync.on_peer_block(1, test_data::block_h2());
+		// should not panic here
+		sync.on_peer_block(2, test_data::block_h2());
 	}
 }
