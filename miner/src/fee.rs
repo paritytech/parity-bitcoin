@@ -1,8 +1,7 @@
 use chain::Transaction;
-use db::SharedStore;
+use db::TransactionProvider;
 
-// TODO: &TransactionProvider after AsTransactionProvider is done
-pub fn transaction_fee(store: SharedStore, transaction: &Transaction) -> u64 {
+pub fn transaction_fee(store: &TransactionProvider, transaction: &Transaction) -> u64 {
 	let inputs_sum = transaction.inputs.iter()
 		.fold(0, |accumulator, input| {
 			let input_transaction = store.transaction(&input.previous_output.hash)
@@ -14,8 +13,7 @@ pub fn transaction_fee(store: SharedStore, transaction: &Transaction) -> u64 {
 	inputs_sum.saturating_sub(outputs_sum)
 }
 
-// TODO: &TransactionProvider after AsTransactionProvider is done
-pub fn transaction_fee_rate(store: SharedStore, transaction: &Transaction) -> u64 {
+pub fn transaction_fee_rate(store: &TransactionProvider, transaction: &Transaction) -> u64 {
 	use ser::Serializable;
 
 	transaction_fee(store, transaction) / transaction.serialized_size() as u64
@@ -24,7 +22,7 @@ pub fn transaction_fee_rate(store: SharedStore, transaction: &Transaction) -> u6
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
-	use db::TestStorage;
+	use db::{TestStorage, AsTransactionProvider};
 	use test_data;
 	use super::*;
 
@@ -53,12 +51,12 @@ mod tests {
 
 		let db = Arc::new(TestStorage::with_blocks(&vec![b0, b1]));
 
-		assert_eq!(transaction_fee(db.clone(), &tx0), 0);
-		assert_eq!(transaction_fee(db.clone(), &tx1), 0);
-		assert_eq!(transaction_fee(db.clone(), &tx2), 500_000);
+		assert_eq!(transaction_fee(db.as_transaction_provider(), &tx0), 0);
+		assert_eq!(transaction_fee(db.as_transaction_provider(), &tx1), 0);
+		assert_eq!(transaction_fee(db.as_transaction_provider(), &tx2), 500_000);
 
-		assert_eq!(transaction_fee_rate(db.clone(), &tx0), 0);
-		assert_eq!(transaction_fee_rate(db.clone(), &tx1), 0);
-		assert_eq!(transaction_fee_rate(db.clone(), &tx2), 4_950);
+		assert_eq!(transaction_fee_rate(db.as_transaction_provider(), &tx0), 0);
+		assert_eq!(transaction_fee_rate(db.as_transaction_provider(), &tx1), 0);
+		assert_eq!(transaction_fee_rate(db.as_transaction_provider(), &tx2), 4_950);
 	}
 }

@@ -26,6 +26,7 @@ use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchr
 	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
 use synchronization_verifier::{Verifier, VerificationSink};
 use hash_queue::HashPosition;
+use miner::transaction_fee_rate;
 use time;
 use std::time::Duration;
 
@@ -851,10 +852,7 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 
 			// calculate transaction fee rate
 			// TODO: uncomment me: after implementation
-			// use miner::transaction_fee_rate;
-			// transaction_fee_rate(chain.mempool_transaction_storage(), &transaction)
-			use std::u64::MAX;
-			MAX
+			transaction_fee_rate(&*chain, &transaction)
 		};
 
 		// relay transaction to peers

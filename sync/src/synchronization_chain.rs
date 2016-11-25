@@ -6,6 +6,7 @@ use parking_lot::RwLock;
 use chain::{Block, BlockHeader, Transaction};
 use db;
 use best_headers_chain::{BestHeadersChain, Information as BestHeadersInformation};
+use primitives::bytes::Bytes;
 use primitives::hash::H256;
 use hash_queue::{HashQueueChain, HashPosition};
 use miner::{MemoryPool, MemoryPoolOrderingStrategy, MemoryPoolInformation};
@@ -181,11 +182,6 @@ impl Chain {
 	pub fn storage(&self) -> db::SharedStore {
 		self.storage.clone()
 	}
-
-	/// Get storage, which contains all storage transaction && mempool transactions
-	// pub fn mempool_transaction_storage() -> db::SharedStore {
-	//		TODO: implement TransactionProvider Storage + MemoryPool
-	//}
 
 	/// Get number of blocks in given state
 	pub fn length_of_blocks_state(&self, state: BlockState) -> u32 {
@@ -663,6 +659,18 @@ impl Chain {
 			}
 			index -= step;
 		}
+	}
+}
+
+impl db::TransactionProvider for Chain {
+	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
+		self.memory_pool.transaction_bytes(hash)
+			.or_else(|| self.storage.transaction_bytes(hash))
+	}
+
+	fn transaction(&self, hash: &H256) -> Option<Transaction> {
+		self.memory_pool.transaction(hash)
+			.or_else(|| self.storage.transaction(hash))
 	}
 }
 

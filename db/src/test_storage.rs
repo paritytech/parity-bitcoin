@@ -2,7 +2,7 @@
 
 use super::{
 	BlockRef, Store, Error, BestBlock, BlockLocation, BlockInsertedChain, BlockProvider,
-	BlockStapler, TransactionMetaProvider, TransactionProvider,
+	BlockStapler, TransactionMetaProvider, TransactionProvider, AsTransactionProvider
 };
 use chain::{self, Block};
 use primitives::hash::H256;
@@ -160,6 +160,12 @@ impl TransactionProvider for TestStorage {
 		data.blocks.iter().flat_map(|(_, b)| b.transactions())
 			.find(|ref tx| tx.hash() == *hash)
 			.cloned()
+	}
+}
+
+impl AsTransactionProvider for TestStorage {
+	fn as_transaction_provider(&self) -> &TransactionProvider {
+		&*self
 	}
 }
 

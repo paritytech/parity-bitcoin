@@ -5,13 +5,15 @@
 //! transactions.
 //! It also guarantees that ancestor-descendant relation won't break during ordered removal (ancestors always removed
 //! before descendants). Removal using `remove_by_hash` can break this rule.
+use db::TransactionProvider;
+use primitives::bytes::Bytes;
 use primitives::hash::H256;
 use chain::Transaction;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::BTreeSet;
-use ser::Serializable;
+use ser::{Serializable, serialize};
 use heapsize::HeapSizeOf;
 
 /// Transactions ordering strategy
@@ -681,6 +683,16 @@ impl MemoryPool {
 	#[cfg(test)]
 	fn get_storage_index(&self) -> u64 {
 		(self.storage.by_hash.len() % 3usize) as u64
+	}
+}
+
+impl TransactionProvider for MemoryPool {
+	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
+		self.get(hash).map(|t| serialize(t))
+	}
+
+	fn transaction(&self, hash: &H256) -> Option<Transaction> {
+		self.get(hash).cloned()
 	}
 }
 
