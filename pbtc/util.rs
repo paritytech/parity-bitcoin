@@ -38,8 +38,6 @@ pub fn init_db(cfg: &Config, db: &db::SharedStore) -> Result<(), String> {
 fn custom_path(data_dir: &str, sub_dir: &str) -> PathBuf {
 	let mut path = PathBuf::from(data_dir);
 	path.push(sub_dir);
-	if let Err(e) = create_dir_all(&path) {
-		panic!("Failed to get app dir: {}", e);
-	}
+	create_dir_all(&path).expect("Failed to get app dir");
 	path
 }
