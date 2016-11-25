@@ -20,6 +20,7 @@ db = { path = "db" }
 verification = { path = "verification" }
 sync = { path = "sync" }
 import = { path = "import" }
+bencher = { path = "bencher" }
 
 [[bin]]
 path = "pbtc/main.rs"

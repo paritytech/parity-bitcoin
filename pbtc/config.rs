@@ -1,6 +1,7 @@
 use std::net;
 use clap;
 use message::Magic;
+use {USER_AGENT, REGTEST_USER_AGENT};
 
 pub struct Config {
 	pub magic: Magic,
@@ -12,6 +13,8 @@ pub struct Config {
 	pub outbound_connections: u32,
 	pub p2p_threads: usize,
 	pub db_cache: usize,
+	pub data_dir: Option<String>,
+	pub user_agent: String,
 }
 
 pub const DEFAULT_DB_CACHE: usize = 512;
@@ -33,6 +36,12 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	let p2p_threads = match magic {
 		Magic::Testnet | Magic::Mainnet => 4,
 		Magic::Regtest => 1,
+	};
+
+	// to skip idiotic 30 seconds delay in test-scripts
+	let user_agent = match magic {
+		Magic::Testnet | Magic::Mainnet => USER_AGENT,
+		Magic::Regtest => REGTEST_USER_AGENT,
 	};
 
 	let port = match matches.value_of("port") {
@@ -60,6 +69,11 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => DEFAULT_DB_CACHE,
 	};
 
+	let data_dir = match matches.value_of("data-dir") {
+		Some(s) => Some(try!(s.parse().map_err(|_| "Invalid data-dir".to_owned()))),
+		None => None,
+	};
+
 	let config = Config {
 		print_to_console: print_to_console,
 		magic: magic,
@@ -70,6 +84,8 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		outbound_connections: out_connections,
 		p2p_threads: p2p_threads,
 		db_cache: db_cache,
+		data_dir: data_dir,
+		user_agent: user_agent.to_string(),
 	};
 
 	Ok(config)

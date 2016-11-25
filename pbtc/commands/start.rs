@@ -2,13 +2,15 @@ use std::net::SocketAddr;
 use sync::create_sync_connection_factory;
 use message::Services;
 use util::{open_db, init_db, node_table_path};
-use {config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM, USER_AGENT};
+use {config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM};
 
 pub fn start(cfg: config::Config) -> Result<(), String> {
 	let mut el = p2p::event_loop();
 
 	let db = open_db(&cfg);
 	try!(init_db(&cfg, &db));
+
+	let nodes_path = node_table_path(&cfg);
 
 	let p2p_cfg = p2p::Config {
 		threads: cfg.p2p_threads,
@@ -20,13 +22,13 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 			magic: cfg.magic,
 			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
 			services: Services::default().with_network(true),
-			user_agent: USER_AGENT.into(),
+			user_agent: cfg.user_agent,
 			start_height: 0,
 			relay: false,
 		},
 		peers: cfg.connect.map_or_else(|| vec![], |x| vec![x]),
 		seeds: cfg.seednode.map_or_else(|| vec![], |x| vec![x]),
-		node_table_path: node_table_path(),
+		node_table_path: nodes_path,
 	};
 
 	let sync_handle = el.handle();
