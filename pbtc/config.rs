@@ -12,6 +12,7 @@ pub struct Config {
 	pub outbound_connections: u32,
 	pub p2p_threads: usize,
 	pub db_cache: usize,
+	pub data_dir: Option<String>,
 }
 
 pub const DEFAULT_DB_CACHE: usize = 512;
@@ -60,6 +61,11 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => DEFAULT_DB_CACHE,
 	};
 
+	let data_dir = match matches.value_of("data-dir") {
+		Some(s) => Some(try!(s.parse().map_err(|_| "Invalid data-dir".to_owned()))),
+		None => None,
+	};
+
 	let config = Config {
 		print_to_console: print_to_console,
 		magic: magic,
@@ -70,6 +76,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		outbound_connections: out_connections,
 		p2p_threads: p2p_threads,
 		db_cache: db_cache,
+		data_dir: data_dir,
 	};
 
 	Ok(config)
