@@ -288,7 +288,8 @@ impl ChainVerifier {
 		}
 
 		if timestamps.len() > 2 {
-			let timestamps: Vec<_> = timestamps.into_iter().collect();
+			let mut timestamps: Vec<_> = timestamps.into_iter().collect();
+			timestamps.sort();
 			Some(timestamps[timestamps.len() / 2])
 		}
 		else { None }
