@@ -21,10 +21,6 @@ const MAX_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS * RETARGETING_FACTOR;
 // Target number of blocks, 2 weaks, 2016
 pub const RETARGETING_INTERVAL: u32 = TARGET_TIMESPAN_SECONDS / TARGET_SPACING_SECONDS;
 
-pub const MAX_NBITS_MAINNET: u32 = 0x1d00ffff;
-pub const MAX_NBITS_TESTNET: u32 = 0x1d00ffff;
-pub const MAX_NBITS_REGTEST: u32 = 0x207fffff;
-
 pub fn is_retarget_height(height: u32) -> bool {
 	height % RETARGETING_INTERVAL == 0
 }
@@ -34,10 +30,10 @@ fn retarget_timespan(retarget_timestamp: u32, last_timestamp: u32) -> u32 {
 	range_constrain(timespan as u32, MIN_TIMESPAN, MAX_TIMESPAN)
 }
 
-pub fn work_required_retarget(retarget_timestamp: u32, last_timestamp: u32, last_nbits: u32) -> u32 {
+pub fn work_required_retarget(max_nbits: u32, retarget_timestamp: u32, last_timestamp: u32, last_nbits: u32) -> u32 {
 	// ignore overflows here
 	let mut retarget = Compact::new(last_nbits).to_u256().unwrap_or_else(|x| x);
-	let maximum = Compact::new(MAX_NBITS_MAINNET).to_u256().unwrap_or_else(|x| x);
+	let maximum = Compact::new(max_nbits).to_u256().unwrap_or_else(|x| x);
 
 	// multiplication overflow potential
 	retarget = retarget * U256::from(retarget_timespan(retarget_timestamp, last_timestamp));
@@ -59,8 +55,10 @@ fn range_constrain(value: u32, min: u32, max: u32) -> u32 {
 }
 
 /// Simple nbits check that does not require 256-bit arithmetic
-pub fn check_nbits(hash: &H256, n_bits: u32) -> bool {
-	if n_bits > MAX_NBITS_REGTEST { return false; }
+pub fn check_nbits(max_nbits: u32, hash: &H256, n_bits: u32) -> bool {
+	if n_bits > max_nbits {
+		return false;
+	}
 
 	let hash_bytes: &[u8] = &**hash;
 
@@ -137,6 +135,7 @@ pub fn p2sh_sigops(output: &Script, input_ref: &Script) -> usize {
 
 #[cfg(test)]
 mod tests {
+	use network::Magic;
 	use super::{block_reward_satoshi, check_nbits};
 	use hash::H256;
 
@@ -154,29 +153,31 @@ mod tests {
 
 	#[test]
 	fn nbits() {
+		let max_nbits = Magic::Regtest.max_nbits();
+
 		// strictly equal
 		let hash = H256::from_reversed_str("00000000000000001bc330000000000000000000000000000000000000000000");
 		let nbits = 0x181bc330u32;
-		assert!(check_nbits(&hash, nbits));
+		assert!(check_nbits(max_nbits, &hash, nbits));
 
 		// nbits match but not equal (greater)
 		let hash = H256::from_reversed_str("00000000000000001bc330000000000000000000000000000000000000000001");
 		let nbits = 0x181bc330u32;
-		assert!(!check_nbits(&hash, nbits));
+		assert!(!check_nbits(max_nbits, &hash, nbits));
 
 		// greater
 		let hash = H256::from_reversed_str("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
 		let nbits = 0x181bc330u32;
-		assert!(!check_nbits(&hash, nbits));
+		assert!(!check_nbits(max_nbits, &hash, nbits));
 
 
 		// some real examples
 		let hash = H256::from_reversed_str("000000000000000001f942eb4bfa0aeccb6a14c268f4c72d5fff17270da771b9");
 		let nbits = 404129525;
-		assert!(check_nbits(&hash, nbits));
+		assert!(check_nbits(max_nbits, &hash, nbits));
 
 		let hash = H256::from_reversed_str("00000000000000000e753ef636075711efd2cbf5a8473c7c5b67755a3701e0c2");
 		let nbits = 404129525;
-		assert!(check_nbits(&hash, nbits));
+		assert!(check_nbits(max_nbits, &hash, nbits));
 	}
 }

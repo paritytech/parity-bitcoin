@@ -10,3 +10,4 @@ bitcrypto = { path = "../crypto" }
 chain = { path = "../chain" }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
+network = { path = "../network" }

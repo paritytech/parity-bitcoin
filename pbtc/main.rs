@@ -12,6 +12,7 @@ extern crate chain;
 extern crate keys;
 extern crate script;
 extern crate message;
+extern crate network;
 extern crate p2p;
 extern crate sync;
 extern crate import;

@@ -1,7 +1,8 @@
 use hash::H32;
 use ser::{Serializable, Stream, Reader};
 use crypto::checksum;
-use common::{Command, Magic};
+use network::Magic;
+use common::Command;
 use Error;
 
 #[derive(Debug, PartialEq)]
@@ -31,9 +32,9 @@ impl MessageHeader {
 
 		let mut reader = Reader::new(data);
 		let magic: u32 = try!(reader.read());
-		let magic = try!(Magic::from_u32(magic));
+		let magic = Magic::from(magic);
 		if expected != magic {
-			return Err(Error::WrongMagic);
+			return Err(Error::InvalidMagic);
 		}
 
 		let header = MessageHeader {
@@ -61,7 +62,7 @@ impl Serializable for MessageHeader {
 mod tests {
 	use bytes::Bytes;
 	use ser::serialize;
-	use common::Magic;
+	use network::Magic;
 	use super::MessageHeader;
 
 	#[test]

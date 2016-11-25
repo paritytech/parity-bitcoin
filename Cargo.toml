@@ -13,6 +13,7 @@ clap = { version = "2", features = ["yaml"] }
 chain = { path = "chain" }
 keys = { path = "keys" }
 message = { path = "message" }
+network = { path = "network" }
 miner = { path = "miner" }
 p2p = { path = "p2p" }
 script = { path = "script" }

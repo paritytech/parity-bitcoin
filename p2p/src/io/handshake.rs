@@ -2,7 +2,7 @@ use std::{io, cmp};
 use futures::{Future, Poll, Async};
 use message::{Message, MessageResult, Error};
 use message::types::{Version, Verack};
-use message::common::Magic;
+use network::Magic;
 use io::{write_message, WriteMessage, ReadMessage, read_message};
 
 pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> Handshake<A> where A: io::Write + io::Read {
@@ -199,7 +199,8 @@ mod tests {
 	use futures::Future;
 	use bytes::Bytes;
 	use ser::Stream;
-	use message::{Magic, Message};
+	use network::Magic;
+	use message::Message;
 	use message::types::Verack;
 	use message::types::version::{Version, V0, V106, V70001};
 	use super::{handshake, accept_handshake, HandshakeResult};

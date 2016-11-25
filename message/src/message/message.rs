@@ -1,6 +1,7 @@
 use ser::Stream;
 use bytes::{TaggedBytes, Bytes};
-use common::{Magic, Command};
+use network::Magic;
+use common::Command;
 use serialization::serialize_payload;
 use {Payload, MessageResult, MessageHeader};
 
