@@ -179,8 +179,4 @@ mod tests {
 		let nbits = 404129525;
 		assert!(check_nbits(&hash, nbits));
 	}
-
-	#[test]
-	fn threshold() {
-	}
 }
