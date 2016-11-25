@@ -26,6 +26,7 @@ use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchr
 	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
 use synchronization_verifier::{Verifier, VerificationSink};
 use hash_queue::HashPosition;
+use miner::transaction_fee_rate;
 use time;
 use std::time::Duration;
 
@@ -195,6 +196,7 @@ pub trait Client : Send + 'static {
 	fn on_peer_filteradd(&mut self, peer_index: usize, message: &types::FilterAdd);
 	fn on_peer_filterclear(&mut self, peer_index: usize);
 	fn on_peer_sendheaders(&mut self, peer_index: usize);
+	fn on_peer_feefilter(&mut self, peer_index: usize, message: &types::FeeFilter);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
 }
@@ -215,6 +217,7 @@ pub trait ClientCore : VerificationSink {
 	fn on_peer_filteradd(&mut self, peer_index: usize, message: &types::FilterAdd);
 	fn on_peer_filterclear(&mut self, peer_index: usize);
 	fn on_peer_sendheaders(&mut self, peer_index: usize);
+	fn on_peer_feefilter(&mut self, peer_index: usize, message: &types::FeeFilter);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>);
@@ -399,6 +402,10 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 
 	fn on_peer_sendheaders(&mut self, peer_index: usize) {
 		self.core.lock().on_peer_sendheaders(peer_index);
+	}
+
+	fn on_peer_feefilter(&mut self, peer_index: usize, message: &types::FeeFilter) {
+		self.core.lock().on_peer_feefilter(peer_index, message);
 	}
 
 	fn on_peer_disconnected(&mut self, peer_index: usize) {
@@ -637,6 +644,13 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 	}
 
+	/// Peer wants to limit transaction announcing by transaction fee
+	fn on_peer_feefilter(&mut self, peer_index: usize, message: &types::FeeFilter) {
+		if self.peers.is_known_peer(peer_index) {
+			self.peers.on_peer_feefilter(peer_index, message.fee_rate);
+		}
+	}
+
 	/// Peer disconnected.
 	fn on_peer_disconnected(&mut self, peer_index: usize) {
 		// when last peer is disconnected, reset, but let verifying blocks be verified
@@ -823,7 +837,7 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 	fn on_transaction_verification_success(&mut self, transaction: Transaction) {
 		let hash = transaction.hash();
 
-		{
+		let transaction_fee_rate = {
 			// insert transaction to the memory pool
 			let mut chain = self.chain.write();
 
@@ -835,10 +849,13 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 
 			// transaction was in verification queue => insert to memory pool
 			chain.insert_verified_transaction(transaction.clone());
-		}
+
+			// calculate transaction fee rate
+			transaction_fee_rate(&*chain, &transaction)
+		};
 
 		// relay transaction to peers
-		self.relay_new_transactions(vec![(hash, &transaction)]);
+		self.relay_new_transactions(vec![(hash, &transaction, transaction_fee_rate)]);
 	}
 
 	/// Process failed transaction verification
@@ -971,12 +988,14 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Relay new transactions
-	fn relay_new_transactions(&mut self, new_transactions: Vec<(H256, &Transaction)>) {
+	fn relay_new_transactions(&mut self, new_transactions: Vec<(H256, &Transaction, u64)>) {
 		let tasks: Vec<_> = self.peers.all_peers().into_iter()
 			.filter_map(|peer_index| {
 				let inventory: Vec<_> = new_transactions.iter()
-					.filter(|&&(ref h, tx)| self.peers.filter_mut(peer_index).filter_transaction(h, tx))
-					.map(|&(ref h, _)| InventoryVector {
+					.filter(|&&(ref h, tx, tx_fee_rate)| {
+						self.peers.filter_mut(peer_index).filter_transaction(h, tx, tx_fee_rate)
+					})
+					.map(|&(ref h, _, _)| InventoryVector {
 						inv_type: InventoryType::MessageTx,
 						hash: h.clone(),
 					})
@@ -1283,6 +1302,7 @@ pub mod tests {
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, Transaction};
 	use message::common::{InventoryVector, InventoryType};
+	use message::types;
 	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore};
 	use connection_filter::tests::*;
 	use synchronization_executor::Task;
@@ -2140,6 +2160,56 @@ pub mod tests {
 		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1),
 			Task::SendHeaders(2, headers, ServerTaskIndex::None),
 			Task::SendInventory(3, inventory, ServerTaskIndex::None),
+		]);
+	}
+
+	#[test]
+	fn relay_new_transaction_with_feefilter() {
+		let (_, _, executor, chain, sync) = create_sync(None, None);
+
+		let b1 = test_data::block_builder().header().parent(test_data::genesis().hash()).build()
+			.transaction().output().value(1_000_000).build().build()
+			.build(); // genesis -> b1
+		let tx0 = b1.transactions[0].clone();
+		let tx1: Transaction = test_data::TransactionBuilder::with_output(800_000).add_input(&tx0, 0).into();
+		let tx1_hash = tx1.hash();
+
+		let mut sync = sync.lock();
+		sync.on_peer_connected(1);
+		sync.on_peer_connected(2);
+		sync.on_peer_connected(3);
+		sync.on_peer_connected(4);
+
+		sync.on_peer_block(1, b1);
+
+		{
+			use miner::transaction_fee_rate;
+			let chain = chain.read();
+			assert_eq!(transaction_fee_rate(&*chain, &tx1), 3333); // 200_000 / 60
+		}
+
+		sync.on_peer_feefilter(2, &types::FeeFilter { fee_rate: 3000, });
+		sync.on_peer_feefilter(3, &types::FeeFilter { fee_rate: 4000, });
+
+		// forget previous tasks
+		{ executor.lock().take_tasks(); }
+
+		sync.on_peer_transaction(1, tx1);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![
+			Task::SendInventory(2, vec![
+				InventoryVector {
+					inv_type: InventoryType::MessageTx,
+					hash: tx1_hash.clone(),
+				}
+			], ServerTaskIndex::None),
+			Task::SendInventory(4, vec![
+				InventoryVector {
+					inv_type: InventoryType::MessageTx,
+					hash: tx1_hash.clone(),
+				}
+			], ServerTaskIndex::None),
 		]);
 	}
 }

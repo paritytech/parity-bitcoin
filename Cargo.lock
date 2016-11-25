@@ -337,6 +337,7 @@ name = "miner"
 version = "0.1.0"
 dependencies = [
  "chain 0.1.0",
+ "db 0.1.0",
  "heapsize 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
  "serialization 0.1.0",

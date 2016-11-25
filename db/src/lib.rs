@@ -46,7 +46,7 @@ pub use best_block::BestBlock;
 pub use storage::{Storage, Store};
 pub use error::Error;
 pub use kvdb::Database;
-pub use transaction_provider::TransactionProvider;
+pub use transaction_provider::{TransactionProvider, AsTransactionProvider};
 pub use transaction_meta_provider::TransactionMetaProvider;
 pub use block_stapler::{BlockStapler, BlockInsertedChain};
 pub use block_provider::BlockProvider;
