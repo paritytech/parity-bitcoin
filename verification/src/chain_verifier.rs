@@ -1,5 +1,7 @@
 //! Bitcoin chain verifier
 
+use std::cmp;
+use std::collections::HashSet;
 use db::{self, BlockRef, BlockLocation};
 use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
 use {chain, utils};
@@ -57,9 +59,15 @@ impl ChainVerifier {
 		if let Some(work) = self.work_required(block, at_height) {
 			if !self.skip_pow && work != block.header().nbits {
 				trace!(target: "verification", "pow verification error at height: {}", at_height);
-				trace!(target: "verification", "block: {:?}", block);
 				trace!(target: "verification", "expected work: {}, got {}", work, block.header().nbits);
 				return Err(Error::Difficulty);
+			}
+		}
+
+		if let Some(median_timestamp) = self.ordered_median_timestamp(block, at_height) {
+			if median_timestamp >= block.block_header.time {
+				trace!(target: "verification", "median timestamp verification failed, median: {}, current: {}", median_timestamp, block.block_header.time);
+				return Err(Error::Timestamp);
 			}
 		}
 
@@ -267,13 +275,34 @@ impl ChainVerifier {
 		}
 	}
 
+	fn ordered_median_timestamp(&self, block: &chain::Block, height: u32) -> Option<u32> {
+		if height == 0 {
+			return None;
+		}
+
+		// TODO: make 11 a const
+		let max = cmp::min(height, 11);
+		let mut timestamps = HashSet::new();
+		let mut block_ref = block.block_header.previous_header_hash.clone().into();
+		// TODO: optimize it, so it does not make 11 redundant queries each time
+		for _ in 0..max {
+			let previous_header = self.store.block_header(block_ref).expect("block_ref < height; qed");
+			timestamps.insert(previous_header.time);
+			block_ref = previous_header.previous_header_hash.into();
+		}
+
+		let timestamps: Vec<_> = timestamps.into_iter().collect();
+		Some(timestamps[timestamps.len() / 2])
+	}
+
 	fn work_required(&self, block: &chain::Block, height: u32) -> Option<u32> {
 		if height == 0 {
 			return None;
 		}
 
-		let parent_ref = block.block_header.previous_header_hash.clone().into();
-		let previous_header = self.store.block_header(parent_ref).expect("expected to find parent header in database");
+		// should this be best_header or parent header?
+		// regtest do not pass with previous header, but, imo checking with best is a bit weird, mk
+		let	previous_header = self.store.best_header().expect("self.height != 0; qed");
 
 		if utils::is_retarget_height(height) {
 			let retarget_ref = (height - utils::RETARGETING_INTERVAL).into();
