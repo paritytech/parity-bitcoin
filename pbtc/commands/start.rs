@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use sync::create_sync_connection_factory;
 use message::Services;
 use util::{open_db, init_db, node_table_path};
-use {config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM, USER_AGENT};
+use {config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM};
 
 pub fn start(cfg: config::Config) -> Result<(), String> {
 	let mut el = p2p::event_loop();
@@ -22,7 +22,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 			magic: cfg.magic,
 			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
 			services: Services::default().with_network(true),
-			user_agent: USER_AGENT.into(),
+			user_agent: cfg.user_agent,
 			start_height: 0,
 			relay: false,
 		},
