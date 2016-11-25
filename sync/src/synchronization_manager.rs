@@ -8,9 +8,9 @@ use primitives::hash::H256;
 /// Management interval (in ms)
 pub const MANAGEMENT_INTERVAL_MS: u64 = 10 * 1000;
 /// Response time before getting block to decrease peer score
-const DEFAULT_PEER_BLOCK_FAILURE_INTERVAL_MS: u32 = 30 * 1000;
+const DEFAULT_PEER_BLOCK_FAILURE_INTERVAL_MS: u32 = 60 * 1000;
 /// Response time before getting inventory to decrease peer score
-const DEFAULT_PEER_INVENTORY_FAILURE_INTERVAL_MS: u32 = 30 * 1000;
+const DEFAULT_PEER_INVENTORY_FAILURE_INTERVAL_MS: u32 = 60 * 1000;
 /// Unknown orphan block removal time
 const DEFAULT_UNKNOWN_BLOCK_REMOVAL_TIME_MS: u32 = 20 * 60 * 1000;
 /// Maximal number of orphaned blocks
