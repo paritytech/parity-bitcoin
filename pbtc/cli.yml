@@ -29,6 +29,12 @@ args:
     - printtoconsole:
         long: printtoconsole
         help: Send trace/debug info to console instead of debug.log file
+    - data-dir:
+        short: d
+        long: data-dir
+        value_name: PATH
+        help: Specify the database & configuration directory PATH
+        takes_value: true
     - db-cache:
         long: db-cache
         help: Sets db cache size
