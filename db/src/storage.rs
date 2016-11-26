@@ -192,7 +192,7 @@ impl Storage {
 							return Err(Error::double_spend(&input.previous_output.hash));
 						}
 
-						meta.note_used(input.previous_output.index as usize);
+						meta.denote_used(input.previous_output.index as usize);
 						true
 					},
 					None => false,
@@ -204,7 +204,7 @@ impl Storage {
 						return Err(Error::double_spend(&input.previous_output.hash));
 					}
 
-					meta.note_used(input.previous_output.index as usize);
+					meta.denote_used(input.previous_output.index as usize);
 
 					context.meta.insert(
 						input.previous_output.hash.clone(),
@@ -243,7 +243,7 @@ impl Storage {
 			for input in &tx.inputs {
 				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
-						meta.denote_used(input.previous_output.index as usize);
+						meta.denote_unused(input.previous_output.index as usize);
 						true
 					},
 					None => false,
@@ -257,7 +257,7 @@ impl Storage {
 								&input.previous_output.hash
 							));
 
-					meta.denote_used(input.previous_output.index as usize);
+					meta.denote_unused(input.previous_output.index as usize);
 
 					context.meta.insert(
 						input.previous_output.hash.clone(),
