@@ -84,6 +84,8 @@ pub enum TransactionError {
 	SigopsP2SH(usize),
 	/// Coinbase transaction is found at position that is not 0
 	MisplacedCoinbase(usize),
+	/// Not fully spent transaction with the same hash already exists.
+	BIP30,
 }
 
 #[derive(PartialEq, Debug)]

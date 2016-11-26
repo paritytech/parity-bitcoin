@@ -68,6 +68,16 @@ impl ChainVerifier {
 
 		let coinbase_spends = block.transactions()[0].total_spends();
 
+		// bip30
+		// TODO: add exceptions
+		for (tx_index, tx) in block.transactions.iter().enumerate() {
+			if let Some(meta) = self.store.transaction_meta(&tx.hash()) {
+				if !meta.is_fully_spent() {
+					return Err(Error::Transaction(tx_index, TransactionError::BIP30));
+				}
+			}
+		}
+
 		let mut total_unspent = 0u64;
 		for (tx_index, tx) in block.transactions().iter().enumerate().skip(1) {
 

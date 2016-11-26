@@ -175,7 +175,7 @@ impl Storage {
 		if let Some(accepted_tx) = accepted_txs.iter().next() {
 			context.meta.insert(
 				accepted_tx.hash(),
-				TransactionMeta::new(number, accepted_tx.outputs.len()).coinbase()
+				TransactionMeta::new_coinbase(number, accepted_tx.outputs.len())
 			);
 		}
 
@@ -186,29 +186,27 @@ impl Storage {
 			);
 
 			for input in &accepted_tx.inputs {
-				if !match context.meta.get_mut(&input.previous_output.hash) {
-					Some(ref mut meta) => {
+				use std::collections::hash_map::Entry;
+
+				match context.meta.entry(input.previous_output.hash.clone()) {
+					Entry::Occupied(mut entry) => {
+						let meta = entry.get_mut();
+						if meta.is_spent(input.previous_output.index as usize) {
+							return Err(Error::double_spend(&input.previous_output.hash));
+						}
+						meta.denote_used(input.previous_output.index as usize);
+					},
+					Entry::Vacant(entry) => {
+						let mut meta = self.transaction_meta(&input.previous_output.hash)
+							.ok_or(Error::unknown_spending(&input.previous_output.hash))?;
+
 						if meta.is_spent(input.previous_output.index as usize) {
 							return Err(Error::double_spend(&input.previous_output.hash));
 						}
 
 						meta.denote_used(input.previous_output.index as usize);
-						true
+						entry.insert(meta);
 					},
-					None => false,
-				} {
-					let mut meta = self.transaction_meta(&input.previous_output.hash)
-						.ok_or(Error::unknown_spending(&input.previous_output.hash))?;
-
-					if meta.is_spent(input.previous_output.index as usize) {
-						return Err(Error::double_spend(&input.previous_output.hash));
-					}
-
-					meta.denote_used(input.previous_output.index as usize);
-
-					context.meta.insert(
-						input.previous_output.hash.clone(),
-						meta);
 				}
 			}
 		}
@@ -238,30 +236,24 @@ impl Storage {
 			// remove meta
 			context.db_transaction.delete(Some(COL_TRANSACTIONS_META), &**tx_hash);
 
-			// denote outputs used
-			if tx_hash_num == 0 { continue; } // coinbase transaction does not have inputs
+			// coinbase transaction does not have inputs
+			if tx_hash_num == 0 {
+				continue;
+			}
+
+			// denote outputs as unused
 			for input in &tx.inputs {
-				if !match context.meta.get_mut(&input.previous_output.hash) {
-					Some(ref mut meta) => {
-						meta.denote_unused(input.previous_output.index as usize);
-						true
+				use std::collections::hash_map::Entry;
+				match context.meta.entry(input.previous_output.hash.clone()) {
+					Entry::Occupied(mut entry) => {
+						entry.get_mut().denote_unused(input.previous_output.index as usize);
 					},
-					None => false,
-				} {
-					let mut meta =
-						self.transaction_meta(&input.previous_output.hash)
-							.unwrap_or_else(|| panic!(
-								// decanonization should always have meta
-								// because block could not have made canonical without writing meta
-								"No transaction metadata for {}! Corrupted DB? Reindex?",
-								&input.previous_output.hash
-							));
-
-					meta.denote_unused(input.previous_output.index as usize);
-
-					context.meta.insert(
-						input.previous_output.hash.clone(),
-						meta);
+					Entry::Vacant(entry) => {
+						let mut meta = self.transaction_meta(&input.previous_output.hash)
+							.expect("No transaction metadata! Possible db corruption");
+						meta.denote_unused(input.previous_output.index as usize);
+						entry.insert(meta);
+					},
 				}
 			}
 		}
