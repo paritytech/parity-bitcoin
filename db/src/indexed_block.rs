@@ -28,11 +28,31 @@ impl From<chain::Block> for IndexedBlock {
 }
 
 impl IndexedBlock {
+	pub fn new(header: chain::BlockHeader, transaction_index: Vec<(H256, chain::Transaction)>) -> Self {
+		let mut block = IndexedBlock {
+			header_hash: header.hash(),
+			header: header,
+			transactions: Vec::new(),
+			transaction_hashes: Vec::new(),
+		};
+
+		for (h256, tx) in transaction_index {
+			block.transactions.push(tx);
+			block.transaction_hashes.push(h256);
+		}
+
+		block
+	}
+
 	pub fn transactions(&self) -> IndexedTransactions {
 		IndexedTransactions {
 			position: 0,
 			block: self,
 		}
+	}
+
+	pub fn transaction_hashes(&self) -> &[H256] {
+		&self.transaction_hashes
 	}
 
 	pub fn header(&self) -> &chain::BlockHeader {
@@ -41,6 +61,17 @@ impl IndexedBlock {
 
 	pub fn hash(&self) -> &H256 {
 		&self.header_hash
+	}
+
+	pub fn transaction_count(&self) -> usize {
+		self.transaction_hashes.len()
+	}
+
+	pub fn to_block(&self) -> chain::Block {
+		chain::Block::new(
+			self.header.clone(),
+			self.transactions.clone(),
+		)
 	}
 }
 

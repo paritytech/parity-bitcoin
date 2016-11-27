@@ -1,5 +1,5 @@
 use primitives::hash::H256;
-use super::BlockLocation;
+use super::{BlockLocation, IndexedBlock};
 use chain;
 use error::Error;
 
@@ -46,4 +46,7 @@ pub trait BlockStapler {
 
 	/// insert block in the storage
 	fn insert_block(&self, block: &chain::Block) -> Result<BlockInsertedChain, Error>;
+
+	/// insert pre-processed block in the storage
+	fn insert_indexed_block(&self, block: &IndexedBlock) -> Result<BlockInsertedChain, Error>;
 }
