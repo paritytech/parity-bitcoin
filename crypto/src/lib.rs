@@ -1,10 +1,13 @@
 extern crate crypto as rcrypto;
 extern crate primitives;
+extern crate siphasher;
 
+use std::hash::Hasher;
 use rcrypto::sha1::Sha1;
 use rcrypto::sha2::Sha256;
 use rcrypto::ripemd160::Ripemd160;
 use rcrypto::digest::Digest;
+use siphasher::sip::SipHasher24;
 use primitives::hash::{H32, H160, H256};
 
 pub struct DHash160 {
@@ -146,6 +149,14 @@ pub fn dhash256(input: &[u8]) -> H256 {
 	result
 }
 
+/// SipHash-2-4
+#[inline]
+pub fn siphash24(key0: u64, key1: u64, input: &[u8]) -> u64 {
+	let mut hasher = SipHasher24::new_with_keys(key0, key1);
+	hasher.write(input);
+	hasher.finish()
+}
+
 /// Data checksum
 #[inline]
 pub fn checksum(data: &[u8]) -> H32 {
@@ -157,7 +168,7 @@ pub fn checksum(data: &[u8]) -> H32 {
 #[cfg(test)]
 mod tests {
 	use primitives::bytes::Bytes;
-	use super::{ripemd160, sha1, sha256, dhash160, dhash256, checksum};
+	use super::{ripemd160, sha1, sha256, dhash160, dhash256, siphash24, checksum};
 
 	#[test]
 	fn test_ripemd160() {
@@ -192,12 +203,19 @@ mod tests {
 		assert_eq!(result, expected);
 	}
 
-    #[test]
-    fn test_dhash256() {
+	#[test]
+	fn test_dhash256() {
 		let expected = "9595c9df90075148eb06860365df33584b75bff782a510c6cd4883a419833d50".into();
 		let result = dhash256(b"hello");
 		assert_eq!(result, expected);
-    }
+	}
+
+	#[test]
+	fn test_siphash24() {
+		let expected = 0x74f839c593dc67fd_u64;
+		let result = siphash24(0x0706050403020100_u64, 0x0F0E0D0C0B0A0908_u64, &[0; 1]);
+		assert_eq!(result, expected);
+	}
 
 	#[test]
 	fn test_checksum() {

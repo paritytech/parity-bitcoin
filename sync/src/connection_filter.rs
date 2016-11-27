@@ -123,7 +123,7 @@ impl ConnectionFilter {
 	}
 
 	/// Check if transaction should be sent to this connection && optionally update filter
-	pub fn filter_transaction(&mut self, transaction_hash: &H256, transaction: &Transaction, transaction_fee_rate: u64) -> bool {
+	pub fn filter_transaction(&mut self, transaction_hash: &H256, transaction: &Transaction, transaction_fee_rate: Option<u64>) -> bool {
 		// check if transaction is known
 		if self.last_transactions.contains_key(transaction_hash) {
 			return false;
@@ -131,8 +131,10 @@ impl ConnectionFilter {
 
 		// check if transaction fee rate is high enough for this peer
 		if let Some(fee_rate) = self.fee_rate {
-			if transaction_fee_rate < fee_rate {
-				return false;
+			if let Some(transaction_fee_rate) = transaction_fee_rate {
+				if transaction_fee_rate < fee_rate {
+					return false;
+				}
 			}
 		}
 
@@ -520,13 +522,13 @@ pub mod tests {
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, None));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, None));
 
 		filter.add(&make_filteradd(&*tx1.hash()));
 
-		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, None));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, None));
 	}
 
 	#[test]
@@ -539,13 +541,13 @@ pub mod tests {
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, None));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, None));
 
 		filter.add(&make_filteradd(&tx1_out_data));
 
-		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, None));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, None));
 	}
 
 	#[test]
@@ -557,13 +559,13 @@ pub mod tests {
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, None));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, None));
 
 		filter.add(&make_filteradd(&tx1_previous_output));
 
-		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, None));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, None));
 	}
 
 	#[test]
@@ -576,13 +578,13 @@ pub mod tests {
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, None));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, None));
 
 		filter.add(&make_filteradd(&tx1_input_data));
 
-		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, None));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, None));
 	}
 
 	#[test]
@@ -592,23 +594,23 @@ pub mod tests {
 
 		let mut filter = ConnectionFilter::default();
 
-		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(filter.filter_transaction(&tx2.hash(), &tx2, 2000));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, Some(1000)));
+		assert!(filter.filter_transaction(&tx2.hash(), &tx2, Some(2000)));
 
 		filter.set_fee_rate(1500);
 
-		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(filter.filter_transaction(&tx2.hash(), &tx2, 2000));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, Some(1000)));
+		assert!(filter.filter_transaction(&tx2.hash(), &tx2, Some(2000)));
 
 		filter.set_fee_rate(3000);
 
-		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 2000));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, Some(1000)));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, Some(2000)));
 
 		filter.set_fee_rate(0);
 
-		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
-		assert!(filter.filter_transaction(&tx2.hash(), &tx2, 2000));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, Some(1000)));
+		assert!(filter.filter_transaction(&tx2.hash(), &tx2, Some(2000)));
 	}
 
 	#[test]

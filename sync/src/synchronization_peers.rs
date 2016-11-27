@@ -4,6 +4,7 @@ use primitives::hash::H256;
 use linked_hash_map::LinkedHashMap;
 use time::precise_time_s;
 use connection_filter::ConnectionFilter;
+use synchronization_client::BlockAnnouncementType;
 
 /// Max peer failures # before excluding from sync process
 const MAX_PEER_FAILURES: usize = 2;
@@ -27,8 +28,8 @@ pub struct Peers {
 	inventory_requests_order: LinkedHashMap<usize, f64>,
 	/// Peer connections filters.
 	filters: HashMap<usize, ConnectionFilter>,
-	/// Flags, informing that peer wants `headers` message instead of `inventory` when announcing new blocks
-	send_headers: HashSet<usize>,
+	/// The way peer is informed about new blocks
+	block_announcement_types: HashMap<usize, BlockAnnouncementType>,
 }
 
 /// Information on synchronization peers
@@ -54,7 +55,7 @@ impl Peers {
 			inventory_requests: HashSet::new(),
 			inventory_requests_order: LinkedHashMap::new(),
 			filters: HashMap::new(),
-			send_headers: HashSet::new(),
+			block_announcement_types: HashMap::new(),
 		}
 	}
 
@@ -160,10 +161,10 @@ impl Peers {
 		self.filters.entry(peer_index).or_insert_with(ConnectionFilter::default)
 	}
 
-	/// Does peer wants `headers` message instead of `inventory` when announcing new blocks
-	pub fn send_headers(&self, peer_index: usize) -> bool {
-		assert!(self.is_known_peer(peer_index));
-		self.send_headers.contains(&peer_index)
+	/// Get the way peer is informed about new blocks
+	pub fn block_announcement_type(&self, peer_index: usize) -> BlockAnnouncementType {
+		self.block_announcement_types.get(&peer_index).cloned()
+			.unwrap_or(BlockAnnouncementType::SendInventory)
 	}
 
 	/// Mark peer as useful.
@@ -193,9 +194,9 @@ impl Peers {
 		self.inventory_requests_order.remove(&peer_index);
 	}
 
-	/// Peer wants `headers` message instead of `inventory` when announcing new blocks
-	pub fn on_peer_sendheaders(&mut self, peer_index: usize) {
-		self.send_headers.insert(peer_index);
+	/// Change the way peer is informed about new blocks
+	pub fn set_block_announcement_type(&mut self, peer_index: usize, announcement_type: BlockAnnouncementType) {
+		self.block_announcement_types.insert(peer_index, announcement_type);
 	}
 
 	/// Peer wants to limit transaction announcing by transaction fee
@@ -214,7 +215,7 @@ impl Peers {
 		self.inventory_requests.remove(&peer_index);
 		self.inventory_requests_order.remove(&peer_index);
 		self.filters.remove(&peer_index);
-		self.send_headers.remove(&peer_index);
+		self.block_announcement_types.remove(&peer_index);
 		peer_blocks_requests
 			.map(|hs| hs.into_iter().collect())
 	}

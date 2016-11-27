@@ -28,6 +28,10 @@ impl From<chain::Block> for IndexedBlock {
 }
 
 impl IndexedBlock {
+	pub fn transactions_len(&self) -> usize {
+		self.transactions.len()
+	}
+
 	pub fn transactions(&self) -> IndexedTransactions {
 		IndexedTransactions {
 			position: 0,

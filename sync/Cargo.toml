@@ -15,8 +15,10 @@ ethcore-devtools = { path = "../devtools" }
 bit-vec = "0.4.3"
 murmur3 = "0.3"
 rand = "0.3"
+byteorder = "0.5"
 
 chain = { path = "../chain" }
+bitcrypto = { path = "../crypto" }
 db = { path = "../db" }
 message = { path = "../message" }
 miner = { path = "../miner" }
