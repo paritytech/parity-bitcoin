@@ -1,3 +1,5 @@
+extern crate bitcrypto;
+extern crate byteorder;
 extern crate chain;
 extern crate db;
 #[macro_use]
@@ -25,6 +27,7 @@ extern crate network;
 
 mod best_headers_chain;
 mod blocks_writer;
+mod compact_block_builder;
 mod connection_filter;
 mod hash_queue;
 mod inbound_connection;

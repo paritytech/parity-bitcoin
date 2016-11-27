@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use parking_lot::Mutex;
 use chain::{Block, BlockHeader, Transaction};
-use message::common::{InventoryVector, InventoryType};
+use message::common::{InventoryVector, InventoryType, BlockHeaderAndIDs};
 use message::types;
 use primitives::hash::H256;
 use p2p::OutboundSyncConnectionRef;
@@ -17,6 +17,7 @@ pub trait TaskExecutor : Send + 'static {
 	fn execute(&mut self, task: Task);
 }
 
+// TODO: get rid of unneeded ServerTaskIndex-es
 /// Synchronization task for the peer.
 #[derive(Debug, PartialEq)]
 pub enum Task {
@@ -40,6 +41,8 @@ pub enum Task {
 	SendInventory(usize, Vec<InventoryVector>, ServerTaskIndex),
 	/// Send headers
 	SendHeaders(usize, Vec<BlockHeader>, ServerTaskIndex),
+	/// Send compact blocks
+	SendCompactBlocks(usize, Vec<BlockHeaderAndIDs>, ServerTaskIndex),
 	/// Notify io about ignored request
 	Ignore(usize, u32),
 }
@@ -184,6 +187,17 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					match id.raw() {
 						Some(id) => connection.respond_headers(&headers, id),
 						None => connection.send_headers(&headers),
+					}
+				}
+			},
+			Task::SendCompactBlocks(peer_index, compact_blocks, id) => {
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					assert_eq!(id.raw(), None);
+					for compact_block in compact_blocks {
+						trace!(target: "sync", "Sending compact_block {:?} to peer#{}", compact_block.header.hash(), peer_index);
+						connection.send_compact_block(&types::CompactBlock {
+							header: compact_block,
+						});
 					}
 				}
 			},
