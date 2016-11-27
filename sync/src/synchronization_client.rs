@@ -989,7 +989,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 							let block_header_and_ids: Vec<_> = indexed_blocks.into_iter()
 								.filter_map(|b| if self.peers.filter(peer_index).filter_block(&b.hash()) {
 									let prefilled_transactions_indexes = b.transactions().enumerate()
-										.filter(|&(_, (h, t))| self.peers.filter_mut(peer_index).filter_transaction(h, t))
+										// we do not filter by fee rate here, because it only reasonable for non-mined transactions
+										.filter(|&(_, (h, t))| self.peers.filter_mut(peer_index).filter_transaction(h, t, None))
 										.map(|(idx, _)| idx)
 										.collect();
 									Some(build_compact_block(b, prefilled_transactions_indexes))
@@ -1031,7 +1032,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			.filter_map(|peer_index| {
 				let inventory: Vec<_> = new_transactions.iter()
 					.filter(|&&(ref h, tx, tx_fee_rate)| {
-						self.peers.filter_mut(peer_index).filter_transaction(h, tx, tx_fee_rate)
+						self.peers.filter_mut(peer_index).filter_transaction(h, tx, Some(tx_fee_rate))
 					})
 					.map(|&(ref h, _, _)| InventoryVector {
 						inv_type: InventoryType::MessageTx,
@@ -2264,6 +2265,7 @@ pub mod tests {
 		sync.on_peer_block(2, test_data::block_h2());
 	}
 
+	#[test]
 	fn relay_new_block_after_sendcmpct() {
 		// TODO
 	}
