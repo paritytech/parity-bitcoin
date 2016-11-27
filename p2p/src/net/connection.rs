@@ -1,5 +1,5 @@
 use std::net;
-use message::Magic;
+use network::Magic;
 use message::common::Services;
 use io::SharedTcpStream;
 

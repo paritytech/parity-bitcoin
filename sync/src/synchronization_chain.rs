@@ -6,6 +6,7 @@ use parking_lot::RwLock;
 use chain::{Block, BlockHeader, Transaction};
 use db;
 use best_headers_chain::{BestHeadersChain, Information as BestHeadersInformation};
+use primitives::bytes::Bytes;
 use primitives::hash::H256;
 use hash_queue::{HashQueueChain, HashPosition};
 use miner::{MemoryPool, MemoryPoolOrderingStrategy, MemoryPoolInformation};
@@ -658,6 +659,18 @@ impl Chain {
 			}
 			index -= step;
 		}
+	}
+}
+
+impl db::TransactionProvider for Chain {
+	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
+		self.memory_pool.transaction_bytes(hash)
+			.or_else(|| self.storage.transaction_bytes(hash))
+	}
+
+	fn transaction(&self, hash: &H256) -> Option<Transaction> {
+		self.memory_pool.transaction(hash)
+			.or_else(|| self.storage.transaction(hash))
 	}
 }
 

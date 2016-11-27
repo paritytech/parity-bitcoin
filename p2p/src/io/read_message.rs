@@ -1,7 +1,8 @@
 use std::io;
 use std::marker::PhantomData;
 use futures::{Poll, Future, Async};
-use message::{MessageResult, Error, Magic, Payload};
+use network::Magic;
+use message::{MessageResult, Error, Payload};
 use io::{read_header, ReadHeader, read_payload, ReadPayload};
 
 pub fn read_message<M, A>(a: A, magic: Magic, version: u32) -> ReadMessage<M, A>
@@ -74,7 +75,8 @@ impl<M, A> Future for ReadMessage<M, A> where A: io::Read, M: Payload {
 mod tests {
 	use futures::Future;
 	use bytes::Bytes;
-	use message::{Magic, Error};
+	use network::Magic;
+	use message::Error;
 	use message::types::{Ping, Pong};
 	use super::read_message;
 
@@ -83,7 +85,7 @@ mod tests {
 		let raw: Bytes = "f9beb4d970696e6700000000000000000800000083c00c765845303b6da97786".into();
 		let ping = Ping::new(u64::from_str_radix("8677a96d3b304558", 16).unwrap());
 		assert_eq!(read_message(raw.as_ref(), Magic::Mainnet, 0).wait().unwrap().1, Ok(ping));
-		assert_eq!(read_message::<Ping, _>(raw.as_ref(), Magic::Testnet, 0).wait().unwrap().1, Err(Error::WrongMagic));
+		assert_eq!(read_message::<Ping, _>(raw.as_ref(), Magic::Testnet, 0).wait().unwrap().1, Err(Error::InvalidMagic));
 		assert_eq!(read_message::<Pong, _>(raw.as_ref(), Magic::Mainnet, 0).wait().unwrap().1, Err(Error::InvalidCommand));
 	}
 

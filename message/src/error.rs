@@ -9,10 +9,8 @@ pub enum Error {
 	Deserialize,
 	/// Command has wrong format or is unsupported.
 	InvalidCommand,
-	/// Network magic is not supported.
-	InvalidMagic,
 	/// Network magic comes from different network.
-	WrongMagic,
+	InvalidMagic,
 	/// Invalid checksum.
 	InvalidChecksum,
 	/// Invalid version.
@@ -37,7 +35,6 @@ impl error::Error for Error {
 			Error::Deserialize => "Message Deserialization Error",
 			Error::InvalidCommand => "Invalid Message Command",
 			Error::InvalidMagic => "Invalid Network Magic",
-			Error::WrongMagic => "Wrong Network Magic",
 			Error::InvalidChecksum => "Invalid message chacksum",
 			Error::InvalidVersion => "Unsupported protocol version",
 		}

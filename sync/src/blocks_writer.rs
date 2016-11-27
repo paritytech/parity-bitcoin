@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use chain;
 use db;
-use super::Error;
+use network::Magic;
 use verification::{Verify, ChainVerifier};
+use super::Error;
 
 pub struct BlocksWriter {
 	storage: Arc<db::Store>,
@@ -10,10 +11,10 @@ pub struct BlocksWriter {
 }
 
 impl BlocksWriter {
-	pub fn new(storage: db::SharedStore) -> BlocksWriter {
+	pub fn new(storage: db::SharedStore, network: Magic) -> BlocksWriter {
 		BlocksWriter {
 			storage: storage.clone(),
-			verifier: ChainVerifier::new(storage),
+			verifier: ChainVerifier::new(storage, network),
 		}
 	}
 
@@ -32,18 +33,17 @@ impl BlocksWriter {
 
 #[cfg(test)]
 mod tests {
-	use db;
-	use db::Store;
 	use std::sync::Arc;
+	use db::{self, Store};
+	use network::Magic;
+	use {test_data, verification};
 	use super::super::Error;
 	use super::BlocksWriter;
-	use test_data;
-	use verification;
 
 	#[test]
 	fn blocks_writer_appends_blocks() {
 		let db = Arc::new(db::TestStorage::with_genesis_block());
-		let mut blocks_target = BlocksWriter::new(db.clone());
+		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet);
 		blocks_target.append_block(test_data::block_h1()).expect("Expecting no error");
 		assert_eq!(db.best_block().expect("Block is inserted").number, 1);
 	}
@@ -51,7 +51,7 @@ mod tests {
 	#[test]
 	fn blocks_writer_verification_error() {
 		let db = Arc::new(db::TestStorage::with_genesis_block());
-		let mut blocks_target = BlocksWriter::new(db.clone());
+		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet);
 		match blocks_target.append_block(test_data::block_h2()).unwrap_err() {
 			Error::OutOfOrderBlock => (),
 			_ => panic!("Unexpected error"),
@@ -62,7 +62,7 @@ mod tests {
 	#[test]
 	fn blocks_writer_out_of_order_block() {
 		let db = Arc::new(db::TestStorage::with_genesis_block());
-		let mut blocks_target = BlocksWriter::new(db.clone());
+		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet);
 
 		let wrong_block = test_data::block_builder()
 			.header().parent(test_data::genesis().hash()).build()

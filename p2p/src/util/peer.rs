@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use message::Magic;
+use network::Magic;
 
 pub type PeerId = usize;
 

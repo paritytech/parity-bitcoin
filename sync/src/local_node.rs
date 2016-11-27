@@ -186,8 +186,9 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		self.client.lock().on_peer_block_announcement_type(peer_index, BlockAnnouncementType::SendHeader);
 	}
 
-	pub fn on_peer_feefilter(&self, peer_index: usize, _message: types::FeeFilter) {
+	pub fn on_peer_feefilter(&self, peer_index: usize, message: types::FeeFilter) {
 		trace!(target: "sync", "Got `feefilter` message from peer#{}", peer_index);
+		self.client.lock().on_peer_feefilter(peer_index, &message);
 	}
 
 	pub fn on_peer_send_compact(&self, peer_index: usize, message: types::SendCompact) {

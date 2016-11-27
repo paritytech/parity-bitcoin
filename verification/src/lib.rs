@@ -1,25 +1,30 @@
 //! Bitcoin blocks verification
 
-extern crate db;
-extern crate primitives;
-extern crate chain;
-extern crate serialization;
+extern crate byteorder;
 extern crate parking_lot;
 extern crate linked_hash_map;
-extern crate byteorder;
 extern crate time;
-extern crate script;
 #[macro_use]
 extern crate log;
+
+extern crate db;
+extern crate chain;
+extern crate network;
+extern crate primitives;
+extern crate serialization;
+extern crate script;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
 #[cfg(test)]
 extern crate test_data;
 
+mod chain_verifier;
+mod compact;
 mod queue;
 mod utils;
-mod chain_verifier;
+
+pub use primitives::{uint, hash};
 
 pub use queue::Queue;
 pub use chain_verifier::ChainVerifier;

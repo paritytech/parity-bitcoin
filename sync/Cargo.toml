@@ -28,6 +28,7 @@ script = { path = "../script" }
 serialization = { path = "../serialization" }
 test-data = { path = "../test-data" }
 verification = { path = "../verification" }
+network = { path = "../network" }
 
 [features]
 dev = []

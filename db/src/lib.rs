@@ -34,6 +34,18 @@ pub enum BlockRef {
 	Hash(primitives::hash::H256),
 }
 
+impl From<u32> for BlockRef {
+	fn from(u: u32) -> Self {
+		BlockRef::Number(u)
+	}
+}
+
+impl From<primitives::hash::H256> for BlockRef {
+	fn from(hash: primitives::hash::H256) -> Self {
+		BlockRef::Hash(hash)
+	}
+}
+
 #[derive(PartialEq, Debug)]
 pub enum BlockLocation {
 	Main(u32),
@@ -46,7 +58,7 @@ pub use best_block::BestBlock;
 pub use storage::{Storage, Store};
 pub use error::Error;
 pub use kvdb::Database;
-pub use transaction_provider::TransactionProvider;
+pub use transaction_provider::{TransactionProvider, AsTransactionProvider};
 pub use transaction_meta_provider::TransactionMetaProvider;
 pub use block_stapler::{BlockStapler, BlockInsertedChain};
 pub use block_provider::BlockProvider;

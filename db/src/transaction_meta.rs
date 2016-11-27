@@ -25,11 +25,6 @@ impl TransactionMeta {
 		}
 	}
 
-	/// note that particular output has been used
-	pub fn note_used(&mut self, index: usize) {
-		self.bits.set(index + 1 , true);
-	}
-
 	pub fn coinbase(mut self) -> Self {
 		self.bits.set(0, true);
 		self
@@ -40,8 +35,13 @@ impl TransactionMeta {
 			.expect("One bit should always exists, since it is created as usize + 1; minimum value of usize is 0; 0 + 1 = 1;  qed")
 	}
 
-	/// note that particular output has been used
+	/// denote particular output as used
 	pub fn denote_used(&mut self, index: usize) {
+		self.bits.set(index + 1 , true);
+	}
+
+	/// denote particular output as not used
+	pub fn denote_unused(&mut self, index: usize) {
 		self.bits.set(index + 1, false);
 	}
 

@@ -2,7 +2,7 @@
 
 use super::{
 	BlockRef, Store, Error, BestBlock, BlockLocation, BlockInsertedChain, BlockProvider,
-	BlockStapler, TransactionMetaProvider, TransactionProvider,
+	BlockStapler, TransactionMetaProvider, TransactionProvider, AsTransactionProvider
 };
 use chain::{self, Block};
 use primitives::hash::H256;
@@ -79,6 +79,13 @@ impl BlockProvider for TestStorage {
 		self.resolve_hash(block_ref)
 			.and_then(|ref h| data.blocks.get(h))
 			.map(|ref block| serialization::serialize(block.header()))
+	}
+
+	fn block_header(&self, block_ref: BlockRef) -> Option<chain::BlockHeader> {
+		let data = self.data.read();
+		self.resolve_hash(block_ref)
+			.and_then(|ref h| data.blocks.get(h))
+			.map(|ref block| block.header().clone())
 	}
 
 	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256> {
@@ -163,6 +170,12 @@ impl TransactionProvider for TestStorage {
 	}
 }
 
+impl AsTransactionProvider for TestStorage {
+	fn as_transaction_provider(&self) -> &TransactionProvider {
+		&*self
+	}
+}
+
 impl TransactionMetaProvider for TestStorage {
 	// just spawns new meta so far, use real store for proper tests
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
@@ -173,6 +186,12 @@ impl TransactionMetaProvider for TestStorage {
 impl Store for TestStorage {
 	fn best_block(&self) -> Option<BestBlock> {
 		self.data.read().best_block.clone()
+	}
+
+	fn best_header(&self) -> Option<chain::BlockHeader> {
+		self.data.read().best_block.as_ref().and_then(
+			|bb| Some(self.block_header(BlockRef::Hash(bb.hash.clone())).expect("Best block exists but no such header. Race condition?"))
+		)
 	}
 }
 

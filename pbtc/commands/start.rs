@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use sync::create_sync_connection_factory;
 use message::Services;
 use util::{open_db, init_db, node_table_path};
-use {config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM, USER_AGENT};
+use {config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM};
 
 pub fn start(cfg: config::Config) -> Result<(), String> {
 	let mut el = p2p::event_loop();
@@ -22,7 +22,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 			magic: cfg.magic,
 			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
 			services: Services::default().with_network(true),
-			user_agent: USER_AGENT.into(),
+			user_agent: cfg.user_agent,
 			start_height: 0,
 			relay: false,
 		},
@@ -32,7 +32,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 	};
 
 	let sync_handle = el.handle();
-	let sync_connection_factory = create_sync_connection_factory(&sync_handle, cfg.magic.consensus_params(), db);
+	let sync_connection_factory = create_sync_connection_factory(&sync_handle, cfg.magic, db);
 
 	let p2p = try!(p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle()).map_err(|x| x.to_string()));
 	try!(p2p.run().map_err(|_| "Failed to start p2p module"));

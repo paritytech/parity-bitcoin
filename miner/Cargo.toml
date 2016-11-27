@@ -6,6 +6,7 @@ authors = ["Ethcore <admin@ethcore.io>"]
 [dependencies]
 heapsize = "0.3"
 chain = { path = "../chain" }
+db = { path = "../db" }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
 test-data = { path = "../test-data" }

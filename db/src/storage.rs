@@ -40,6 +40,9 @@ const MAX_FORK_ROUTE_PRESET: usize = 128;
 pub trait Store : BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider {
 	/// get best block
 	fn best_block(&self) -> Option<BestBlock>;
+
+	/// get best header
+	fn best_header(&self) -> Option<chain::BlockHeader>;
 }
 
 /// Blockchain storage with rocksdb database
@@ -165,7 +168,6 @@ impl Storage {
 		})
 	}
 
-
 	/// update transactions metadata in the specified database transaction
 	fn update_transactions_meta(&self, context: &mut UpdateContext, number: u32, accepted_txs: &[chain::Transaction])
 		-> Result<(), Error>
@@ -190,7 +192,7 @@ impl Storage {
 							return Err(Error::double_spend(&input.previous_output.hash));
 						}
 
-						meta.note_used(input.previous_output.index as usize);
+						meta.denote_used(input.previous_output.index as usize);
 						true
 					},
 					None => false,
@@ -202,7 +204,7 @@ impl Storage {
 						return Err(Error::double_spend(&input.previous_output.hash));
 					}
 
-					meta.note_used(input.previous_output.index as usize);
+					meta.denote_used(input.previous_output.index as usize);
 
 					context.meta.insert(
 						input.previous_output.hash.clone(),
@@ -241,7 +243,7 @@ impl Storage {
 			for input in &tx.inputs {
 				if !match context.meta.get_mut(&input.previous_output.hash) {
 					Some(ref mut meta) => {
-						meta.denote_used(input.previous_output.index as usize);
+						meta.denote_unused(input.previous_output.index as usize);
 						true
 					},
 					None => false,
@@ -255,7 +257,7 @@ impl Storage {
 								&input.previous_output.hash
 							));
 
-					meta.denote_used(input.previous_output.index as usize);
+					meta.denote_unused(input.previous_output.index as usize);
 
 					context.meta.insert(
 						input.previous_output.hash.clone(),
@@ -383,6 +385,12 @@ impl BlockProvider for Storage {
 
 	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes> {
 		self.resolve_hash(block_ref).and_then(|h| self.get(COL_BLOCK_HEADERS, &*h))
+	}
+
+	fn block_header(&self, block_ref: BlockRef) -> Option<chain::BlockHeader> {
+		self.block_header_bytes(block_ref).map(
+			|bytes| deserialize::<_, chain::BlockHeader>(bytes.as_ref())
+				.expect("Error deserializing header, possible db corruption"))
 	}
 
 	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256> {
@@ -595,6 +603,12 @@ impl TransactionMetaProvider for Storage {
 impl Store for Storage {
 	fn best_block(&self) -> Option<BestBlock> {
 		self.best_block.read().clone()
+	}
+
+	fn best_header(&self) -> Option<chain::BlockHeader> {
+		self.best_block.read().as_ref().and_then(
+			|bb| Some(self.block_header_by_hash(&bb.hash).expect("Best block exists but no such header. Race condition?")),
+		)
 	}
 }
 

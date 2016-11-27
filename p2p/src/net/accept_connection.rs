@@ -3,7 +3,8 @@ use std::time::Duration;
 use futures::{Future, Poll};
 use tokio_core::reactor::Handle;
 use tokio_core::net::TcpStream;
-use message::{MessageResult, Magic};
+use network::Magic;
+use message::{MessageResult};
 use io::{accept_handshake, AcceptHandshake, Deadline, deadline};
 use net::{Config, Connection};
 

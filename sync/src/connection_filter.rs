@@ -27,6 +27,8 @@ pub struct ConnectionFilter {
 	last_blocks: LinkedHashMap<H256, ()>,
 	/// Last transactions from peer.
 	last_transactions: LinkedHashMap<H256, ()>,
+	/// Minimal fee in satoshis per 1000 bytes
+	fee_rate: Option<u64>,
 }
 
 /// Connection bloom filter
@@ -70,6 +72,7 @@ impl Default for ConnectionFilter {
 			filter_flags: types::FilterFlags::None,
 			last_blocks: LinkedHashMap::new(),
 			last_transactions: LinkedHashMap::new(),
+			fee_rate: None,
 		}
 	}
 }
@@ -83,6 +86,7 @@ impl ConnectionFilter {
 			filter_flags: message.flags,
 			last_blocks: LinkedHashMap::new(),
 			last_transactions: LinkedHashMap::new(),
+			fee_rate: None,
 		}
 	}
 
@@ -119,12 +123,104 @@ impl ConnectionFilter {
 	}
 
 	/// Check if transaction should be sent to this connection && optionally update filter
-	pub fn filter_transaction(&mut self, transaction_hash: &H256, transaction: &Transaction) -> bool {
+	pub fn filter_transaction(&mut self, transaction_hash: &H256, transaction: &Transaction, transaction_fee_rate: u64) -> bool {
 		// check if transaction is known
 		if self.last_transactions.contains_key(transaction_hash) {
 			return false;
 		}
 
+		// check if transaction fee rate is high enough for this peer
+		if let Some(fee_rate) = self.fee_rate {
+			if transaction_fee_rate < fee_rate {
+				return false;
+			}
+		}
+
+		// check with bloom filter, if set
+		self.filter_transaction_with_bloom(transaction_hash, transaction)
+	}
+
+	/// Load filter
+	pub fn load(&mut self, message: &types::FilterLoad) {
+		self.bloom = Some(ConnectionBloom::new(message));
+		self.filter_flags = message.flags;
+	}
+
+	/// Add filter
+	pub fn add(&mut self, message: &types::FilterAdd) {
+		// ignore if filter is not currently set
+		if let Some(ref mut bloom) = self.bloom {
+			bloom.insert(&message.data);
+		}
+	}
+
+	/// Clear filter
+	pub fn clear(&mut self) {
+		self.bloom = None;
+	}
+
+	/// Limit transaction announcing by transaction fee
+	pub fn set_fee_rate(&mut self, fee_rate: u64) {
+		if fee_rate == 0 {
+			self.fee_rate = None;
+		}
+		else {
+			self.fee_rate = Some(fee_rate);
+		}
+	}
+
+	/// Convert `Block` to `MerkleBlock` using this filter
+	pub fn build_merkle_block(&mut self, block: Block) -> Option<MerkleBlockArtefacts> {
+		if self.bloom.is_none() {
+			return None;
+		}
+
+		// prepare result
+		let all_len = block.transactions.len();
+		let mut result = MerkleBlockArtefacts {
+			merkleblock: types::MerkleBlock {
+				block_header: block.block_header.clone(),
+				total_transactions: all_len as u32,
+				hashes: Vec::default(),
+				flags: Bytes::default(),
+			},
+			matching_transactions: Vec::new(),
+		};
+
+		// calculate hashes && match flags for all transactions
+		let (all_hashes, all_flags) = block.transactions.into_iter()
+			.fold((Vec::<H256>::with_capacity(all_len), BitVec::with_capacity(all_len)), |(mut all_hashes, mut all_flags), t| {
+				let hash = t.hash();
+				let flag = self.filter_transaction_with_bloom(&hash, &t);
+				if flag {
+					result.matching_transactions.push((hash.clone(), t));
+				}
+
+				all_flags.push(flag);
+				all_hashes.push(hash);
+				(all_hashes, all_flags)
+			});
+
+		// build partial merkle tree
+		let (hashes, flags) = PartialMerkleTree::build(all_hashes, all_flags);
+		result.merkleblock.hashes.extend(hashes);
+		// to_bytes() converts [true, false, true] to 0b10100000
+		// while protocol requires [true, false, true] to be serialized as 0x00000101
+		result.merkleblock.flags = flags.to_bytes().into_iter()
+			.map(|b|
+				((b & 0b10000000) >> 7) |
+				((b & 0b01000000) >> 5) |
+				((b & 0b00100000) >> 3) |
+				((b & 0b00010000) >> 1) |
+				((b & 0b00001000) << 1) |
+				((b & 0b00000100) << 3) |
+				((b & 0b00000010) << 5) |
+				((b & 0b00000001) << 7)).collect::<Vec<u8>>().into();
+		Some(result)
+	}
+
+	/// Check if transaction should be sent to this connection using bloom filter && optionally update filter
+	fn filter_transaction_with_bloom(&mut self, transaction_hash: &H256, transaction: &Transaction) -> bool {
 		// check with bloom filter, if set
 		match self.bloom {
 			/// if no filter is set for the connection => match everything
@@ -187,75 +283,6 @@ impl ConnectionFilter {
 				false
 			},
 		}
-	}
-
-	/// Load filter
-	pub fn load(&mut self, message: &types::FilterLoad) {
-		self.bloom = Some(ConnectionBloom::new(message));
-		self.filter_flags = message.flags;
-	}
-
-	/// Add filter
-	pub fn add(&mut self, message: &types::FilterAdd) {
-		// ignore if filter is not currently set
-		if let Some(ref mut bloom) = self.bloom {
-			bloom.insert(&message.data);
-		}
-	}
-
-	/// Clear filter
-	pub fn clear(&mut self) {
-		self.bloom = None;
-	}
-
-	/// Convert `Block` to `MerkleBlock` using this filter
-	pub fn build_merkle_block(&mut self, block: Block) -> Option<MerkleBlockArtefacts> {
-		if self.bloom.is_none() {
-			return None;
-		}
-
-		// prepare result
-		let all_len = block.transactions.len();
-		let mut result = MerkleBlockArtefacts {
-			merkleblock: types::MerkleBlock {
-				block_header: block.block_header.clone(),
-				total_transactions: all_len as u32,
-				hashes: Vec::default(),
-				flags: Bytes::default(),
-			},
-			matching_transactions: Vec::new(),
-		};
-
-		// calculate hashes && match flags for all transactions
-		let (all_hashes, all_flags) = block.transactions.into_iter()
-			.fold((Vec::<H256>::with_capacity(all_len), BitVec::with_capacity(all_len)), |(mut all_hashes, mut all_flags), t| {
-				let hash = t.hash();
-				let flag = self.filter_transaction(&hash, &t);
-				if flag {
-					result.matching_transactions.push((hash.clone(), t));
-				}
-
-				all_flags.push(flag);
-				all_hashes.push(hash);
-				(all_hashes, all_flags)
-			});
-
-		// build partial merkle tree
-		let (hashes, flags) = PartialMerkleTree::build(all_hashes, all_flags);
-		result.merkleblock.hashes.extend(hashes);
-		// to_bytes() converts [true, false, true] to 0b10100000
-		// while protocol requires [true, false, true] to be serialized as 0x00000101
-		result.merkleblock.flags = flags.to_bytes().into_iter()
-			.map(|b|
-				((b & 0b10000000) >> 7) |
-				((b & 0b01000000) >> 5) |
-				((b & 0b00100000) >> 3) |
-				((b & 0b00010000) >> 1) |
-				((b & 0b00001000) << 1) |
-				((b & 0b00000100) << 3) |
-				((b & 0b00000010) << 5) |
-				((b & 0b00000001) << 7)).collect::<Vec<u8>>().into();
-		Some(result)
 	}
 }
 
@@ -493,13 +520,13 @@ pub mod tests {
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.filter_transaction(&tx1.hash(), &tx1));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
 
 		filter.add(&make_filteradd(&*tx1.hash()));
 
-		assert!(filter.filter_transaction(&tx1.hash(), &tx1));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
 	}
 
 	#[test]
@@ -512,13 +539,13 @@ pub mod tests {
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.filter_transaction(&tx1.hash(), &tx1));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
 
 		filter.add(&make_filteradd(&tx1_out_data));
 
-		assert!(filter.filter_transaction(&tx1.hash(), &tx1));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
 	}
 
 	#[test]
@@ -530,13 +557,13 @@ pub mod tests {
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.filter_transaction(&tx1.hash(), &tx1));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
 
 		filter.add(&make_filteradd(&tx1_previous_output));
 
-		assert!(filter.filter_transaction(&tx1.hash(), &tx1));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
 	}
 
 	#[test]
@@ -549,13 +576,39 @@ pub mod tests {
 
 		let mut filter = ConnectionFilter::with_filterload(&default_filterload());
 
-		assert!(!filter.filter_transaction(&tx1.hash(), &tx1));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
 
 		filter.add(&make_filteradd(&tx1_input_data));
 
-		assert!(filter.filter_transaction(&tx1.hash(), &tx1));
-		assert!(!filter.filter_transaction(&tx2.hash(), &tx2));
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 1000));
+	}
+
+	#[test]
+	fn connection_filter_matches_transaction_by_fee_rate() {
+		let tx1: Transaction = test_data::TransactionBuilder::with_version(1).into();
+		let tx2: Transaction = test_data::TransactionBuilder::with_version(2).into();
+
+		let mut filter = ConnectionFilter::default();
+
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(filter.filter_transaction(&tx2.hash(), &tx2, 2000));
+
+		filter.set_fee_rate(1500);
+
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(filter.filter_transaction(&tx2.hash(), &tx2, 2000));
+
+		filter.set_fee_rate(3000);
+
+		assert!(!filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(!filter.filter_transaction(&tx2.hash(), &tx2, 2000));
+
+		filter.set_fee_rate(0);
+
+		assert!(filter.filter_transaction(&tx1.hash(), &tx1, 1000));
+		assert!(filter.filter_transaction(&tx2.hash(), &tx2, 2000));
 	}
 
 	#[test]

@@ -8,6 +8,7 @@ dependencies = [
  "ethcore-devtools 1.3.0",
  "linked-hash-map 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "network 0.1.0",
  "parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
  "script 0.1.0",
@@ -329,6 +330,7 @@ dependencies = [
  "bitcrypto 0.1.0",
  "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "chain 0.1.0",
+ "network 0.1.0",
  "primitives 0.1.0",
  "serialization 0.1.0",
 ]
@@ -338,6 +340,7 @@ name = "miner"
 version = "0.1.0"
 dependencies = [
  "chain 0.1.0",
+ "db 0.1.0",
  "heapsize 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
  "serialization 0.1.0",
@@ -389,6 +392,14 @@ dependencies = [
  "libc 0.2.17 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "ws2_32-sys 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "network"
+version = "0.1.0"
+dependencies = [
+ "chain 0.1.0",
+ "serialization 0.1.0",
 ]
 
 [[package]]
@@ -461,6 +472,7 @@ dependencies = [
  "futures-cpupool 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "message 0.1.0",
+ "network 0.1.0",
  "ns-dns-tokio 0.1.0 (git+https://github.com/debris/abstract-ns)",
  "parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
@@ -506,6 +518,7 @@ dependencies = [
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "message 0.1.0",
  "miner 0.1.0",
+ "network 0.1.0",
  "p2p 0.1.0",
  "script 0.1.0",
  "sync 0.1.0",
@@ -681,6 +694,7 @@ dependencies = [
  "message 0.1.0",
  "miner 0.1.0",
  "murmur3 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "network 0.1.0",
  "p2p 0.1.0",
  "parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
@@ -710,6 +724,7 @@ dependencies = [
  "chain 0.1.0",
  "primitives 0.1.0",
  "serialization 0.1.0",
+ "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use parking_lot::Mutex;
 use chain::{Block, Transaction};
-use message::common::ConsensusParams;
+use network::{Magic, ConsensusParams};
 use primitives::hash::H256;
 use verification::{ChainVerifier, Verify as VerificationVerify};
 use synchronization_chain::ChainRef;
@@ -48,16 +48,16 @@ pub struct AsyncVerifier {
 
 impl AsyncVerifier {
 	/// Create new async verifier
-	pub fn new<T: VerificationSink>(consensus_params: ConsensusParams, chain: ChainRef, sink: Arc<Mutex<T>>) -> Self {
+	pub fn new<T: VerificationSink>(network: Magic, chain: ChainRef, sink: Arc<Mutex<T>>) -> Self {
 		let (verification_work_sender, verification_work_receiver) = channel();
 		let storage = chain.read().storage();
-		let verifier = ChainVerifier::new(storage);
+		let verifier = ChainVerifier::new(storage, network);
 		AsyncVerifier {
 			verification_work_sender: verification_work_sender,
 			verification_worker_thread: Some(thread::Builder::new()
 				.name("Sync verification thread".to_string())
 				.spawn(move || {
-					AsyncVerifier::verification_worker_proc(sink, chain, consensus_params, verifier, verification_work_receiver)
+					AsyncVerifier::verification_worker_proc(sink, chain, network.consensus_params(), verifier, verification_work_receiver)
 				})
 				.expect("Error creating verification thread"))
 		}

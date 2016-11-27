@@ -12,6 +12,7 @@ extern crate chain;
 extern crate keys;
 extern crate script;
 extern crate message;
+extern crate network;
 extern crate p2p;
 extern crate sync;
 extern crate import;
@@ -26,6 +27,7 @@ pub const APP_INFO: AppInfo = AppInfo { name: "pbtc", author: "Parity" };
 pub const PROTOCOL_VERSION: u32 = 70_014;
 pub const PROTOCOL_MINIMUM: u32 = 70_001;
 pub const USER_AGENT: &'static str = "pbtc";
+pub const REGTEST_USER_AGENT: &'static str = "/Satoshi:0.12.1/";
 
 fn main() {
 	env_logger::init().unwrap();

@@ -23,6 +23,7 @@ extern crate serialization as ser;
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
 extern crate rand;
+extern crate network;
 
 mod best_headers_chain;
 mod blocks_writer;
@@ -45,7 +46,7 @@ mod synchronization_verifier;
 use std::sync::Arc;
 use parking_lot::RwLock;
 use tokio_core::reactor::Handle;
-use message::common::ConsensusParams;
+use network::Magic;
 
 /// Sync errors.
 #[derive(Debug)]
@@ -59,12 +60,12 @@ pub enum Error {
 }
 
 /// Create blocks writer.
-pub fn create_sync_blocks_writer(db: db::SharedStore) -> blocks_writer::BlocksWriter {
-	blocks_writer::BlocksWriter::new(db)
+pub fn create_sync_blocks_writer(db: db::SharedStore, network: Magic) -> blocks_writer::BlocksWriter {
+	blocks_writer::BlocksWriter::new(db, network)
 }
 
 /// Create inbound synchronization connections factory for given `db`.
-pub fn create_sync_connection_factory(handle: &Handle, consensus_params: ConsensusParams, db: db::SharedStore) -> p2p::LocalSyncNodeRef {
+pub fn create_sync_connection_factory(handle: &Handle, network: Magic, db: db::SharedStore) -> p2p::LocalSyncNodeRef {
 	use synchronization_chain::Chain as SyncChain;
 	use synchronization_executor::LocalSynchronizationTaskExecutor as SyncExecutor;
 	use local_node::LocalNode as SyncNode;
@@ -77,7 +78,7 @@ pub fn create_sync_connection_factory(handle: &Handle, consensus_params: Consens
 	let sync_executor = SyncExecutor::new(sync_chain.clone());
 	let sync_server = Arc::new(SynchronizationServer::new(sync_chain.clone(), sync_executor.clone()));
 	let sync_client_core = SynchronizationClientCore::new(SynchronizationConfig::new(), handle, sync_executor.clone(), sync_chain.clone());
-	let verifier = AsyncVerifier::new(consensus_params, sync_chain, sync_client_core.clone());
+	let verifier = AsyncVerifier::new(network, sync_chain, sync_client_core.clone());
 	let sync_client = SynchronizationClient::new(sync_client_core, verifier);
 	let sync_node = Arc::new(SyncNode::new(sync_server, sync_client, sync_executor));
 	SyncConnectionFactory::with_local_node(sync_node)
