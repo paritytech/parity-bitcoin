@@ -78,7 +78,7 @@ impl ChainVerifier {
 		// bip30
 		for (tx_index, tx) in block.transactions.iter().enumerate() {
 			if let Some(meta) = self.store.transaction_meta(&tx.hash()) {
-				if !meta.is_fully_spent() && !consensus_params.is_bip30_expcetion(&block_hash, at_height) {
+				if !meta.is_fully_spent() && !consensus_params.is_bip30_exception(&block_hash, at_height) {
 					return Err(Error::Transaction(tx_index, TransactionError::UnspentTransactionWithTheSameHash));
 				}
 			}
