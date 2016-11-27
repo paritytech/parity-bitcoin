@@ -2267,6 +2267,29 @@ pub mod tests {
 
 	#[test]
 	fn relay_new_block_after_sendcmpct() {
-		// TODO
+		let (_, _, executor, _, sync) = create_sync(None, None);
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+
+		let mut sync = sync.lock();
+		sync.on_peer_connected(1);
+		sync.on_peer_connected(2);
+		sync.on_peer_block_announcement_type(2, BlockAnnouncementType::SendCompactBlock);
+		sync.on_peer_connected(3);
+
+		// igonore tasks
+		{ executor.lock().take_tasks(); }
+
+		sync.on_peer_block(1, b0.clone());
+
+		let tasks = executor.lock().take_tasks();
+		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: b0.hash() }];
+		assert_eq!(tasks.len(), 3);
+		assert_eq!(tasks[0], Task::RequestBlocksHeaders(1));
+		match tasks[1] {
+			Task::SendCompactBlocks(2, _, _) => (),
+			_ => panic!("unexpected task"),
+		}
+		assert_eq!(tasks[2], Task::SendInventory(3, inventory, ServerTaskIndex::None));
 	}
 }
