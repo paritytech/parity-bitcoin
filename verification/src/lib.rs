@@ -59,6 +59,8 @@ pub enum Error {
 	CoinbaseSignatureLength(usize),
 	/// Block size is invalid
 	Size(usize),
+	/// Block transactions are not final.
+	NonFinalBlock,
 }
 
 #[derive(Debug, PartialEq)]
@@ -84,8 +86,8 @@ pub enum TransactionError {
 	SigopsP2SH(usize),
 	/// Coinbase transaction is found at position that is not 0
 	MisplacedCoinbase(usize),
-	/// Not fully spent transaction with the same hash already exists.
-	BIP30,
+	/// Not fully spent transaction with the same hash already exists, bip30.
+	UnspentTransactionWithTheSameHash,
 }
 
 #[derive(PartialEq, Debug)]

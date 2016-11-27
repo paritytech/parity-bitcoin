@@ -70,6 +70,10 @@ impl Block {
 	pub fn hash(&self) -> H256 {
 		self.block_header.hash()
 	}
+
+	pub fn is_final(&self, height: u32) -> bool {
+		self.transactions.iter().all(|t| t.is_final(height, self.block_header.time))
+	}
 }
 
 #[cfg(test)]

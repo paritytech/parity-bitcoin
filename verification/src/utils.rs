@@ -121,7 +121,7 @@ pub fn transaction_sigops(transaction: &chain::Transaction) -> Result<usize, scr
 	if transaction.is_coinbase() { return Ok(result); }
 
 	for input in &transaction.inputs {
-		let input_script: Script = input.script_sig().to_vec().into();
+		let input_script: Script = input.script_sig.to_vec().into();
 		result += try!(input_script.sigop_count(false));
 	}
 
