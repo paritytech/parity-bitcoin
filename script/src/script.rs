@@ -209,15 +209,15 @@ impl Script {
 
 				let slice = try!(self.take(position + 1, len));
 				let n = try!(read_usize(slice, len));
-				let bytes = try!(self.take_checked(position + 1 + len, n));
+				let bytes = try!(self.take(position + 1 + len, n));
 				Instruction {
 					opcode: opcode,
 					step: len + n + 1,
 					data: Some(bytes),
 				}
 			},
-			o if o >= Opcode::OP_0 && o <= Opcode::OP_PUSHBYTES_75 => {
-				let bytes = try!(self.take_checked(position+ 1, opcode as usize));
+			o if o <= Opcode::OP_PUSHBYTES_75 => {
+				let bytes = try!(self.take(position + 1, opcode as usize));
 				Instruction {
 					opcode: o,
 					step: opcode as usize + 1,
@@ -240,15 +240,6 @@ impl Script {
 			Err(Error::BadOpcode)
 		} else {
 			Ok(&self.data[offset..offset + len])
-		}
-	}
-
-	#[inline]
-	pub fn take_checked(&self, offset: usize, len: usize) -> Result<&[u8], Error> {
-		if len > MAX_SCRIPT_ELEMENT_SIZE {
-			Err(Error::ScriptSize)
-		} else {
-			self.take(offset, len)
 		}
 	}
 
@@ -318,78 +309,53 @@ impl Script {
 		Opcodes { position: 0, script: self }
 	}
 
-	pub fn sigop_count(&self, accurate: bool) -> Result<usize, Error> {
+	pub fn sigops_count(&self, serialized_script: bool) -> usize {
 		let mut last_opcode = Opcode::OP_0;
-		let mut result = 0;
+		let mut total = 0;
 		for opcode in self.opcodes() {
-			let opcode = try!(opcode);
+			let opcode = match opcode {
+				Ok(opcode) => opcode,
+				// If we push an invalid element, all previous CHECKSIGs are counted
+				_ => return total,
+			};
 
 			match opcode {
-				Opcode::OP_CHECKSIG | Opcode::OP_CHECKSIGVERIFY => { result += 1; },
+				Opcode::OP_CHECKSIG | Opcode::OP_CHECKSIGVERIFY => {
+					total += 1;
+				},
 				Opcode::OP_CHECKMULTISIG | Opcode::OP_CHECKMULTISIGVERIFY => {
-					if accurate {
-						match last_opcode {
-							Opcode::OP_1 |
-							Opcode::OP_2 |
-							Opcode::OP_3 |
-							Opcode::OP_4 |
-							Opcode::OP_5 |
-							Opcode::OP_6 |
-							Opcode::OP_7 |
-							Opcode::OP_8 |
-							Opcode::OP_9 |
-							Opcode::OP_10 |
-							Opcode::OP_11 |
-							Opcode::OP_12 |
-							Opcode::OP_13 |
-							Opcode::OP_14 |
-							Opcode::OP_15 |
-							Opcode::OP_16 => {
-								result += (last_opcode as u8 - (Opcode::OP_1 as u8 - 1)) as usize;
-							},
-							_ => {
-								result += MAX_PUBKEYS_PER_MULTISIG;
-							}
-						}
-					}
-					else {
-						result += MAX_PUBKEYS_PER_MULTISIG;
+					if serialized_script && last_opcode.is_within_op_n() {
+						total += last_opcode.decode_op_n() as usize;
+					} else {
+						total += MAX_PUBKEYS_PER_MULTISIG;
 					}
 				},
-				_ => { }
+				_ => (),
 			};
 
 			last_opcode = opcode;
 		}
 
-		Ok(result)
+		total
 	}
 
-	pub fn sigop_count_p2sh(&self, input_ref: &Script) -> Result<usize, Error> {
-		if !self.is_pay_to_script_hash() { return self.sigop_count(true); }
-
-		let mut script_data: Option<&[u8]> = None;
-		// we need last command
-		for next in input_ref.iter() {
-			let instruction = match next {
-				Err(_) => return Ok(0),
-				Ok(i) => i,
-			};
-
-			if instruction.opcode as u8 > Opcode::OP_16 as u8 {
-				return Ok(0);
-			}
-
-			script_data = instruction.data;
+	pub fn pay_to_script_hash_sigops(&self, prev_out: &Script) -> usize {
+		if !prev_out.is_pay_to_script_hash() {
+			return 0;
 		}
 
-		match script_data {
-			Some(slc) => {
-				let nested_script: Script = slc.to_vec().into();
-				nested_script.sigop_count(true)
-			},
-			None => Ok(0),
+		if self.data.is_empty() || !self.is_push_only() {
+			return 0;
 		}
+
+		let script: Script = self.iter().last()
+			.expect("self.data.is_empty() == false; qed")
+			.expect("self.data.is_push_only()")
+			.data.expect("self.data.is_push_only()")
+			.to_vec()
+			.into();
+
+		script.sigops_count(true)
 	}
 }
 
@@ -492,7 +458,7 @@ impl fmt::Display for Script {
 #[cfg(test)]
 mod tests {
 	use {Builder, Opcode};
-	use super::{Script, ScriptType};
+	use super::{Script, ScriptType, MAX_SCRIPT_ELEMENT_SIZE};
 
 	#[test]
 	fn test_is_pay_to_script_hash() {
@@ -573,10 +539,39 @@ OP_ADD
 
 	#[test]
 	fn test_sigops_count() {
-		assert_eq!(1usize, Script::from("76a914aab76ba4877d696590d94ea3e02948b55294815188ac").sigop_count(false).unwrap());
-		assert_eq!(2usize, Script::from("522102004525da5546e7603eefad5ef971e82f7dad2272b34e6b3036ab1fe3d299c22f21037d7f2227e6c646707d1c61ecceb821794124363a2cf2c1d2a6f28cf01e5d6abe52ae").sigop_count(true).unwrap());
-		assert_eq!(20usize, Script::from("522102004525da5546e7603eefad5ef971e82f7dad2272b34e6b3036ab1fe3d299c22f21037d7f2227e6c646707d1c61ecceb821794124363a2cf2c1d2a6f28cf01e5d6abe52ae").sigop_count(false).unwrap());
-		assert_eq!(0usize, Script::from("a9146262b64aec1f4a4c1d21b32e9c2811dd2171fd7587").sigop_count(false).unwrap());
-		assert_eq!(1usize, Script::from("4104ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84cac").sigop_count(false).unwrap());
+		assert_eq!(1usize, Script::from("76a914aab76ba4877d696590d94ea3e02948b55294815188ac").sigops_count(false));
+		assert_eq!(2usize, Script::from("522102004525da5546e7603eefad5ef971e82f7dad2272b34e6b3036ab1fe3d299c22f21037d7f2227e6c646707d1c61ecceb821794124363a2cf2c1d2a6f28cf01e5d6abe52ae").sigops_count(true));
+		assert_eq!(20usize, Script::from("522102004525da5546e7603eefad5ef971e82f7dad2272b34e6b3036ab1fe3d299c22f21037d7f2227e6c646707d1c61ecceb821794124363a2cf2c1d2a6f28cf01e5d6abe52ae").sigops_count(false));
+		assert_eq!(0usize, Script::from("a9146262b64aec1f4a4c1d21b32e9c2811dd2171fd7587").sigops_count(false));
+		assert_eq!(1usize, Script::from("4104ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84cac").sigops_count(false));
+	}
+
+	#[test]
+	fn test_sigops_count_b73() {
+		let max_block_sigops = 20000;
+		let block_sigops = 0;
+		let mut script = vec![Opcode::OP_CHECKSIG as u8; max_block_sigops - block_sigops + MAX_SCRIPT_ELEMENT_SIZE + 1 + 5 + 1];
+		script[max_block_sigops - block_sigops] = Opcode::OP_PUSHDATA4 as u8;
+		let overmax = MAX_SCRIPT_ELEMENT_SIZE + 1;
+		script[max_block_sigops - block_sigops + 1] = overmax as u8;
+		script[max_block_sigops - block_sigops + 2] = (overmax >> 8) as u8;
+		script[max_block_sigops - block_sigops + 3] = (overmax >> 16) as u8;
+		script[max_block_sigops - block_sigops + 4] = (overmax >> 24) as u8;
+		let script: Script = script.into();
+		assert_eq!(script.sigops_count(false), 20001);
+	}
+
+	#[test]
+	fn test_sigops_count_b74() {
+		let max_block_sigops = 20000;
+		let block_sigops = 0;
+		let mut script = vec![Opcode::OP_CHECKSIG as u8; max_block_sigops - block_sigops + MAX_SCRIPT_ELEMENT_SIZE + 42];
+		script[max_block_sigops - block_sigops + 1] = Opcode::OP_PUSHDATA4 as u8;
+		script[max_block_sigops - block_sigops + 2] = 0xfe;
+		script[max_block_sigops - block_sigops + 3] = 0xff;
+		script[max_block_sigops - block_sigops + 4] = 0xff;
+		script[max_block_sigops - block_sigops + 5] = 0xff;
+		let script: Script = script.into();
+		assert_eq!(script.sigops_count(false), 20001);
 	}
 }
