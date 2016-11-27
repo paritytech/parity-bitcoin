@@ -21,12 +21,11 @@ extern crate test_data;
 
 mod chain_verifier;
 mod compact;
-mod queue;
 mod utils;
+mod lookup;
 
 pub use primitives::{uint, hash};
 
-pub use queue::Queue;
 pub use chain_verifier::ChainVerifier;
 
 use primitives::hash::H256;
@@ -116,11 +115,11 @@ pub type VerificationResult = Result<Chain, Error>;
 
 /// Interface for block verification
 pub trait Verify : Send + Sync {
-	fn verify(&self, block: &chain::Block) -> VerificationResult;
+	fn verify(&self, block: &db::IndexedBlock) -> VerificationResult;
 }
 
 /// Trait for verifier that can be interrupted and continue from the specific point
 pub trait ContinueVerify : Verify + Send + Sync {
 	type State;
-	fn continue_verify(&self, block: &chain::Block, state: Self::State) -> VerificationResult;
+	fn continue_verify(&self, block: &db::IndexedBlock, state: Self::State) -> VerificationResult;
 }

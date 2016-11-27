@@ -1,5 +1,6 @@
 use chain;
 use primitives::hash::H256;
+use serialization::Serializable;
 
 pub struct IndexedBlock {
 	header: chain::BlockHeader,
@@ -72,6 +73,19 @@ impl IndexedBlock {
 			self.header.clone(),
 			self.transactions.clone(),
 		)
+	}
+
+	pub fn size(&self) -> usize {
+		// todo: optimize
+		self.to_block().serialized_size()
+	}
+
+	pub fn merkle_root(&self) -> H256 {
+		chain::merkle_root(&self.transaction_hashes)
+	}
+
+	pub fn is_final(&self, height: u32) -> bool {
+		self.transactions.iter().all(|t| t.is_final(height, self.header.time))
 	}
 }
 

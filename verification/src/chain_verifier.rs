@@ -1,10 +1,11 @@
 //! Bitcoin chain verifier
 
 use std::collections::BTreeSet;
-use db::{self, BlockRef, BlockLocation};
+use db::{self, BlockRef, BlockLocation, IndexedBlock};
 use network::Magic;
 use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
 use {chain, utils};
+use primitives::H256;
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
 const COINBASE_MATURITY: u32 = 100; // 2 hours
@@ -56,7 +57,7 @@ impl ChainVerifier {
 		self
 	}
 
-	fn ordered_verify(&self, block: &chain::Block, at_height: u32) -> Result<(), Error> {
+	fn ordered_verify(&self, block: &db::IndexedBlock, at_height: u32) -> Result<(), Error> {
 		if !block.is_final(at_height) {
 			return Err(Error::NonFinalBlock);
 		}
@@ -73,11 +74,15 @@ impl ChainVerifier {
 			}
 		}
 
-		let coinbase_spends = block.transactions()[0].total_spends();
+		let coinbase_spends = block.transactions()
+			.nth(0)
+			.expect("block emptyness should be checked at this point")
+			.1
+			.total_spends();
 
 		// bip30
-		for (tx_index, tx) in block.transactions.iter().enumerate() {
-			if let Some(meta) = self.store.transaction_meta(&tx.hash()) {
+		for (tx_index, (tx_hash, tx)) in block.transactions().enumerate() {
+			if let Some(meta) = self.store.transaction_meta(tx_hash) {
 				if !meta.is_fully_spent() && !consensus_params.is_bip30_exception(&block_hash, at_height) {
 					return Err(Error::Transaction(tx_index, TransactionError::UnspentTransactionWithTheSameHash));
 				}
@@ -85,7 +90,7 @@ impl ChainVerifier {
 		}
 
 		let mut total_unspent = 0u64;
-		for (tx_index, tx) in block.transactions().iter().enumerate().skip(1) {
+		for (tx_index, (tx_hash, tx)) in block.transactions().enumerate().skip(1) {
 
 			let mut total_claimed: u64 = 0;
 
@@ -106,7 +111,13 @@ impl ChainVerifier {
 
 					self.store.transaction(&input.previous_output.hash)
 						// todo: optimize block decomposition vec<transaction> -> hashmap<h256, transaction>
-						.or(block.transactions().iter().find(|tx| !tx.is_coinbase() && tx.hash() == input.previous_output.hash).cloned())
+						.or(
+							block.transactions()
+								.skip(1)
+								.find(|&(hash, tx)| hash == &input.previous_output.hash)
+								.and_then(|(_, tx)| Some(tx))
+								.cloned()
+							)
 						.ok_or(
 							Error::Transaction(tx_index, TransactionError::UnknownReference(input.previous_output.hash.clone()))
 						)
@@ -140,7 +151,8 @@ impl ChainVerifier {
 	}
 
 	fn verify_transaction(&self,
-		block: &chain::Block,
+		block: &db::IndexedBlock,
+		hash: &H256,
 		transaction: &chain::Transaction,
 		sequence: usize,
 	) -> Result<usize, TransactionError> {
@@ -170,7 +182,10 @@ impl ChainVerifier {
 			let store_parent_transaction = self.store.transaction(&input.previous_output.hash);
 			let parent_transaction = store_parent_transaction
 				.as_ref()
-				.or_else(|| block.transactions.iter().find(|t| t.hash() == input.previous_output.hash))
+				.or_else(
+					|| block.transactions().find(|&(hash, tx)| hash == &input.previous_output.hash)
+						.and_then(|(hash, tx)| Some(tx))
+				)
 				.ok_or_else(|| TransactionError::Inconclusive(input.previous_output.hash.clone()))?;
 
 			if parent_transaction.outputs.len() <= input.previous_output.index as usize {
@@ -212,11 +227,11 @@ impl ChainVerifier {
 		Ok(sigops)
 	}
 
-	fn verify_block(&self, block: &chain::Block) -> VerificationResult {
+	fn verify_block(&self, block: &db::IndexedBlock) -> VerificationResult {
 		let hash = block.hash();
 
 		// There should be at least 1 transaction
-		if block.transactions().is_empty() {
+		if block.transaction_count() == 0 {
 			return Err(Error::Empty);
 		}
 
@@ -231,14 +246,18 @@ impl ChainVerifier {
 		}
 
 		if let Some(median_timestamp) = self.median_timestamp(block) {
-			if median_timestamp >= block.block_header.time {
-				trace!(target: "verification", "median timestamp verification failed, median: {}, current: {}", median_timestamp, block.block_header.time);
+			if median_timestamp >= block.header().time {
+				trace!(
+					target: "verification", "median timestamp verification failed, median: {}, current: {}",
+					median_timestamp,
+					block.header().time
+				);
 				return Err(Error::Timestamp);
 			}
 		}
 
 		// todo: serialized_size function is at least suboptimal
-		let size = ::serialization::Serializable::serialized_size(block);
+		let size = block.size();
 		if size > MAX_BLOCK_SIZE {
 			return Err(Error::Size(size))
 		}
@@ -248,25 +267,25 @@ impl ChainVerifier {
 			return Err(Error::MerkleRoot);
 		}
 
+		let first_tx = block.transactions().nth(0).expect("transaction count is checked above to be greater than 0").1;
 		// check first transaction is a coinbase transaction
-		if !block.transactions()[0].is_coinbase() {
+		if !first_tx.is_coinbase() {
 			return Err(Error::Coinbase)
 		}
-
 		// check that coinbase has a valid signature
-		let coinbase = &block.transactions()[0];
 		// is_coinbase() = true above guarantees that there is at least one input
-		let coinbase_script_len = coinbase.inputs[0].script_sig.len();
+		let coinbase_script_len = first_tx.inputs[0].script_sig.len();
 		if coinbase_script_len < 2 || coinbase_script_len > 100 {
 			return Err(Error::CoinbaseSignatureLength(coinbase_script_len));
 		}
 
 		// transaction verification including number of signature operations checking
 		let mut block_sigops = 0;
-		for (idx, transaction) in block.transactions().iter().enumerate() {
+		for (idx, (tx_hash, transaction)) in block.transactions().enumerate() {
 			block_sigops += try!(
 				self.verify_transaction(
 					block,
+					tx_hash,
 					transaction,
 					idx,
 				).map_err(|e| Error::Transaction(idx, e))
@@ -293,9 +312,9 @@ impl ChainVerifier {
 		}
 	}
 
-	fn median_timestamp(&self, block: &chain::Block) -> Option<u32> {
+	fn median_timestamp(&self, block: &db::IndexedBlock) -> Option<u32> {
 		let mut timestamps = BTreeSet::new();
-		let mut block_ref = block.block_header.previous_header_hash.clone().into();
+		let mut block_ref = block.header().previous_header_hash.clone().into();
 		// TODO: optimize it, so it does not make 11 redundant queries each time
 		for _ in 0..11 {
 			let previous_header = match self.store.block_header(block_ref) {
@@ -313,12 +332,12 @@ impl ChainVerifier {
 		else { None }
 	}
 
-	fn work_required(&self, block: &chain::Block, height: u32) -> Option<u32> {
+	fn work_required(&self, block: &db::IndexedBlock, height: u32) -> Option<u32> {
 		if height == 0 {
 			return None;
 		}
 
-		let previous_ref = block.block_header.previous_header_hash.clone().into();
+		let previous_ref = block.header().previous_header_hash.clone().into();
 		let previous_header = self.store.block_header(previous_ref).expect("self.height != 0; qed");
 
 		if utils::is_retarget_height(height) {
@@ -341,12 +360,12 @@ impl ChainVerifier {
 }
 
 impl Verify for ChainVerifier {
-	fn verify(&self, block: &chain::Block) -> VerificationResult {
+	fn verify(&self, block: &db::IndexedBlock) -> VerificationResult {
 		let result = self.verify_block(block);
 		trace!(
 			target: "verification", "Block {} (transactions: {}) verification finished. Result {:?}",
 			block.hash().to_reversed_str(),
-			block.transactions().len(),
+			block.transaction_count(),
 			result,
 		);
 		result
@@ -356,10 +375,10 @@ impl Verify for ChainVerifier {
 impl ContinueVerify for ChainVerifier {
 	type State = usize;
 
-	fn continue_verify(&self, block: &chain::Block, state: usize) -> VerificationResult {
+	fn continue_verify(&self, block: &db::IndexedBlock, state: usize) -> VerificationResult {
 		// verify transactions (except coinbase)
-		for (idx, transaction) in block.transactions().iter().enumerate().skip(state - 1) {
-			try!(self.verify_transaction(block, transaction, idx).map_err(|e| Error::Transaction(idx, e)));
+		for (idx, (tx_hash, transaction)) in block.transactions().enumerate().skip(state - 1) {
+			try!(self.verify_transaction(block, tx_hash, transaction, idx).map_err(|e| Error::Transaction(idx, e)));
 		}
 
 		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
@@ -374,7 +393,7 @@ impl ContinueVerify for ChainVerifier {
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
-	use db::{TestStorage, Storage, Store, BlockStapler};
+	use db::{TestStorage, Storage, Store, BlockStapler, IndexedBlock};
 	use network::Magic;
 	use devtools::RandomTempPath;
 	use {script, test_data};
@@ -387,7 +406,7 @@ mod tests {
 		let b2 = test_data::block_h2();
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
 
-		assert_eq!(Chain::Orphan, verifier.verify(&b2).unwrap());
+		assert_eq!(Chain::Orphan, verifier.verify(&b2.into()).unwrap());
 	}
 
 	#[test]
@@ -395,7 +414,7 @@ mod tests {
 		let storage = TestStorage::with_blocks(&vec![test_data::genesis()]);
 		let b1 = test_data::block_h1();
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
-		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
+		assert_eq!(Chain::Main, verifier.verify(&b1.into()).unwrap());
 	}
 
 	#[test]
@@ -408,7 +427,7 @@ mod tests {
 		);
 		let b1 = test_data::block_h170();
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
-		assert_eq!(Chain::Main, verifier.verify(&b1).unwrap());
+		assert_eq!(Chain::Main, verifier.verify(&b1.into()).unwrap());
 	}
 
 	#[test]
@@ -425,7 +444,7 @@ mod tests {
 			1,
 			TransactionError::Inconclusive("c997a5e56e104102fa209c6a852dd90660a20b2d9c352423edce25857fcd3704".into())
 		));
-		assert_eq!(should_be, verifier.verify(&b170));
+		assert_eq!(should_be, verifier.verify(&b170.into()));
 	}
 
 	#[test]
@@ -460,7 +479,7 @@ mod tests {
 			TransactionError::Maturity,
 		));
 
-		assert_eq!(expected, verifier.verify(&block));
+		assert_eq!(expected, verifier.verify(&block.into()));
 	}
 
 	#[test]
@@ -493,7 +512,7 @@ mod tests {
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
 		let expected = Ok(Chain::Main);
-		assert_eq!(expected, verifier.verify(&block));
+		assert_eq!(expected, verifier.verify(&block.into()));
 	}
 
 
@@ -532,7 +551,7 @@ mod tests {
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
 		let expected = Ok(Chain::Main);
-		assert_eq!(expected, verifier.verify(&block));
+		assert_eq!(expected, verifier.verify(&block.into()));
 	}
 
 	#[test]
@@ -570,7 +589,7 @@ mod tests {
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
 		let expected = Err(Error::Transaction(2, TransactionError::Overspend));
-		assert_eq!(expected, verifier.verify(&block));
+		assert_eq!(expected, verifier.verify(&block.into()));
 	}
 
 	#[test]
@@ -615,7 +634,7 @@ mod tests {
 
 		let expected = Ok(Chain::Main);
 
-		assert_eq!(expected, verifier.verify(&block))
+		assert_eq!(expected, verifier.verify(&block.into()))
 	}
 
 	#[test]
@@ -646,7 +665,7 @@ mod tests {
 			builder_tx2 = builder_tx2.push_opcode(script::Opcode::OP_CHECKSIG)
 		}
 
-		let block = test_data::block_builder()
+		let block: IndexedBlock = test_data::block_builder()
 			.transaction().coinbase().build()
 			.transaction()
 				.input()
@@ -661,12 +680,13 @@ mod tests {
 					.build()
 				.build()
 			.merkled_header().parent(genesis.hash()).build()
-			.build();
+			.build()
+			.into();
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
 		let expected = Err(Error::MaximumSigops);
-		assert_eq!(expected, verifier.verify(&block));
+		assert_eq!(expected, verifier.verify(&block.into()));
 	}
 
 	#[test]
@@ -681,13 +701,14 @@ mod tests {
 			.build();
 		storage.insert_block(&genesis).unwrap();
 
-		let block = test_data::block_builder()
+		let block: IndexedBlock = test_data::block_builder()
 			.transaction()
 				.coinbase()
 				.output().value(5000000001).build()
 				.build()
 			.merkled_header().parent(genesis.hash()).build()
-			.build();
+			.build()
+			.into();
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
 
@@ -696,6 +717,6 @@ mod tests {
 			actual: 5000000001
 		});
 
-		assert_eq!(expected, verifier.verify(&block));
+		assert_eq!(expected, verifier.verify(&block.into()));
 	}
 }
