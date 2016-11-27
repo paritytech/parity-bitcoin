@@ -23,7 +23,8 @@ pub use self::merkle_root::merkle_node_hash;
 pub use self::transaction::{
 	Transaction, TransactionInput, TransactionOutput, OutPoint,
 	SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_FINAL,
-	SEQUENCE_LOCKTIME_TYPE_FLAG, SEQUENCE_LOCKTIME_MASK
+	SEQUENCE_LOCKTIME_TYPE_FLAG, SEQUENCE_LOCKTIME_MASK,
+	LOCKTIME_THRESHOLD
 };
 
 pub type ShortTransactionID = hash::H48;

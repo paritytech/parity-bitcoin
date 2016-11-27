@@ -6,3 +6,4 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 [dependencies]
 serialization = { path = "../serialization" }
 chain = { path = "../chain" }
+primitives = { path = "../primitives" }

@@ -30,6 +30,9 @@ pub const SEQUENCE_LOCKTIME_TYPE_FLAG: u32 = (1 << 22);
 // applied to extract that lock-time from the sequence field.
 pub const SEQUENCE_LOCKTIME_MASK: u32 = 0x0000ffff;
 
+/// Threshold for `nLockTime`: below this value it is interpreted as block number,
+/// otherwise as UNIX timestamp.
+pub const LOCKTIME_THRESHOLD: u32 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct OutPoint {
@@ -66,10 +69,6 @@ impl OutPoint {
 		&self.hash
 	}
 
-	pub fn index(&self) -> u32 {
-		self.index
-	}
-
 	pub fn is_null(&self) -> bool {
 		self.hash.is_zero() && self.index == u32::max_value()
 	}
@@ -80,6 +79,12 @@ pub struct TransactionInput {
 	pub previous_output: OutPoint,
 	pub script_sig: Bytes,
 	pub sequence: u32,
+}
+
+impl TransactionInput {
+	pub fn is_final(&self) -> bool {
+		self.sequence == SEQUENCE_FINAL
+	}
 }
 
 impl Serializable for TransactionInput {
@@ -113,20 +118,6 @@ impl Deserializable for TransactionInput {
 impl HeapSizeOf for TransactionInput {
 	fn heap_size_of_children(&self) -> usize {
 		self.script_sig.heap_size_of_children()
-	}
-}
-
-impl TransactionInput {
-	pub fn previous_output(&self) -> &OutPoint {
-		&self.previous_output
-	}
-
-	pub fn script_sig(&self) -> &[u8] {
-		&self.script_sig
-	}
-
-	pub fn sequence(&self) -> u32 {
-		self.sequence
 	}
 }
 
@@ -173,16 +164,6 @@ impl Default for TransactionOutput {
 impl HeapSizeOf for TransactionOutput {
 	fn heap_size_of_children(&self) -> usize {
 		self.script_pubkey.heap_size_of_children()
-	}
-}
-
-impl TransactionOutput {
-	pub fn value(&self) -> u64 {
-		self.value
-	}
-
-	pub fn script_pubkey(&self) -> &[u8] {
-		&self.script_pubkey
 	}
 }
 
@@ -252,6 +233,24 @@ impl Transaction {
 
 	pub fn is_coinbase(&self) -> bool {
 		self.inputs.len() == 1 && self.inputs[0].previous_output.is_null()
+	}
+
+	pub fn is_final(&self, block_height: u32, block_time: u32) -> bool {
+		if self.lock_time == 0 {
+			return true;
+		}
+
+		let max_lock_time = if self.lock_time < LOCKTIME_THRESHOLD {
+			block_height
+		} else {
+			block_time
+		};
+
+		if self.lock_time < max_lock_time {
+			return true;
+		}
+
+		self.inputs.iter().all(TransactionInput::is_final)
 	}
 
 	pub fn total_spends(&self) -> u64 {

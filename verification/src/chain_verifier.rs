@@ -57,6 +57,13 @@ impl ChainVerifier {
 	}
 
 	fn ordered_verify(&self, block: &chain::Block, at_height: u32) -> Result<(), Error> {
+		if !block.is_final(at_height) {
+			return Err(Error::NonFinalBlock);
+		}
+
+		let block_hash = block.hash();
+		let consensus_params = self.network.consensus_params();
+
 		// check that difficulty matches the adjusted level
 		if let Some(work) = self.work_required(block, at_height) {
 			if !self.skip_pow && work != block.header().nbits {
@@ -67,6 +74,15 @@ impl ChainVerifier {
 		}
 
 		let coinbase_spends = block.transactions()[0].total_spends();
+
+		// bip30
+		for (tx_index, tx) in block.transactions.iter().enumerate() {
+			if let Some(meta) = self.store.transaction_meta(&tx.hash()) {
+				if !meta.is_fully_spent() && !consensus_params.is_bip30_exception(&block_hash, at_height) {
+					return Err(Error::Transaction(tx_index, TransactionError::UnspentTransactionWithTheSameHash));
+				}
+			}
+		}
 
 		let mut total_unspent = 0u64;
 		for (tx_index, tx) in block.transactions().iter().enumerate().skip(1) {
@@ -168,7 +184,7 @@ impl ChainVerifier {
 				signer: signer,
 				input_index: input_index,
 			};
-			let input: Script = input.script_sig().to_vec().into();
+			let input: Script = input.script_sig.to_vec().into();
 			let output: Script = paired_output.script_pubkey.to_vec().into();
 
 			if is_strict_p2sh && output.is_pay_to_script_hash() {
@@ -240,7 +256,7 @@ impl ChainVerifier {
 		// check that coinbase has a valid signature
 		let coinbase = &block.transactions()[0];
 		// is_coinbase() = true above guarantees that there is at least one input
-		let coinbase_script_len = coinbase.inputs[0].script_sig().len();
+		let coinbase_script_len = coinbase.inputs[0].script_sig.len();
 		if coinbase_script_len < 2 || coinbase_script_len > 100 {
 			return Err(Error::CoinbaseSignatureLength(coinbase_script_len));
 		}
@@ -455,6 +471,7 @@ mod tests {
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
+				.output().value(1).build()
 				.build()
 			.transaction()
 				.output().value(50).build()
@@ -488,6 +505,7 @@ mod tests {
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
+				.output().value(1).build()
 				.build()
 			.transaction()
 				.output().value(50).build()
@@ -525,6 +543,7 @@ mod tests {
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
+				.output().value(1).build()
 				.build()
 			.transaction()
 				.output().value(50).build()

@@ -398,6 +398,7 @@ name = "network"
 version = "0.1.0"
 dependencies = [
  "chain 0.1.0",
+ "primitives 0.1.0",
  "serialization 0.1.0",
 ]
 
