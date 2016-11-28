@@ -1,7 +1,7 @@
 use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::collections::{VecDeque, HashMap};
+use std::collections::{VecDeque, HashMap, HashSet};
 use std::collections::hash_map::Entry;
 use futures::{Future, BoxFuture, lazy, finished};
 use parking_lot::{Mutex, Condvar};
@@ -19,6 +19,7 @@ pub trait Server : Send + Sync + 'static {
 	fn serve_getdata(&self, peer_index: usize, inventory: FilteredInventory) -> Option<IndexedServerTask>;
 	fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) -> Option<IndexedServerTask>;
 	fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders, id: Option<u32>) -> Option<IndexedServerTask>;
+	fn serve_get_block_txn(&self, peer_index: usize, block_hash: H256, indexes: Vec<usize>) -> Option<IndexedServerTask>;
 	fn serve_mempool(&self, peer_index: usize) -> Option<IndexedServerTask>;
 	fn add_task(&self, peer_index: usize, task: IndexedServerTask);
 }
@@ -103,6 +104,7 @@ pub enum ServerTask {
 	ServeGetData(FilteredInventory),
 	ServeGetBlocks(db::BestBlock, H256),
 	ServeGetHeaders(db::BestBlock, H256),
+	ServeGetBlockTxn(H256, Vec<usize>),
 	ServeMempool,
 	ReturnNotFound(Vec<InventoryVector>),
 	ReturnBlock(H256),
@@ -234,6 +236,44 @@ impl SynchronizationServer {
 					}
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
+				},
+				// `getblocktxn` => `blocktxn`
+				ServerTask::ServeGetBlockTxn(block_hash, indexes) => {
+					let transactions = {
+						let chain = chain.read();
+						let storage = chain.storage();
+						if let Some(block) = storage.block(db::BlockRef::Hash(block_hash.clone())) {
+							let requested_len = indexes.len();
+							let transactions_len = block.transactions.len();
+							let mut read_indexes = HashSet::new();
+							let transactions: Vec<_> = indexes.into_iter()
+								.map(|index| {
+									if index >= transactions_len {
+										None
+									} else if read_indexes.insert(index) {
+										None
+									} else {
+										Some(block.transactions[index].clone())
+									}
+								})
+								.take_while(Option::is_some)
+								.map(Option::unwrap) // take_while above
+								.collect();
+							if transactions.len() == requested_len {
+								Some(transactions)
+							} else {
+								// TODO: malformed
+								None
+							}
+						} else {
+							// TODO: else malformed
+							None
+						}
+					};
+					if let Some(transactions) = transactions {
+						trace!(target: "sync", "Going to respond with {} blocktxn transactions to peer#{}", transactions.len(), peer_index);
+						executor.lock().execute(Task::SendBlockTxn(peer_index, block_hash, transactions));
+					}
 				},
 				// `mempool` => `inventory`
 				ServerTask::ServeMempool => {
@@ -399,6 +439,13 @@ impl Server for SynchronizationServer {
 		}
 	}
 
+	fn serve_get_block_txn(&self, _peer_index: usize, block_hash: H256, indexes: Vec<usize>) -> Option<IndexedServerTask> {
+		// TODO: Upon receipt of a properly-formatted getblocktxn message, nodes which *recently provided the sender
+		// of such a message a cmpctblock for the block hash identified in this message* MUST respond ...
+		let task = IndexedServerTask::new(ServerTask::ServeGetBlockTxn(block_hash, indexes), ServerTaskIndex::None);
+		Some(task)
+	}
+
 	fn serve_mempool(&self, _peer_index: usize) -> Option<IndexedServerTask> {
 		let task = IndexedServerTask::new(ServerTask::ServeMempool, ServerTaskIndex::None);
 		Some(task)
@@ -536,6 +583,11 @@ pub mod tests {
 				number: 0,
 				hash: message.block_locator_hashes[0].clone(),
 			}, message.hash_stop)));
+			None
+		}
+
+		fn serve_get_block_txn(&self, peer_index: usize, block_hash: H256, indexes: Vec<usize>) -> Option<IndexedServerTask> {
+			self.tasks.lock().push((peer_index, ServerTask::ServeGetBlockTxn(block_hash, indexes)));
 			None
 		}
 
