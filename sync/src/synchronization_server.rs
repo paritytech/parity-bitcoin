@@ -243,6 +243,7 @@ impl SynchronizationServer {
 						let chain = chain.read();
 						let storage = chain.storage();
 						if let Some(block) = storage.block(db::BlockRef::Hash(block_hash.clone())) {
+						
 							let requested_len = indexes.len();
 							let transactions_len = block.transactions.len();
 							let mut read_indexes = HashSet::new();
@@ -250,7 +251,7 @@ impl SynchronizationServer {
 								.map(|index| {
 									if index >= transactions_len {
 										None
-									} else if read_indexes.insert(index) {
+									} else if !read_indexes.insert(index) {
 										None
 									} else {
 										Some(block.transactions[index].clone())
@@ -734,5 +735,27 @@ pub mod tests {
 		}];
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![Task::SendInventory(0, inventory, ServerTaskIndex::None)]);
+	}
+
+	#[test]
+	fn server_get_block_txn_responds_when_good_request() {
+		let (_, executor, server) = create_synchronization_server();
+		// when asking for block_txns
+		server.serve_get_block_txn(0, test_data::genesis().hash(), vec![0]).map(|t| server.add_task(0, t));
+		// server responds with transactions
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendBlockTxn(0, test_data::genesis().hash(), vec![
+			test_data::genesis().transactions[0].clone()
+		])]);
+	}
+
+	#[test]
+	fn server_get_block_txn_do_not_responds_when_bad_request() {
+		let (_, executor, server) = create_synchronization_server();
+		// when asking for block_txns
+		server.serve_get_block_txn(0, test_data::genesis().hash(), vec![1]).map(|t| server.add_task(0, t));
+		// server responds with transactions
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![]);
 	}
 }
