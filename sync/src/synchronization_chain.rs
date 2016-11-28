@@ -228,8 +228,7 @@ impl Chain {
 	/// Get block header by number
 	pub fn block_header_by_number(&self, number: u32) -> Option<BlockHeader> {
 		if number <= self.best_storage_block.number {
-			// TODO: read block header only
-			self.storage.block(db::BlockRef::Number(number)).map(|b| b.block_header)
+			self.storage.block_header(db::BlockRef::Number(number))
 		} else {
 			self.headers_chain.at(number - self.best_storage_block.number)
 		}
