@@ -243,7 +243,7 @@ impl SynchronizationServer {
 						let chain = chain.read();
 						let storage = chain.storage();
 						if let Some(block) = storage.block(db::BlockRef::Hash(block_hash.clone())) {
-						
+
 							let requested_len = indexes.len();
 							let transactions_len = block.transactions.len();
 							let mut read_indexes = HashSet::new();
@@ -658,7 +658,7 @@ pub mod tests {
 	#[test]
 	fn server_getblocks_responds_inventory_when_have_unknown_blocks() {
 		let (chain, executor, server) = create_synchronization_server();
-		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Db write error");
+		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1().into()).expect("Db write error");
 		// when asking for blocks hashes
 		server.serve_getblocks(0, types::GetBlocks {
 			version: 0,
@@ -693,7 +693,7 @@ pub mod tests {
 	#[test]
 	fn server_getheaders_responds_headers_when_have_unknown_blocks() {
 		let (chain, executor, server) = create_synchronization_server();
-		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Db write error");
+		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1().into()).expect("Db write error");
 		// when asking for blocks hashes
 		let dummy_id = 0;
 		server.serve_getheaders(0, types::GetHeaders {

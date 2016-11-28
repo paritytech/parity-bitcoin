@@ -610,12 +610,12 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 	/// Process new block.
 	fn on_peer_block(&mut self, peer_index: usize, block: IndexedBlock) -> Option<VecDeque<(H256, IndexedBlock)>> {
-		let block_hash = block.hash();
+		let block_hash = block.hash().clone();
 
 		// update peers to select next tasks
 		self.peers.on_block_received(peer_index, &block_hash);
 
-		self.process_peer_block(peer_index, block_hash.clone(), block)
+		self.process_peer_block(peer_index, block_hash, block)
 	}
 
 	/// Process new transaction.
@@ -1410,7 +1410,7 @@ pub mod tests {
 		assert_eq!(sync.information().peers.active, 1);
 
 		// push unknown block => will be queued as orphan
-		sync.on_peer_block(5, block2);
+		sync.on_peer_block(5, block2.into());
 		assert!(sync.information().state.is_nearly_saturated());
 		assert_eq!(sync.information().orphaned_blocks, 1);
 		assert_eq!(sync.information().chain.scheduled, 0);
@@ -1420,7 +1420,7 @@ pub mod tests {
 		assert_eq!(sync.information().peers.active, 1);
 
 		// push requested block => should be moved to the test storage && orphan should be moved
-		sync.on_peer_block(5, block1);
+		sync.on_peer_block(5, block1.into());
 		assert!(sync.information().state.is_saturated());
 		assert_eq!(sync.information().orphaned_blocks, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
@@ -1437,7 +1437,7 @@ pub mod tests {
 		let mut sync = sync.lock();
 
 		sync.on_new_blocks_headers(5, vec![test_data::block_h1().block_header.clone(), test_data::block_h2().block_header.clone()]);
-		sync.on_peer_block(5, test_data::block_h169());
+		sync.on_peer_block(5, test_data::block_h169().into());
 
 		// out-of-order block was presented by the peer
 		assert!(sync.information().state.is_synchronizing());
@@ -1485,11 +1485,11 @@ pub mod tests {
 		{
 			let mut sync = sync.lock();
 			// receive block from peer#2
-			sync.on_peer_block(2, block2);
+			sync.on_peer_block(2, block2.into());
 			assert!(sync.information().chain.requested == 2
 				&& sync.information().orphaned_blocks == 1);
 			// receive block from peer#1
-			sync.on_peer_block(1, block1);
+			sync.on_peer_block(1, block1.into());
 
 			assert!(sync.information().chain.requested == 0
 				&& sync.information().orphaned_blocks == 0
@@ -1537,7 +1537,7 @@ pub mod tests {
 		sync.on_new_blocks_headers(1, vec![block.block_header.clone()]);
 		sync.on_new_blocks_headers(2, vec![block.block_header.clone()]);
 		executor.lock().take_tasks();
-		sync.on_peer_block(2, block.clone());
+		sync.on_peer_block(2, block.clone().into());
 
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks.len(), 5);
@@ -1570,7 +1570,7 @@ pub mod tests {
 			assert_eq!(chain.information().headers.total, 2);
 		}
 
-		sync.on_peer_block(1, b1);
+		sync.on_peer_block(1, b1.into());
 
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![]);
@@ -1581,7 +1581,7 @@ pub mod tests {
 			assert_eq!(chain.information().headers.total, 1);
 		}
 
-		sync.on_peer_block(1, b2);
+		sync.on_peer_block(1, b2.into());
 
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::RequestMemoryPool(1)]);
@@ -1613,7 +1613,7 @@ pub mod tests {
 			assert_eq!(chain.information().headers.total, 2);
 		}
 
-		sync.on_peer_block(1, b2);
+		sync.on_peer_block(1, b2.into());
 
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![]);
@@ -1624,7 +1624,7 @@ pub mod tests {
 			assert_eq!(chain.information().headers.total, 2);
 		}
 
-		sync.on_peer_block(1, b1);
+		sync.on_peer_block(1, b1.into());
 
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::RequestMemoryPool(1)]);
@@ -1674,35 +1674,35 @@ pub mod tests {
 			Task::RequestBlocks(2, vec![fork2[0].hash(), fork2[1].hash(), fork2[2].hash()]),
 		]);
 
-		sync.on_peer_block(2, fork2[0].clone());
+		sync.on_peer_block(2, fork2[0].clone().into());
 		{
 			let chain = chain.read();
 			assert_eq!(chain.best_storage_block().hash, fork2[0].hash());
 			assert_eq!(chain.best_storage_block().number, 1);
 		}
 
-		sync.on_peer_block(1, fork1[0].clone());
+		sync.on_peer_block(1, fork1[0].clone().into());
 		{
 			let chain = chain.read();
 			assert_eq!(chain.best_storage_block().hash, fork2[0].hash());
 			assert_eq!(chain.best_storage_block().number, 1);
 		}
 
-		sync.on_peer_block(1, fork1[1].clone());
+		sync.on_peer_block(1, fork1[1].clone().into());
 		{
 			let chain = chain.read();
 			assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
 			assert_eq!(chain.best_storage_block().number, 2);
 		}
 
-		sync.on_peer_block(2, fork2[1].clone());
+		sync.on_peer_block(2, fork2[1].clone().into());
 		{
 			let chain = chain.read();
 			assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
 			assert_eq!(chain.best_storage_block().number, 2);
 		}
 
-		sync.on_peer_block(2, fork2[2].clone());
+		sync.on_peer_block(2, fork2[2].clone().into());
 		{
 			let chain = chain.read();
 			assert_eq!(chain.best_storage_block().hash, fork2[2].hash());
@@ -1740,12 +1740,12 @@ pub mod tests {
 			assert_eq!(chain.information().headers.total, 3);
 		}
 
-		sync.on_peer_block(1, common_block.clone());
-		sync.on_peer_block(1, fork1[0].clone());
-		sync.on_peer_block(1, fork1[1].clone());
-		sync.on_peer_block(2, fork2[0].clone());
-		sync.on_peer_block(2, fork2[1].clone());
-		sync.on_peer_block(2, fork2[2].clone());
+		sync.on_peer_block(1, common_block.clone().into());
+		sync.on_peer_block(1, fork1[0].clone().into());
+		sync.on_peer_block(1, fork1[1].clone().into());
+		sync.on_peer_block(2, fork2[0].clone().into());
+		sync.on_peer_block(2, fork2[1].clone().into());
+		sync.on_peer_block(2, fork2[2].clone().into());
 
 		{
 			let chain = chain.read();
@@ -1759,7 +1759,7 @@ pub mod tests {
 		let (_, _, _, chain, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
-		sync.on_peer_block(1, test_data::block_h2());
+		sync.on_peer_block(1, test_data::block_h2().into());
 		assert_eq!(sync.information().orphaned_blocks, 1);
 
 		{
@@ -1767,7 +1767,7 @@ pub mod tests {
 			assert_eq!(chain.best_storage_block().number, 0);
 		}
 
-		sync.on_peer_block(1, test_data::block_h1());
+		sync.on_peer_block(1, test_data::block_h1().into());
 		assert_eq!(sync.information().orphaned_blocks, 0);
 
 		{
@@ -1781,7 +1781,7 @@ pub mod tests {
 		let (_, _, executor, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
-		sync.on_peer_block(1, test_data::block_h2());
+		sync.on_peer_block(1, test_data::block_h2().into());
 		sync.on_new_blocks_inventory(1, vec![test_data::block_h1().hash(), test_data::block_h2().hash()]);
 
 		let tasks = executor.lock().take_tasks();
@@ -2051,11 +2051,11 @@ pub mod tests {
 		sync.on_new_blocks_headers(1, vec![b10.block_header.clone(), b11.block_header.clone(), b12.block_header.clone()]);
 		sync.on_new_blocks_headers(2, vec![b10.block_header.clone(), b21.block_header.clone(), b22.block_header.clone()]);
 
-		sync.on_peer_block(1, b10.clone());
-		sync.on_peer_block(1, b11);
-		sync.on_peer_block(1, b12);
+		sync.on_peer_block(1, b10.clone().into());
+		sync.on_peer_block(1, b11.into());
+		sync.on_peer_block(1, b12.into());
 
-		sync.on_peer_block(2, b21.clone());
+		sync.on_peer_block(2, b21.clone().into());
 
 		// should not panic here
 		sync.on_new_blocks_headers(2, vec![b10.block_header.clone(), b21.block_header.clone(),
@@ -2073,8 +2073,8 @@ pub mod tests {
 
 		let mut sync = sync.lock();
 		sync.on_new_blocks_headers(1, vec![b0.block_header.clone(), b1.block_header.clone()]);
-		sync.on_peer_block(1, b0.clone());
-		sync.on_peer_block(1, b1.clone());
+		sync.on_peer_block(1, b0.clone().into());
+		sync.on_peer_block(1, b1.clone().into());
 
 		// we were in synchronization state => block is not relayed
 		{
@@ -2086,7 +2086,7 @@ pub mod tests {
 			]);
 		}
 
-		sync.on_peer_block(2, b2.clone());
+		sync.on_peer_block(2, b2.clone().into());
 
 		// we were in saturated state => block is relayed
 		{
@@ -2096,7 +2096,7 @@ pub mod tests {
 		}
 
 		sync.on_new_blocks_headers(1, vec![b3.block_header.clone()]);
-		sync.on_peer_block(1, b3.clone());
+		sync.on_peer_block(1, b3.clone().into());
 
 		// we were in nearly saturated state => block is relayed
 		{
@@ -2193,7 +2193,7 @@ pub mod tests {
 		// igonore tasks
 		{ executor.lock().take_tasks(); }
 
-		sync.on_peer_block(1, b0.clone());
+		sync.on_peer_block(1, b0.clone().into());
 
 		let tasks = executor.lock().take_tasks();
 		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: b0.hash() }];
@@ -2221,7 +2221,7 @@ pub mod tests {
 		sync.on_peer_connected(3);
 		sync.on_peer_connected(4);
 
-		sync.on_peer_block(1, b1);
+		sync.on_peer_block(1, b1.into());
 
 		{
 			use miner::transaction_fee_rate;
@@ -2260,9 +2260,9 @@ pub mod tests {
 
 		let mut sync = sync.lock();
 
-		sync.on_peer_block(1, test_data::block_h2());
+		sync.on_peer_block(1, test_data::block_h2().into());
 		// should not panic here
-		sync.on_peer_block(2, test_data::block_h2());
+		sync.on_peer_block(2, test_data::block_h2().into());
 	}
 
 	#[test]
@@ -2280,7 +2280,7 @@ pub mod tests {
 		// igonore tasks
 		{ executor.lock().take_tasks(); }
 
-		sync.on_peer_block(1, b0.clone());
+		sync.on_peer_block(1, b0.clone().into());
 
 		let tasks = executor.lock().take_tasks();
 		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: b0.hash() }];

@@ -310,10 +310,10 @@ impl Chain {
 
 	/// Insert new best block to storage
 	pub fn insert_best_block(&mut self, hash: H256, block: &IndexedBlock) -> Result<BlockInsertionResult, db::Error> {
-		let is_appending_to_main_branch = self.best_storage_block.hash == block.block_header.previous_header_hash;
+		let is_appending_to_main_branch = &self.best_storage_block.hash == block.hash();
 
 		// insert to storage
-		let storage_insertion = try!(self.storage.insert_block(&block));
+		let storage_insertion = try!(self.storage.insert_indexed_block(&block));
 
 		// remember new best block hash
 		self.best_storage_block = self.storage.best_block().expect("Inserted block above");
@@ -328,7 +328,7 @@ impl Chain {
 
 			// all transactions from this block were accepted
 			// => delete accepted transactions from verification queue and from the memory pool
-			let this_block_transactions_hashes = block.transactions.iter().map(|tx| tx.hash());
+			let this_block_transactions_hashes: Vec<H256> = block.transaction_hashes().iter().cloned().collect();
 			for transaction_accepted in this_block_transactions_hashes {
 				self.memory_pool.remove_by_hash(&transaction_accepted);
 				self.verifying_transactions.remove(&transaction_accepted);
@@ -353,7 +353,7 @@ impl Chain {
 			// all transactions from this block were accepted
 			// + all transactions from previous blocks of this fork were accepted
 			// => delete accepted transactions from verification queue and from the memory pool
-			let this_block_transactions_hashes = block.transaction_hashes();
+			let this_block_transactions_hashes: Vec<H256> = block.transaction_hashes().iter().cloned().collect();
 			let mut canonized_blocks_hashes: Vec<H256> = Vec::new();
 			let mut new_main_blocks_transactions_hashes: Vec<H256> = Vec::new();
 			while let Some(canonized_block_hash) = reorganization.pop_canonized() {
@@ -361,7 +361,7 @@ impl Chain {
 				new_main_blocks_transactions_hashes.extend(canonized_transactions_hashes);
 				canonized_blocks_hashes.push(canonized_block_hash);
 			}
-			for transaction_accepted in this_block_transactions_hashes.chain(new_main_blocks_transactions_hashes.into_iter()) {
+			for transaction_accepted in this_block_transactions_hashes.into_iter().chain(new_main_blocks_transactions_hashes.into_iter()) {
 				self.memory_pool.remove_by_hash(&transaction_accepted);
 				self.verifying_transactions.remove(&transaction_accepted);
 			}
@@ -785,7 +785,7 @@ mod tests {
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 1);
 		// insert new best block to the chain
-		chain.insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Db error");
+		chain.insert_best_block(test_data::block_h1().hash(), &test_data::block_h1().into()).expect("Db error");
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 2);
 		assert_eq!(db.best_block().expect("storage with genesis block is required").number, 1);
@@ -800,13 +800,13 @@ mod tests {
 		let block1 = test_data::block_h1();
 		let block1_hash = block1.hash();
 
-		chain.insert_best_block(block1_hash.clone(), &block1).expect("Error inserting new block");
+		chain.insert_best_block(block1_hash.clone(), &block1.into()).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block1_hash.clone(), genesis_hash.clone()]);
 
 		let block2 = test_data::block_h2();
 		let block2_hash = block2.hash();
 
-		chain.insert_best_block(block2_hash.clone(), &block2).expect("Error inserting new block");
+		chain.insert_best_block(block2_hash.clone(), &block2.into()).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
 
 		let blocks0 = test_data::build_n_empty_blocks_from_genesis(11, 0);
@@ -879,8 +879,8 @@ mod tests {
 	fn chain_intersect_with_inventory() {
 		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
 		// append 2 db blocks
-		chain.insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Error inserting new block");
-		chain.insert_best_block(test_data::block_h2().hash(), &test_data::block_h2()).expect("Error inserting new block");
+		chain.insert_best_block(test_data::block_h1().hash(), &test_data::block_h1().into()).expect("Error inserting new block");
+		chain.insert_best_block(test_data::block_h2().hash(), &test_data::block_h2().into()).expect("Error inserting new block");
 
 		// prepare blocks
 		let blocks0 = test_data::build_n_empty_blocks_from(9, 0, &test_data::block_h2().block_header);
@@ -993,7 +993,7 @@ mod tests {
 		assert_eq!(chain.information().transactions.transactions_count, 1);
 
 		// when block is inserted to the database => all accepted transactions are removed from mempool && verifying queue
-		chain.insert_best_block(b1.hash(), &b1).expect("block accepted");
+		chain.insert_best_block(b1.hash(), &b1.into()).expect("block accepted");
 
 		assert_eq!(chain.information().transactions.transactions_count, 0);
 		assert!(!chain.forget_verifying_transaction(&tx1_hash));
@@ -1063,15 +1063,15 @@ mod tests {
 		chain.insert_verified_transaction(tx2);
 
 		// no reorg
-		let result = chain.insert_best_block(b1.hash(), &b1).expect("no error");
+		let result = chain.insert_best_block(b1.hash(), &b1.into()).expect("no error");
 		assert_eq!(result.transactions_to_reverify.len(), 0);
 
 		// no reorg
-		let result = chain.insert_best_block(b2.hash(), &b2).expect("no error");
+		let result = chain.insert_best_block(b2.hash(), &b2.into()).expect("no error");
 		assert_eq!(result.transactions_to_reverify.len(), 0);
 
 		// reorg
-		let result = chain.insert_best_block(b3.hash(), &b3).expect("no error");
+		let result = chain.insert_best_block(b3.hash(), &b3.into()).expect("no error");
 		assert_eq!(result.transactions_to_reverify.len(), 2);
 		assert!(result.transactions_to_reverify.iter().any(|&(ref h, _)| h == &tx1_hash));
 		assert!(result.transactions_to_reverify.iter().any(|&(ref h, _)| h == &tx2_hash));
@@ -1115,18 +1115,18 @@ mod tests {
 		chain.insert_verified_transaction(tx4);
 		chain.insert_verified_transaction(tx5);
 
-		assert_eq!(chain.insert_best_block(b0.hash(), &b0).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b0.hash()]));
+		assert_eq!(chain.insert_best_block(b0.hash(), &b0.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b0.hash()]));
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(b1.hash(), &b1).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b1.hash()]));
+		assert_eq!(chain.insert_best_block(b1.hash(), &b1.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b1.hash()]));
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(b2.hash(), &b2).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b2.hash()]));
+		assert_eq!(chain.insert_best_block(b2.hash(), &b2.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b2.hash()]));
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(b3.hash(), &b3).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.insert_best_block(b3.hash(), &b3.clone().into()).expect("block accepted"), BlockInsertionResult::default());
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(b4.hash(), &b4).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.insert_best_block(b4.hash(), &b4.clone().into()).expect("block accepted"), BlockInsertionResult::default());
 		assert_eq!(chain.information().transactions.transactions_count, 3);
 		// order matters
-		let insert_result = chain.insert_best_block(b5.hash(), &b5).expect("block accepted");
+		let insert_result = chain.insert_best_block(b5.hash(), &b5.clone().into()).expect("block accepted");
 		let transactions_to_reverify_hashes: Vec<_> = insert_result
 			.transactions_to_reverify
 			.into_iter()

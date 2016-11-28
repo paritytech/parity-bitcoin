@@ -157,6 +157,7 @@ pub mod tests {
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use primitives::hash::H256;
 	use super::{Verifier, VerificationSink};
+	use db::IndexedBlock;
 
 	#[derive(Default)]
 	pub struct DummyVerifier {
@@ -175,7 +176,7 @@ pub mod tests {
 	}
 
 	impl Verifier for DummyVerifier {
-		fn verify_block(&self, block: Block) {
+		fn verify_block(&self, block: IndexedBlock) {
 			match self.sink {
 				Some(ref sink) => match self.errors.get(&block.hash()) {
 					Some(err) => sink.lock().on_block_verification_error(&err, &block.hash()),

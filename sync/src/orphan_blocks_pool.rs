@@ -44,7 +44,7 @@ impl OrphanBlocksPool {
 	/// Insert orphaned block, for which we have already requested its parent block
 	pub fn insert_orphaned_block(&mut self, hash: H256, block: IndexedBlock) {
 		self.orphaned_blocks
-			.entry(block.block_header.previous_header_hash.clone())
+			.entry(block.header().previous_header_hash.clone())
 			.or_insert_with(HashMap::new)
 			.insert(hash, block);
 	}
@@ -72,7 +72,7 @@ impl OrphanBlocksPool {
 		let mut queue: VecDeque<H256> = VecDeque::new();
 		queue.push_back(hash.clone());
 
-		let mut removed: Vec<(H256, Block)> = Vec::new();
+		let mut removed: Vec<(H256, IndexedBlock)> = Vec::new();
 		while let Some(parent_hash) = queue.pop_front() {
 			if let Entry::Occupied(entry) = self.orphaned_blocks.entry(parent_hash) {
 				let (_, orphaned) = entry.remove_entry();
@@ -89,7 +89,7 @@ impl OrphanBlocksPool {
 	/// Remove blocks with given hashes + all dependent blocks
 	pub fn remove_blocks(&mut self, hashes: &HashSet<H256>) -> Vec<(H256, IndexedBlock)> {
 		// TODO: excess clone
-		let mut removed: Vec<(H256, Block)> = Vec::new();
+		let mut removed: Vec<(H256, IndexedBlock)> = Vec::new();
 		let parent_orphan_keys: Vec<_> = self.orphaned_blocks.keys().cloned().collect();
 		for parent_orphan_key in parent_orphan_keys {
 			if let Entry::Occupied(mut orphan_entry) = self.orphaned_blocks.entry(parent_orphan_key) {
@@ -139,7 +139,7 @@ mod tests {
 		let b1 = test_data::block_h1();
 		let b1_hash = b1.hash();
 
-		pool.insert_orphaned_block(b1_hash.clone(), b1);
+		pool.insert_orphaned_block(b1_hash.clone(), b1.into());
 
 		assert_eq!(pool.len(), 1);
 		assert!(!pool.contains_unknown_block(&b1_hash));
@@ -152,7 +152,7 @@ mod tests {
 		let b1 = test_data::block_h1();
 		let b1_hash = b1.hash();
 
-		pool.insert_unknown_block(b1_hash.clone(), b1);
+		pool.insert_unknown_block(b1_hash.clone(), b1.into());
 
 		assert_eq!(pool.len(), 1);
 		assert!(pool.contains_unknown_block(&b1_hash));
@@ -167,8 +167,8 @@ mod tests {
 		let b2 = test_data::block_h169();
 		let b2_hash = b2.hash();
 
-		pool.insert_orphaned_block(b1_hash.clone(), b1);
-		pool.insert_unknown_block(b2_hash.clone(), b2);
+		pool.insert_orphaned_block(b1_hash.clone(), b1.into());
+		pool.insert_unknown_block(b2_hash.clone(), b2.into());
 
 		assert_eq!(pool.len(), 2);
 		assert!(!pool.contains_unknown_block(&b1_hash));
@@ -193,9 +193,9 @@ mod tests {
 		let b3 = test_data::block_h2();
 		let b3_hash = b3.hash();
 
-		pool.insert_orphaned_block(b1_hash.clone(), b1);
-		pool.insert_unknown_block(b2_hash.clone(), b2);
-		pool.insert_orphaned_block(b3_hash.clone(), b3);
+		pool.insert_orphaned_block(b1_hash.clone(), b1.into());
+		pool.insert_unknown_block(b2_hash.clone(), b2.into());
+		pool.insert_orphaned_block(b3_hash.clone(), b3.into());
 
 		let removed = pool.remove_blocks_for_parent(&test_data::genesis().hash());
 		assert_eq!(removed.len(), 2);
@@ -223,11 +223,11 @@ mod tests {
 		let b5 = test_data::block_h181();
 		let b5_hash = b5.hash();
 
-		pool.insert_orphaned_block(b1_hash.clone(), b1);
-		pool.insert_orphaned_block(b2_hash.clone(), b2);
-		pool.insert_orphaned_block(b3_hash.clone(), b3);
-		pool.insert_orphaned_block(b4_hash.clone(), b4);
-		pool.insert_orphaned_block(b5_hash.clone(), b5);
+		pool.insert_orphaned_block(b1_hash.clone(), b1.into());
+		pool.insert_orphaned_block(b2_hash.clone(), b2.into());
+		pool.insert_orphaned_block(b3_hash.clone(), b3.into());
+		pool.insert_orphaned_block(b4_hash.clone(), b4.into());
+		pool.insert_orphaned_block(b5_hash.clone(), b5.into());
 
 		let mut blocks_to_remove: HashSet<H256> = HashSet::new();
 		blocks_to_remove.insert(b1_hash.clone());

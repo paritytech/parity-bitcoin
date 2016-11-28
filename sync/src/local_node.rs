@@ -145,7 +145,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		trace!(target: "sync", "Got `block` message from peer#{}. Block hash: {}", peer_index, message.block.hash().to_reversed_str());
 
 		// try to process new block
-		self.client.lock().on_peer_block(peer_index, message.block);
+		self.client.lock().on_peer_block(peer_index, message.block.into());
 	}
 
 	pub fn on_peer_headers(&self, peer_index: usize, message: types::Headers) {
