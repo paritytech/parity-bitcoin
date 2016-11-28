@@ -34,8 +34,8 @@ impl IndexedBlock {
 		let mut block = IndexedBlock {
 			header_hash: header.hash(),
 			header: header,
-			transactions: Vec::new(),
-			transaction_hashes: Vec::new(),
+			transactions: Vec::with_capacity(transaction_index.len()),
+			transaction_hashes: Vec::with_capacity(transaction_index.len()),
 		};
 
 		for (h256, tx) in transaction_index {
