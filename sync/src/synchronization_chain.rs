@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::collections::VecDeque;
 use linked_hash_map::LinkedHashMap;
 use parking_lot::RwLock;
-use chain::{Block, BlockHeader, Transaction};
+use chain::{BlockHeader, Transaction};
 use db::{self, IndexedBlock};
 use best_headers_chain::{BestHeadersChain, Information as BestHeadersInformation};
 use primitives::bytes::Bytes;

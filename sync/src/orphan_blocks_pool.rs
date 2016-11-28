@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
 use linked_hash_map::LinkedHashMap;
 use time;
-use chain::Block;
 use primitives::hash::H256;
 use db::IndexedBlock;
 

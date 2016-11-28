@@ -8,7 +8,7 @@ use futures::stream::Stream;
 use tokio_core::reactor::{Handle, Interval};
 use futures_cpupool::CpuPool;
 use db::{self, IndexedBlock};
-use chain::{Block, BlockHeader, Transaction};
+use chain::{BlockHeader, Transaction};
 use message::types;
 use message::common::{InventoryVector, InventoryType};
 use primitives::hash::H256;

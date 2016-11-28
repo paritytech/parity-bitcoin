@@ -1,12 +1,11 @@
 //! Bitcoin chain verifier
 
 use std::collections::BTreeSet;
-use db::{self, BlockRef, BlockLocation, IndexedBlock};
+use db::{self, BlockRef, BlockLocation};
 use network::Magic;
 use script::Script;
 use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
 use {chain, utils};
-use primitives::H256;
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
 const COINBASE_MATURITY: u32 = 100; // 2 hours
@@ -61,7 +60,7 @@ impl ChainVerifier {
 	fn previous_transaction_output(&self, block: &db::IndexedBlock, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput> {
 		self.store.transaction(&prevout.hash)
 			.as_ref()
-			.or_else(|| block.transactions().find(|&(hash, tx)| hash == &prevout.hash).and_then(|(hash, tx)| Some(tx)))
+			.or_else(|| block.transactions().find(|&(hash, _)| hash == &prevout.hash).and_then(|(_, tx)| Some(tx)))
 			.and_then(|tx| tx.outputs.iter().nth(prevout.index as usize).cloned())
 	}
 
@@ -130,7 +129,7 @@ impl ChainVerifier {
 			.total_spends();
 
 		// bip30
-		for (tx_index, (tx_hash, tx)) in block.transactions().enumerate() {
+		for (tx_index, (tx_hash, _)) in block.transactions().enumerate() {
 			if let Some(meta) = self.store.transaction_meta(tx_hash) {
 				if !meta.is_fully_spent() && !consensus_params.is_bip30_exception(&block_hash, at_height) {
 					return Err(Error::Transaction(tx_index, TransactionError::UnspentTransactionWithTheSameHash));
@@ -139,7 +138,7 @@ impl ChainVerifier {
 		}
 
 		let mut total_unspent = 0u64;
-		for (tx_index, (tx_hash, tx)) in block.transactions().enumerate().skip(1) {
+		for (tx_index, (_, tx)) in block.transactions().enumerate().skip(1) {
 			let mut total_claimed: u64 = 0;
 			for input in &tx.inputs {
 				// Coinbase maturity check
@@ -178,7 +177,6 @@ impl ChainVerifier {
 
 	fn verify_transaction(&self,
 		block: &db::IndexedBlock,
-		hash: &H256,
 		transaction: &chain::Transaction,
 		sequence: usize,
 	) -> Result<(), TransactionError> {
@@ -283,8 +281,8 @@ impl ChainVerifier {
 			return Err(Error::CoinbaseSignatureLength(coinbase_script_len));
 		}
 
-		for (idx, (tx_hash, transaction)) in block.transactions().enumerate() {
-			try!(self.verify_transaction(block, tx_hash, transaction, idx).map_err(|e| Error::Transaction(idx, e)))
+		for (idx, (_, transaction)) in block.transactions().enumerate() {
+			try!(self.verify_transaction(block, transaction, idx).map_err(|e| Error::Transaction(idx, e)))
 		}
 
 		// todo: pre-process projected block number once verification is parallel!
@@ -368,8 +366,8 @@ impl ContinueVerify for ChainVerifier {
 
 	fn continue_verify(&self, block: &db::IndexedBlock, state: usize) -> VerificationResult {
 		// verify transactions (except coinbase)
-		for (idx, (tx_hash, transaction)) in block.transactions().enumerate().skip(state - 1) {
-			try!(self.verify_transaction(block, tx_hash, transaction, idx).map_err(|e| Error::Transaction(idx, e)));
+		for (idx, (_, transaction)) in block.transactions().enumerate().skip(state - 1) {
+			try!(self.verify_transaction(block, transaction, idx).map_err(|e| Error::Transaction(idx, e)));
 		}
 
 		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {

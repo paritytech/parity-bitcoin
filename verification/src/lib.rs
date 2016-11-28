@@ -22,7 +22,6 @@ extern crate test_data;
 mod chain_verifier;
 mod compact;
 mod utils;
-mod lookup;
 
 pub use primitives::{uint, hash};
 
