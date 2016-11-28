@@ -436,7 +436,7 @@ pub fn eval_script(
 			Opcode::OP_14 |
 			Opcode::OP_15 |
 			Opcode::OP_16 => {
-				let value = (opcode as u8).wrapping_sub(Opcode::OP_1 as u8 - 1);
+				let value = (opcode as i32).wrapping_sub(Opcode::OP_1 as i32 - 1);
 				stack.push(Num::from(value).to_bytes());
 			},
 			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_LEFT | Opcode::OP_RIGHT |
