@@ -174,7 +174,7 @@ impl Script {
 		let len = data.len();
 		let end = self.data.len();
 
-		if len > end {
+		if len > end || len == 0 {
 			return self.data.to_vec().into()
 		}
 
@@ -573,5 +573,12 @@ OP_ADD
 		script[max_block_sigops - block_sigops + 5] = 0xff;
 		let script: Script = script.into();
 		assert_eq!(script.sigops_count(false), 20001);
+	}
+
+	#[test]
+	fn test_script_empty_find_and_delete() {
+		let s: Script = vec![Opcode::OP_0 as u8].into();
+		let result = s.find_and_delete(&[]);
+		assert_eq!(s, result);
 	}
 }
