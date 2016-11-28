@@ -4,8 +4,6 @@ use std::cmp;
 use hash::H256;
 use uint::U256;
 use byteorder::{BigEndian, ByteOrder};
-use script::{self, Script};
-use chain;
 use compact::Compact;
 
 // Timespan constants
@@ -107,30 +105,6 @@ pub fn block_reward_satoshi(block_height: u32) -> u64 {
 	let mut res = 50 * 100 * 1000 * 1000;
 	for _ in 0..block_height / 210000 { res /= 2 }
 	res
-}
-
-pub fn transaction_sigops(transaction: &chain::Transaction) -> Result<usize, script::Error> {
-	let mut result = 0usize;
-
-	for output in &transaction.outputs {
-		let output_script: Script = output.script_pubkey.to_vec().into();
-		// todo: not always allow malformed output?
-		result += output_script.sigop_count(false).unwrap_or(0);
-	}
-
-	if transaction.is_coinbase() { return Ok(result); }
-
-	for input in &transaction.inputs {
-		let input_script: Script = input.script_sig.to_vec().into();
-		result += try!(input_script.sigop_count(false));
-	}
-
-	Ok(result)
-}
-
-pub fn p2sh_sigops(output: &Script, input_ref: &Script) -> usize {
-	// todo: not always skip malformed output?
-	output.sigop_count_p2sh(input_ref).unwrap_or(0)
 }
 
 #[cfg(test)]

@@ -214,8 +214,10 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		trace!(target: "sync", "Got `cmpctblock` message from peer#{}", peer_index);
 	}
 
-	pub fn on_peer_get_block_txn(&self, peer_index: usize, _message: types::GetBlockTxn) {
+	pub fn on_peer_get_block_txn(&self, peer_index: usize, message: types::GetBlockTxn) {
 		trace!(target: "sync", "Got `getblocktxn` message from peer#{}", peer_index);
+
+		self.server.serve_get_block_txn(peer_index, message.request.blockhash, message.request.indexes).map(|t| self.server.add_task(peer_index, t));
 	}
 
 	pub fn on_peer_block_txn(&self, peer_index: usize, _message: types::BlockTxn) {
