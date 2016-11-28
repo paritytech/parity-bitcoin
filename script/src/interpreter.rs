@@ -436,7 +436,7 @@ pub fn eval_script(
 			Opcode::OP_14 |
 			Opcode::OP_15 |
 			Opcode::OP_16 => {
-				let value = opcode as u8 - (Opcode::OP_1 as u8 - 1);
+				let value = (opcode as i32).wrapping_sub(Opcode::OP_1 as i32 - 1);
 				stack.push(Num::from(value).to_bytes());
 			},
 			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_LEFT | Opcode::OP_RIGHT |
@@ -1893,6 +1893,21 @@ mod tests {
 			.verify_p2sh(true)
 			.verify_clocktimeverify(true);
 		assert_eq!(verify_script(&input, &output, &flags, &checker), Err(Error::NumberOverflow));
+	}
+
+	// https://blockchain.info/rawtx/54fabd73f1d20c980a0686bf0035078e07f69c58437e4d586fb29aa0bee9814f
+	#[test]
+	fn test_arithmetic_correct_arguments_order() {
+		let tx: Transaction = "01000000010c0e314bd7bb14721b3cfd8e487cd6866173354f87ca2cf4d13c8d3feb4301a6000000004a483045022100d92e4b61452d91a473a43cde4b469a472467c0ba0cbd5ebba0834e4f4762810402204802b76b7783db57ac1f61d2992799810e173e91055938750815b6d8a675902e014fffffffff0140548900000000001976a914a86e8ee2a05a44613904e18132e49b2448adc4e688ac00000000".into();
+		let signer: TransactionInputSigner = tx.into();
+		let checker = TransactionSignatureChecker {
+			signer: signer,
+			input_index: 0,
+		};
+		let input: Script = "483045022100d92e4b61452d91a473a43cde4b469a472467c0ba0cbd5ebba0834e4f4762810402204802b76b7783db57ac1f61d2992799810e173e91055938750815b6d8a675902e014f".into();
+		let output: Script = "76009f69905160a56b210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71ad6c".into();
+		let flags = VerificationFlags::default();
+		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
 	}
 }
 
