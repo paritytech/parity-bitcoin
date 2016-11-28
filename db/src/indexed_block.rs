@@ -2,6 +2,7 @@ use chain;
 use primitives::hash::H256;
 use serialization::Serializable;
 
+#[derive(Debug)]
 pub struct IndexedBlock {
 	header: chain::BlockHeader,
 	header_hash: H256,

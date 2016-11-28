@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use linked_hash_map::LinkedHashMap;
 use parking_lot::RwLock;
 use chain::{Block, BlockHeader, Transaction};
-use db;
+use db::{self, IndexedBlock};
 use best_headers_chain::{BestHeadersChain, Information as BestHeadersInformation};
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
@@ -309,7 +309,7 @@ impl Chain {
 	}
 
 	/// Insert new best block to storage
-	pub fn insert_best_block(&mut self, hash: H256, block: &Block) -> Result<BlockInsertionResult, db::Error> {
+	pub fn insert_best_block(&mut self, hash: H256, block: &IndexedBlock) -> Result<BlockInsertionResult, db::Error> {
 		let is_appending_to_main_branch = self.best_storage_block.hash == block.block_header.previous_header_hash;
 
 		// insert to storage
@@ -353,7 +353,7 @@ impl Chain {
 			// all transactions from this block were accepted
 			// + all transactions from previous blocks of this fork were accepted
 			// => delete accepted transactions from verification queue and from the memory pool
-			let this_block_transactions_hashes = block.transactions.iter().map(|tx| tx.hash());
+			let this_block_transactions_hashes = block.transaction_hashes();
 			let mut canonized_blocks_hashes: Vec<H256> = Vec::new();
 			let mut new_main_blocks_transactions_hashes: Vec<H256> = Vec::new();
 			while let Some(canonized_block_hash) = reorganization.pop_canonized() {

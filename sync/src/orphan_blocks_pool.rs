@@ -4,13 +4,14 @@ use linked_hash_map::LinkedHashMap;
 use time;
 use chain::Block;
 use primitives::hash::H256;
+use db::IndexedBlock;
 
 #[derive(Debug)]
 /// Storage for blocks, for which we have no parent yet.
 /// Blocks from this storage are either moved to verification queue, or removed at all.
 pub struct OrphanBlocksPool {
 	/// Blocks from requested_hashes, but received out-of-order.
-	orphaned_blocks: HashMap<H256, HashMap<H256, Block>>,
+	orphaned_blocks: HashMap<H256, HashMap<H256, IndexedBlock>>,
 	/// Blocks that we have received without requesting with receiving time.
 	unknown_blocks: LinkedHashMap<H256, f64>,
 }
@@ -41,7 +42,7 @@ impl OrphanBlocksPool {
 	}
 
 	/// Insert orphaned block, for which we have already requested its parent block
-	pub fn insert_orphaned_block(&mut self, hash: H256, block: Block) {
+	pub fn insert_orphaned_block(&mut self, hash: H256, block: IndexedBlock) {
 		self.orphaned_blocks
 			.entry(block.block_header.previous_header_hash.clone())
 			.or_insert_with(HashMap::new)
@@ -49,7 +50,7 @@ impl OrphanBlocksPool {
 	}
 
 	/// Insert unknown block, for which we know nothing about its parent block
-	pub fn insert_unknown_block(&mut self, hash: H256, block: Block) {
+	pub fn insert_unknown_block(&mut self, hash: H256, block: IndexedBlock) {
 		let previous_value = self.unknown_blocks.insert(hash.clone(), time::precise_time_s());
 		assert_eq!(previous_value, None);
 
@@ -67,7 +68,7 @@ impl OrphanBlocksPool {
 	}
 
 	/// Remove all blocks, depending on this parent
-	pub fn remove_blocks_for_parent(&mut self, hash: &H256) -> Vec<(H256, Block)> {
+	pub fn remove_blocks_for_parent(&mut self, hash: &H256) -> Vec<(H256, IndexedBlock)> {
 		let mut queue: VecDeque<H256> = VecDeque::new();
 		queue.push_back(hash.clone());
 
@@ -86,7 +87,7 @@ impl OrphanBlocksPool {
 	}
 
 	/// Remove blocks with given hashes + all dependent blocks
-	pub fn remove_blocks(&mut self, hashes: &HashSet<H256>) -> Vec<(H256, Block)> {
+	pub fn remove_blocks(&mut self, hashes: &HashSet<H256>) -> Vec<(H256, IndexedBlock)> {
 		// TODO: excess clone
 		let mut removed: Vec<(H256, Block)> = Vec::new();
 		let parent_orphan_keys: Vec<_> = self.orphaned_blocks.keys().cloned().collect();

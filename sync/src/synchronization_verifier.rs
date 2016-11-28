@@ -7,11 +7,12 @@ use network::{Magic, ConsensusParams};
 use primitives::hash::H256;
 use verification::{ChainVerifier, Verify as VerificationVerify};
 use synchronization_chain::ChainRef;
+use db::IndexedBlock;
 
 /// Verification events sink
 pub trait VerificationSink : Send + 'static {
 	/// When block verification has completed successfully.
-	fn on_block_verification_success(&mut self, block: Block);
+	fn on_block_verification_success(&mut self, block: IndexedBlock);
 	/// When block verification has failed.
 	fn on_block_verification_error(&mut self, err: &str, hash: &H256);
 	/// When transaction verification has completed successfully.
@@ -23,7 +24,7 @@ pub trait VerificationSink : Send + 'static {
 /// Verification thread tasks
 enum VerificationTask {
 	/// Verify single block
-	VerifyBlock(Block),
+	VerifyBlock(IndexedBlock),
 	/// Verify single transaction
 	VerifyTransaction(Transaction),
 	/// Stop verification thread
@@ -33,7 +34,7 @@ enum VerificationTask {
 /// Synchronization verifier
 pub trait Verifier : Send + 'static {
 	/// Verify block
-	fn verify_block(&self, block: Block);
+	fn verify_block(&self, block: IndexedBlock);
 	/// Verify transaction
 	fn verify_transaction(&self, transaction: Transaction);
 }
@@ -73,7 +74,7 @@ impl AsyncVerifier {
 			match task {
 				VerificationTask::VerifyBlock(block) => {
 					// for changes that are not relying on block#
-					let is_bip16_active_on_block = block.block_header.time >= bip16_time_border;
+					let is_bip16_active_on_block = block.header().time >= bip16_time_border;
 					let force_parameters_change = is_bip16_active_on_block != is_bip16_active;
 					if force_parameters_change {
 						parameters_change_steps = Some(0);
@@ -132,7 +133,7 @@ impl Drop for AsyncVerifier {
 
 impl Verifier for AsyncVerifier {
 	/// Verify block
-	fn verify_block(&self, block: Block) {
+	fn verify_block(&self, block: IndexedBlock) {
 		self.verification_work_sender
 			.send(VerificationTask::VerifyBlock(block))
 			.expect("Verification thread have the same lifetime as `AsyncVerifier`");

@@ -7,7 +7,7 @@ use futures::{BoxFuture, Future, finished};
 use futures::stream::Stream;
 use tokio_core::reactor::{Handle, Interval};
 use futures_cpupool::CpuPool;
-use db;
+use db::{self, IndexedBlock};
 use chain::{Block, BlockHeader, Transaction};
 use message::types;
 use message::common::{InventoryVector, InventoryType};
@@ -191,7 +191,7 @@ pub trait Client : Send + 'static {
 	fn on_new_transactions_inventory(&mut self, peer_index: usize, transactions_hashes: Vec<H256>);
 	fn on_new_blocks_headers(&mut self, peer_index: usize, blocks_headers: Vec<BlockHeader>);
 	fn on_peer_blocks_notfound(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
-	fn on_peer_block(&mut self, peer_index: usize, block: Block);
+	fn on_peer_block(&mut self, peer_index: usize, block: IndexedBlock);
 	fn on_peer_transaction(&mut self, peer_index: usize, transaction: Transaction);
 	fn on_peer_filterload(&mut self, peer_index: usize, message: &types::FilterLoad);
 	fn on_peer_filteradd(&mut self, peer_index: usize, message: &types::FilterAdd);
@@ -212,7 +212,7 @@ pub trait ClientCore : VerificationSink {
 	fn on_new_transactions_inventory(&mut self, peer_index: usize, transactions_hashes: Vec<H256>);
 	fn on_new_blocks_headers(&mut self, peer_index: usize, blocks_headers: Vec<BlockHeader>);
 	fn on_peer_blocks_notfound(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
-	fn on_peer_block(&mut self, peer_index: usize, block: Block) -> Option<VecDeque<(H256, Block)>>;
+	fn on_peer_block(&mut self, peer_index: usize, block: IndexedBlock) -> Option<VecDeque<(H256, IndexedBlock)>>;
 	fn on_peer_transaction(&mut self, peer_index: usize, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>>;
 	fn on_peer_filterload(&mut self, peer_index: usize, message: &types::FilterLoad);
 	fn on_peer_filteradd(&mut self, peer_index: usize, message: &types::FilterAdd);
@@ -371,8 +371,8 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().on_peer_blocks_notfound(peer_index, blocks_hashes);
 	}
 
-	fn on_peer_block(&mut self, peer_index: usize, block: Block) {
-		let blocks_to_verify = { self.core.lock().on_peer_block(peer_index, block) };
+	fn on_peer_block(&mut self, peer_index: usize, block: IndexedBlock) {
+		let blocks_to_verify = self.core.lock().on_peer_block(peer_index, block);
 
 		// verify selected blocks
 		if let Some(mut blocks_to_verify) = blocks_to_verify {
@@ -609,13 +609,13 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Process new block.
-	fn on_peer_block(&mut self, peer_index: usize, block: Block) -> Option<VecDeque<(H256, Block)>> {
+	fn on_peer_block(&mut self, peer_index: usize, block: IndexedBlock) -> Option<VecDeque<(H256, IndexedBlock)>> {
 		let block_hash = block.hash();
 
 		// update peers to select next tasks
 		self.peers.on_block_received(peer_index, &block_hash);
 
-		self.process_peer_block(peer_index, block_hash, block)
+		self.process_peer_block(peer_index, block_hash.clone(), block)
 	}
 
 	/// Process new transaction.
@@ -776,7 +776,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor {
 	/// Process successful block verification
-	fn on_block_verification_success(&mut self, block: Block) {
+	fn on_block_verification_success(&mut self, block: IndexedBlock) {
 		let hash = block.hash();
 		// insert block to the storage
 		match {
@@ -1114,9 +1114,9 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Process new peer block
-	fn process_peer_block(&mut self, peer_index: usize, block_hash: H256, block: Block) -> Option<VecDeque<(H256, Block)>> {
+	fn process_peer_block(&mut self, peer_index: usize, block_hash: H256, block: IndexedBlock) -> Option<VecDeque<(H256, IndexedBlock)>> {
 		// prepare list of blocks to verify + make all required changes to the chain
-		let mut result: Option<VecDeque<(H256, Block)>> = None;
+		let mut result: Option<VecDeque<(H256, IndexedBlock)>> = None;
 		let mut chain = self.chain.write();
 		match chain.block_state(&block_hash) {
 			BlockState::Verifying | BlockState::Stored => {
@@ -1125,7 +1125,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			},
 			BlockState::Unknown | BlockState::Scheduled | BlockState::Requested => {
 				// check parent block state
-				match chain.block_state(&block.block_header.previous_header_hash) {
+				match chain.block_state(&block.header().previous_header_hash) {
 					BlockState::Unknown => {
 						if self.state.is_synchronizing() {
 							// when synchronizing, we tend to receive all blocks in-order
@@ -1153,14 +1153,14 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 						// remember peer as useful
 						self.peers.useful_peer(peer_index);
 						// schedule verification
-						let mut blocks_to_verify: VecDeque<(H256, Block)> = VecDeque::new();
+						let mut blocks_to_verify: VecDeque<(H256, IndexedBlock)> = VecDeque::new();
 						blocks_to_verify.push_back((block_hash.clone(), block));
 						blocks_to_verify.extend(self.orphaned_blocks_pool.remove_blocks_for_parent(&block_hash));
 						// forget blocks we are going to process
 						let blocks_hashes_to_forget: Vec<_> = blocks_to_verify.iter().map(|t| t.0.clone()).collect();
 						chain.forget_blocks_leave_header(&blocks_hashes_to_forget);
 						// remember that we are verifying these blocks
-						let blocks_headers_to_verify: Vec<_> = blocks_to_verify.iter().map(|&(ref h, ref b)| (h.clone(), b.block_header.clone())).collect();
+						let blocks_headers_to_verify: Vec<_> = blocks_to_verify.iter().map(|&(ref h, ref b)| (h.clone(), b.header().clone())).collect();
 						chain.verify_blocks(blocks_headers_to_verify);
 						// remember that we are verifying block from this peer
 						self.verifying_blocks_by_peer.insert(block_hash.clone(), peer_index);
