@@ -610,6 +610,12 @@ impl Chain {
 		}
 	}
 
+	/// Get transaction by hash (if it's in memory pool or verifying)
+	pub fn transaction_by_hash(&self, hash: &H256) -> Option<Transaction> {
+		self.verifying_transactions.get(hash).cloned()
+			.or_else(|| self.memory_pool.read_by_hash(hash).cloned())
+	}
+
 	/// Insert transaction to memory pool
 	pub fn insert_verified_transaction(&mut self, transaction: Transaction) {
 		self.memory_pool.insert_verified(transaction);
