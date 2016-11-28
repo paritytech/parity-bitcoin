@@ -225,7 +225,7 @@ mod tests {
 		let config = ManageUnknownBlocksConfig { removal_time_ms: 1000, max_number: 100 };
 		let mut pool = OrphanBlocksPool::new();
 		let block = test_data::genesis();
-		pool.insert_unknown_block(block.hash(), block);
+		pool.insert_unknown_block(block.hash(), block.into());
 		assert_eq!(manage_unknown_orphaned_blocks(&config, &mut pool), None);
 		assert_eq!(pool.len(), 1);
 	}
@@ -238,7 +238,7 @@ mod tests {
 		let mut pool = OrphanBlocksPool::new();
 		let block = test_data::genesis();
 		let block_hash = block.hash();
-		pool.insert_unknown_block(block_hash.clone(), block);
+		pool.insert_unknown_block(block_hash.clone(), block.into());
 		sleep(Duration::from_millis(1));
 
 		assert_eq!(manage_unknown_orphaned_blocks(&config, &mut pool), Some(vec![block_hash]));
@@ -253,8 +253,8 @@ mod tests {
 		let block1_hash = block1.hash();
 		let block2 = test_data::block_h2();
 		let block2_hash = block2.hash();
-		pool.insert_unknown_block(block1_hash.clone(), block1);
-		pool.insert_unknown_block(block2_hash.clone(), block2);
+		pool.insert_unknown_block(block1_hash.clone(), block1.into());
+		pool.insert_unknown_block(block2_hash.clone(), block2.into());
 		assert_eq!(manage_unknown_orphaned_blocks(&config, &mut pool), Some(vec![block1_hash]));
 		assert_eq!(pool.len(), 1);
 	}

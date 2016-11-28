@@ -15,7 +15,7 @@ pub fn build_compact_block(block: IndexedBlock, prefilled_transactions_indexes: 
 	let nonce: u64 = thread_rng().gen();
 
 	let prefilled_transactions_len = prefilled_transactions_indexes.len();
-	let mut short_ids: Vec<ShortTransactionID> = Vec::with_capacity(block.transactions_len() - prefilled_transactions_len);
+	let mut short_ids: Vec<ShortTransactionID> = Vec::with_capacity(block.transaction_count() - prefilled_transactions_len);
 	let mut prefilled_transactions: Vec<PrefilledTransaction> = Vec::with_capacity(prefilled_transactions_len);
 	let mut prefilled_transactions_size: usize = 0;
 
@@ -72,5 +72,5 @@ mod tests {
 	#[test]
 	fn compact_block_is_built_correctly() {
 		// TODO
-	}	
+	}
 }

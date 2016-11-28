@@ -19,14 +19,15 @@ impl BlocksWriter {
 	}
 
 	pub fn append_block(&mut self, block: chain::Block) -> Result<(), Error> {
+		let indexed_block: db::IndexedBlock = block.into();
 		// TODO: share same verification code with synchronization_client
-		if self.storage.best_block().map_or(false, |bb| bb.hash != block.block_header.previous_header_hash) {
+		if self.storage.best_block().map_or(false, |bb| bb.hash != indexed_block.header().previous_header_hash) {
 			return Err(Error::OutOfOrderBlock);
 		}
 
-		match self.verifier.verify(&block) {
+		match self.verifier.verify(&indexed_block) {
 			Err(err) => Err(Error::Verification(err)),
-			Ok(_chain) => { try!(self.storage.insert_block(&block).map_err(Error::Database)); Ok(()) }
+			Ok(_chain) => { try!(self.storage.insert_indexed_block(&indexed_block).map_err(Error::Database)); Ok(()) }
 		}
 	}
 }
