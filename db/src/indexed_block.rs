@@ -88,6 +88,10 @@ impl IndexedBlock {
 	pub fn is_final(&self, height: u32) -> bool {
 		self.transactions.iter().all(|t| t.is_final(height, self.header.time))
 	}
+
+	pub fn transaction_at(&self, index: usize) -> (&H256, &chain::Transaction) {
+		(&self.transaction_hashes[index], &self.transactions[index])
+	}
 }
 
 pub struct IndexedTransactions<'a> {

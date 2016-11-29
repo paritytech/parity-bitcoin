@@ -1,16 +1,19 @@
 //! Bitcoin chain verifier
 
 use std::collections::BTreeSet;
-use db::{self, BlockRef, BlockLocation};
+use db::{self, BlockLocation};
 use network::Magic;
 use script::Script;
-use super::{Verify, VerificationResult, Chain, Error, TransactionError, ContinueVerify};
+use super::{Verify, VerificationResult, Chain, Error, TransactionError};
 use {chain, utils};
+use scoped_pool::Pool;
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
 const COINBASE_MATURITY: u32 = 100; // 2 hours
 const MAX_BLOCK_SIGOPS: usize = 20000;
 const MAX_BLOCK_SIZE: usize = 1000000;
+
+const TRANSACTIONS_VERIFY_THREADS: usize = 4;
 
 pub struct ChainVerifier {
 	store: db::SharedStore,
@@ -19,6 +22,7 @@ pub struct ChainVerifier {
 	skip_pow: bool,
 	skip_sig: bool,
 	network: Magic,
+	pool: Pool,
 }
 
 impl ChainVerifier {
@@ -30,6 +34,7 @@ impl ChainVerifier {
 			skip_pow: false,
 			skip_sig: false,
 			network: network,
+			pool: Pool::new(TRANSACTIONS_VERIFY_THREADS),
 		}
 	}
 
@@ -175,7 +180,7 @@ impl ChainVerifier {
 		Ok(())
 	}
 
-	fn verify_transaction(&self,
+	pub fn verify_transaction(&self,
 		block: &db::IndexedBlock,
 		transaction: &chain::Transaction,
 		sequence: usize,
@@ -200,7 +205,7 @@ impl ChainVerifier {
 			let signer: TransactionInputSigner = transaction.clone().into();
 			let paired_output = match self.previous_transaction_output(block, &input.previous_output) {
 				Some(output) => output,
-				_ => return Err(TransactionError::Inconclusive(input.previous_output.hash.clone()))
+				_ => return Err(TransactionError::UnknownReference(input.previous_output.hash.clone()))
 			};
 
 			let checker = TransactionSignatureChecker {
@@ -230,6 +235,8 @@ impl ChainVerifier {
 	}
 
 	fn verify_block(&self, block: &db::IndexedBlock) -> VerificationResult {
+		use task::Task;
+
 		let hash = block.hash();
 
 		// There should be at least 1 transaction
@@ -281,8 +288,26 @@ impl ChainVerifier {
 			return Err(Error::CoinbaseSignatureLength(coinbase_script_len));
 		}
 
-		for (idx, (_, transaction)) in block.transactions().enumerate() {
-			try!(self.verify_transaction(block, transaction, idx).map_err(|e| Error::Transaction(idx, e)))
+		// todo: might use on-stack vector (smallvec/elastic array)
+		let mut transaction_tasks: Vec<Task> = Vec::with_capacity(TRANSACTIONS_VERIFY_THREADS);
+		let mut last = 0;
+		for num_task in 0..TRANSACTIONS_VERIFY_THREADS {
+			let from = last;
+			last = ::std::cmp::max(1, block.transaction_count() / TRANSACTIONS_VERIFY_THREADS);
+			if num_task == TRANSACTIONS_VERIFY_THREADS - 1 { last = block.transaction_count(); };
+			transaction_tasks.push(Task::new(block, from, last));
+		}
+
+		self.pool.scoped(|scope| {
+			for task in transaction_tasks.iter_mut() {
+				scope.execute(move || task.progress(self))
+			}
+		});
+
+		for task in transaction_tasks.into_iter() {
+			if let Err((index, tx_err)) = task.result() {
+				return Err(Error::Transaction(index, tx_err));
+			}
 		}
 
 		// todo: pre-process projected block number once verification is parallel!
@@ -361,24 +386,6 @@ impl Verify for ChainVerifier {
 	}
 }
 
-impl ContinueVerify for ChainVerifier {
-	type State = usize;
-
-	fn continue_verify(&self, block: &db::IndexedBlock, state: usize) -> VerificationResult {
-		// verify transactions (except coinbase)
-		for (idx, (_, transaction)) in block.transactions().enumerate().skip(state - 1) {
-			try!(self.verify_transaction(block, transaction, idx).map_err(|e| Error::Transaction(idx, e)));
-		}
-
-		let _parent = match self.store.block(BlockRef::Hash(block.header().previous_header_hash.clone())) {
-			Some(b) => b,
-			None => { return Ok(Chain::Orphan); }
-		};
-
-		Ok(Chain::Main)
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
@@ -417,23 +424,6 @@ mod tests {
 		let b1 = test_data::block_h170();
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
 		assert_eq!(Chain::Main, verifier.verify(&b1.into()).unwrap());
-	}
-
-	#[test]
-	fn unknown_transaction_returns_inconclusive() {
-		let storage = TestStorage::with_blocks(
-			&vec![
-				test_data::block_h169(),
-			]
-		);
-		let b170 = test_data::block_h170();
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
-
-		let should_be = Err(Error::Transaction(
-			1,
-			TransactionError::Inconclusive("c997a5e56e104102fa209c6a852dd90660a20b2d9c352423edce25857fcd3704".into())
-		));
-		assert_eq!(should_be, verifier.verify(&b170.into()));
 	}
 
 	#[test]
