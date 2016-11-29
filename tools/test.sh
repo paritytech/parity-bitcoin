@@ -9,6 +9,7 @@ cargo test\
 	-p keys\
 	-p message\
 	-p miner\
+	-p network\
 	-p pbtc\
 	-p p2p\
 	-p primitives\
