@@ -189,6 +189,15 @@ impl SynchronizationServer {
 										None => unknown_items.push(item),
 									}
 								},
+								InventoryType::MessageTx => {
+									match chain.transaction_by_hash(&item.hash) {
+										Some(transaction) => {
+											let task = IndexedServerTask::new(ServerTask::ReturnTransaction(transaction), ServerTaskIndex::None);
+											new_tasks.push(task);
+										},
+										None => unknown_items.push(item),
+									}
+								},
 								_ => (), // TODO: process other inventory types
 							}
 						}
@@ -757,5 +766,62 @@ pub mod tests {
 		// server responds with transactions
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![]);
+	}
+
+	#[test]
+	fn server_getdata_responds_notfound_when_transaction_is_inaccessible() {
+		let (_, executor, server) = create_synchronization_server();
+		// when asking for unknown transaction or transaction that is already in the storage
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageTx,
+				hash: H256::default(),
+			},
+			InventoryVector {
+				inv_type: InventoryType::MessageTx,
+				hash: test_data::genesis().transactions[0].hash(),
+			},
+		];
+		server.serve_getdata(0, FilteredInventory::with_unfiltered(inventory.clone())).map(|t| server.add_task(0, t));
+		// => respond with notfound
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendNotFound(0, inventory, ServerTaskIndex::None)]);
+	}
+
+	#[test]
+	fn server_getdata_responds_transaction_when_transaction_is_in_memory() {
+		let (chain, executor, server) = create_synchronization_server();
+		let tx_verifying: Transaction = test_data::TransactionBuilder::with_output(10).into();
+		let tx_verifying_hash = tx_verifying.hash();
+		let tx_verified: Transaction = test_data::TransactionBuilder::with_output(20).into();
+		let tx_verified_hash = tx_verified.hash();
+		// given in-memory transaction
+		{
+			let mut chain = chain.write();
+			chain.verify_transaction(tx_verifying_hash.clone(), tx_verifying.clone());
+			chain.insert_verified_transaction(tx_verified.clone());
+		}
+		// when asking for known in-memory transaction
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageTx,
+				hash: tx_verifying_hash,
+			},
+			InventoryVector {
+				inv_type: InventoryType::MessageTx,
+				hash: tx_verified_hash,
+			},
+		];
+		server.serve_getdata(0, FilteredInventory::with_unfiltered(inventory)).map(|t| server.add_task(0, t));
+		// => respond with transaction
+		let mut tasks = DummyTaskExecutor::wait_tasks(executor.clone());
+		// 2 tasks => can be situation when single task is ready
+		if tasks.len() != 2 {
+			tasks.extend(DummyTaskExecutor::wait_tasks_for(executor, 100));
+		}
+		assert_eq!(tasks, vec![
+			Task::SendTransaction(0, tx_verifying),
+			Task::SendTransaction(0, tx_verified),
+		]);
 	}
 }

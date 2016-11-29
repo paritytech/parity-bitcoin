@@ -333,6 +333,10 @@ impl Storage {
 		}
 	}
 
+	pub fn read_by_hash(&self, h: &H256) -> Option<&Transaction> {
+		self.by_hash.get(h).map(|e| &e.transaction)
+	}
+
 	pub fn read_with_strategy(&self, strategy: OrderingStrategy) -> Option<H256> {
 		match strategy {
 			OrderingStrategy::ByTimestamp => self.references.ordered.by_storage_index.iter().map(|entry| entry.hash.clone()).nth(0),
@@ -573,6 +577,11 @@ impl MemoryPool {
 	/// All descedants remain in the pool.
 	pub fn remove_by_hash(&mut self, h: &H256) -> Option<Transaction> {
 		self.storage.remove_by_hash(h).map(|entry| entry.transaction)
+	}
+
+	/// Reads single transaction by its hash.
+	pub fn read_by_hash(&self, h: &H256) -> Option<&Transaction> {
+		self.storage.read_by_hash(h)
 	}
 
 	/// Reads hash of the 'top' transaction from the `MemoryPool` using selected strategy.
