@@ -14,6 +14,7 @@ const MAX_BLOCK_SIGOPS: usize = 20000;
 const MAX_BLOCK_SIZE: usize = 1000000;
 
 const TRANSACTIONS_VERIFY_THREADS: usize = 4;
+const TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD: usize = 16;
 
 pub struct ChainVerifier {
 	store: db::SharedStore,
@@ -288,25 +289,35 @@ impl ChainVerifier {
 			return Err(Error::CoinbaseSignatureLength(coinbase_script_len));
 		}
 
-		// todo: might use on-stack vector (smallvec/elastic array)
-		let mut transaction_tasks: Vec<Task> = Vec::with_capacity(TRANSACTIONS_VERIFY_THREADS);
-		let mut last = 0;
-		for num_task in 0..TRANSACTIONS_VERIFY_THREADS {
-			let from = last;
-			last = ::std::cmp::max(1, block.transaction_count() / TRANSACTIONS_VERIFY_THREADS);
-			if num_task == TRANSACTIONS_VERIFY_THREADS - 1 { last = block.transaction_count(); };
-			transaction_tasks.push(Task::new(block, from, last));
-		}
-
-		self.pool.scoped(|scope| {
-			for task in transaction_tasks.iter_mut() {
-				scope.execute(move || task.progress(self))
+		if block.transaction_count() > TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD {
+			// todo: might use on-stack vector (smallvec/elastic array)
+			let mut transaction_tasks: Vec<Task> = Vec::with_capacity(TRANSACTIONS_VERIFY_THREADS);
+			let mut last = 0;
+			for num_task in 0..TRANSACTIONS_VERIFY_THREADS {
+				let from = last;
+				last = ::std::cmp::max(1, block.transaction_count() / TRANSACTIONS_VERIFY_THREADS);
+				if num_task == TRANSACTIONS_VERIFY_THREADS - 1 { last = block.transaction_count(); };
+				transaction_tasks.push(Task::new(block, from, last));
 			}
-		});
 
-		for task in transaction_tasks.into_iter() {
-			if let Err((index, tx_err)) = task.result() {
-				return Err(Error::Transaction(index, tx_err));
+			self.pool.scoped(|scope| {
+				for task in transaction_tasks.iter_mut() {
+					scope.execute(move || task.progress(self))
+				}
+			});
+
+
+			for task in transaction_tasks.into_iter() {
+				if let Err((index, tx_err)) = task.result() {
+					return Err(Error::Transaction(index, tx_err));
+				}
+			}
+		}
+		else {
+			for (index, (_, tx)) in block.transactions().enumerate() {
+				if let Err(tx_err) = self.verify_transaction(block, tx, index) {
+					return Err(Error::Transaction(index, tx_err));
+				}
 			}
 		}
 
