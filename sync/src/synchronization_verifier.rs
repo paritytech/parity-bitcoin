@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use parking_lot::Mutex;
 use chain::Transaction;
-use network::{Magic, ConsensusParams};
+use network::Magic;
 use primitives::hash::H256;
-use verification::{ChainVerifier, Verify as VerificationVerify};
+use verification::{ChainVerifier, Verify as VerificationVerify, Chain};
 use synchronization_chain::ChainRef;
 use db::IndexedBlock;
 
@@ -58,53 +58,24 @@ impl AsyncVerifier {
 			verification_worker_thread: Some(thread::Builder::new()
 				.name("Sync verification thread".to_string())
 				.spawn(move || {
-					AsyncVerifier::verification_worker_proc(sink, chain, network.consensus_params(), verifier, verification_work_receiver)
+					AsyncVerifier::verification_worker_proc(sink, verifier, verification_work_receiver)
 				})
 				.expect("Error creating verification thread"))
 		}
 	}
 
 	/// Thread procedure for handling verification tasks
-	fn verification_worker_proc<T: VerificationSink>(sink: Arc<Mutex<T>>, chain: ChainRef, consensus_params: ConsensusParams, mut verifier: ChainVerifier, work_receiver: Receiver<VerificationTask>) {
-		let bip16_time_border = consensus_params.bip16_time;
-		let mut is_bip16_active = false;
-		let mut parameters_change_steps = Some(0);
-
+	fn verification_worker_proc<T: VerificationSink>(sink: Arc<Mutex<T>>, verifier: ChainVerifier, work_receiver: Receiver<VerificationTask>) {
 		while let Ok(task) = work_receiver.recv() {
 			match task {
 				VerificationTask::VerifyBlock(block) => {
-					// for changes that are not relying on block#
-					let is_bip16_active_on_block = block.header().time >= bip16_time_border;
-					let force_parameters_change = is_bip16_active_on_block != is_bip16_active;
-					if force_parameters_change {
-						parameters_change_steps = Some(0);
-					}
-
-					// change verifier parameters, if needed
-					if let Some(steps_left) = parameters_change_steps {
-						if steps_left == 0 {
-							let best_storage_block = chain.read().best_storage_block();
-
-							is_bip16_active = is_bip16_active_on_block;
-							verifier = verifier.verify_p2sh(is_bip16_active);
-
-							let is_bip65_active = best_storage_block.number >= consensus_params.bip65_height;
-							verifier = verifier.verify_clocktimeverify(is_bip65_active);
-
-							if is_bip65_active {
-								parameters_change_steps = None;
-							} else {
-								parameters_change_steps = Some(consensus_params.bip65_height - best_storage_block.number);
-							}
-						} else {
-							parameters_change_steps = Some(steps_left - 1);
-						}
-					}
-
 					// verify block
 					match verifier.verify(&block) {
-						Ok(_chain) => {
+						Ok(Chain::Main) | Ok(Chain::Side) => {
 							sink.lock().on_block_verification_success(block)
+						},
+						Ok(Chain::Orphan) => {
+							sink.lock().on_block_verification_error("Orphaned block", &block.hash())
 						},
 						Err(e) => {
 							sink.lock().on_block_verification_error(&format!("{:?}", e), &block.hash())

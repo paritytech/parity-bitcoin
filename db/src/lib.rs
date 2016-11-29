@@ -52,6 +52,14 @@ pub enum BlockLocation {
 	Side(u32),
 }
 
+impl BlockLocation {
+	pub fn height(&self) -> u32 {
+		match *self {
+			BlockLocation::Main(h) | BlockLocation::Side(h) => h,
+		}
+	}
+}
+
 pub type SharedStore = std::sync::Arc<Store + Send + Sync>;
 
 pub use best_block::BestBlock;
