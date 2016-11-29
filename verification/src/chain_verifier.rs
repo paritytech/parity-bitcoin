@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 use db::{self, BlockLocation, PreviousTransactionOutputProvider};
-use network::Magic;
+use network::{Magic, ConsensusParams};
 use script::Script;
 use super::{Verify, VerificationResult, Chain, Error, TransactionError};
 use {chain, utils};
@@ -18,11 +18,10 @@ const TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD: usize = 16;
 
 pub struct ChainVerifier {
 	store: db::SharedStore,
-	//verify_p2sh: bool,
-	//verify_clocktimeverify: bool,
 	skip_pow: bool,
 	skip_sig: bool,
 	network: Magic,
+	consensus_params: ConsensusParams,
 	pool: Pool,
 }
 
@@ -30,11 +29,10 @@ impl ChainVerifier {
 	pub fn new(store: db::SharedStore, network: Magic) -> Self {
 		ChainVerifier {
 			store: store,
-			//verify_p2sh: false,
-			//verify_clocktimeverify: false,
 			skip_pow: false,
 			skip_sig: false,
 			network: network,
+			consensus_params: network.consensus_params(),
 			pool: Pool::new(TRANSACTIONS_VERIFY_THREADS),
 		}
 	}
@@ -52,11 +50,11 @@ impl ChainVerifier {
 	}
 
 	pub fn verify_p2sh(&self, time: u32) -> bool {
-		time >= self.network.consensus_params().bip16_time
+		time >= self.consensus_params.bip16_time
 	}
 
 	pub fn verify_clocktimeverify(&self, height: u32) -> bool {
-		height >= self.network.consensus_params().bip65_height
+		height >= self.consensus_params.bip65_height
 	}
 
 	/// Returns previous transaction output.
@@ -115,7 +113,6 @@ impl ChainVerifier {
 		}
 
 		let block_hash = block.hash();
-		let consensus_params = self.network.consensus_params();
 
 		// check that difficulty matches the adjusted level
 		if let Some(work) = self.work_required(block, at_height) {
@@ -135,7 +132,7 @@ impl ChainVerifier {
 		// bip30
 		for (tx_index, (tx_hash, _)) in block.transactions().enumerate() {
 			if let Some(meta) = self.store.transaction_meta(tx_hash) {
-				if !meta.is_fully_spent() && !consensus_params.is_bip30_exception(&block_hash, at_height) {
+				if !meta.is_fully_spent() && !self.consensus_params.is_bip30_exception(&block_hash, at_height) {
 					return Err(Error::Transaction(tx_index, TransactionError::UnspentTransactionWithTheSameHash));
 				}
 			}
