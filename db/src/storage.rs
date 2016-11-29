@@ -367,6 +367,34 @@ impl Storage {
 
 		Ok(Some(reorganization))
 	}
+
+	/// Decanonizes main chain until best block is the one with `hash`
+	pub fn rollback(&self, hash: &H256) -> Result<Vec<H256>, Error> {
+		if self.block_number(hash).is_none() {
+			return Err(Error::not_main(hash));
+		}
+
+		// lock will be held until the end of the routine
+		let mut best_block = self.best_block.write();
+
+		let mut context = UpdateContext::new(&self.database);
+		let mut result = Vec::new();
+		let mut best_number = try!(self.best_number().ok_or(Error::Consistency(ConsistencyError::NoBestBlock)));
+		loop {
+			let next = try!(self.block_hash(best_number).ok_or(Error::unknown_number(best_number)));
+			if &next == hash {
+				context.db_transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, &**hash);
+				context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, best_number);
+				try!(context.apply(&self.database));
+				*best_block = Some(BestBlock { hash: next, number: best_number });
+
+				return Ok(result);
+			}
+			try!(self.decanonize_block(&mut context, &next));
+			best_number -= 1;
+			result.push(next);
+		}
+	}
 }
 
 impl BlockProvider for Storage {
@@ -1316,6 +1344,38 @@ mod tests {
 			}
 			else { panic!("Insert should fail because of the double-spend"); }
 		});
+	}
+
+	#[test]
+	fn rollback() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+
+		let (main_hash1, main_block1) = test_data::block_hash_builder()
+			.block()
+				.header().parent(genesis.hash())
+					.nonce(1)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&main_block1).expect("main block 1 should insert with no problems");
+
+		let (main_hash2, main_block2) = test_data::block_hash_builder()
+			.block()
+				.header().parent(main_hash1.clone())
+					.nonce(2)
+					.build()
+				.build()
+			.build();
+		store.insert_block(&main_block2).expect("main block 2 should insert with no problems");
+		assert_eq!(store.best_block().unwrap().hash, main_hash2);
+
+		store.rollback(&main_hash1).unwrap();
+
+		assert_eq!(store.best_block().unwrap().hash, main_hash1);
 	}
 
 	#[test]

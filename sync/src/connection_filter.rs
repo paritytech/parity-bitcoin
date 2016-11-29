@@ -12,9 +12,9 @@ use script::Script;
 /// Constant optimized to create large differences in the seed for different values of `hash_functions_num`.
 const SEED_OFFSET: u32 = 0xFBA4C795;
 /// Max last blocks to store for given peer
-const MAX_LAST_BLOCKS_TO_STORE: usize = 64;
+pub const MAX_LAST_BLOCKS_TO_STORE: usize = 64;
 /// Max last transactions to store for given peer
-const MAX_LAST_TRANSACTIONS_TO_STORE: usize = 64;
+pub const MAX_LAST_TRANSACTIONS_TO_STORE: usize = 64;
 
 /// Filter, which controls data relayed over connection.
 #[derive(Debug)]
@@ -92,7 +92,6 @@ impl ConnectionFilter {
 
 	/// We have a knowledge that block with given hash is known to this connection
 	pub fn known_block(&mut self, block_hash: &H256) {
-		// TODO: add test for it
 		// remember that peer knows about this block
 		if !self.last_blocks.contains_key(block_hash) {
 			if self.last_blocks.len() == MAX_LAST_BLOCKS_TO_STORE {
@@ -105,7 +104,6 @@ impl ConnectionFilter {
 
 	/// We have a knowledge that transaction with given hash is known to this connection
 	pub fn known_transaction(&mut self, transaction_hash: &H256) {
-		// TODO: add test for it
 		// remember that peer knows about this block
 		if !self.last_transactions.contains_key(transaction_hash) {
 			if self.last_transactions.len() == MAX_LAST_TRANSACTIONS_TO_STORE {
@@ -488,7 +486,8 @@ pub mod tests {
 	use primitives::hash::H256;
 	use primitives::bytes::Bytes;
 	use ser::serialize;
-	use super::{ConnectionFilter, ConnectionBloom, PartialMerkleTree};
+	use super::{ConnectionFilter, ConnectionBloom, PartialMerkleTree,
+		MAX_LAST_BLOCKS_TO_STORE, MAX_LAST_TRANSACTIONS_TO_STORE};
 
 	pub fn default_filterload() -> types::FilterLoad {
 		types::FilterLoad {
@@ -654,5 +653,45 @@ pub mod tests {
 				assert_eq!(merkle_root, parsed_root);
 			}
 		}
+	}
+
+	#[test]
+	fn block_is_filtered_out_when_it_is_received_from_peer() {
+		let blocks = test_data::build_n_empty_blocks_from_genesis((MAX_LAST_BLOCKS_TO_STORE + 1) as u32, 1);
+
+		let mut filter = ConnectionFilter::default();
+		assert!(filter.filter_block(&blocks[0].hash()));
+
+		filter.known_block(&blocks[0].hash());
+		assert!(!filter.filter_block(&blocks[0].hash()));
+
+		for block in blocks.iter().skip(1).take(MAX_LAST_BLOCKS_TO_STORE - 1) {
+			filter.known_block(&block.hash());
+			assert!(!filter.filter_block(&blocks[0].hash()));
+		}
+
+		filter.known_block(&blocks[MAX_LAST_BLOCKS_TO_STORE].hash());
+		assert!(filter.filter_block(&blocks[0].hash()));
+	}
+
+	#[test]
+	fn transaction_is_filtered_out_when_it_is_received_from_peer() {
+		let transactions: Vec<Transaction> = (0..MAX_LAST_TRANSACTIONS_TO_STORE + 1)
+			.map(|version| test_data::TransactionBuilder::with_version(version as i32).into())
+			.collect();
+
+		let mut filter = ConnectionFilter::default();
+		assert!(filter.filter_transaction(&transactions[0].hash(), &transactions[0], None));
+
+		filter.known_transaction(&transactions[0].hash());
+		assert!(!filter.filter_transaction(&transactions[0].hash(), &transactions[0], None));
+
+		for transaction in transactions.iter().skip(1).take(MAX_LAST_TRANSACTIONS_TO_STORE - 1) {
+			filter.known_transaction(&transaction.hash());
+			assert!(!filter.filter_transaction(&transactions[0].hash(), &transactions[0], None));
+		}
+
+		filter.known_transaction(&transactions[MAX_LAST_TRANSACTIONS_TO_STORE].hash());
+		assert!(filter.filter_transaction(&transactions[0].hash(), &transactions[0], None));
 	}
 }
