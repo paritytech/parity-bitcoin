@@ -1163,14 +1163,15 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 						let blocks_headers_to_verify: Vec<_> = blocks_to_verify.iter().map(|&(ref h, ref b)| (h.clone(), b.header().clone())).collect();
 						chain.verify_blocks(blocks_headers_to_verify);
 						// remember that we are verifying block from this peer
-						self.verifying_blocks_by_peer.insert(block_hash.clone(), peer_index);
+						for verifying_block_hash in blocks_to_verify.iter().map(|&(ref h, _)| h.clone()) {
+							self.verifying_blocks_by_peer.insert(verifying_block_hash, peer_index);
+						}
 						match self.verifying_blocks_futures.entry(peer_index) {
 							Entry::Occupied(mut entry) => {
-								entry.get_mut().0.insert(block_hash.clone());
+								entry.get_mut().0.extend(blocks_to_verify.iter().map(|&(ref h, _)| h.clone()));
 							},
 							Entry::Vacant(entry) => {
-								let mut block_hashes = HashSet::new();
-								block_hashes.insert(block_hash.clone());
+								let block_hashes: HashSet<_> = blocks_to_verify.iter().map(|&(ref h, _)| h.clone()).collect();
 								entry.insert((block_hashes, Vec::new()));
 							}
 						}
