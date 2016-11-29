@@ -23,11 +23,6 @@ impl ConnectionCounter {
 		}
 	}
 
-	/// Returns maxiumum number of outbound connections.
-	pub fn max_outbound_connections(&self) -> u32 {
-		self.max_outbound_connections
-	}
-
 	/// Increases inbound connections counter by 1.
 	pub fn note_new_inbound_connection(&self) {
 		self.current_inbound_connections.fetch_add(1, Ordering::AcqRel);

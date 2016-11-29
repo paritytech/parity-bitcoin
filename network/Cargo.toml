@@ -1,9 +1,9 @@
 [package]
-name = "bitcrypto"
+name = "network"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 
 [dependencies]
-rust-crypto = "0.2.36"
-siphasher = "0.1.1"
+serialization = { path = "../serialization" }
+chain = { path = "../chain" }
 primitives = { path = "../primitives" }

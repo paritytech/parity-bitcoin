@@ -4,18 +4,17 @@ version = "0.1.0"
 authors = ["Nikolay Volf <nikvolf@gmail.com>"]
 
 [dependencies]
+byteorder = "0.5"
+parking_lot = "0.3"
+linked-hash-map = "0.3"
+time = "0.1"
+log = "0.3"
+
 ethcore-devtools = { path = "../devtools" }
 primitives = { path = "../primitives" }
 chain = { path = "../chain"  }
 serialization = { path = "../serialization" }
-parking_lot = "0.3"
-linked-hash-map = "0.3"
 test-data = { path = "../test-data" }
-byteorder = "0.5"
-time = "0.1"
 script = { path = "../script" }
-log = "0.3"
-
-[dependencies.db]
-path = "../db"
-features = ["dev"]
+network = { path = "../network" }
+db = { path = "../db", features = ["dev"] }

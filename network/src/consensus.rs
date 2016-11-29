@@ -1,3 +1,4 @@
+use hash::H256;
 use super::Magic;
 
 #[derive(Debug, Clone)]
@@ -14,7 +15,7 @@ pub struct ConsensusParams {
 impl ConsensusParams {
 	pub fn with_magic(magic: Magic) -> Self {
 		match magic {
-			Magic::Mainnet => ConsensusParams {
+			Magic::Mainnet | Magic::Other(_) => ConsensusParams {
 				bip16_time: 1333238400,	// Apr 1 2012
 				bip65_height: 388381,	// 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
 			},
@@ -27,6 +28,11 @@ impl ConsensusParams {
 				bip65_height: 1351,
 			},
 		}
+	}
+
+	pub fn is_bip30_exception(&self, hash: &H256, height: u32) -> bool {
+		(height == 91842 && hash == &H256::from_reversed_str("0x00000000000a4d0a398161ffc163c503763b1f4360639393e0e4c8e300e0caec")) ||
+		(height == 91880 && hash == &H256::from_reversed_str("0x00000000000743f190a18c5577a3c2d2a1f610ae9601ac046a38084ccb7cd721"))
 	}
 }
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use parking_lot::Mutex;
 use chain::{Block, BlockHeader, Transaction};
-use message::common::{InventoryVector, InventoryType};
+use message::common::{InventoryVector, InventoryType, BlockHeaderAndIDs, BlockTransactions};
 use message::types;
 use primitives::hash::H256;
 use p2p::OutboundSyncConnectionRef;
@@ -17,6 +17,7 @@ pub trait TaskExecutor : Send + 'static {
 	fn execute(&mut self, task: Task);
 }
 
+// TODO: get rid of unneeded ServerTaskIndex-es
 /// Synchronization task for the peer.
 #[derive(Debug, PartialEq)]
 pub enum Task {
@@ -34,12 +35,16 @@ pub enum Task {
 	SendMerkleBlock(usize, types::MerkleBlock),
 	/// Send transaction
 	SendTransaction(usize, Transaction),
+	/// Send block transactions
+	SendBlockTxn(usize, H256, Vec<Transaction>),
 	/// Send notfound
 	SendNotFound(usize, Vec<InventoryVector>, ServerTaskIndex),
 	/// Send inventory
 	SendInventory(usize, Vec<InventoryVector>, ServerTaskIndex),
 	/// Send headers
 	SendHeaders(usize, Vec<BlockHeader>, ServerTaskIndex),
+	/// Send compact blocks
+	SendCompactBlocks(usize, Vec<BlockHeaderAndIDs>, ServerTaskIndex),
 	/// Notify io about ignored request
 	Ignore(usize, u32),
 }
@@ -152,6 +157,19 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					connection.send_transaction(&transaction_message);
 				}
 			},
+			Task::SendBlockTxn(peer_index, block_hash, transactions) => {
+				let transactions_message = types::BlockTxn {
+					request: BlockTransactions {
+						blockhash: block_hash,
+						transactions: transactions,
+					}
+				};
+
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					trace!(target: "sync", "Sending blocktxn with {} transactions to peer#{}", transactions_message.request.transactions.len(), peer_index);
+					connection.send_block_txn(&transactions_message);
+				}
+			},
 			Task::SendNotFound(peer_index, unknown_inventory, id) => {
 				let notfound = types::NotFound {
 					inventory: unknown_inventory,
@@ -184,6 +202,17 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					match id.raw() {
 						Some(id) => connection.respond_headers(&headers, id),
 						None => connection.send_headers(&headers),
+					}
+				}
+			},
+			Task::SendCompactBlocks(peer_index, compact_blocks, id) => {
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					assert_eq!(id.raw(), None);
+					for compact_block in compact_blocks {
+						trace!(target: "sync", "Sending compact_block {:?} to peer#{}", compact_block.header.hash(), peer_index);
+						connection.send_compact_block(&types::CompactBlock {
+							header: compact_block,
+						});
 					}
 				}
 			},

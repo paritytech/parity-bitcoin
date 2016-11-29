@@ -7,8 +7,8 @@ use futures::{BoxFuture, Future, finished};
 use futures::stream::Stream;
 use tokio_core::reactor::{Handle, Interval};
 use futures_cpupool::CpuPool;
-use db;
-use chain::{Block, BlockHeader, Transaction};
+use db::{self, IndexedBlock};
+use chain::{BlockHeader, Transaction};
 use message::types;
 use message::common::{InventoryVector, InventoryType};
 use primitives::hash::H256;
@@ -25,7 +25,9 @@ use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchr
 	manage_unknown_orphaned_blocks, manage_orphaned_transactions, MANAGEMENT_INTERVAL_MS,
 	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
 use synchronization_verifier::{Verifier, VerificationSink};
+use compact_block_builder::build_compact_block;
 use hash_queue::HashPosition;
+use miner::transaction_fee_rate;
 use time;
 use std::time::Duration;
 
@@ -189,12 +191,13 @@ pub trait Client : Send + 'static {
 	fn on_new_transactions_inventory(&mut self, peer_index: usize, transactions_hashes: Vec<H256>);
 	fn on_new_blocks_headers(&mut self, peer_index: usize, blocks_headers: Vec<BlockHeader>);
 	fn on_peer_blocks_notfound(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
-	fn on_peer_block(&mut self, peer_index: usize, block: Block);
+	fn on_peer_block(&mut self, peer_index: usize, block: IndexedBlock);
 	fn on_peer_transaction(&mut self, peer_index: usize, transaction: Transaction);
 	fn on_peer_filterload(&mut self, peer_index: usize, message: &types::FilterLoad);
 	fn on_peer_filteradd(&mut self, peer_index: usize, message: &types::FilterAdd);
 	fn on_peer_filterclear(&mut self, peer_index: usize);
-	fn on_peer_sendheaders(&mut self, peer_index: usize);
+	fn on_peer_block_announcement_type(&mut self, peer_index: usize, announcement_type: BlockAnnouncementType);
+	fn on_peer_feefilter(&mut self, peer_index: usize, message: &types::FeeFilter);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
 }
@@ -209,12 +212,13 @@ pub trait ClientCore : VerificationSink {
 	fn on_new_transactions_inventory(&mut self, peer_index: usize, transactions_hashes: Vec<H256>);
 	fn on_new_blocks_headers(&mut self, peer_index: usize, blocks_headers: Vec<BlockHeader>);
 	fn on_peer_blocks_notfound(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
-	fn on_peer_block(&mut self, peer_index: usize, block: Block) -> Option<VecDeque<(H256, Block)>>;
+	fn on_peer_block(&mut self, peer_index: usize, block: IndexedBlock) -> Option<VecDeque<(H256, IndexedBlock)>>;
 	fn on_peer_transaction(&mut self, peer_index: usize, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>>;
 	fn on_peer_filterload(&mut self, peer_index: usize, message: &types::FilterLoad);
 	fn on_peer_filteradd(&mut self, peer_index: usize, message: &types::FilterAdd);
 	fn on_peer_filterclear(&mut self, peer_index: usize);
-	fn on_peer_sendheaders(&mut self, peer_index: usize);
+	fn on_peer_block_announcement_type(&mut self, peer_index: usize, announcement_type: BlockAnnouncementType);
+	fn on_peer_feefilter(&mut self, peer_index: usize, message: &types::FeeFilter);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>);
@@ -238,6 +242,17 @@ pub struct FilteredInventory {
 	pub unfiltered: Vec<InventoryVector>,
 	/// Items that were supposed to be filtered, but we know nothing about these
 	pub notfound: Vec<InventoryVector>,
+}
+
+#[derive(Debug, Clone, Copy)]
+/// New block announcement type
+pub enum BlockAnnouncementType {
+	/// Send inventory with block hash
+	SendInventory,
+	/// Send block header
+	SendHeader,
+	/// Send compact block
+	SendCompactBlock,
 }
 
 /// Synchronization client facade
@@ -356,8 +371,8 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().on_peer_blocks_notfound(peer_index, blocks_hashes);
 	}
 
-	fn on_peer_block(&mut self, peer_index: usize, block: Block) {
-		let blocks_to_verify = { self.core.lock().on_peer_block(peer_index, block) };
+	fn on_peer_block(&mut self, peer_index: usize, block: IndexedBlock) {
+		let blocks_to_verify = self.core.lock().on_peer_block(peer_index, block);
 
 		// verify selected blocks
 		if let Some(mut blocks_to_verify) = blocks_to_verify {
@@ -397,8 +412,12 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().on_peer_filterclear(peer_index);
 	}
 
-	fn on_peer_sendheaders(&mut self, peer_index: usize) {
-		self.core.lock().on_peer_sendheaders(peer_index);
+	fn on_peer_block_announcement_type(&mut self, peer_index: usize, announcement_type: BlockAnnouncementType) {
+		self.core.lock().on_peer_block_announcement_type(peer_index, announcement_type);
+	}
+
+	fn on_peer_feefilter(&mut self, peer_index: usize, message: &types::FeeFilter) {
+		self.core.lock().on_peer_feefilter(peer_index, message);
 	}
 
 	fn on_peer_disconnected(&mut self, peer_index: usize) {
@@ -590,8 +609,8 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Process new block.
-	fn on_peer_block(&mut self, peer_index: usize, block: Block) -> Option<VecDeque<(H256, Block)>> {
-		let block_hash = block.hash();
+	fn on_peer_block(&mut self, peer_index: usize, block: IndexedBlock) -> Option<VecDeque<(H256, IndexedBlock)>> {
+		let block_hash = block.hash().clone();
 
 		// update peers to select next tasks
 		self.peers.on_block_received(peer_index, &block_hash);
@@ -630,10 +649,17 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 	}
 
-	/// Peer wants to get blocks headers instead of blocks hashes when announcing new blocks
-	fn on_peer_sendheaders(&mut self, peer_index: usize) {
+	/// Change the way peer is informed about new blocks
+	fn on_peer_block_announcement_type(&mut self, peer_index: usize, announcement_type: BlockAnnouncementType) {
 		if self.peers.is_known_peer(peer_index) {
-			self.peers.on_peer_sendheaders(peer_index);
+			self.peers.set_block_announcement_type(peer_index, announcement_type);
+		}
+	}
+
+	/// Peer wants to limit transaction announcing by transaction fee
+	fn on_peer_feefilter(&mut self, peer_index: usize, message: &types::FeeFilter) {
+		if self.peers.is_known_peer(peer_index) {
+			self.peers.on_peer_feefilter(peer_index, message.fee_rate);
 		}
 	}
 
@@ -750,7 +776,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor {
 	/// Process successful block verification
-	fn on_block_verification_success(&mut self, block: Block) {
+	fn on_block_verification_success(&mut self, block: IndexedBlock) {
 		let hash = block.hash();
 		// insert block to the storage
 		match {
@@ -823,7 +849,7 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 	fn on_transaction_verification_success(&mut self, transaction: Transaction) {
 		let hash = transaction.hash();
 
-		{
+		let transaction_fee_rate = {
 			// insert transaction to the memory pool
 			let mut chain = self.chain.write();
 
@@ -835,10 +861,13 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 
 			// transaction was in verification queue => insert to memory pool
 			chain.insert_verified_transaction(transaction.clone());
-		}
+
+			// calculate transaction fee rate
+			transaction_fee_rate(&*chain, &transaction)
+		};
 
 		// relay transaction to peers
-		self.relay_new_transactions(vec![(hash, &transaction)]);
+		self.relay_new_transactions(vec![(hash, &transaction, transaction_fee_rate)]);
 	}
 
 	/// Process failed transaction verification
@@ -930,35 +959,62 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		let tasks: Vec<_> = {
 			self.peers.all_peers().into_iter()
 				.filter_map(|peer_index| {
-					let send_headers = self.peers.send_headers(peer_index);
+					let block_announcement_type = self.peers.block_announcement_type(peer_index);
 
-					if send_headers {
-						let filtered_blocks_hashes: Vec<_> = new_blocks_hashes.iter()
-							.filter(|h| self.peers.filter(peer_index).filter_block(h))
-							.collect();
-						let chain = self.chain.read();
-						let headers: Vec<_> = filtered_blocks_hashes.into_iter()
-							.filter_map(|h| chain.block_header_by_hash(&h))
-							.collect();
-						if !headers.is_empty() {
-							Some(Task::SendHeaders(peer_index, headers, ServerTaskIndex::None))
-						}
-						else {
-							None
-						}
-					} else {
-						let inventory: Vec<_> = new_blocks_hashes.iter()
-							.filter(|h| self.peers.filter(peer_index).filter_block(h))
-							.map(|h| InventoryVector {
-								inv_type: InventoryType::MessageBlock,
-								hash: h.clone(),
-							})
-							.collect();
-						if !inventory.is_empty() {
-							Some(Task::SendInventory(peer_index, inventory, ServerTaskIndex::None))
-						} else {
-							None
-						}
+					match block_announcement_type {
+						BlockAnnouncementType::SendHeader => {
+							let filtered_blocks_hashes: Vec<_> = new_blocks_hashes.iter()
+								.filter(|h| self.peers.filter(peer_index).filter_block(h))
+								.collect();
+							let chain = self.chain.read();
+							let headers: Vec<_> = filtered_blocks_hashes.into_iter()
+								.filter_map(|h| chain.block_header_by_hash(&h))
+								.collect();
+							if !headers.is_empty() {
+								Some(Task::SendHeaders(peer_index, headers, ServerTaskIndex::None))
+							}
+							else {
+								None
+							}
+						},
+						BlockAnnouncementType::SendCompactBlock => {
+							let indexed_blocks: Vec<db::IndexedBlock> = {
+								let chain = self.chain.read();
+								new_blocks_hashes.iter()
+									.filter_map(|h| chain.storage().block(db::BlockRef::Hash(h.clone())))
+									.map(|b| b.into())
+									.collect()
+							};
+
+							let block_header_and_ids: Vec<_> = indexed_blocks.into_iter()
+								.filter_map(|b| if self.peers.filter(peer_index).filter_block(&b.hash()) {
+									let prefilled_transactions_indexes = b.transactions().enumerate()
+										// we do not filter by fee rate here, because it only reasonable for non-mined transactions
+										.filter(|&(_, (h, t))| self.peers.filter_mut(peer_index).filter_transaction(h, t, None))
+										.map(|(idx, _)| idx)
+										.collect();
+									Some(build_compact_block(b, prefilled_transactions_indexes))
+								} else {
+									None
+								})
+								.collect();
+
+							Some(Task::SendCompactBlocks(peer_index, block_header_and_ids, ServerTaskIndex::None))
+						},
+						BlockAnnouncementType::SendInventory => {
+							let inventory: Vec<_> = new_blocks_hashes.iter()
+								.filter(|h| self.peers.filter(peer_index).filter_block(h))
+								.map(|h| InventoryVector {
+									inv_type: InventoryType::MessageBlock,
+									hash: h.clone(),
+								})
+								.collect();
+							if !inventory.is_empty() {
+								Some(Task::SendInventory(peer_index, inventory, ServerTaskIndex::None))
+							} else {
+								None
+							}
+						},
 					}
 				})
 				.collect()
@@ -971,12 +1027,14 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Relay new transactions
-	fn relay_new_transactions(&mut self, new_transactions: Vec<(H256, &Transaction)>) {
+	fn relay_new_transactions(&mut self, new_transactions: Vec<(H256, &Transaction, u64)>) {
 		let tasks: Vec<_> = self.peers.all_peers().into_iter()
 			.filter_map(|peer_index| {
 				let inventory: Vec<_> = new_transactions.iter()
-					.filter(|&&(ref h, tx)| self.peers.filter_mut(peer_index).filter_transaction(h, tx))
-					.map(|&(ref h, _)| InventoryVector {
+					.filter(|&&(ref h, tx, tx_fee_rate)| {
+						self.peers.filter_mut(peer_index).filter_transaction(h, tx, Some(tx_fee_rate))
+					})
+					.map(|&(ref h, _, _)| InventoryVector {
 						inv_type: InventoryType::MessageTx,
 						hash: h.clone(),
 					})
@@ -1056,9 +1114,9 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Process new peer block
-	fn process_peer_block(&mut self, peer_index: usize, block_hash: H256, block: Block) -> Option<VecDeque<(H256, Block)>> {
+	fn process_peer_block(&mut self, peer_index: usize, block_hash: H256, block: IndexedBlock) -> Option<VecDeque<(H256, IndexedBlock)>> {
 		// prepare list of blocks to verify + make all required changes to the chain
-		let mut result: Option<VecDeque<(H256, Block)>> = None;
+		let mut result: Option<VecDeque<(H256, IndexedBlock)>> = None;
 		let mut chain = self.chain.write();
 		match chain.block_state(&block_hash) {
 			BlockState::Verifying | BlockState::Stored => {
@@ -1067,7 +1125,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			},
 			BlockState::Unknown | BlockState::Scheduled | BlockState::Requested => {
 				// check parent block state
-				match chain.block_state(&block.block_header.previous_header_hash) {
+				match chain.block_state(&block.header().previous_header_hash) {
 					BlockState::Unknown => {
 						if self.state.is_synchronizing() {
 							// when synchronizing, we tend to receive all blocks in-order
@@ -1086,21 +1144,23 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 							// remove this block from the queue
 							chain.forget_block_leave_header(&block_hash);
 							// remember this block as unknown
-							self.orphaned_blocks_pool.insert_unknown_block(block_hash, block);
+							if !self.orphaned_blocks_pool.contains_unknown_block(&block_hash) {
+								self.orphaned_blocks_pool.insert_unknown_block(block_hash, block);
+							}
 						}
 					},
 					BlockState::Verifying | BlockState::Stored => {
 						// remember peer as useful
 						self.peers.useful_peer(peer_index);
 						// schedule verification
-						let mut blocks_to_verify: VecDeque<(H256, Block)> = VecDeque::new();
+						let mut blocks_to_verify: VecDeque<(H256, IndexedBlock)> = VecDeque::new();
 						blocks_to_verify.push_back((block_hash.clone(), block));
 						blocks_to_verify.extend(self.orphaned_blocks_pool.remove_blocks_for_parent(&block_hash));
 						// forget blocks we are going to process
 						let blocks_hashes_to_forget: Vec<_> = blocks_to_verify.iter().map(|t| t.0.clone()).collect();
 						chain.forget_blocks_leave_header(&blocks_hashes_to_forget);
 						// remember that we are verifying these blocks
-						let blocks_headers_to_verify: Vec<_> = blocks_to_verify.iter().map(|&(ref h, ref b)| (h.clone(), b.block_header.clone())).collect();
+						let blocks_headers_to_verify: Vec<_> = blocks_to_verify.iter().map(|&(ref h, ref b)| (h.clone(), b.header().clone())).collect();
 						chain.verify_blocks(blocks_headers_to_verify);
 						// remember that we are verifying block from this peer
 						for &(ref verifying_block_hash, _) in &blocks_to_verify {
@@ -1285,7 +1345,8 @@ pub mod tests {
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, Transaction};
 	use message::common::{InventoryVector, InventoryType};
-	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore};
+	use message::types;
+	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore, BlockAnnouncementType};
 	use connection_filter::tests::*;
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
@@ -1351,7 +1412,7 @@ pub mod tests {
 		assert_eq!(sync.information().peers.active, 1);
 
 		// push unknown block => will be queued as orphan
-		sync.on_peer_block(5, block2);
+		sync.on_peer_block(5, block2.into());
 		assert!(sync.information().state.is_nearly_saturated());
 		assert_eq!(sync.information().orphaned_blocks, 1);
 		assert_eq!(sync.information().chain.scheduled, 0);
@@ -1361,7 +1422,7 @@ pub mod tests {
 		assert_eq!(sync.information().peers.active, 1);
 
 		// push requested block => should be moved to the test storage && orphan should be moved
-		sync.on_peer_block(5, block1);
+		sync.on_peer_block(5, block1.into());
 		assert!(sync.information().state.is_saturated());
 		assert_eq!(sync.information().orphaned_blocks, 0);
 		assert_eq!(sync.information().chain.scheduled, 0);
@@ -1378,7 +1439,7 @@ pub mod tests {
 		let mut sync = sync.lock();
 
 		sync.on_new_blocks_headers(5, vec![test_data::block_h1().block_header.clone(), test_data::block_h2().block_header.clone()]);
-		sync.on_peer_block(5, test_data::block_h169());
+		sync.on_peer_block(5, test_data::block_h169().into());
 
 		// out-of-order block was presented by the peer
 		assert!(sync.information().state.is_synchronizing());
@@ -1426,11 +1487,11 @@ pub mod tests {
 		{
 			let mut sync = sync.lock();
 			// receive block from peer#2
-			sync.on_peer_block(2, block2);
+			sync.on_peer_block(2, block2.into());
 			assert!(sync.information().chain.requested == 2
 				&& sync.information().orphaned_blocks == 1);
 			// receive block from peer#1
-			sync.on_peer_block(1, block1);
+			sync.on_peer_block(1, block1.into());
 
 			assert!(sync.information().chain.requested == 0
 				&& sync.information().orphaned_blocks == 0
@@ -1478,7 +1539,7 @@ pub mod tests {
 		sync.on_new_blocks_headers(1, vec![block.block_header.clone()]);
 		sync.on_new_blocks_headers(2, vec![block.block_header.clone()]);
 		executor.lock().take_tasks();
-		sync.on_peer_block(2, block.clone());
+		sync.on_peer_block(2, block.clone().into());
 
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks.len(), 5);
@@ -1511,7 +1572,7 @@ pub mod tests {
 			assert_eq!(chain.information().headers.total, 2);
 		}
 
-		sync.on_peer_block(1, b1);
+		sync.on_peer_block(1, b1.into());
 
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![]);
@@ -1522,7 +1583,7 @@ pub mod tests {
 			assert_eq!(chain.information().headers.total, 1);
 		}
 
-		sync.on_peer_block(1, b2);
+		sync.on_peer_block(1, b2.into());
 
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::RequestMemoryPool(1)]);
@@ -1554,7 +1615,7 @@ pub mod tests {
 			assert_eq!(chain.information().headers.total, 2);
 		}
 
-		sync.on_peer_block(1, b2);
+		sync.on_peer_block(1, b2.into());
 
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![]);
@@ -1565,7 +1626,7 @@ pub mod tests {
 			assert_eq!(chain.information().headers.total, 2);
 		}
 
-		sync.on_peer_block(1, b1);
+		sync.on_peer_block(1, b1.into());
 
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1), Task::RequestMemoryPool(1)]);
@@ -1615,35 +1676,35 @@ pub mod tests {
 			Task::RequestBlocks(2, vec![fork2[0].hash(), fork2[1].hash(), fork2[2].hash()]),
 		]);
 
-		sync.on_peer_block(2, fork2[0].clone());
+		sync.on_peer_block(2, fork2[0].clone().into());
 		{
 			let chain = chain.read();
 			assert_eq!(chain.best_storage_block().hash, fork2[0].hash());
 			assert_eq!(chain.best_storage_block().number, 1);
 		}
 
-		sync.on_peer_block(1, fork1[0].clone());
+		sync.on_peer_block(1, fork1[0].clone().into());
 		{
 			let chain = chain.read();
 			assert_eq!(chain.best_storage_block().hash, fork2[0].hash());
 			assert_eq!(chain.best_storage_block().number, 1);
 		}
 
-		sync.on_peer_block(1, fork1[1].clone());
+		sync.on_peer_block(1, fork1[1].clone().into());
 		{
 			let chain = chain.read();
 			assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
 			assert_eq!(chain.best_storage_block().number, 2);
 		}
 
-		sync.on_peer_block(2, fork2[1].clone());
+		sync.on_peer_block(2, fork2[1].clone().into());
 		{
 			let chain = chain.read();
 			assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
 			assert_eq!(chain.best_storage_block().number, 2);
 		}
 
-		sync.on_peer_block(2, fork2[2].clone());
+		sync.on_peer_block(2, fork2[2].clone().into());
 		{
 			let chain = chain.read();
 			assert_eq!(chain.best_storage_block().hash, fork2[2].hash());
@@ -1681,12 +1742,12 @@ pub mod tests {
 			assert_eq!(chain.information().headers.total, 3);
 		}
 
-		sync.on_peer_block(1, common_block.clone());
-		sync.on_peer_block(1, fork1[0].clone());
-		sync.on_peer_block(1, fork1[1].clone());
-		sync.on_peer_block(2, fork2[0].clone());
-		sync.on_peer_block(2, fork2[1].clone());
-		sync.on_peer_block(2, fork2[2].clone());
+		sync.on_peer_block(1, common_block.clone().into());
+		sync.on_peer_block(1, fork1[0].clone().into());
+		sync.on_peer_block(1, fork1[1].clone().into());
+		sync.on_peer_block(2, fork2[0].clone().into());
+		sync.on_peer_block(2, fork2[1].clone().into());
+		sync.on_peer_block(2, fork2[2].clone().into());
 
 		{
 			let chain = chain.read();
@@ -1700,7 +1761,7 @@ pub mod tests {
 		let (_, _, _, chain, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
-		sync.on_peer_block(1, test_data::block_h2());
+		sync.on_peer_block(1, test_data::block_h2().into());
 		assert_eq!(sync.information().orphaned_blocks, 1);
 
 		{
@@ -1708,7 +1769,7 @@ pub mod tests {
 			assert_eq!(chain.best_storage_block().number, 0);
 		}
 
-		sync.on_peer_block(1, test_data::block_h1());
+		sync.on_peer_block(1, test_data::block_h1().into());
 		assert_eq!(sync.information().orphaned_blocks, 0);
 
 		{
@@ -1722,7 +1783,7 @@ pub mod tests {
 		let (_, _, executor, _, sync) = create_sync(None, None);
 		let mut sync = sync.lock();
 
-		sync.on_peer_block(1, test_data::block_h2());
+		sync.on_peer_block(1, test_data::block_h2().into());
 		sync.on_new_blocks_inventory(1, vec![test_data::block_h1().hash(), test_data::block_h2().hash()]);
 
 		let tasks = executor.lock().take_tasks();
@@ -1992,11 +2053,11 @@ pub mod tests {
 		sync.on_new_blocks_headers(1, vec![b10.block_header.clone(), b11.block_header.clone(), b12.block_header.clone()]);
 		sync.on_new_blocks_headers(2, vec![b10.block_header.clone(), b21.block_header.clone(), b22.block_header.clone()]);
 
-		sync.on_peer_block(1, b10.clone());
-		sync.on_peer_block(1, b11);
-		sync.on_peer_block(1, b12);
+		sync.on_peer_block(1, b10.clone().into());
+		sync.on_peer_block(1, b11.into());
+		sync.on_peer_block(1, b12.into());
 
-		sync.on_peer_block(2, b21.clone());
+		sync.on_peer_block(2, b21.clone().into());
 
 		// should not panic here
 		sync.on_new_blocks_headers(2, vec![b10.block_header.clone(), b21.block_header.clone(),
@@ -2014,8 +2075,8 @@ pub mod tests {
 
 		let mut sync = sync.lock();
 		sync.on_new_blocks_headers(1, vec![b0.block_header.clone(), b1.block_header.clone()]);
-		sync.on_peer_block(1, b0.clone());
-		sync.on_peer_block(1, b1.clone());
+		sync.on_peer_block(1, b0.clone().into());
+		sync.on_peer_block(1, b1.clone().into());
 
 		// we were in synchronization state => block is not relayed
 		{
@@ -2027,7 +2088,7 @@ pub mod tests {
 			]);
 		}
 
-		sync.on_peer_block(2, b2.clone());
+		sync.on_peer_block(2, b2.clone().into());
 
 		// we were in saturated state => block is relayed
 		{
@@ -2037,7 +2098,7 @@ pub mod tests {
 		}
 
 		sync.on_new_blocks_headers(1, vec![b3.block_header.clone()]);
-		sync.on_peer_block(1, b3.clone());
+		sync.on_peer_block(1, b3.clone().into());
 
 		// we were in nearly saturated state => block is relayed
 		{
@@ -2128,13 +2189,13 @@ pub mod tests {
 		let mut sync = sync.lock();
 		sync.on_peer_connected(1);
 		sync.on_peer_connected(2);
-		sync.on_peer_sendheaders(2);
+		sync.on_peer_block_announcement_type(2, BlockAnnouncementType::SendHeader);
 		sync.on_peer_connected(3);
 
 		// igonore tasks
 		{ executor.lock().take_tasks(); }
 
-		sync.on_peer_block(1, b0.clone());
+		sync.on_peer_block(1, b0.clone().into());
 
 		let tasks = executor.lock().take_tasks();
 		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: b0.hash() }];
@@ -2143,5 +2204,94 @@ pub mod tests {
 			Task::SendHeaders(2, headers, ServerTaskIndex::None),
 			Task::SendInventory(3, inventory, ServerTaskIndex::None),
 		]);
+	}
+
+	#[test]
+	fn relay_new_transaction_with_feefilter() {
+		let (_, _, executor, chain, sync) = create_sync(None, None);
+
+		let b1 = test_data::block_builder().header().parent(test_data::genesis().hash()).build()
+			.transaction().output().value(1_000_000).build().build()
+			.build(); // genesis -> b1
+		let tx0 = b1.transactions[0].clone();
+		let tx1: Transaction = test_data::TransactionBuilder::with_output(800_000).add_input(&tx0, 0).into();
+		let tx1_hash = tx1.hash();
+
+		let mut sync = sync.lock();
+		sync.on_peer_connected(1);
+		sync.on_peer_connected(2);
+		sync.on_peer_connected(3);
+		sync.on_peer_connected(4);
+
+		sync.on_peer_block(1, b1.into());
+
+		{
+			use miner::transaction_fee_rate;
+			let chain = chain.read();
+			assert_eq!(transaction_fee_rate(&*chain, &tx1), 3333); // 200_000 / 60
+		}
+
+		sync.on_peer_feefilter(2, &types::FeeFilter { fee_rate: 3000, });
+		sync.on_peer_feefilter(3, &types::FeeFilter { fee_rate: 4000, });
+
+		// forget previous tasks
+		{ executor.lock().take_tasks(); }
+
+		sync.on_peer_transaction(1, tx1);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![
+			Task::SendInventory(2, vec![
+				InventoryVector {
+					inv_type: InventoryType::MessageTx,
+					hash: tx1_hash.clone(),
+				}
+			], ServerTaskIndex::None),
+			Task::SendInventory(4, vec![
+				InventoryVector {
+					inv_type: InventoryType::MessageTx,
+					hash: tx1_hash.clone(),
+				}
+			], ServerTaskIndex::None),
+		]);
+	}
+
+	#[test]
+	fn receive_same_unknown_block_twice() {
+		let (_, _, _, _, sync) = create_sync(None, None);
+
+		let mut sync = sync.lock();
+
+		sync.on_peer_block(1, test_data::block_h2().into());
+		// should not panic here
+		sync.on_peer_block(2, test_data::block_h2().into());
+	}
+
+	#[test]
+	fn relay_new_block_after_sendcmpct() {
+		let (_, _, executor, _, sync) = create_sync(None, None);
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+
+		let mut sync = sync.lock();
+		sync.on_peer_connected(1);
+		sync.on_peer_connected(2);
+		sync.on_peer_block_announcement_type(2, BlockAnnouncementType::SendCompactBlock);
+		sync.on_peer_connected(3);
+
+		// igonore tasks
+		{ executor.lock().take_tasks(); }
+
+		sync.on_peer_block(1, b0.clone().into());
+
+		let tasks = executor.lock().take_tasks();
+		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: b0.hash() }];
+		assert_eq!(tasks.len(), 3);
+		assert_eq!(tasks[0], Task::RequestBlocksHeaders(1));
+		match tasks[1] {
+			Task::SendCompactBlocks(2, _, _) => (),
+			_ => panic!("unexpected task"),
+		}
+		assert_eq!(tasks[2], Task::SendInventory(3, inventory, ServerTaskIndex::None));
 	}
 }

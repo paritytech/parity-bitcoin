@@ -5,13 +5,15 @@
 //! transactions.
 //! It also guarantees that ancestor-descendant relation won't break during ordered removal (ancestors always removed
 //! before descendants). Removal using `remove_by_hash` can break this rule.
+use db::TransactionProvider;
+use primitives::bytes::Bytes;
 use primitives::hash::H256;
 use chain::Transaction;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::BTreeSet;
-use ser::Serializable;
+use ser::{Serializable, serialize};
 use heapsize::HeapSizeOf;
 
 /// Transactions ordering strategy
@@ -331,6 +333,10 @@ impl Storage {
 		}
 	}
 
+	pub fn read_by_hash(&self, h: &H256) -> Option<&Transaction> {
+		self.by_hash.get(h).map(|e| &e.transaction)
+	}
+
 	pub fn read_with_strategy(&self, strategy: OrderingStrategy) -> Option<H256> {
 		match strategy {
 			OrderingStrategy::ByTimestamp => self.references.ordered.by_storage_index.iter().map(|entry| entry.hash.clone()).nth(0),
@@ -573,6 +579,11 @@ impl MemoryPool {
 		self.storage.remove_by_hash(h).map(|entry| entry.transaction)
 	}
 
+	/// Reads single transaction by its hash.
+	pub fn read_by_hash(&self, h: &H256) -> Option<&Transaction> {
+		self.storage.read_by_hash(h)
+	}
+
 	/// Reads hash of the 'top' transaction from the `MemoryPool` using selected strategy.
 	/// Ancestors are always returned before descendant transactions.
 	pub fn read_with_strategy(&mut self, strategy: OrderingStrategy) -> Option<H256> {
@@ -681,6 +692,16 @@ impl MemoryPool {
 	#[cfg(test)]
 	fn get_storage_index(&self) -> u64 {
 		(self.storage.by_hash.len() % 3usize) as u64
+	}
+}
+
+impl TransactionProvider for MemoryPool {
+	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
+		self.get(hash).map(|t| serialize(t))
+	}
+
+	fn transaction(&self, hash: &H256) -> Option<Transaction> {
+		self.get(hash).cloned()
 	}
 }
 

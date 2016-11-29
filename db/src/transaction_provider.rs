@@ -16,3 +16,8 @@ pub trait TransactionProvider {
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction>;
 
 }
+
+pub trait AsTransactionProvider {
+	/// returns `TransactionProvider`
+	fn as_transaction_provider(&self) -> &TransactionProvider;
+}

@@ -2,7 +2,8 @@ use std::io;
 use futures::{Future, Poll, Async};
 use tokio_core::io::{read_exact, ReadExact};
 use crypto::checksum;
-use message::{Error, MessageHeader, MessageResult, Magic, Command};
+use network::Magic;
+use message::{Error, MessageHeader, MessageResult, Command};
 use bytes::Bytes;
 use io::{read_header, ReadHeader};
 
@@ -68,7 +69,8 @@ impl<A> Future for ReadAnyMessage<A> where A: io::Read {
 mod tests {
 	use futures::Future;
 	use bytes::Bytes;
-	use message::{Magic, Error};
+	use network::Magic;
+	use message::Error;
 	use super::read_any_message;
 
 	#[test]
@@ -79,7 +81,7 @@ mod tests {
 		let expected = (name, nonce);
 
 		assert_eq!(read_any_message(raw.as_ref(), Magic::Mainnet).wait().unwrap(), Ok(expected));
-		assert_eq!(read_any_message(raw.as_ref(), Magic::Testnet).wait().unwrap(), Err(Error::WrongMagic));
+		assert_eq!(read_any_message(raw.as_ref(), Magic::Testnet).wait().unwrap(), Err(Error::InvalidMagic));
 	}
 
 	#[test]

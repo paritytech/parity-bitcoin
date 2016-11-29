@@ -455,6 +455,17 @@ impl Opcode {
 	pub fn is_push_value(&self) -> bool {
 		*self >= Opcode::OP_1NEGATE && *self <= Opcode::OP_16
 	}
+
+	pub fn is_within_op_n(&self) -> bool {
+		*self >= Opcode::OP_1 && *self <= Opcode::OP_16
+	}
+
+	pub fn decode_op_n(&self) -> u8 {
+		assert!(self.is_within_op_n());
+		let value = *self as u8;
+		let op0 = Opcode::OP_1 as u8 - 1;
+		value - op0
+	}
 }
 
 #[cfg(test)]

@@ -12,17 +12,3 @@ impl NonceGenerator for RandomNonce {
 		rand::random()
 	}
 }
-
-pub struct StaticNonce(u64);
-
-impl StaticNonce {
-	pub fn new(nonce: u64) -> Self {
-		StaticNonce(nonce)
-	}
-}
-
-impl NonceGenerator for StaticNonce {
-	fn get(&self) -> u64 {
-		self.0
-	}
-}

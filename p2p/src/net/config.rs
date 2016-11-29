@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
-use message::common::{Magic, Services, NetAddress};
+use network::Magic;
+use message::common::{Services, NetAddress};
 use message::types::version::{Version, V0, V106, V70001};
 use util::time::{Time, RealTime};
 use util::nonce::{NonceGenerator, RandomNonce};

@@ -3,6 +3,7 @@
 extern crate chain;
 extern crate primitives;
 extern crate serialization as ser;
+extern crate time;
 
 use chain::Block;
 

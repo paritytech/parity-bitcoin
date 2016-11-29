@@ -1,7 +1,7 @@
 use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::collections::{VecDeque, HashMap};
+use std::collections::{VecDeque, HashMap, HashSet};
 use std::collections::hash_map::Entry;
 use futures::{Future, BoxFuture, lazy, finished};
 use parking_lot::{Mutex, Condvar};
@@ -19,6 +19,7 @@ pub trait Server : Send + Sync + 'static {
 	fn serve_getdata(&self, peer_index: usize, inventory: FilteredInventory) -> Option<IndexedServerTask>;
 	fn serve_getblocks(&self, peer_index: usize, message: types::GetBlocks) -> Option<IndexedServerTask>;
 	fn serve_getheaders(&self, peer_index: usize, message: types::GetHeaders, id: Option<u32>) -> Option<IndexedServerTask>;
+	fn serve_get_block_txn(&self, peer_index: usize, block_hash: H256, indexes: Vec<usize>) -> Option<IndexedServerTask>;
 	fn serve_mempool(&self, peer_index: usize) -> Option<IndexedServerTask>;
 	fn add_task(&self, peer_index: usize, task: IndexedServerTask);
 }
@@ -103,6 +104,7 @@ pub enum ServerTask {
 	ServeGetData(FilteredInventory),
 	ServeGetBlocks(db::BestBlock, H256),
 	ServeGetHeaders(db::BestBlock, H256),
+	ServeGetBlockTxn(H256, Vec<usize>),
 	ServeMempool,
 	ReturnNotFound(Vec<InventoryVector>),
 	ReturnBlock(H256),
@@ -187,6 +189,15 @@ impl SynchronizationServer {
 										None => unknown_items.push(item),
 									}
 								},
+								InventoryType::MessageTx => {
+									match chain.transaction_by_hash(&item.hash) {
+										Some(transaction) => {
+											let task = IndexedServerTask::new(ServerTask::ReturnTransaction(transaction), ServerTaskIndex::None);
+											new_tasks.push(task);
+										},
+										None => unknown_items.push(item),
+									}
+								},
 								_ => (), // TODO: process other inventory types
 							}
 						}
@@ -234,6 +245,45 @@ impl SynchronizationServer {
 					}
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
+				},
+				// `getblocktxn` => `blocktxn`
+				ServerTask::ServeGetBlockTxn(block_hash, indexes) => {
+					let transactions = {
+						let chain = chain.read();
+						let storage = chain.storage();
+						if let Some(block) = storage.block(db::BlockRef::Hash(block_hash.clone())) {
+
+							let requested_len = indexes.len();
+							let transactions_len = block.transactions.len();
+							let mut read_indexes = HashSet::new();
+							let transactions: Vec<_> = indexes.into_iter()
+								.map(|index| {
+									if index >= transactions_len {
+										None
+									} else if !read_indexes.insert(index) {
+										None
+									} else {
+										Some(block.transactions[index].clone())
+									}
+								})
+								.take_while(Option::is_some)
+								.map(Option::unwrap) // take_while above
+								.collect();
+							if transactions.len() == requested_len {
+								Some(transactions)
+							} else {
+								// TODO: malformed
+								None
+							}
+						} else {
+							// TODO: else malformed
+							None
+						}
+					};
+					if let Some(transactions) = transactions {
+						trace!(target: "sync", "Going to respond with {} blocktxn transactions to peer#{}", transactions.len(), peer_index);
+						executor.lock().execute(Task::SendBlockTxn(peer_index, block_hash, transactions));
+					}
 				},
 				// `mempool` => `inventory`
 				ServerTask::ServeMempool => {
@@ -399,6 +449,13 @@ impl Server for SynchronizationServer {
 		}
 	}
 
+	fn serve_get_block_txn(&self, _peer_index: usize, block_hash: H256, indexes: Vec<usize>) -> Option<IndexedServerTask> {
+		// TODO: Upon receipt of a properly-formatted getblocktxn message, nodes which *recently provided the sender
+		// of such a message a cmpctblock for the block hash identified in this message* MUST respond ...
+		let task = IndexedServerTask::new(ServerTask::ServeGetBlockTxn(block_hash, indexes), ServerTaskIndex::None);
+		Some(task)
+	}
+
 	fn serve_mempool(&self, _peer_index: usize) -> Option<IndexedServerTask> {
 		let task = IndexedServerTask::new(ServerTask::ServeMempool, ServerTaskIndex::None);
 		Some(task)
@@ -539,6 +596,11 @@ pub mod tests {
 			None
 		}
 
+		fn serve_get_block_txn(&self, peer_index: usize, block_hash: H256, indexes: Vec<usize>) -> Option<IndexedServerTask> {
+			self.tasks.lock().push((peer_index, ServerTask::ServeGetBlockTxn(block_hash, indexes)));
+			None
+		}
+
 		fn serve_mempool(&self, peer_index: usize) -> Option<IndexedServerTask> {
 			self.tasks.lock().push((peer_index, ServerTask::ServeMempool));
 			None
@@ -605,7 +667,7 @@ pub mod tests {
 	#[test]
 	fn server_getblocks_responds_inventory_when_have_unknown_blocks() {
 		let (chain, executor, server) = create_synchronization_server();
-		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Db write error");
+		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1().into()).expect("Db write error");
 		// when asking for blocks hashes
 		server.serve_getblocks(0, types::GetBlocks {
 			version: 0,
@@ -640,7 +702,7 @@ pub mod tests {
 	#[test]
 	fn server_getheaders_responds_headers_when_have_unknown_blocks() {
 		let (chain, executor, server) = create_synchronization_server();
-		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1()).expect("Db write error");
+		chain.write().insert_best_block(test_data::block_h1().hash(), &test_data::block_h1().into()).expect("Db write error");
 		// when asking for blocks hashes
 		let dummy_id = 0;
 		server.serve_getheaders(0, types::GetHeaders {
@@ -682,5 +744,84 @@ pub mod tests {
 		}];
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![Task::SendInventory(0, inventory, ServerTaskIndex::None)]);
+	}
+
+	#[test]
+	fn server_get_block_txn_responds_when_good_request() {
+		let (_, executor, server) = create_synchronization_server();
+		// when asking for block_txns
+		server.serve_get_block_txn(0, test_data::genesis().hash(), vec![0]).map(|t| server.add_task(0, t));
+		// server responds with transactions
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendBlockTxn(0, test_data::genesis().hash(), vec![
+			test_data::genesis().transactions[0].clone()
+		])]);
+	}
+
+	#[test]
+	fn server_get_block_txn_do_not_responds_when_bad_request() {
+		let (_, executor, server) = create_synchronization_server();
+		// when asking for block_txns
+		server.serve_get_block_txn(0, test_data::genesis().hash(), vec![1]).map(|t| server.add_task(0, t));
+		// server responds with transactions
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![]);
+	}
+
+	#[test]
+	fn server_getdata_responds_notfound_when_transaction_is_inaccessible() {
+		let (_, executor, server) = create_synchronization_server();
+		// when asking for unknown transaction or transaction that is already in the storage
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageTx,
+				hash: H256::default(),
+			},
+			InventoryVector {
+				inv_type: InventoryType::MessageTx,
+				hash: test_data::genesis().transactions[0].hash(),
+			},
+		];
+		server.serve_getdata(0, FilteredInventory::with_unfiltered(inventory.clone())).map(|t| server.add_task(0, t));
+		// => respond with notfound
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendNotFound(0, inventory, ServerTaskIndex::None)]);
+	}
+
+	#[test]
+	fn server_getdata_responds_transaction_when_transaction_is_in_memory() {
+		let (chain, executor, server) = create_synchronization_server();
+		let tx_verifying: Transaction = test_data::TransactionBuilder::with_output(10).into();
+		let tx_verifying_hash = tx_verifying.hash();
+		let tx_verified: Transaction = test_data::TransactionBuilder::with_output(20).into();
+		let tx_verified_hash = tx_verified.hash();
+		// given in-memory transaction
+		{
+			let mut chain = chain.write();
+			chain.verify_transaction(tx_verifying_hash.clone(), tx_verifying.clone());
+			chain.insert_verified_transaction(tx_verified.clone());
+		}
+		// when asking for known in-memory transaction
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageTx,
+				hash: tx_verifying_hash,
+			},
+			InventoryVector {
+				inv_type: InventoryType::MessageTx,
+				hash: tx_verified_hash,
+			},
+		];
+		server.serve_getdata(0, FilteredInventory::with_unfiltered(inventory)).map(|t| server.add_task(0, t));
+		// => respond with transaction
+		let mut tasks = DummyTaskExecutor::wait_tasks(executor.clone());
+		// 2 tasks => can be situation when single task is ready
+		if tasks.len() != 2 {
+			tasks.extend(DummyTaskExecutor::wait_tasks_for(executor, 100));
+		}
+		assert_eq!(tasks, vec![
+			Task::SendTransaction(0, tx_verifying),
+			Task::SendTransaction(0, tx_verified),
+		]);
 	}
 }

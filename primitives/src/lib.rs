@@ -1,7 +1,7 @@
 #![cfg_attr(asm_available, feature(asm))]
 
-extern crate rustc_serialize;
 #[macro_use] extern crate heapsize;
+extern crate rustc_serialize;
 
 pub mod bytes;
 pub mod hash;

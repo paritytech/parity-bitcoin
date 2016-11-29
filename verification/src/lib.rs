@@ -1,27 +1,30 @@
 //! Bitcoin blocks verification
 
-extern crate db;
-extern crate primitives;
-extern crate chain;
-extern crate serialization;
+extern crate byteorder;
 extern crate parking_lot;
 extern crate linked_hash_map;
-extern crate byteorder;
 extern crate time;
-extern crate script;
 #[macro_use]
 extern crate log;
+
+extern crate db;
+extern crate chain;
+extern crate network;
+extern crate primitives;
+extern crate serialization;
+extern crate script;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
 #[cfg(test)]
 extern crate test_data;
 
-mod queue;
-mod utils;
 mod chain_verifier;
+mod compact;
+mod utils;
 
-pub use queue::Queue;
+pub use primitives::{uint, hash};
+
 pub use chain_verifier::ChainVerifier;
 
 use primitives::hash::H256;
@@ -54,6 +57,8 @@ pub enum Error {
 	CoinbaseSignatureLength(usize),
 	/// Block size is invalid
 	Size(usize),
+	/// Block transactions are not final.
+	NonFinalBlock,
 }
 
 #[derive(Debug, PartialEq)]
@@ -79,6 +84,8 @@ pub enum TransactionError {
 	SigopsP2SH(usize),
 	/// Coinbase transaction is found at position that is not 0
 	MisplacedCoinbase(usize),
+	/// Not fully spent transaction with the same hash already exists, bip30.
+	UnspentTransactionWithTheSameHash,
 }
 
 #[derive(PartialEq, Debug)]
@@ -107,11 +114,11 @@ pub type VerificationResult = Result<Chain, Error>;
 
 /// Interface for block verification
 pub trait Verify : Send + Sync {
-	fn verify(&self, block: &chain::Block) -> VerificationResult;
+	fn verify(&self, block: &db::IndexedBlock) -> VerificationResult;
 }
 
 /// Trait for verifier that can be interrupted and continue from the specific point
 pub trait ContinueVerify : Verify + Send + Sync {
 	type State;
-	fn continue_verify(&self, block: &chain::Block, state: Self::State) -> VerificationResult;
+	fn continue_verify(&self, block: &db::IndexedBlock, state: Self::State) -> VerificationResult;
 }

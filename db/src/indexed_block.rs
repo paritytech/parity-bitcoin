@@ -1,6 +1,8 @@
 use chain;
 use primitives::hash::H256;
+use serialization::Serializable;
 
+#[derive(Debug)]
 pub struct IndexedBlock {
 	header: chain::BlockHeader,
 	header_hash: H256,
@@ -28,11 +30,31 @@ impl From<chain::Block> for IndexedBlock {
 }
 
 impl IndexedBlock {
+	pub fn new(header: chain::BlockHeader, transaction_index: Vec<(H256, chain::Transaction)>) -> Self {
+		let mut block = IndexedBlock {
+			header_hash: header.hash(),
+			header: header,
+			transactions: Vec::with_capacity(transaction_index.len()),
+			transaction_hashes: Vec::with_capacity(transaction_index.len()),
+		};
+
+		for (h256, tx) in transaction_index {
+			block.transactions.push(tx);
+			block.transaction_hashes.push(h256);
+		}
+
+		block
+	}
+
 	pub fn transactions(&self) -> IndexedTransactions {
 		IndexedTransactions {
 			position: 0,
 			block: self,
 		}
+	}
+
+	pub fn transaction_hashes(&self) -> &[H256] {
+		&self.transaction_hashes
 	}
 
 	pub fn header(&self) -> &chain::BlockHeader {
@@ -41,6 +63,30 @@ impl IndexedBlock {
 
 	pub fn hash(&self) -> &H256 {
 		&self.header_hash
+	}
+
+	pub fn transaction_count(&self) -> usize {
+		self.transaction_hashes.len()
+	}
+
+	pub fn to_block(&self) -> chain::Block {
+		chain::Block::new(
+			self.header.clone(),
+			self.transactions.clone(),
+		)
+	}
+
+	pub fn size(&self) -> usize {
+		// todo: optimize
+		self.to_block().serialized_size()
+	}
+
+	pub fn merkle_root(&self) -> H256 {
+		chain::merkle_root(&self.transaction_hashes)
+	}
+
+	pub fn is_final(&self, height: u32) -> bool {
+		self.transactions.iter().all(|t| t.is_final(height, self.header.time))
 	}
 }
 

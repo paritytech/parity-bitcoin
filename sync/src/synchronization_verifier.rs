@@ -2,16 +2,17 @@ use std::thread;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use parking_lot::Mutex;
-use chain::{Block, Transaction};
-use message::common::ConsensusParams;
+use chain::Transaction;
+use network::{Magic, ConsensusParams};
 use primitives::hash::H256;
 use verification::{ChainVerifier, Verify as VerificationVerify};
 use synchronization_chain::ChainRef;
+use db::IndexedBlock;
 
 /// Verification events sink
 pub trait VerificationSink : Send + 'static {
 	/// When block verification has completed successfully.
-	fn on_block_verification_success(&mut self, block: Block);
+	fn on_block_verification_success(&mut self, block: IndexedBlock);
 	/// When block verification has failed.
 	fn on_block_verification_error(&mut self, err: &str, hash: &H256);
 	/// When transaction verification has completed successfully.
@@ -23,7 +24,7 @@ pub trait VerificationSink : Send + 'static {
 /// Verification thread tasks
 enum VerificationTask {
 	/// Verify single block
-	VerifyBlock(Block),
+	VerifyBlock(IndexedBlock),
 	/// Verify single transaction
 	VerifyTransaction(Transaction),
 	/// Stop verification thread
@@ -33,7 +34,7 @@ enum VerificationTask {
 /// Synchronization verifier
 pub trait Verifier : Send + 'static {
 	/// Verify block
-	fn verify_block(&self, block: Block);
+	fn verify_block(&self, block: IndexedBlock);
 	/// Verify transaction
 	fn verify_transaction(&self, transaction: Transaction);
 }
@@ -48,16 +49,16 @@ pub struct AsyncVerifier {
 
 impl AsyncVerifier {
 	/// Create new async verifier
-	pub fn new<T: VerificationSink>(consensus_params: ConsensusParams, chain: ChainRef, sink: Arc<Mutex<T>>) -> Self {
+	pub fn new<T: VerificationSink>(network: Magic, chain: ChainRef, sink: Arc<Mutex<T>>) -> Self {
 		let (verification_work_sender, verification_work_receiver) = channel();
 		let storage = chain.read().storage();
-		let verifier = ChainVerifier::new(storage);
+		let verifier = ChainVerifier::new(storage, network);
 		AsyncVerifier {
 			verification_work_sender: verification_work_sender,
 			verification_worker_thread: Some(thread::Builder::new()
 				.name("Sync verification thread".to_string())
 				.spawn(move || {
-					AsyncVerifier::verification_worker_proc(sink, chain, consensus_params, verifier, verification_work_receiver)
+					AsyncVerifier::verification_worker_proc(sink, chain, network.consensus_params(), verifier, verification_work_receiver)
 				})
 				.expect("Error creating verification thread"))
 		}
@@ -73,7 +74,7 @@ impl AsyncVerifier {
 			match task {
 				VerificationTask::VerifyBlock(block) => {
 					// for changes that are not relying on block#
-					let is_bip16_active_on_block = block.block_header.time >= bip16_time_border;
+					let is_bip16_active_on_block = block.header().time >= bip16_time_border;
 					let force_parameters_change = is_bip16_active_on_block != is_bip16_active;
 					if force_parameters_change {
 						parameters_change_steps = Some(0);
@@ -132,7 +133,7 @@ impl Drop for AsyncVerifier {
 
 impl Verifier for AsyncVerifier {
 	/// Verify block
-	fn verify_block(&self, block: Block) {
+	fn verify_block(&self, block: IndexedBlock) {
 		self.verification_work_sender
 			.send(VerificationTask::VerifyBlock(block))
 			.expect("Verification thread have the same lifetime as `AsyncVerifier`");
@@ -151,11 +152,12 @@ pub mod tests {
 	use std::sync::Arc;
 	use std::collections::HashMap;
 	use parking_lot::Mutex;
-	use chain::{Block, Transaction};
+	use chain::Transaction;
 	use synchronization_client::SynchronizationClientCore;
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use primitives::hash::H256;
 	use super::{Verifier, VerificationSink};
+	use db::IndexedBlock;
 
 	#[derive(Default)]
 	pub struct DummyVerifier {
@@ -174,7 +176,7 @@ pub mod tests {
 	}
 
 	impl Verifier for DummyVerifier {
-		fn verify_block(&self, block: Block) {
+		fn verify_block(&self, block: IndexedBlock) {
 			match self.sink {
 				Some(ref sink) => match self.errors.get(&block.hash()) {
 					Some(err) => sink.lock().on_block_verification_error(&err, &block.hash()),

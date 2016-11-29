@@ -7,3 +7,4 @@ authors = ["Nikolay Volf <nikvolf@gmail.com>"]
 chain = { path = "../chain"  }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
+time = "0.1"

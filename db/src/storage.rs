@@ -6,7 +6,7 @@ use kvdb::{Database, DatabaseConfig};
 use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
-use super::{BlockRef, BestBlock, BlockLocation};
+use super::{BlockRef, BestBlock, BlockLocation, IndexedBlock, IndexedTransactions};
 use serialization::{serialize, deserialize};
 use chain;
 use parking_lot::RwLock;
@@ -40,6 +40,9 @@ const MAX_FORK_ROUTE_PRESET: usize = 128;
 pub trait Store : BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider {
 	/// get best block
 	fn best_block(&self) -> Option<BestBlock>;
+
+	/// get best header
+	fn best_header(&self) -> Option<chain::BlockHeader>;
 }
 
 /// Blockchain storage with rocksdb database
@@ -165,48 +168,66 @@ impl Storage {
 		})
 	}
 
+	fn block_by_hash(&self, h: &H256) -> Option<IndexedBlock> {
+
+		self.block_header_by_hash(h).map(|header| {
+			let tx_index =
+				self.block_transaction_hashes_by_hash(h)
+					.into_iter()
+					.filter_map(|tx_hash| {
+						self.transaction_bytes(&tx_hash)
+							.map(|tx_bytes| {
+								(
+									tx_hash,
+									deserialize::<_, chain::Transaction>(tx_bytes.as_ref())
+										.expect("Error deserializing transaction, possible db corruption"),
+								)
+							})
+					})
+					.collect();
+			IndexedBlock::new(header, tx_index)
+		})
+	}
 
 	/// update transactions metadata in the specified database transaction
-	fn update_transactions_meta(&self, context: &mut UpdateContext, number: u32, accepted_txs: &[chain::Transaction])
+	fn update_transactions_meta(&self, context: &mut UpdateContext, number: u32, accepted_txs: &mut IndexedTransactions)
 		-> Result<(), Error>
 	{
-		if let Some(accepted_tx) = accepted_txs.iter().next() {
+		if let Some((accepted_hash, accepted_tx)) = accepted_txs.next() {
 			context.meta.insert(
-				accepted_tx.hash(),
-				TransactionMeta::new(number, accepted_tx.outputs.len()).coinbase()
+				accepted_hash.clone(),
+				TransactionMeta::new_coinbase(number, accepted_tx.outputs.len())
 			);
 		}
 
-		for accepted_tx in accepted_txs.iter().skip(1) {
+		for (accepted_hash, accepted_tx) in accepted_txs {
 			context.meta.insert(
-				accepted_tx.hash(),
+				accepted_hash.clone(),
 				TransactionMeta::new(number, accepted_tx.outputs.len())
 			);
 
 			for input in &accepted_tx.inputs {
-				if !match context.meta.get_mut(&input.previous_output.hash) {
-					Some(ref mut meta) => {
+				use std::collections::hash_map::Entry;
+
+				match context.meta.entry(input.previous_output.hash.clone()) {
+					Entry::Occupied(mut entry) => {
+						let meta = entry.get_mut();
+						if meta.is_spent(input.previous_output.index as usize) {
+							return Err(Error::double_spend(&input.previous_output.hash));
+						}
+						meta.denote_used(input.previous_output.index as usize);
+					},
+					Entry::Vacant(entry) => {
+						let mut meta = self.transaction_meta(&input.previous_output.hash)
+							.ok_or(Error::unknown_spending(&input.previous_output.hash))?;
+
 						if meta.is_spent(input.previous_output.index as usize) {
 							return Err(Error::double_spend(&input.previous_output.hash));
 						}
 
-						meta.note_used(input.previous_output.index as usize);
-						true
+						meta.denote_used(input.previous_output.index as usize);
+						entry.insert(meta);
 					},
-					None => false,
-				} {
-					let mut meta = self.transaction_meta(&input.previous_output.hash)
-						.ok_or(Error::unknown_spending(&input.previous_output.hash))?;
-
-					if meta.is_spent(input.previous_output.index as usize) {
-						return Err(Error::double_spend(&input.previous_output.hash));
-					}
-
-					meta.note_used(input.previous_output.index as usize);
-
-					context.meta.insert(
-						input.previous_output.hash.clone(),
-						meta);
 				}
 			}
 		}
@@ -236,30 +257,24 @@ impl Storage {
 			// remove meta
 			context.db_transaction.delete(Some(COL_TRANSACTIONS_META), &**tx_hash);
 
-			// denote outputs used
-			if tx_hash_num == 0 { continue; } // coinbase transaction does not have inputs
+			// coinbase transaction does not have inputs
+			if tx_hash_num == 0 {
+				continue;
+			}
+
+			// denote outputs as unused
 			for input in &tx.inputs {
-				if !match context.meta.get_mut(&input.previous_output.hash) {
-					Some(ref mut meta) => {
-						meta.denote_used(input.previous_output.index as usize);
-						true
+				use std::collections::hash_map::Entry;
+				match context.meta.entry(input.previous_output.hash.clone()) {
+					Entry::Occupied(mut entry) => {
+						entry.get_mut().denote_unused(input.previous_output.index as usize);
 					},
-					None => false,
-				} {
-					let mut meta =
-						self.transaction_meta(&input.previous_output.hash)
-							.unwrap_or_else(|| panic!(
-								// decanonization should always have meta
-								// because block could not have made canonical without writing meta
-								"No transaction metadata for {}! Corrupted DB? Reindex?",
-								&input.previous_output.hash
-							));
-
-					meta.denote_used(input.previous_output.index as usize);
-
-					context.meta.insert(
-						input.previous_output.hash.clone(),
-						meta);
+					Entry::Vacant(entry) => {
+						let mut meta = self.transaction_meta(&input.previous_output.hash)
+							.expect("No transaction metadata! Possible db corruption");
+						meta.denote_unused(input.previous_output.index as usize);
+						entry.insert(meta);
+					},
 				}
 			}
 		}
@@ -300,8 +315,8 @@ impl Storage {
 	}
 
 	fn canonize_block(&self, context: &mut UpdateContext, at_height: u32, hash: &H256) -> Result<(), Error> {
-		let transactions = self.block_transactions_by_hash(hash);
-		try!(self.update_transactions_meta(context, at_height, &transactions));
+		let block = try!(self.block_by_hash(hash).ok_or(Error::unknown_hash(hash)));
+		try!(self.update_transactions_meta(context, at_height, &mut block.transactions()));
 
 		// only canonical blocks are allowed to wield a number
 		context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(at_height), &**hash);
@@ -385,6 +400,12 @@ impl BlockProvider for Storage {
 		self.resolve_hash(block_ref).and_then(|h| self.get(COL_BLOCK_HEADERS, &*h))
 	}
 
+	fn block_header(&self, block_ref: BlockRef) -> Option<chain::BlockHeader> {
+		self.block_header_bytes(block_ref).map(
+			|bytes| deserialize::<_, chain::BlockHeader>(bytes.as_ref())
+				.expect("Error deserializing header, possible db corruption"))
+	}
+
 	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256> {
 		self.resolve_hash(block_ref)
 			.map(|h| self.block_transaction_hashes_by_hash(&h))
@@ -412,8 +433,12 @@ impl BlockProvider for Storage {
 
 impl BlockStapler for Storage {
 
+	/// insert pre-processed block in the storage
 	fn insert_block(&self, block: &chain::Block) -> Result<BlockInsertedChain, Error> {
+		self.insert_indexed_block(&block.clone().into())
+	}
 
+	fn insert_indexed_block(&self, block: &IndexedBlock) -> Result<BlockInsertedChain, Error> {
 		// ! lock will be held during the entire insert routine
 		let mut best_block = self.best_block.write();
 
@@ -428,39 +453,38 @@ impl BlockStapler for Storage {
 
 		let mut new_best_number = match best_block.as_ref().map(|b| b.number) {
 			Some(best_number) => {
-				if block.hash() == new_best_hash { best_number + 1 }
+				if block.hash() == &new_best_hash { best_number + 1 }
 				else { best_number }
 			},
 			None => 0,
 		};
 
-		let tx_space = block.transactions().len() * 32;
+		let tx_space = block.transaction_count() * 32;
 		let mut tx_refs = Vec::with_capacity(tx_space);
-		for tx in block.transactions() {
-			let tx_hash = tx.hash();
-			tx_refs.extend(&*tx_hash);
+		for (tx_hash, tx) in block.transactions() {
+			tx_refs.extend(&**tx_hash);
 			context.db_transaction.put(
 				Some(COL_TRANSACTIONS),
-				&*tx_hash,
+				&**tx_hash,
 				&serialize(tx),
 			);
 		}
-		context.db_transaction.put(Some(COL_BLOCK_TRANSACTIONS), &*block_hash, &tx_refs);
+		context.db_transaction.put(Some(COL_BLOCK_TRANSACTIONS), &**block_hash, &tx_refs);
 
 		context.db_transaction.put(
 			Some(COL_BLOCK_HEADERS),
-			&*block_hash,
+			&**block_hash,
 			&serialize(block.header())
 		);
 
 		// the block is continuing the main chain
 		let result = if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
-			try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
+			try!(self.update_transactions_meta(&mut context, new_best_number, &mut block.transactions()));
 			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 
 			// updating main chain height reference
-			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), &*block_hash);
-			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), &*block_hash, new_best_number);
+			context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), &**block_hash);
+			context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), &**block_hash, new_best_number);
 
 			BlockInsertedChain::Main
 		}
@@ -473,10 +497,10 @@ impl BlockStapler for Storage {
 				Ok(Some(mut reorg)) => {
 					// if so, we have new best main chain block
 					new_best_number = reorg.height + 1;
-					new_best_hash = block_hash;
+					new_best_hash = block_hash.clone();
 
 					// and we canonize it also by provisioning transactions
-					try!(self.update_transactions_meta(&mut context, new_best_number, block.transactions()));
+					try!(self.update_transactions_meta(&mut context, new_best_number, &mut block.transactions()));
 					context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 					context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), &*new_best_hash);
 					context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), &*new_best_hash, new_best_number);
@@ -595,6 +619,12 @@ impl TransactionMetaProvider for Storage {
 impl Store for Storage {
 	fn best_block(&self) -> Option<BestBlock> {
 		self.best_block.read().clone()
+	}
+
+	fn best_header(&self) -> Option<chain::BlockHeader> {
+		self.best_block.read().as_ref().and_then(
+			|bb| Some(self.block_header_by_hash(&bb.hash).expect("Best block exists but no such header. Race condition?")),
+		)
 	}
 }
 
