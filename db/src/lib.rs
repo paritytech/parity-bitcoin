@@ -56,7 +56,7 @@ pub type SharedStore = std::sync::Arc<Store + Send + Sync>;
 
 pub use best_block::BestBlock;
 pub use storage::{Storage, Store};
-pub use error::Error;
+pub use error::{Error, ConsistencyError};
 pub use kvdb::Database;
 pub use transaction_provider::{TransactionProvider, AsTransactionProvider, PreviousTransactionOutputProvider};
 pub use transaction_meta_provider::TransactionMetaProvider;
