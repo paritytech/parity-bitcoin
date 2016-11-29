@@ -151,14 +151,8 @@ impl Storage {
 
 	fn block_transactions_by_hash(&self, h: &H256) -> Vec<chain::Transaction> {
 		self.block_transaction_hashes_by_hash(h)
-			.into_iter()
-			.filter_map(|tx_hash| {
-				self.transaction_bytes(&tx_hash)
-					.map(|tx_bytes| {
-						deserialize::<_, chain::Transaction>(tx_bytes.as_ref())
-							.expect("Error deserializing transaction, possible db corruption")
-					})
-			})
+			.iter()
+			.map(|tx_hash| self.transaction(tx_hash).expect("Missing transaction, possible db corruption"))
 			.collect()
 	}
 
@@ -169,22 +163,12 @@ impl Storage {
 	}
 
 	fn block_by_hash(&self, h: &H256) -> Option<IndexedBlock> {
-
 		self.block_header_by_hash(h).map(|header| {
-			let tx_index =
-				self.block_transaction_hashes_by_hash(h)
-					.into_iter()
-					.filter_map(|tx_hash| {
-						self.transaction_bytes(&tx_hash)
-							.map(|tx_bytes| {
-								(
-									tx_hash,
-									deserialize::<_, chain::Transaction>(tx_bytes.as_ref())
-										.expect("Error deserializing transaction, possible db corruption"),
-								)
-							})
-					})
-					.collect();
+			let tx_hashes = self.block_transaction_hashes_by_hash(h);
+			let txs = tx_hashes.iter()
+				.map(|tx_hash| self.transaction(tx_hash).expect("Missing transaction, possible db corruption"))
+				.collect::<Vec<_>>();
+			let tx_index = tx_hashes.into_iter().zip(txs.into_iter()).collect();
 			IndexedBlock::new(header, tx_index)
 		})
 	}

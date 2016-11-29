@@ -1,6 +1,7 @@
 use chain;
 use primitives::hash::H256;
 use serialization::Serializable;
+use PreviousTransactionOutputProvider;
 
 #[derive(Debug)]
 pub struct IndexedBlock {
@@ -11,19 +12,24 @@ pub struct IndexedBlock {
 	transaction_hashes: Vec<H256>,
 }
 
+impl PreviousTransactionOutputProvider for IndexedBlock {
+	fn previous_transaction_output(&self, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput> {
+		self.transaction(&prevout.hash)
+			.and_then(|tx| tx.outputs.get(prevout.index as usize))
+			.cloned()
+	}
+}
+
 impl From<chain::Block> for IndexedBlock {
 	fn from(block: chain::Block) -> Self {
-		let (org_header, org_txs) = block.drain();
-		let mut hashes = Vec::with_capacity(org_txs.len());
-		for tx in org_txs.iter() {
-			hashes.push(tx.hash())
-		}
-		let header_hash = org_header.hash();
+		let chain::Block { block_header, transactions } = block;
+		let header_hash = block_header.hash();
+		let hashes = transactions.iter().map(chain::Transaction::hash).collect();
 
 		IndexedBlock {
-			header: org_header,
+			header: block_header,
 			header_hash: header_hash,
-			transactions: org_txs,
+			transactions: transactions,
 			transaction_hashes: hashes,
 		}
 	}
@@ -44,6 +50,12 @@ impl IndexedBlock {
 		}
 
 		block
+	}
+
+	pub fn transaction(&self, hash: &H256) -> Option<&chain::Transaction> {
+		self.transaction_hashes.iter()
+			.position(|x| x == hash)
+			.map(|position| &self.transactions[position])
 	}
 
 	pub fn transactions(&self) -> IndexedTransactions {

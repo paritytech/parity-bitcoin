@@ -1,7 +1,7 @@
 //! Bitcoin chain verifier
 
 use std::collections::BTreeSet;
-use db::{self, BlockLocation};
+use db::{self, BlockLocation, PreviousTransactionOutputProvider};
 use network::Magic;
 use script::Script;
 use super::{Verify, VerificationResult, Chain, Error, TransactionError};
@@ -63,11 +63,11 @@ impl ChainVerifier {
 
 	/// Returns previous transaction output.
 	/// NOTE: This function expects all previous blocks to be already in database.
-	fn previous_transaction_output(&self, block: &db::IndexedBlock, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput> {
+	fn previous_transaction_output<T>(&self, prevout_provider: &T, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput>
+		where T: PreviousTransactionOutputProvider {
 		self.store.transaction(&prevout.hash)
-			.as_ref()
-			.or_else(|| block.transactions().find(|&(hash, _)| hash == &prevout.hash).and_then(|(_, tx)| Some(tx)))
-			.and_then(|tx| tx.outputs.iter().nth(prevout.index as usize).cloned())
+			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
+			.or_else(|| prevout_provider.previous_transaction_output(prevout))
 	}
 
 	/// Returns number of transaction signature operations.
@@ -181,11 +181,14 @@ impl ChainVerifier {
 		Ok(())
 	}
 
-	pub fn verify_transaction(&self,
-		block: &db::IndexedBlock,
+		//block: &db::IndexedBlock,
+	pub fn verify_transaction<T>(
+		&self,
+		prevout_provider: &T,
 		transaction: &chain::Transaction,
-		sequence: usize,
-	) -> Result<(), TransactionError> {
+		sequence: usize
+	) -> Result<(), TransactionError> where T: PreviousTransactionOutputProvider {
+
 		use script::{
 			TransactionInputSigner,
 			TransactionSignatureChecker,
@@ -204,7 +207,7 @@ impl ChainVerifier {
 		for (input_index, input) in transaction.inputs().iter().enumerate() {
 			// signature verification
 			let signer: TransactionInputSigner = transaction.clone().into();
-			let paired_output = match self.previous_transaction_output(block, &input.previous_output) {
+			let paired_output = match self.previous_transaction_output(prevout_provider, &input.previous_output) {
 				Some(output) => output,
 				_ => return Err(TransactionError::UnknownReference(input.previous_output.hash.clone()))
 			};
