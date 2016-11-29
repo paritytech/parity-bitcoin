@@ -814,7 +814,11 @@ pub mod tests {
 		];
 		server.serve_getdata(0, FilteredInventory::with_unfiltered(inventory)).map(|t| server.add_task(0, t));
 		// => respond with transaction
-		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		let mut tasks = DummyTaskExecutor::wait_tasks(executor.clone());
+		// 2 tasks => can be situation when single task is ready
+		if tasks.len() != 2 {
+			tasks.extend(DummyTaskExecutor::wait_tasks_for(executor, 100));
+		}
 		assert_eq!(tasks, vec![
 			Task::SendTransaction(0, tx_verifying),
 			Task::SendTransaction(0, tx_verified),
