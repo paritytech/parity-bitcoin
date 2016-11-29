@@ -1,6 +1,7 @@
 use std::{fmt, io};
+use hex::FromHex;
 use ser::{
-	Deserializable, Reader, Error as ReaderError,
+	Deserializable, Reader, Error as ReaderError, deserialize,
 	Serializable, Stream, serialize
 };
 use crypto::dhash256;
@@ -59,6 +60,12 @@ impl Deserializable for BlockHeader {
 		};
 
 		Ok(block_header)
+	}
+}
+
+impl From<&'static str> for BlockHeader {
+	fn from(s: &'static str) -> Self {
+		deserialize(&s.from_hex().unwrap() as &[u8]).unwrap()
 	}
 }
 
