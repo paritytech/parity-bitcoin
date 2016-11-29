@@ -75,7 +75,7 @@ impl AsyncVerifier {
 							sink.lock().on_block_verification_success(block)
 						},
 						Ok(Chain::Orphan) => {
-							sink.lock().on_block_verification_error("Orphaned block", &block.hash())
+							unreachable!("sync will never put orphaned blocks to verification queue");
 						},
 						Err(e) => {
 							sink.lock().on_block_verification_error(&format!("{:?}", e), &block.hash())
