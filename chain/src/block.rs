@@ -63,10 +63,6 @@ impl Block {
 		&self.block_header
 	}
 
-	pub fn drain(self) -> (BlockHeader, Vec<Transaction>) {
-		(self.block_header, self.transactions)
-	}
-
 	pub fn hash(&self) -> H256 {
 		self.block_header.hash()
 	}

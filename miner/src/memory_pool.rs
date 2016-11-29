@@ -5,10 +5,10 @@
 //! transactions.
 //! It also guarantees that ancestor-descendant relation won't break during ordered removal (ancestors always removed
 //! before descendants). Removal using `remove_by_hash` can break this rule.
-use db::TransactionProvider;
+use db::{TransactionProvider, PreviousTransactionOutputProvider};
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
-use chain::Transaction;
+use chain::{Transaction, OutPoint, TransactionOutput};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -702,6 +702,14 @@ impl TransactionProvider for MemoryPool {
 
 	fn transaction(&self, hash: &H256) -> Option<Transaction> {
 		self.get(hash).cloned()
+	}
+}
+
+impl PreviousTransactionOutputProvider for MemoryPool {
+	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
+		self.get(&prevout.hash)
+			.and_then(|tx| tx.outputs.iter().nth(prevout.index as usize))
+			.cloned()
 	}
 }
 
