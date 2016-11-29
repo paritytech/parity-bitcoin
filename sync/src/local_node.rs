@@ -67,8 +67,6 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		trace!(target: "sync", "Starting new sync session with peer#{}", peer_index);
 
 		// request inventory from peer
-		// TODO: bitcoind doesn't respond to the `getheaders` request while it is synchronizing
-		//     but it answers to the `inventory` request
 		self.executor.lock().execute(SynchronizationTask::RequestBlocksHeaders(peer_index));
 	}
 
