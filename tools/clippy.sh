@@ -22,6 +22,7 @@ cargo clippy -p import
 cargo clippy -p keys
 cargo clippy -p message
 cargo clippy -p miner
+cargo clippy -p network
 cargo clippy -p p2p
 cargo clippy -p primitives
 cargo clippy -p script
