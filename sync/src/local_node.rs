@@ -92,7 +92,8 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 			self.client.lock().on_new_transactions_inventory(peer_index, transactions_inventory);
 		}
 
-		// TODO: process other inventory types
+		// currently we do not setup connection filter => skip InventoryType::MessageFilteredBlock
+		// currently we do not send sendcmpct message => skip InventoryType::MessageCompactBlock
 	}
 
 	pub fn on_peer_getdata(&self, peer_index: usize, message: types::GetData) {
