@@ -708,7 +708,7 @@ impl TransactionProvider for MemoryPool {
 impl PreviousTransactionOutputProvider for MemoryPool {
 	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
 		self.get(&prevout.hash)
-			.and_then(|tx| tx.outputs.iter().nth(prevout.index as usize))
+			.and_then(|tx| tx.outputs.get(prevout.index as usize))
 			.cloned()
 	}
 }

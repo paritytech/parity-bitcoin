@@ -14,8 +14,8 @@ pub struct IndexedBlock {
 
 impl PreviousTransactionOutputProvider for IndexedBlock {
 	fn previous_transaction_output(&self, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput> {
-		self.transaction_by_hash(&prevout.hash)
-			.and_then(|tx| tx.outputs.iter().nth(prevout.index as usize))
+		self.transaction(&prevout.hash)
+			.and_then(|tx| tx.outputs.get(prevout.index as usize))
 			.cloned()
 	}
 }
@@ -52,7 +52,7 @@ impl IndexedBlock {
 		block
 	}
 
-	pub fn transaction_by_hash(&self, hash: &H256) -> Option<&chain::Transaction> {
+	pub fn transaction(&self, hash: &H256) -> Option<&chain::Transaction> {
 		self.transaction_hashes.iter()
 			.position(|x| x == hash)
 			.map(|position| &self.transactions[position])
