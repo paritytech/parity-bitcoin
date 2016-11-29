@@ -13,6 +13,7 @@ extern crate network;
 extern crate primitives;
 extern crate serialization;
 extern crate script;
+extern crate scoped_pool;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
@@ -22,6 +23,7 @@ extern crate test_data;
 mod chain_verifier;
 mod compact;
 mod utils;
+mod task;
 
 pub use primitives::{uint, hash};
 
@@ -70,8 +72,6 @@ pub enum TransactionError {
 	Maturity,
 	/// Signature invalid for given input
 	Signature(usize),
-	/// Inconclusive (unknown parent transaction)
-	Inconclusive(H256),
 	/// Unknown previous transaction referenced
 	UnknownReference(H256),
 	/// Spends more than claims
@@ -115,10 +115,4 @@ pub type VerificationResult = Result<Chain, Error>;
 /// Interface for block verification
 pub trait Verify : Send + Sync {
 	fn verify(&self, block: &db::IndexedBlock) -> VerificationResult;
-}
-
-/// Trait for verifier that can be interrupted and continue from the specific point
-pub trait ContinueVerify : Verify + Send + Sync {
-	type State;
-	fn continue_verify(&self, block: &db::IndexedBlock, state: Self::State) -> VerificationResult;
 }
