@@ -4,6 +4,7 @@ use db::IndexedBlock;
 
 pub struct Task<'a> {
 	block: &'a IndexedBlock,
+	block_height: u32,
 	from: usize,
 	to: usize,
 	result: Result<(), TransactionCheckError>,
@@ -12,9 +13,10 @@ pub struct Task<'a> {
 type TransactionCheckError = (usize, TransactionError);
 
 impl<'a> Task<'a> {
-	pub fn new(block: &'a IndexedBlock, from: usize, to: usize) -> Self {
+	pub fn new(block: &'a IndexedBlock, block_height: u32, from: usize, to: usize) -> Self {
 		Task {
 			block: block,
+			block_height: block_height,
 			from: from,
 			to: to,
 			result: Ok(()),
@@ -23,7 +25,7 @@ impl<'a> Task<'a> {
 
 	pub fn progress(&mut self, verifier: &ChainVerifier) {
 		for index in self.from..self.to {
-			if let Err(e) = verifier.verify_transaction(self.block, self.block.transaction_at(index).1, index) {
+			if let Err(e) = verifier.verify_transaction(self.block, self.block_height, self.block.header().time, self.block.transaction_at(index).1, index) {
 				self.result = Err((index, e))
 			}
 		}

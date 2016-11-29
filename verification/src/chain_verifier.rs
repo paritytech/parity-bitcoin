@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 use db::{self, BlockLocation, PreviousTransactionOutputProvider};
-use network::Magic;
+use network::{Magic, ConsensusParams};
 use script::Script;
 use super::{Verify, VerificationResult, Chain, Error, TransactionError};
 use {chain, utils};
@@ -18,11 +18,10 @@ const TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD: usize = 16;
 
 pub struct ChainVerifier {
 	store: db::SharedStore,
-	verify_p2sh: bool,
-	verify_clocktimeverify: bool,
 	skip_pow: bool,
 	skip_sig: bool,
 	network: Magic,
+	consensus_params: ConsensusParams,
 	pool: Pool,
 }
 
@@ -30,11 +29,10 @@ impl ChainVerifier {
 	pub fn new(store: db::SharedStore, network: Magic) -> Self {
 		ChainVerifier {
 			store: store,
-			verify_p2sh: false,
-			verify_clocktimeverify: false,
 			skip_pow: false,
 			skip_sig: false,
 			network: network,
+			consensus_params: network.consensus_params(),
 			pool: Pool::new(TRANSACTIONS_VERIFY_THREADS),
 		}
 	}
@@ -51,14 +49,12 @@ impl ChainVerifier {
 		self
 	}
 
-	pub fn verify_p2sh(mut self, verify: bool) -> Self {
-		self.verify_p2sh = verify;
-		self
+	pub fn verify_p2sh(&self, time: u32) -> bool {
+		time >= self.consensus_params.bip16_time
 	}
 
-	pub fn verify_clocktimeverify(mut self, verify: bool) -> Self {
-		self.verify_clocktimeverify = verify;
-		self
+	pub fn verify_clocktimeverify(&self, height: u32) -> bool {
+		height >= self.consensus_params.bip65_height
 	}
 
 	/// Returns previous transaction output.
@@ -102,7 +98,7 @@ impl ChainVerifier {
 	fn block_sigops(&self, block: &db::IndexedBlock) -> usize {
 		// strict pay-to-script-hash signature operations count toward block
 		// signature operations limit is enforced with BIP16
-		let bip16_active = block.header().time >= self.network.consensus_params().bip16_time;
+		let bip16_active = self.verify_p2sh(block.header().time);
 		block.transactions().map(|(_, tx)| self.transaction_sigops(block, tx, bip16_active)).sum()
 	}
 
@@ -117,7 +113,6 @@ impl ChainVerifier {
 		}
 
 		let block_hash = block.hash();
-		let consensus_params = self.network.consensus_params();
 
 		// check that difficulty matches the adjusted level
 		if let Some(work) = self.work_required(block, at_height) {
@@ -137,7 +132,7 @@ impl ChainVerifier {
 		// bip30
 		for (tx_index, (tx_hash, _)) in block.transactions().enumerate() {
 			if let Some(meta) = self.store.transaction_meta(tx_hash) {
-				if !meta.is_fully_spent() && !consensus_params.is_bip30_exception(&block_hash, at_height) {
+				if !meta.is_fully_spent() && !self.consensus_params.is_bip30_exception(&block_hash, at_height) {
 					return Err(Error::Transaction(tx_index, TransactionError::UnspentTransactionWithTheSameHash));
 				}
 			}
@@ -181,10 +176,11 @@ impl ChainVerifier {
 		Ok(())
 	}
 
-		//block: &db::IndexedBlock,
 	pub fn verify_transaction<T>(
 		&self,
 		prevout_provider: &T,
+		height: u32,
+		time: u32,
 		transaction: &chain::Transaction,
 		sequence: usize
 	) -> Result<(), TransactionError> where T: PreviousTransactionOutputProvider {
@@ -220,8 +216,8 @@ impl ChainVerifier {
 			let output: Script = paired_output.script_pubkey.into();
 
 			let flags = VerificationFlags::default()
-				.verify_p2sh(self.verify_p2sh)
-				.verify_clocktimeverify(self.verify_clocktimeverify);
+				.verify_p2sh(self.verify_p2sh(time))
+				.verify_clocktimeverify(self.verify_clocktimeverify(height));
 
 			// for tests only, skips as late as possible
 			if self.skip_sig { continue; }
@@ -292,6 +288,11 @@ impl ChainVerifier {
 			return Err(Error::CoinbaseSignatureLength(coinbase_script_len));
 		}
 
+		let location = match self.store.accepted_location(block.header()) {
+			Some(location) => location,
+			None => return Ok(Chain::Orphan),
+		};
+
 		if block.transaction_count() > TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD {
 			// todo: might use on-stack vector (smallvec/elastic array)
 			let mut transaction_tasks: Vec<Task> = Vec::with_capacity(TRANSACTIONS_VERIFY_THREADS);
@@ -300,7 +301,7 @@ impl ChainVerifier {
 				let from = last;
 				last = ::std::cmp::max(1, block.transaction_count() / TRANSACTIONS_VERIFY_THREADS);
 				if num_task == TRANSACTIONS_VERIFY_THREADS - 1 { last = block.transaction_count(); };
-				transaction_tasks.push(Task::new(block, from, last));
+				transaction_tasks.push(Task::new(block, location.height(), from, last));
 			}
 
 			self.pool.scoped(|scope| {
@@ -318,22 +319,19 @@ impl ChainVerifier {
 		}
 		else {
 			for (index, (_, tx)) in block.transactions().enumerate() {
-				if let Err(tx_err) = self.verify_transaction(block, tx, index) {
+				if let Err(tx_err) = self.verify_transaction(block, location.height(), block.header().time, tx, index) {
 					return Err(Error::Transaction(index, tx_err));
 				}
 			}
 		}
 
 		// todo: pre-process projected block number once verification is parallel!
-		match self.store.accepted_location(block.header()) {
-			None => {
-				Ok(Chain::Orphan)
-			},
-			Some(BlockLocation::Main(block_number)) => {
+		match location {
+			BlockLocation::Main(block_number) => {
 				try!(self.ordered_verify(block, block_number));
 				Ok(Chain::Main)
 			},
-			Some(BlockLocation::Side(block_number)) => {
+			BlockLocation::Side(block_number) => {
 				try!(self.ordered_verify(block, block_number));
 				Ok(Chain::Side)
 			},
