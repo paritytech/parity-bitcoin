@@ -1,13 +1,14 @@
 use std::net;
 use clap;
 use network::Magic;
+use seednodes::{mainnet_seednodes, testnet_seednodes};
 use {USER_AGENT, REGTEST_USER_AGENT};
 
 pub struct Config {
 	pub magic: Magic,
 	pub port: u16,
 	pub connect: Option<net::SocketAddr>,
-	pub seednode: Option<String>,
+	pub seednodes: Vec<String>,
 	pub print_to_console: bool,
 	pub inbound_connections: u32,
 	pub outbound_connections: u32,
@@ -59,9 +60,13 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => None,
 	};
 
-	let seednode = match matches.value_of("seednode") {
-		Some(s) => Some(try!(s.parse().map_err(|_| "Invalid seednode".to_owned()))),
-		None => None,
+	let seednodes = match matches.value_of("seednode") {
+		Some(s) => vec![try!(s.parse().map_err(|_| "Invalid seednode".to_owned()))],
+		None => match magic {
+			Magic::Mainnet => mainnet_seednodes().into_iter().map(Into::into).collect(),
+			Magic::Testnet => testnet_seednodes().into_iter().map(Into::into).collect(),
+			Magic::Other(_) | Magic::Regtest => Vec::new(),
+		},
 	};
 
 	let db_cache = match matches.value_of("db-cache") {
@@ -79,7 +84,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		magic: magic,
 		port: port,
 		connect: connect,
-		seednode: seednode,
+		seednodes: seednodes,
 		inbound_connections: in_connections,
 		outbound_connections: out_connections,
 		p2p_threads: p2p_threads,
