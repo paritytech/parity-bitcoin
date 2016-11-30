@@ -32,5 +32,5 @@ pub use config::Config;
 pub use net::Config as NetConfig;
 pub use p2p::P2P;
 pub use event_loop::{event_loop, forever};
-pub use util::{PeerId, PeerInfo};
+pub use util::{PeerId, PeerInfo, InternetProtocol};
 pub use protocol::{InboundSyncConnection, InboundSyncConnectionRef, OutboundSyncConnection, OutboundSyncConnectionRef, LocalSyncNode, LocalSyncNodeRef};

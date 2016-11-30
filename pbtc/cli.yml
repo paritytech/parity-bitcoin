@@ -38,6 +38,11 @@ args:
     - db-cache:
         long: db-cache
         help: Sets db cache size
+    - only-net:
+        long: only-net
+        value_name: NET
+        help: Only connect to nodes in network <NET> (ipv4 or ipv6)
+        takes_value: true
 subcommands:
     - import:
         about: Import blocks from bitcoin core database

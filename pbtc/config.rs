@@ -1,6 +1,7 @@
 use std::net;
 use clap;
 use network::Magic;
+use p2p::InternetProtocol;
 use {USER_AGENT, REGTEST_USER_AGENT};
 
 pub struct Config {
@@ -15,6 +16,7 @@ pub struct Config {
 	pub db_cache: usize,
 	pub data_dir: Option<String>,
 	pub user_agent: String,
+	pub internet_protocol: InternetProtocol,
 }
 
 pub const DEFAULT_DB_CACHE: usize = 512;
@@ -74,6 +76,11 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => None,
 	};
 
+	let only_net = match matches.value_of("only-net") {
+		Some(s) => try!(s.parse()),
+		None => InternetProtocol::default(),
+	};
+
 	let config = Config {
 		print_to_console: print_to_console,
 		magic: magic,
@@ -86,6 +93,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		db_cache: db_cache,
 		data_dir: data_dir,
 		user_agent: user_agent.to_string(),
+		internet_protocol: only_net,
 	};
 
 	Ok(config)
