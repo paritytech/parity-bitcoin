@@ -13,7 +13,6 @@ pub fn import(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 	let blk_path = matches.value_of("PATH").expect("PATH is required in cli.yml; qed");
 	let blk_dir = try!(::import::open_blk_dir(blk_path).map_err(|_| "Import directory does not exist".to_owned()));
 	let mut counter = 0;
-	let mut skipped = 0;
 	for blk in blk_dir {
 		// TODO: verify magic!
 		let blk = try!(blk.map_err(|_| "Cannot read block".to_owned()));
@@ -24,14 +23,12 @@ pub fn import(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 					info!("Imported {} blocks", counter);
 				}
 			}
-			Err(Error::OutOfOrderBlock) => {
-				skipped += 1;
-			},
+			Err(Error::TooManyOrphanBlocks) => return Err("Too many orphan (unordered) blocks".into()),
 			Err(_) => return Err("Cannot append block".into()),
 		}
 	}
 
-	info!("Finished import of {} blocks. Skipped {} blocks.", counter, skipped);
+	info!("Finished import of {} blocks", counter);
 
 	Ok(())
 }

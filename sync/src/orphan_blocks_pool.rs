@@ -24,7 +24,6 @@ impl OrphanBlocksPool {
 		}
 	}
 
-	#[cfg(test)]
 	/// Get total number of blocks in pool
 	pub fn len(&self) -> usize {
 		self.orphaned_blocks.len()
