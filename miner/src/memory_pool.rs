@@ -711,6 +711,10 @@ impl PreviousTransactionOutputProvider for MemoryPool {
 			.and_then(|tx| tx.outputs.get(prevout.index as usize))
 			.cloned()
 	}
+
+	fn is_spent(&self, _prevout: &OutPoint) -> bool {
+		false
+	}
 }
 
 impl HeapSizeOf for MemoryPool {

@@ -5,7 +5,7 @@ use chain;
 use db;
 use network::Magic;
 use orphan_blocks_pool::OrphanBlocksPool;
-use synchronization_verifier::{Verifier, SyncVerifier, VerificationSink};
+use synchronization_verifier::{Verifier, SyncVerifier, VerificationSink, VerificationTask};
 use primitives::hash::H256;
 use super::Error;
 
@@ -75,10 +75,11 @@ impl BlocksWriterSink {
 }
 
 impl VerificationSink for BlocksWriterSink {
-	fn on_block_verification_success(&mut self, block: db::IndexedBlock) {
+	fn on_block_verification_success(&mut self, block: db::IndexedBlock) -> Option<Vec<VerificationTask>> {
 		if let Err(err) = self.storage.insert_indexed_block(&block) {
 			self.err = Some(Error::Database(err));
 		}
+		None
 	}
 
 	fn on_block_verification_error(&mut self, err: &str, _hash: &H256) {

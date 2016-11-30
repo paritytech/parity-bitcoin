@@ -208,6 +208,10 @@ impl ChainVerifier {
 				_ => return Err(TransactionError::UnknownReference(input.previous_output.hash.clone()))
 			};
 
+			if prevout_provider.is_spent(&input.previous_output) {
+				return Err(TransactionError::UsingSpentOutput(input.previous_output.hash.clone(), input.previous_output.index))
+			}
+
 			let checker = TransactionSignatureChecker {
 				signer: signer,
 				input_index: input_index,
