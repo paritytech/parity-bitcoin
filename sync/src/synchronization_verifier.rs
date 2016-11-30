@@ -206,7 +206,7 @@ impl PreviousTransactionOutputProvider for EmptyTransactionOutputProvider {
 		None
 	}
 
-	fn is_spent(&self, prevout: &OutPoint) -> bool {
+	fn is_spent(&self, _prevout: &OutPoint) -> bool {
 		false
 	}
 }

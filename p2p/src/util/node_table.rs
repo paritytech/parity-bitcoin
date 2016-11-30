@@ -7,6 +7,7 @@ use csv;
 use message::common::{Services, NetAddress};
 use message::types::addr::AddressEntry;
 use util::time::{Time, RealTime};
+use util::InternetProtocol;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Node {
@@ -254,8 +255,9 @@ impl<T> NodeTable<T> where T: Time {
 	}
 
 	/// Returnes most reliable nodes with desired services.
-	pub fn nodes_with_services(&self, services: &Services, limit: usize) -> Vec<Node> {
+	pub fn nodes_with_services(&self, services: &Services, protocol: InternetProtocol, limit: usize) -> Vec<Node> {
 		self.by_score.iter()
+			.filter(|node| protocol.is_allowed(&node.0.addr))
 			.filter(|node| node.0.services.includes(services))
 			.map(|node| node.0.clone())
 			.take(limit)
@@ -270,8 +272,9 @@ impl<T> NodeTable<T> where T: Time {
 	/// Let's do the same.
 	///
 	/// https://en.bitcoin.it/wiki/Protocol_documentation#addr
-	pub fn recently_active_nodes(&self) -> Vec<Node> {
+	pub fn recently_active_nodes(&self, protocol: InternetProtocol) -> Vec<Node> {
 		self.by_time.iter()
+			.filter(|node| protocol.is_allowed(&node.0.addr))
 			.map(|node| node.0.clone())
 			.take(1000)
 			.collect()
@@ -350,6 +353,7 @@ impl<T> NodeTable<T> where T: Time {
 mod tests {
 	use std::net::SocketAddr;
 	use message::common::Services;
+	use util::InternetProtocol;
 	use util::time::{IncrementalTime, ZeroTime};
 	use super::NodeTable;
 
@@ -362,7 +366,7 @@ mod tests {
 		table.insert(s0, Services::default());
 		table.insert(s1, Services::default());
 		table.insert(s2, Services::default());
-		let nodes = table.nodes_with_services(&Services::default(), 2);
+		let nodes = table.nodes_with_services(&Services::default(), InternetProtocol::default(), 2);
 		assert_eq!(nodes.len(), 2);
 		assert_eq!(nodes[0].addr, s2);
 		assert_eq!(nodes[0].time, 2);
@@ -390,7 +394,7 @@ mod tests {
 		table.note_used(&s1);
 		table.note_failure(&s2);
 		table.note_failure(&s3);
-		let nodes = table.nodes_with_services(&Services::default(), 10);
+		let nodes = table.nodes_with_services(&Services::default(), InternetProtocol::default(), 10);
 		assert_eq!(nodes.len(), 5);
 
 		assert_eq!(nodes[0].addr, s1);
@@ -413,7 +417,7 @@ mod tests {
 		assert_eq!(nodes[4].time, 3);
 		assert_eq!(nodes[4].failures, 1);
 
-		let nodes = table.recently_active_nodes();
+		let nodes = table.recently_active_nodes(InternetProtocol::default());
 		assert_eq!(nodes.len(), 5);
 
 		assert_eq!(nodes[0].addr, s1);

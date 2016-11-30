@@ -1,4 +1,4 @@
-use std::{io, net, error, time, path};
+use std::{io, net, error, time};
 use std::sync::Arc;
 use parking_lot::RwLock;
 use futures::{Future, finished, failed, BoxFuture};
@@ -35,12 +35,12 @@ pub struct Context {
 	/// Local synchronization node.
 	local_sync_node: LocalSyncNodeRef,
 	/// Node table path.
-	node_table_path: path::PathBuf,
+	config: Config,
 }
 
 impl Context {
 	/// Creates new context with reference to local sync node, thread pool and event loop.
-	pub fn new(local_sync_node: LocalSyncNodeRef, pool_handle: CpuPool, remote: Remote, config: &Config) -> Result<Self, Box<error::Error>> {
+	pub fn new(local_sync_node: LocalSyncNodeRef, pool_handle: CpuPool, remote: Remote, config: Config) -> Result<Self, Box<error::Error>> {
 		let context = Context {
 			connections: Default::default(),
 			connection_counter: ConnectionCounter::new(config.inbound_connections, config.outbound_connections),
@@ -48,7 +48,7 @@ impl Context {
 			pool: pool_handle,
 			remote: remote,
 			local_sync_node: local_sync_node,
-			node_table_path: config.node_table_path.clone(),
+			config: config,
 		};
 
 		Ok(context)
@@ -79,7 +79,7 @@ impl Context {
 
 	/// Returns addresses of recently active nodes. Sorted and limited to 1000.
 	pub fn node_table_entries(&self) -> Vec<Node> {
-		self.node_table.read().recently_active_nodes()
+		self.node_table.read().recently_active_nodes(self.config.internet_protocol)
 	}
 
 	/// Updates node table.
@@ -104,7 +104,7 @@ impl Context {
 				let used_addresses = context.connections.addresses();
 				let max = (ic.1 + oc.1) as usize;
 				let needed = context.connection_counter.outbound_connections_needed() as usize;
-				let peers = context.node_table.read().nodes_with_services(&Services::default(), max);
+				let peers = context.node_table.read().nodes_with_services(&Services::default(), context.config.internet_protocol, max);
 				let addresses = peers.into_iter()
 					.map(|peer| peer.address())
 					.filter(|address| !used_addresses.contains(address))
@@ -116,7 +116,7 @@ impl Context {
 					Context::connect::<NormalSessionFactory>(context.clone(), address, config.clone());
 				}
 
-				if let Err(_err) = context.node_table.read().save_to_file(&context.node_table_path) {
+				if let Err(_err) = context.node_table.read().save_to_file(&context.config.node_table_path) {
 					error!("Saving node table to disk failed");
 				}
 
@@ -398,7 +398,7 @@ impl P2P {
 	pub fn new(config: Config, local_sync_node: LocalSyncNodeRef, handle: Handle) -> Result<Self, Box<error::Error>> {
 		let pool = CpuPool::new(config.threads);
 
-		let context = try!(Context::new(local_sync_node, pool.clone(), handle.remote().clone(), &config));
+		let context = try!(Context::new(local_sync_node, pool.clone(), handle.remote().clone(), config.clone()));
 
 		let p2p = P2P {
 			event_loop_handle: handle.clone(),

@@ -19,6 +19,7 @@ extern crate import;
 
 mod commands;
 mod config;
+mod seednodes;
 mod util;
 
 use app_dirs::AppInfo;
