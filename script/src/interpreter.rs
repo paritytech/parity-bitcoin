@@ -1909,5 +1909,19 @@ mod tests {
 		let flags = VerificationFlags::default();
 		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
 	}
+
+	#[test]
+	fn test_invalid_opcode_in_dead_execution_path_b83() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_0)
+			.push_opcode(Opcode::OP_IF)
+			.push_invalid_opcode()
+			.push_opcode(Opcode::OP_ELSE)
+			.push_opcode(Opcode::OP_1)
+			.push_opcode(Opcode::OP_ENDIF)
+			.into_script();
+		let result = Err(Error::BadOpcode);
+		basic_test(&script, result, vec![].into());
+	}
 }
 

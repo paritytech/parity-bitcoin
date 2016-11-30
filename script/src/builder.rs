@@ -50,6 +50,11 @@ impl Builder {
 		self
 	}
 
+	pub fn push_invalid_opcode(mut self) -> Self {
+		self.data.push(0xff);
+		self
+	}
+
 	pub fn into_script(self) -> Script {
 		Script::new(self.data)
 	}
