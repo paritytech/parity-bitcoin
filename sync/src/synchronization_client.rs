@@ -238,7 +238,9 @@ pub struct Config {
 pub struct FilteredInventory {
 	/// Merkleblock messages + transactions to send after
 	pub filtered: Vec<(types::MerkleBlock, Vec<(H256, Transaction)>)>,
-	/// Rest of inventory with MessageTx, MessageBlock, MessageCompactBlock inventory types
+	/// Compactblock messages
+	pub compacted: Vec<types::CompactBlock>,
+	/// Rest of inventory with MessageTx, MessageBlock inventory types
 	pub unfiltered: Vec<InventoryVector>,
 	/// Items that were supposed to be filtered, but we know nothing about these
 	pub notfound: Vec<InventoryVector>,
@@ -300,6 +302,7 @@ impl FilteredInventory {
 	pub fn with_unfiltered(unfiltered: Vec<InventoryVector>) -> Self {
 		FilteredInventory {
 			filtered: Vec::new(),
+			compacted: Vec::new(),
 			unfiltered: unfiltered,
 			notfound: Vec::new(),
 		}
@@ -309,6 +312,7 @@ impl FilteredInventory {
 	pub fn with_notfound(notfound: Vec<InventoryVector>) -> Self {
 		FilteredInventory {
 			filtered: Vec::new(),
+			compacted: Vec::new(),
 			unfiltered: Vec::new(),
 			notfound: notfound,
 		}
@@ -460,9 +464,10 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 	/// Filter inventory from `getdata` message for given peer
 	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory {
-		let chain = self.chain.read();
+		let storage = {	self.chain.read().storage() };
 		let mut filter = self.peers.filter_mut(peer_index);
 		let mut filtered: Vec<(types::MerkleBlock, Vec<(H256, Transaction)>)> = Vec::new();
+		let mut compacted: Vec<types::CompactBlock> = Vec::new();
 		let mut unfiltered: Vec<InventoryVector> = Vec::new();
 		let mut notfound: Vec<InventoryVector> = Vec::new();
 
@@ -473,12 +478,30 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 				// 2) build && send `merkleblock` message for this block
 				// 3) send all matching transactions after this block
 				InventoryType::MessageFilteredBlock => {
-					match chain.storage().block(db::BlockRef::Hash(item.hash.clone())) {
+					match storage.block(db::BlockRef::Hash(item.hash.clone())) {
 						None => notfound.push(item),
 						Some(block) => match filter.build_merkle_block(block) {
 							None => notfound.push(item),
 							Some(merkleblock) => filtered.push((merkleblock.merkleblock, merkleblock.matching_transactions)),
-						}
+						},
+					}
+				},
+				// peer asks for compact block:
+				InventoryType::MessageCompactBlock => {
+					match storage.block(db::BlockRef::Hash(item.hash.clone())) {
+						None => notfound.push(item),
+						Some(block) => {
+							let indexed_block: IndexedBlock = block.into();
+							let prefilled_transactions_indexes = indexed_block.transactions().enumerate()
+								// we do not filter by fee rate here, because it only reasonable for non-mined transactions
+								.filter(|&(_, (h, t))| filter.filter_transaction(h, t, None))
+								.map(|(idx, _)| idx)
+								.collect();
+							let compact_block = types::CompactBlock {
+								header: build_compact_block(indexed_block, prefilled_transactions_indexes),
+							};
+							compacted.push(compact_block);
+						},
 					}
 				},
 				// these will be filtered (found/not found) in sync server
@@ -488,6 +511,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 		FilteredInventory {
 			filtered: filtered,
+			compacted: compacted,
 			unfiltered: unfiltered,
 			notfound: notfound,
 		}
