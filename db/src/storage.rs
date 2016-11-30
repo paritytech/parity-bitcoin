@@ -34,6 +34,7 @@ const _COL_RESERVED6: u32 = 10;
 
 const DB_VERSION: u32 = 1;
 
+// TODO: check how bitcoin core deals with long forks
 const MAX_FORK_ROUTE_PRESET: usize = 2048;
 
 /// Blockchain storage interface
