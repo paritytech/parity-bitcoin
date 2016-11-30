@@ -285,6 +285,8 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	verifying_blocks_by_peer: HashMap<H256, usize>,
 	/// Verifying blocks futures
 	verifying_blocks_futures: HashMap<usize, (HashSet<H256>, Vec<BoxFuture<(), ()>>)>,
+	/// Hashes of items we do not want to relay after verification is completed
+	do_not_relay: HashSet<H256>,
 }
 
 impl Config {
@@ -394,8 +396,13 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		let transactions_to_verify = { self.core.lock().on_peer_transaction(peer_index, transaction) };
 
 		if let Some(mut transactions_to_verify) = transactions_to_verify {
+			// it is not actual height of block this transaction will be included to
+			// => it possibly will be invalid if included in later blocks
+			// => mined block can be rejected
+			// => we should verify blocks we mine
+			let next_block_height = self.best_block().number + 1;
 			while let Some((_, tx)) = transactions_to_verify.pop_front() {
-				self.verifier.verify_transaction(tx);
+				self.verifier.verify_transaction(next_block_height, tx);
 			}
 		}
 	}
@@ -625,7 +632,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		// remember that peer has this transaction
 		self.peers.on_transaction_received(peer_index, &transaction_hash);
 
-		self.process_peer_transaction(Some(peer_index), transaction_hash, transaction)
+		self.process_peer_transaction(Some(peer_index), transaction_hash, transaction, true)
 	}
 
 	/// Peer wants to set bloom filter for the connection
@@ -778,6 +785,7 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 	/// Process successful block verification
 	fn on_block_verification_success(&mut self, block: IndexedBlock) -> Option<Vec<VerificationTask>> {
 		let hash = block.hash();
+		let needs_relay = !self.do_not_relay.remove(hash);
 		// insert block to the storage
 		match {
 			let mut chain = self.chain.write();
@@ -806,15 +814,18 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 				// Being able to opt-out of inv messages until the filter is set prevents a client being flooded with traffic in
 				// the brief window of time between finishing version handshaking and setting the filter.
 				if self.state.is_saturated() || self.state.is_nearly_saturated() {
-					self.relay_new_blocks(insert_result.canonized_blocks_hashes);
+					if needs_relay {
+						self.relay_new_blocks(insert_result.canonized_blocks_hashes);
+					}
 				}
 
 				// deal with block transactions
 				let mut verification_tasks: Vec<VerificationTask> = Vec::with_capacity(insert_result.transactions_to_reverify.len());
+				let next_block_height = self.best_block().number + 1;
 				for (hash, tx) in insert_result.transactions_to_reverify {
-					// TODO: transactions from this blocks will be relayed. Do we need this?
-					if let Some(tx_orphans) = self.process_peer_transaction(None, hash, tx) {
-						let tx_tasks = tx_orphans.into_iter().map(|(_, tx)| VerificationTask::VerifyTransaction(tx));
+					// do not relay resurrected transactions again
+					if let Some(tx_orphans) = self.process_peer_transaction(None, hash, tx, false) {
+						let tx_tasks = tx_orphans.into_iter().map(|(_, tx)| VerificationTask::VerifyTransaction(next_block_height, tx));
 						verification_tasks.extend(tx_tasks);
 					};
 				}
@@ -836,6 +847,8 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 	fn on_block_verification_error(&mut self, err: &str, hash: &H256) {
 		warn!(target: "sync", "Block {:?} verification failed with error {:?}", hash.to_reversed_str(), err);
 
+		self.do_not_relay.remove(hash);
+
 		{
 			let mut chain = self.chain.write();
 
@@ -854,6 +867,7 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 	/// Process successful transaction verification
 	fn on_transaction_verification_success(&mut self, transaction: Transaction) {
 		let hash = transaction.hash();
+		let needs_relay = !self.do_not_relay.remove(&hash);
 
 		let transaction_fee_rate = {
 			// insert transaction to the memory pool
@@ -873,12 +887,16 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 		};
 
 		// relay transaction to peers
-		self.relay_new_transactions(vec![(hash, &transaction, transaction_fee_rate)]);
+		if needs_relay {
+			self.relay_new_transactions(vec![(hash, &transaction, transaction_fee_rate)]);
+		}
 	}
 
 	/// Process failed transaction verification
 	fn on_transaction_verification_error(&mut self, err: &str, hash: &H256) {
 		warn!(target: "sync", "Transaction {:?} verification failed with error {:?}", hash.to_reversed_str(), err);
+
+		self.do_not_relay.remove(hash);
 
 		{
 			let mut chain = self.chain.write();
@@ -904,6 +922,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				orphaned_transactions_pool: OrphanTransactionsPool::new(),
 				verifying_blocks_by_peer: HashMap::new(),
 				verifying_blocks_futures: HashMap::new(),
+				do_not_relay: HashSet::new(),
 			}
 		));
 
@@ -1197,7 +1216,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Process new peer transaction
-	fn process_peer_transaction(&mut self, peer_index: Option<usize>, hash: H256, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>> {
+	fn process_peer_transaction(&mut self, peer_index: Option<usize>, hash: H256, transaction: Transaction, relay: bool) -> Option<VecDeque<(H256, Transaction)>> {
 		// if we are in synchronization state, we will ignore this message
 		if self.state.is_synchronizing() {
 			return None;
@@ -1222,14 +1241,17 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		// else verify && insert this transaction && all dependent orphans
-		let mut transactons: VecDeque<(H256, Transaction)> = VecDeque::new();
-		transactons.push_back((hash.clone(), transaction));
-		transactons.extend(self.orphaned_transactions_pool.remove_transactions_for_parent(&hash));
+		let mut transactions: VecDeque<(H256, Transaction)> = VecDeque::new();
+		transactions.push_back((hash.clone(), transaction));
+		transactions.extend(self.orphaned_transactions_pool.remove_transactions_for_parent(&hash));
 		// remember that we are verifying these transactions
-		for &(ref h, ref tx) in &transactons {
+		for &(ref h, ref tx) in &transactions {
 			chain.verify_transaction(h.clone(), tx.clone());
+			if !relay {
+				self.do_not_relay.insert(h.clone());
+			}
 		}
-		Some(transactons)
+		Some(transactions)
 	}
 
 	fn prepare_blocks_requests_tasks(&mut self, peers: Vec<usize>, mut hashes: Vec<H256>) -> Vec<Task> {
