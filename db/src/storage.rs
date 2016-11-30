@@ -379,7 +379,7 @@ impl Storage {
 		// lock will be held until the end of the routine
 		let mut best_block = self.best_block.write();
 
-		let mut context = UpdateContext::new(&self.database);
+		let mut context = UpdateContext::new(&self.database, hash);
 		let mut result = Vec::new();
 		let mut best_number = try!(self.best_number().ok_or(Error::Consistency(ConsistencyError::NoBestBlock)));
 		loop {
@@ -456,8 +456,7 @@ impl BlockStapler for Storage {
 		// ! lock will be held during the entire insert routine
 		let mut best_block = self.best_block.write();
 
-		let mut context = UpdateContext::new(&self.database);
-		context.target(block.hash());
+		let mut context = UpdateContext::new(&self.database, block.hash());
 
 		let block_hash = block.hash();
 
