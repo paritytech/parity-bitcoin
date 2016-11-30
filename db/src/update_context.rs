@@ -35,7 +35,9 @@ impl UpdateContext {
 
 		try!(db.write(self.db_transaction));
 
-		trace!("Applied transaction for block {:?}", self.target);
+		if let Some(target) = self.target {
+			trace!("Applied transaction for block {:?}", target);
+		}
 		Ok(())
 	}
 
