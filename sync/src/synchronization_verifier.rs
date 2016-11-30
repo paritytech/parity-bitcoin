@@ -6,8 +6,7 @@ use chain::Transaction;
 use network::Magic;
 use primitives::hash::H256;
 use verification::{ChainVerifier, Verify as VerificationVerify, Chain};
-use synchronization_chain::ChainRef;
-use db::IndexedBlock;
+use db::{SharedStore, IndexedBlock};
 
 /// Verification events sink
 pub trait VerificationSink : Send + 'static {
@@ -49,9 +48,8 @@ pub struct AsyncVerifier {
 
 impl AsyncVerifier {
 	/// Create new async verifier
-	pub fn new<T: VerificationSink>(network: Magic, chain: ChainRef, sink: Arc<Mutex<T>>) -> Self {
+	pub fn new<T: VerificationSink>(network: Magic, storage: SharedStore, sink: Arc<Mutex<T>>) -> Self {
 		let (verification_work_sender, verification_work_receiver) = channel();
-		let storage = chain.read().storage();
 		let verifier = ChainVerifier::new(storage, network);
 		AsyncVerifier {
 			verification_work_sender: verification_work_sender,
@@ -68,29 +66,13 @@ impl AsyncVerifier {
 	fn verification_worker_proc<T: VerificationSink>(sink: Arc<Mutex<T>>, verifier: ChainVerifier, work_receiver: Receiver<VerificationTask>) {
 		while let Ok(task) = work_receiver.recv() {
 			match task {
-				VerificationTask::VerifyBlock(block) => {
-					// verify block
-					match verifier.verify(&block) {
-						Ok(Chain::Main) | Ok(Chain::Side) => {
-							sink.lock().on_block_verification_success(block)
-						},
-						Ok(Chain::Orphan) => {
-							unreachable!("sync will never put orphaned blocks to verification queue");
-						},
-						Err(e) => {
-							sink.lock().on_block_verification_error(&format!("{:?}", e), &block.hash())
-						}
-					}
-				},
-				VerificationTask::VerifyTransaction(transaction) => {
-					// TODO: add verification here
-					sink.lock().on_transaction_verification_error("unimplemented", &transaction.hash())
-				}
 				VerificationTask::Stop => break,
+				_ => execute_verification_task(&sink, &verifier, task),
 			}
 		}
 	}
 }
+
 
 impl Drop for AsyncVerifier {
 	fn drop(&mut self) {
@@ -115,6 +97,62 @@ impl Verifier for AsyncVerifier {
 		self.verification_work_sender
 			.send(VerificationTask::VerifyTransaction(transaction))
 			.expect("Verification thread have the same lifetime as `AsyncVerifier`");
+	}
+}
+
+/// Synchronous synchronization verifier
+pub struct SyncVerifier<T: VerificationSink> {
+	/// Verifier
+	verifier: ChainVerifier,
+	/// Verification sink
+	sink: Arc<Mutex<T>>,
+}
+
+impl<T> SyncVerifier<T> where T: VerificationSink {
+	/// Create new sync verifier
+	pub fn new(network: Magic, storage: SharedStore, sink: Arc<Mutex<T>>) -> Self {
+		let verifier = ChainVerifier::new(storage, network);
+		SyncVerifier {
+			verifier: verifier,
+			sink: sink,
+		}
+	}
+}
+
+impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
+	/// Verify block
+	fn verify_block(&self, block: IndexedBlock) {
+		execute_verification_task(&self.sink, &self.verifier, VerificationTask::VerifyBlock(block))
+	}
+
+	/// Verify transaction
+	fn verify_transaction(&self, transaction: Transaction) {
+		execute_verification_task(&self.sink, &self.verifier, VerificationTask::VerifyTransaction(transaction))
+	}
+}
+
+/// Execute single verification task
+fn execute_verification_task<T: VerificationSink>(sink: &Arc<Mutex<T>>, verifier: &ChainVerifier, task: VerificationTask) {
+	match task {
+		VerificationTask::VerifyBlock(block) => {
+			// verify block
+			match verifier.verify(&block) {
+				Ok(Chain::Main) | Ok(Chain::Side) => {
+					sink.lock().on_block_verification_success(block)
+				},
+				Ok(Chain::Orphan) => {
+					unreachable!("sync will never put orphaned blocks to verification queue");
+				},
+				Err(e) => {
+					sink.lock().on_block_verification_error(&format!("{:?}", e), &block.hash())
+				}
+			}
+		},
+		VerificationTask::VerifyTransaction(transaction) => {
+			// TODO: add verification here
+			sink.lock().on_transaction_verification_error("unimplemented", &transaction.hash())
+		},
+		_ => unreachable!("must be checked by caller"),
 	}
 }
 
