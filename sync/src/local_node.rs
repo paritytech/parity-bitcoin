@@ -92,7 +92,8 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 			self.client.lock().on_new_transactions_inventory(peer_index, transactions_inventory);
 		}
 
-		// TODO: process other inventory types
+		// currently we do not setup connection filter => skip InventoryType::MessageFilteredBlock
+		// currently we do not send sendcmpct message => skip InventoryType::MessageCompactBlock
 	}
 
 	pub fn on_peer_getdata(&self, peer_index: usize, message: types::GetData) {
@@ -440,6 +441,38 @@ mod tests {
 				},
 				_ => panic!("unexpected"),
 			}
+		}
+	}
+
+	#[test]
+	fn local_node_serves_compactblock() {
+		let (_, _, _, server, local_node) = create_local_node();
+
+		let genesis = test_data::genesis();
+		let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
+			.transaction().output().value(10).build().build()
+			.build(); // genesis -> b1
+		let b1_hash = b1.hash();
+
+		// This peer will provide blocks
+		let peer_index1 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		local_node.on_peer_block(peer_index1, types::Block { block: b1.clone() });
+
+		// This peer will receive compact block
+		let peer_index2 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		local_node.on_peer_getdata(peer_index2, types::GetData {inventory: vec![
+				InventoryVector { inv_type: InventoryType::MessageCompactBlock, hash: b1_hash.clone() },
+			]});
+		let tasks = server.take_tasks();
+		assert_eq!(tasks.len(), 1);
+		match tasks[0] {
+			(_, ServerTask::ServeGetData(ref gd)) => {
+				assert_eq!(gd.filtered.len(), 0);
+				assert_eq!(gd.unfiltered.len(), 0);
+				assert_eq!(gd.notfound.len(), 0);
+				assert_eq!(gd.compacted.len(), 1);
+			},
+			_ => panic!("unexpected"),
 		}
 	}
 }

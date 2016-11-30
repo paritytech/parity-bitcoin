@@ -1,4 +1,4 @@
-use std::{io, fs, path};
+use std::{io, fs, path, cmp};
 
 /// Creates an iterator over all blk .dat files
 pub fn read_blk_dir<P>(path: P) -> Result<ReadBlkDir, io::Error> where P: AsRef<path::Path> {
@@ -13,8 +13,21 @@ pub struct ReadBlkDir {
 	read_dir: fs::ReadDir,
 }
 
+#[derive(PartialEq, Eq)]
 pub struct BlkEntry {
 	pub path: path::PathBuf,
+}
+
+impl cmp::PartialOrd for BlkEntry {
+	fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+		cmp::PartialOrd::partial_cmp(&self.path, &other.path)
+	}
+}
+
+impl cmp::Ord for BlkEntry {
+	fn cmp(&self, other: &Self) -> cmp::Ordering {
+		cmp::Ord::cmp(&self.path, &other.path)
+	}
 }
 
 fn is_blk_file_name(file_name: &str) -> bool {

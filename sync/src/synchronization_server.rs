@@ -104,6 +104,7 @@ pub enum ServerTask {
 	ReturnNotFound(Vec<InventoryVector>),
 	ReturnBlock(H256),
 	ReturnMerkleBlock(types::MerkleBlock),
+	ReturnCompactBlock(types::CompactBlock),
 	ReturnTransaction(Transaction),
 }
 
@@ -168,6 +169,10 @@ impl SynchronizationServer {
 							new_tasks.extend(transactions.into_iter().map(|(_, t)|
 								IndexedServerTask::new(ServerTask::ReturnTransaction(t), ServerTaskIndex::None)));
 						}
+						// process compactblock items
+						for compactblock in inventory.compacted {
+							new_tasks.push(IndexedServerTask::new(ServerTask::ReturnCompactBlock(compactblock), ServerTaskIndex::None));
+						}
 						// extend with unknown merkleitems
 						unknown_items.extend(inventory.notfound);
 						// process unfiltered items
@@ -191,7 +196,11 @@ impl SynchronizationServer {
 										None => unknown_items.push(item),
 									}
 								},
-								_ => (), // TODO: process other inventory types
+								// we have no enough information here => it must be filtered by caller
+								InventoryType::MessageCompactBlock => unreachable!(),
+								// we have no enough information here => it must be filtered by caller
+								InventoryType::MessageFilteredBlock => unreachable!(),
+								_ => (),
 							}
 						}
 					}
@@ -224,7 +233,7 @@ impl SynchronizationServer {
 								inv_type: InventoryType::MessageBlock,
 								hash: hash,
 							}).collect();
-							executor.lock().execute(Task::SendInventory(peer_index, inventory, indexed_task.id));
+							executor.lock().execute(Task::SendInventory(peer_index, inventory));
 						}
 					}
 					else {
@@ -309,7 +318,7 @@ impl SynchronizationServer {
 						.collect();
 					if !inventory.is_empty() {
 						trace!(target: "sync", "Going to respond with {} memory-pool transactions ids to peer#{}", inventory.len(), peer_index);
-						executor.lock().execute(Task::SendInventory(peer_index, inventory, indexed_task.id));
+						executor.lock().execute(Task::SendInventory(peer_index, inventory));
 					} else {
 						assert_eq!(indexed_task.id, ServerTaskIndex::None);
 					}
@@ -318,7 +327,7 @@ impl SynchronizationServer {
 				},
 				// `notfound`
 				ServerTask::ReturnNotFound(inventory) => {
-					executor.lock().execute(Task::SendNotFound(peer_index, inventory, indexed_task.id));
+					executor.lock().execute(Task::SendNotFound(peer_index, inventory));
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
 				},
@@ -326,7 +335,7 @@ impl SynchronizationServer {
 				ServerTask::ReturnBlock(block_hash) => {
 					let block = chain.read().storage().block(db::BlockRef::Hash(block_hash))
 						.expect("we have checked that block exists in ServeGetData; db is append-only; qed");
-					executor.lock().execute(Task::SendBlock(peer_index, block, indexed_task.id));
+					executor.lock().execute(Task::SendBlock(peer_index, block));
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
 				},
@@ -334,6 +343,10 @@ impl SynchronizationServer {
 				ServerTask::ReturnMerkleBlock(merkleblock) => {
 					executor.lock().execute(Task::SendMerkleBlock(peer_index, merkleblock));
 				},
+				// `cmpctblock`
+				ServerTask::ReturnCompactBlock(compactblock) => {
+					executor.lock().execute(Task::SendCompactBlocks(peer_index, vec![compactblock.header]))
+				}
 				// `tx`
 				ServerTask::ReturnTransaction(transaction) => {
 					executor.lock().execute(Task::SendTransaction(peer_index, transaction));
@@ -609,7 +622,7 @@ pub mod tests {
 		server.serve_getdata(0, FilteredInventory::with_unfiltered(inventory.clone())).map(|t| server.add_task(0, t));
 		// => respond with notfound
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
-		assert_eq!(tasks, vec![Task::SendNotFound(0, inventory, ServerTaskIndex::None)]);
+		assert_eq!(tasks, vec![Task::SendNotFound(0, inventory)]);
 	}
 
 	#[test]
@@ -625,7 +638,7 @@ pub mod tests {
 		server.serve_getdata(0, FilteredInventory::with_unfiltered(inventory)).map(|t| server.add_task(0, t));
 		// => respond with block
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
-		assert_eq!(tasks, vec![Task::SendBlock(0, test_data::genesis(), ServerTaskIndex::None)]);
+		assert_eq!(tasks, vec![Task::SendBlock(0, test_data::genesis())]);
 	}
 
 	#[test]
@@ -659,7 +672,7 @@ pub mod tests {
 			hash: test_data::block_h1().hash(),
 		}];
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
-		assert_eq!(tasks, vec![Task::SendInventory(0, inventory, ServerTaskIndex::None)]);
+		assert_eq!(tasks, vec![Task::SendInventory(0, inventory)]);
 	}
 
 	#[test]
@@ -722,7 +735,7 @@ pub mod tests {
 			hash: transaction_hash,
 		}];
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
-		assert_eq!(tasks, vec![Task::SendInventory(0, inventory, ServerTaskIndex::None)]);
+		assert_eq!(tasks, vec![Task::SendInventory(0, inventory)]);
 	}
 
 	#[test]
@@ -764,7 +777,7 @@ pub mod tests {
 		server.serve_getdata(0, FilteredInventory::with_unfiltered(inventory.clone())).map(|t| server.add_task(0, t));
 		// => respond with notfound
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
-		assert_eq!(tasks, vec![Task::SendNotFound(0, inventory, ServerTaskIndex::None)]);
+		assert_eq!(tasks, vec![Task::SendNotFound(0, inventory)]);
 	}
 
 	#[test]

@@ -17,7 +17,6 @@ pub trait TaskExecutor : Send + 'static {
 	fn execute(&mut self, task: Task);
 }
 
-// TODO: get rid of unneeded ServerTaskIndex-es
 /// Synchronization task for the peer.
 #[derive(Debug, PartialEq)]
 pub enum Task {
@@ -30,7 +29,7 @@ pub enum Task {
 	/// Request memory pool contents
 	RequestMemoryPool(usize),
 	/// Send block.
-	SendBlock(usize, Block, ServerTaskIndex),
+	SendBlock(usize, Block),
 	/// Send merkleblock
 	SendMerkleBlock(usize, types::MerkleBlock),
 	/// Send transaction
@@ -38,13 +37,13 @@ pub enum Task {
 	/// Send block transactions
 	SendBlockTxn(usize, H256, Vec<Transaction>),
 	/// Send notfound
-	SendNotFound(usize, Vec<InventoryVector>, ServerTaskIndex),
+	SendNotFound(usize, Vec<InventoryVector>),
 	/// Send inventory
-	SendInventory(usize, Vec<InventoryVector>, ServerTaskIndex),
+	SendInventory(usize, Vec<InventoryVector>),
 	/// Send headers
 	SendHeaders(usize, Vec<BlockHeader>, ServerTaskIndex),
 	/// Send compact blocks
-	SendCompactBlocks(usize, Vec<BlockHeaderAndIDs>, ServerTaskIndex),
+	SendCompactBlocks(usize, Vec<BlockHeaderAndIDs>),
 	/// Notify io about ignored request
 	Ignore(usize, u32),
 }
@@ -130,13 +129,12 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					connection.send_getdata(&getdata);
 				}
 			},
-			Task::SendBlock(peer_index, block, id) => {
+			Task::SendBlock(peer_index, block) => {
 				let block_message = types::Block {
 					block: block,
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					assert_eq!(id.raw(), None);
 					trace!(target: "sync", "Sending block {:?} to peer#{}", block_message.block.hash().to_reversed_str(), peer_index);
 					connection.send_block(&block_message);
 				}
@@ -170,24 +168,22 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					connection.send_block_txn(&transactions_message);
 				}
 			},
-			Task::SendNotFound(peer_index, unknown_inventory, id) => {
+			Task::SendNotFound(peer_index, unknown_inventory) => {
 				let notfound = types::NotFound {
 					inventory: unknown_inventory,
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					assert_eq!(id.raw(), None);
 					trace!(target: "sync", "Sending notfound to peer#{} with {} items", peer_index, notfound.inventory.len());
 					connection.send_notfound(&notfound);
 				}
 			},
-			Task::SendInventory(peer_index, inventory, id) => {
+			Task::SendInventory(peer_index, inventory) => {
 				let inventory = types::Inv {
 					inventory: inventory,
 				};
 
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					assert_eq!(id.raw(), None);
 					trace!(target: "sync", "Sending inventory to peer#{} with {} items", peer_index, inventory.inventory.len());
 					connection.send_inventory(&inventory);
 				}
@@ -205,9 +201,8 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					}
 				}
 			},
-			Task::SendCompactBlocks(peer_index, compact_blocks, id) => {
+			Task::SendCompactBlocks(peer_index, compact_blocks) => {
 				if let Some(connection) = self.peers.get_mut(&peer_index) {
-					assert_eq!(id.raw(), None);
 					for compact_block in compact_blocks {
 						trace!(target: "sync", "Sending compact_block {:?} to peer#{}", compact_block.header.hash(), peer_index);
 						connection.send_compact_block(&types::CompactBlock {
