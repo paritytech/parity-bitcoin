@@ -687,7 +687,7 @@ pub mod tests {
 		}, Some(dummy_id)).map(|t| server.add_task(0, t));
 		// => no response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
-		assert_eq!(tasks, vec![Task::Ignore(0, dummy_id)]);
+		assert_eq!(tasks, vec![Task::SendHeaders(0, vec![], ServerTaskIndex::Final(dummy_id))]);
 	}
 
 	#[test]
