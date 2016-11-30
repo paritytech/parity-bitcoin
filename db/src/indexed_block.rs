@@ -18,6 +18,11 @@ impl PreviousTransactionOutputProvider for IndexedBlock {
 			.and_then(|tx| tx.outputs.get(prevout.index as usize))
 			.cloned()
 	}
+
+	fn is_spent(&self, _prevout: &chain::OutPoint) -> bool {
+		// block does not need it to be checked
+		false
+	}
 }
 
 impl From<chain::Block> for IndexedBlock {

@@ -86,6 +86,8 @@ pub enum TransactionError {
 	MisplacedCoinbase(usize),
 	/// Not fully spent transaction with the same hash already exists, bip30.
 	UnspentTransactionWithTheSameHash,
+	/// Not fully spent transaction with the same hash already exists, bip30.
+	UsingSpentOutput(H256, u32),
 }
 
 #[derive(PartialEq, Debug)]

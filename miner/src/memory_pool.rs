@@ -15,6 +15,7 @@ use std::collections::HashSet;
 use std::collections::BTreeSet;
 use ser::{Serializable, serialize};
 use heapsize::HeapSizeOf;
+use db::TransactionMetaProvider;
 
 /// Transactions ordering strategy
 #[cfg_attr(feature="cargo-clippy", allow(enum_variant_names))]
@@ -710,6 +711,10 @@ impl PreviousTransactionOutputProvider for MemoryPool {
 		self.get(&prevout.hash)
 			.and_then(|tx| tx.outputs.get(prevout.index as usize))
 			.cloned()
+	}
+
+	fn is_spent(&self, prevout: &OutPoint) -> bool {
+		false
 	}
 }
 

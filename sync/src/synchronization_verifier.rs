@@ -195,11 +195,19 @@ impl PreviousTransactionOutputProvider for ChainMemoryPoolTransactionOutputProvi
 	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
 		self.chain.read().memory_pool().previous_transaction_output(prevout)
 	}
+
+	fn is_spent(&self, prevout: &OutPoint) -> bool {
+		self.chain.read().storage().transaction_meta(&prevout.hash).and_then(|tm| Some(tm.is_spent(prevout.index as usize))).unwrap_or(false)
+	}
 }
 
 impl PreviousTransactionOutputProvider for EmptyTransactionOutputProvider {
 	fn previous_transaction_output(&self, _prevout: &OutPoint) -> Option<TransactionOutput> {
 		None
+	}
+
+	fn is_spent(&self, prevout: &OutPoint) -> bool {
+		false
 	}
 }
 

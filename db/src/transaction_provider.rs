@@ -27,4 +27,6 @@ pub trait AsTransactionProvider {
 /// a shame to clone the whole transaction just to get single output.
 pub trait PreviousTransactionOutputProvider {
 	fn previous_transaction_output(&self, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput>;
+
+	fn is_spent(&self, prevout: &chain::OutPoint) -> bool;
 }
