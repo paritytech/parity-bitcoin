@@ -579,7 +579,7 @@ impl BlockStapler for Storage {
 		// write accumulated transactions meta
 		try!(context.apply(&self.database));
 
-		trace!(target: "db", "Best block now ({}, {})", &new_best_hash, &new_best_number);
+		trace!(target: "db", "Best block now ({}, {})", &new_best_hash.to_reversed_str(), &new_best_number);
 		// updating locked best block
 		*best_block = Some(BestBlock { hash: new_best_hash, number: new_best_number });
 
