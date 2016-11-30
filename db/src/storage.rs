@@ -224,7 +224,7 @@ impl Storage {
 	///   all transaction meta is removed
 	///   DOES NOT update best block
 	fn decanonize_block(&self, context: &mut UpdateContext, hash: &H256) -> Result<(), Error> {
-		trace!(target: "reorg", "Decanonizing block {}", hash.to_reversed_str());
+		trace!(target: "db", "Decanonizing block {}", hash.to_reversed_str());
 
 		// ensure that block is of the main chain
 		try!(self.block_number(hash).ok_or(Error::not_main(hash)));
@@ -299,6 +299,8 @@ impl Storage {
 	}
 
 	fn canonize_block(&self, context: &mut UpdateContext, at_height: u32, hash: &H256) -> Result<(), Error> {
+		trace!(target: "db", "Canonizing block {}", hash.to_reversed_str());
+
 		let block = try!(self.block_by_hash(hash).ok_or(Error::unknown_hash(hash)));
 		try!(self.update_transactions_meta(context, at_height, &mut block.transactions()));
 
@@ -377,7 +379,7 @@ impl Storage {
 		// lock will be held until the end of the routine
 		let mut best_block = self.best_block.write();
 
-		let mut context = UpdateContext::new(&self.database);
+		let mut context = UpdateContext::new(&self.database, hash);
 		let mut result = Vec::new();
 		let mut best_number = try!(self.best_number().ok_or(Error::Consistency(ConsistencyError::NoBestBlock)));
 		loop {
@@ -454,7 +456,7 @@ impl BlockStapler for Storage {
 		// ! lock will be held during the entire insert routine
 		let mut best_block = self.best_block.write();
 
-		let mut context = UpdateContext::new(&self.database);
+		let mut context = UpdateContext::new(&self.database, block.hash());
 
 		let block_hash = block.hash();
 
@@ -577,6 +579,7 @@ impl BlockStapler for Storage {
 		// write accumulated transactions meta
 		try!(context.apply(&self.database));
 
+		trace!(target: "db", "Best block now ({}, {})", &new_best_hash, &new_best_number);
 		// updating locked best block
 		*best_block = Some(BestBlock { hash: new_best_hash, number: new_best_number });
 
