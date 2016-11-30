@@ -51,7 +51,6 @@ impl BlocksWriter {
 		let mut verification_queue: VecDeque<db::IndexedBlock> = self.orphaned_blocks_pool.remove_blocks_for_parent(indexed_block.hash()).into_iter().map(|(_, b)| b).collect();
 		verification_queue.push_front(indexed_block);
 		while let Some(block) = verification_queue.pop_front() {
-			println!("Verifying {:?}", block.hash().to_reversed_str());
 			self.verifier.verify_block(block);
 			if let Some(err) = self.sink.lock().error() {
 				return Err(err);
