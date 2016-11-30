@@ -30,7 +30,7 @@ impl UpdateContext {
 
 		try!(db.write(self.db_transaction));
 
-		trace!("Applied transaction for block {:?}", &self.target);
+		trace!("Applied transaction for block {:?}", &self.target.to_reversed_str());
 		Ok(())
 	}
 
