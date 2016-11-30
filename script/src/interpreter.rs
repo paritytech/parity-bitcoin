@@ -306,7 +306,14 @@ pub fn eval_script(
 
 	while pc < script.len() {
 		let executing = exec_stack.iter().all(|x| *x);
-		let instruction = try!(script.get_instruction(pc));
+		let instruction = match script.get_instruction(pc) {
+			Ok(i) => i,
+			Err(Error::BadOpcode) if !executing => {
+				pc += 1;
+				continue;
+			},
+			Err(err) => return Err(err),
+		};
 		let opcode = instruction.opcode;
 
 		if let Some(data) = instruction.data {
@@ -1920,8 +1927,8 @@ mod tests {
 			.push_opcode(Opcode::OP_1)
 			.push_opcode(Opcode::OP_ENDIF)
 			.into_script();
-		let result = Err(Error::BadOpcode);
-		basic_test(&script, result, vec![].into());
+		let result = Ok(true);
+		basic_test(&script, result, vec![vec![1].into()].into());
 	}
 }
 
