@@ -24,7 +24,7 @@ use synchronization_server::ServerTaskIndex;
 use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchronization_peers_inventory,
 	manage_unknown_orphaned_blocks, manage_orphaned_transactions, MANAGEMENT_INTERVAL_MS,
 	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
-use synchronization_verifier::{Verifier, VerificationSink};
+use synchronization_verifier::{Verifier, VerificationSink, VerificationTask};
 use compact_block_builder::build_compact_block;
 use hash_queue::HashPosition;
 use miner::transaction_fee_rate;
@@ -776,7 +776,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor {
 	/// Process successful block verification
-	fn on_block_verification_success(&mut self, block: IndexedBlock) {
+	fn on_block_verification_success(&mut self, block: IndexedBlock) -> Option<Vec<VerificationTask>> {
 		let hash = block.hash();
 		// insert block to the storage
 		match {
@@ -810,14 +810,20 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 				}
 
 				// deal with block transactions
+				let mut verification_tasks: Vec<VerificationTask> = Vec::with_capacity(insert_result.transactions_to_reverify.len());
 				for (hash, tx) in insert_result.transactions_to_reverify {
 					// TODO: transactions from this blocks will be relayed. Do we need this?
-					self.process_peer_transaction(None, hash, tx);
+					if let Some(tx_orphans) = self.process_peer_transaction(None, hash, tx) {
+						let tx_tasks = tx_orphans.into_iter().map(|(_, tx)| VerificationTask::VerifyTransaction(tx));
+						verification_tasks.extend(tx_tasks);
+					};
 				}
+				Some(verification_tasks)
 			},
 			Err(db::Error::Consistency(e)) => {
 				// process as verification error
 				self.on_block_verification_error(&format!("{:?}", db::Error::Consistency(e)), &hash);
+				None
 			},
 			Err(e) => {
 				// process as irrecoverable failure

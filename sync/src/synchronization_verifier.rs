@@ -1,4 +1,5 @@
 use std::thread;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use parking_lot::Mutex;
@@ -11,7 +12,7 @@ use db::{SharedStore, IndexedBlock};
 /// Verification events sink
 pub trait VerificationSink : Send + 'static {
 	/// When block verification has completed successfully.
-	fn on_block_verification_success(&mut self, block: IndexedBlock);
+	fn on_block_verification_success(&mut self, block: IndexedBlock) -> Option<Vec<VerificationTask>>;
 	/// When block verification has failed.
 	fn on_block_verification_error(&mut self, err: &str, hash: &H256);
 	/// When transaction verification has completed successfully.
@@ -21,7 +22,8 @@ pub trait VerificationSink : Send + 'static {
 }
 
 /// Verification thread tasks
-enum VerificationTask {
+#[derive(Debug)]
+pub enum VerificationTask {
 	/// Verify single block
 	VerifyBlock(IndexedBlock),
 	/// Verify single transaction
@@ -133,26 +135,33 @@ impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
 
 /// Execute single verification task
 fn execute_verification_task<T: VerificationSink>(sink: &Arc<Mutex<T>>, verifier: &ChainVerifier, task: VerificationTask) {
-	match task {
-		VerificationTask::VerifyBlock(block) => {
-			// verify block
-			match verifier.verify(&block) {
-				Ok(Chain::Main) | Ok(Chain::Side) => {
-					sink.lock().on_block_verification_success(block)
-				},
-				Ok(Chain::Orphan) => {
-					unreachable!("sync will never put orphaned blocks to verification queue");
-				},
-				Err(e) => {
-					sink.lock().on_block_verification_error(&format!("{:?}", e), &block.hash())
+	let mut tasks_queue: VecDeque<VerificationTask> = VecDeque::new();
+	tasks_queue.push_back(task);
+
+	while let Some(task) = tasks_queue.pop_front() {
+		match task {
+			VerificationTask::VerifyBlock(block) => {
+				// verify block
+				match verifier.verify(&block) {
+					Ok(Chain::Main) | Ok(Chain::Side) => {
+						if let Some(tasks) = sink.lock().on_block_verification_success(block) {
+							tasks_queue.extend(tasks);
+						}
+					},
+					Ok(Chain::Orphan) => {
+						unreachable!("sync will never put orphaned blocks to verification queue");
+					},
+					Err(e) => {
+						sink.lock().on_block_verification_error(&format!("{:?}", e), &block.hash())
+					}
 				}
-			}
-		},
-		VerificationTask::VerifyTransaction(transaction) => {
-			// TODO: add verification here
-			sink.lock().on_transaction_verification_error("unimplemented", &transaction.hash())
-		},
-		_ => unreachable!("must be checked by caller"),
+			},
+			VerificationTask::VerifyTransaction(transaction) => {
+				// TODO: add verification here
+				sink.lock().on_transaction_verification_error("unimplemented", &transaction.hash())
+			},
+			_ => unreachable!("must be checked by caller"),
+		}
 	}
 }
 
@@ -189,7 +198,10 @@ pub mod tests {
 			match self.sink {
 				Some(ref sink) => match self.errors.get(&block.hash()) {
 					Some(err) => sink.lock().on_block_verification_error(&err, &block.hash()),
-					None => sink.lock().on_block_verification_success(block),
+					None => {
+						sink.lock().on_block_verification_success(block);
+						()
+					},
 				},
 				None => panic!("call set_sink"),
 			}
