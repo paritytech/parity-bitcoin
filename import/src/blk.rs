@@ -1,4 +1,5 @@
 use std::{io, fs, path};
+use std::collections::BTreeSet;
 use ser::{ReadIterator, deserialize_iterator, Error as ReaderError};
 use block::Block;
 use fs::read_blk_dir;
@@ -25,9 +26,11 @@ impl Iterator for BlkFile {
 }
 
 pub fn open_blk_dir<P>(path: P) -> Result<BlkDir, io::Error> where P: AsRef<path::Path> {
-	let iter = try!(read_blk_dir(path))
+	let files = read_blk_dir(path)?.collect::<Result<BTreeSet<_>, _>>()?;
+
+	let iter = files.into_iter()
 		// flatten results...
-		.flat_map(|entry| entry.and_then(|file| open_blk_file(file.path)))
+		.flat_map(|file| open_blk_file(file.path))
 		// flat iterators over each block in each file
 		.flat_map(|file| file);
 

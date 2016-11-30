@@ -9,7 +9,7 @@ use synchronization_verifier::{Verifier, SyncVerifier, VerificationSink};
 use primitives::hash::H256;
 use super::Error;
 
-pub const MAX_ORPHANED_BLOCKS: usize = 64;
+pub const MAX_ORPHANED_BLOCKS: usize = 1024;
 
 pub struct BlocksWriter {
 	storage: db::SharedStore,
