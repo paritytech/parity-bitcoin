@@ -901,8 +901,6 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			}
 		));
 
-		// TODO: start management worker only when synchronization is started
-		//       currently impossible because there is no way to call Interval::new with Remote && Handle is not-Send
 		{
 			let peers_config = ManagePeersConfig::default();
 			let unknown_config = ManageUnknownBlocksConfig::default();
@@ -999,7 +997,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 								})
 								.collect();
 
-							Some(Task::SendCompactBlocks(peer_index, block_header_and_ids, ServerTaskIndex::None))
+							Some(Task::SendCompactBlocks(peer_index, block_header_and_ids))
 						},
 						BlockAnnouncementType::SendInventory => {
 							let inventory: Vec<_> = new_blocks_hashes.iter()
@@ -1010,7 +1008,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 								})
 								.collect();
 							if !inventory.is_empty() {
-								Some(Task::SendInventory(peer_index, inventory, ServerTaskIndex::None))
+								Some(Task::SendInventory(peer_index, inventory))
 							} else {
 								None
 							}
@@ -1040,7 +1038,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 					})
 					.collect();
 				if !inventory.is_empty() {
-					Some(Task::SendInventory(peer_index, inventory, ServerTaskIndex::None))
+					Some(Task::SendInventory(peer_index, inventory))
 				} else {
 					None
 				}
@@ -1191,15 +1189,10 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Process new peer transaction
-	fn process_peer_transaction(&mut self, peer_index: Option<usize>, hash: H256, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>> {
+	fn process_peer_transaction(&mut self, _peer_index: Option<usize>, hash: H256, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>> {
 		// if we are in synchronization state, we will ignore this message
 		if self.state.is_synchronizing() {
 			return None;
-		}
-
-		// mark peer as useful (TODO: remove after self.all_peers() would be all peers, not sync one)
-		if let Some(peer_index) = peer_index {
-			self.peers.useful_peer(peer_index);
 		}
 
 		// else => verify transaction + it's orphans and then add to the memory pool
@@ -1548,7 +1541,7 @@ pub mod tests {
 		assert!(tasks.iter().any(|t| t == &Task::RequestMemoryPool(2)));
 
 		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: block.hash() }];
-		assert!(tasks.iter().any(|t| t == &Task::SendInventory(1, inventory.clone(), ServerTaskIndex::None)));
+		assert!(tasks.iter().any(|t| t == &Task::SendInventory(1, inventory.clone())));
 	}
 
 	#[test]
@@ -1826,7 +1819,19 @@ pub mod tests {
 
 	#[test]
 	fn sync_after_db_insert_nonfatal_fail() {
-		// TODO: implement me
+		use db::Store;
+
+		let mut storage = db::TestStorage::with_genesis_block();
+		let block = test_data::block_h1();
+		storage.insert_error(block.hash(), db::Error::Consistency(db::ConsistencyError::NoBestBlock));
+		let best_genesis = storage.best_block().unwrap();
+
+		let (_, _, _, chain, sync) = create_sync(Some(Arc::new(storage)), None);
+		let mut sync = sync.lock();
+
+		sync.on_peer_block(1, block.into());
+
+		assert_eq!(chain.read().best_block(), best_genesis);
 	}
 
 	#[test]
@@ -2093,7 +2098,7 @@ pub mod tests {
 		{
 			let tasks = executor.lock().take_tasks();
 			let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: b2.hash() }];
-			assert_eq!(tasks, vec![Task::RequestBlocksHeaders(2), Task::SendInventory(1, inventory, ServerTaskIndex::None)]);
+			assert_eq!(tasks, vec![Task::RequestBlocksHeaders(2), Task::SendInventory(1, inventory)]);
 		}
 
 		sync.on_new_blocks_headers(1, vec![b3.block_header.clone()]);
@@ -2103,7 +2108,7 @@ pub mod tests {
 		{
 			let tasks = executor.lock().take_tasks();
 			let inventory = vec![InventoryVector { inv_type: InventoryType::MessageBlock, hash: b3.hash() }];
-			assert!(tasks.iter().any(|t| t == &Task::SendInventory(2, inventory.clone(), ServerTaskIndex::None)));
+			assert!(tasks.iter().any(|t| t == &Task::SendInventory(2, inventory.clone())));
 		}
 	}
 
@@ -2111,17 +2116,16 @@ pub mod tests {
 	fn relay_new_transaction_when_in_saturated_state() {
 		let (_, _, executor, _, sync) = create_sync(None, None);
 
-		let tx1: Transaction = test_data::TransactionBuilder::with_output(10).into();
-		let tx2: Transaction = test_data::TransactionBuilder::with_output(20).into();
-		let tx2_hash = tx2.hash();
+		let tx: Transaction = test_data::TransactionBuilder::with_output(20).into();
+		let tx_hash = tx.hash();
 
 		let mut sync = sync.lock();
-		sync.on_peer_transaction(1, tx1);
-		sync.on_peer_transaction(2, tx2);
+		sync.on_peer_connected(1);
+		sync.on_peer_transaction(2, tx);
 
 		let tasks = { executor.lock().take_tasks() };
-		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageTx, hash: tx2_hash }];
-		assert_eq!(tasks, vec![Task::SendInventory(1, inventory, ServerTaskIndex::None)]);
+		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageTx, hash: tx_hash }];
+		assert_eq!(tasks, vec![Task::SendInventory(1, inventory)]);
 	}
 
 	#[test]
@@ -2162,9 +2166,9 @@ pub mod tests {
 		let tasks = { executor.lock().take_tasks() };
 		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageTx, hash: tx1_hash }];
 		assert_eq!(tasks, vec![
-			Task::SendInventory(1, inventory.clone(), ServerTaskIndex::None),
-			Task::SendInventory(3, inventory.clone(), ServerTaskIndex::None),
-			Task::SendInventory(4, inventory.clone(), ServerTaskIndex::None),
+			Task::SendInventory(1, inventory.clone()),
+			Task::SendInventory(3, inventory.clone()),
+			Task::SendInventory(4, inventory.clone()),
 		]);
 
 		// tx2 is relayed to peers: 2, 3, 4
@@ -2173,9 +2177,9 @@ pub mod tests {
 		let tasks = { executor.lock().take_tasks() };
 		let inventory = vec![InventoryVector { inv_type: InventoryType::MessageTx, hash: tx2_hash }];
 		assert_eq!(tasks, vec![
-			Task::SendInventory(2, inventory.clone(), ServerTaskIndex::None),
-			Task::SendInventory(3, inventory.clone(), ServerTaskIndex::None),
-			Task::SendInventory(4, inventory.clone(), ServerTaskIndex::None),
+			Task::SendInventory(2, inventory.clone()),
+			Task::SendInventory(3, inventory.clone()),
+			Task::SendInventory(4, inventory.clone()),
 		]);
 	}
 
@@ -2201,7 +2205,7 @@ pub mod tests {
 		let headers = vec![b0.block_header.clone()];
 		assert_eq!(tasks, vec![Task::RequestBlocksHeaders(1),
 			Task::SendHeaders(2, headers, ServerTaskIndex::None),
-			Task::SendInventory(3, inventory, ServerTaskIndex::None),
+			Task::SendInventory(3, inventory),
 		]);
 	}
 
@@ -2245,13 +2249,13 @@ pub mod tests {
 					inv_type: InventoryType::MessageTx,
 					hash: tx1_hash.clone(),
 				}
-			], ServerTaskIndex::None),
+			]),
 			Task::SendInventory(4, vec![
 				InventoryVector {
 					inv_type: InventoryType::MessageTx,
 					hash: tx1_hash.clone(),
 				}
-			], ServerTaskIndex::None),
+			]),
 		]);
 	}
 
@@ -2288,9 +2292,9 @@ pub mod tests {
 		assert_eq!(tasks.len(), 3);
 		assert_eq!(tasks[0], Task::RequestBlocksHeaders(1));
 		match tasks[1] {
-			Task::SendCompactBlocks(2, _, _) => (),
+			Task::SendCompactBlocks(2, _) => (),
 			_ => panic!("unexpected task"),
 		}
-		assert_eq!(tasks[2], Task::SendInventory(3, inventory, ServerTaskIndex::None));
+		assert_eq!(tasks[2], Task::SendInventory(3, inventory));
 	}
 }
