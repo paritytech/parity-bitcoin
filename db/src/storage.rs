@@ -1179,7 +1179,7 @@ mod tests {
 			.expect("Transaction meta for the genesis coinbase transaction should exist");
 		assert!(genesis_meta.is_spent(0), "Genesis coinbase should be recorded as spent because block#1 transaction spends it");
 
-		let mut update_context = UpdateContext::new(&store.database);
+		let mut update_context = UpdateContext::new(&store.database, &block_hash);
 		store.decanonize_block(&mut update_context, &block_hash)
 			.expect("Decanonizing block #1 which was just inserted should not fail");
 		update_context.apply(&store.database).unwrap();
