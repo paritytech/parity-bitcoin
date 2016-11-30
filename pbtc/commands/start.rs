@@ -27,7 +27,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 			relay: false,
 		},
 		peers: cfg.connect.map_or_else(|| vec![], |x| vec![x]),
-		seeds: cfg.seednode.map_or_else(|| vec![], |x| vec![x]),
+		seeds: cfg.seednodes,
 		node_table_path: nodes_path,
 	};
 
