@@ -306,7 +306,14 @@ pub fn eval_script(
 
 	while pc < script.len() {
 		let executing = exec_stack.iter().all(|x| *x);
-		let instruction = try!(script.get_instruction(pc));
+		let instruction = match script.get_instruction(pc) {
+			Ok(i) => i,
+			Err(Error::BadOpcode) if !executing => {
+				pc += 1;
+				continue;
+			},
+			Err(err) => return Err(err),
+		};
 		let opcode = instruction.opcode;
 
 		if let Some(data) = instruction.data {
@@ -1908,6 +1915,20 @@ mod tests {
 		let output: Script = "76009f69905160a56b210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71ad6c".into();
 		let flags = VerificationFlags::default();
 		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+	}
+
+	#[test]
+	fn test_invalid_opcode_in_dead_execution_path_b83() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_0)
+			.push_opcode(Opcode::OP_IF)
+			.push_invalid_opcode()
+			.push_opcode(Opcode::OP_ELSE)
+			.push_opcode(Opcode::OP_1)
+			.push_opcode(Opcode::OP_ENDIF)
+			.into_script();
+		let result = Ok(true);
+		basic_test(&script, result, vec![vec![1].into()].into());
 	}
 }
 
