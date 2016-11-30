@@ -29,6 +29,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 		peers: cfg.connect.map_or_else(|| vec![], |x| vec![x]),
 		seeds: cfg.seednodes,
 		node_table_path: nodes_path,
+		internet_protocol: cfg.internet_protocol,
 	};
 
 	let sync_handle = el.handle();
