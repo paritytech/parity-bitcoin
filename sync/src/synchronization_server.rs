@@ -104,6 +104,7 @@ pub enum ServerTask {
 	ReturnNotFound(Vec<InventoryVector>),
 	ReturnBlock(H256),
 	ReturnMerkleBlock(types::MerkleBlock),
+	ReturnCompactBlock(types::CompactBlock),
 	ReturnTransaction(Transaction),
 }
 
@@ -168,6 +169,10 @@ impl SynchronizationServer {
 							new_tasks.extend(transactions.into_iter().map(|(_, t)|
 								IndexedServerTask::new(ServerTask::ReturnTransaction(t), ServerTaskIndex::None)));
 						}
+						// process compactblock items
+						for compactblock in inventory.compacted {
+							new_tasks.push(IndexedServerTask::new(ServerTask::ReturnCompactBlock(compactblock), ServerTaskIndex::None));
+						}
 						// extend with unknown merkleitems
 						unknown_items.extend(inventory.notfound);
 						// process unfiltered items
@@ -191,7 +196,11 @@ impl SynchronizationServer {
 										None => unknown_items.push(item),
 									}
 								},
-								_ => (), // TODO: process other inventory types
+								// we have no enough information here => it must be filtered by caller
+								InventoryType::MessageCompactBlock => unreachable!(),
+								// we have no enough information here => it must be filtered by caller
+								InventoryType::MessageFilteredBlock => unreachable!(),
+								_ => (),
 							}
 						}
 					}
@@ -334,6 +343,10 @@ impl SynchronizationServer {
 				ServerTask::ReturnMerkleBlock(merkleblock) => {
 					executor.lock().execute(Task::SendMerkleBlock(peer_index, merkleblock));
 				},
+				// `cmpctblock`
+				ServerTask::ReturnCompactBlock(compactblock) => {
+					executor.lock().execute(Task::SendCompactBlocks(peer_index, vec![compactblock.header]))
+				}
 				// `tx`
 				ServerTask::ReturnTransaction(transaction) => {
 					executor.lock().execute(Task::SendTransaction(peer_index, transaction));
