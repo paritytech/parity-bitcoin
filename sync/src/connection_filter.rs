@@ -11,8 +11,8 @@ use script::Script;
 
 /// Constant optimized to create large differences in the seed for different values of `hash_functions_num`.
 const SEED_OFFSET: u32 = 0xFBA4C795;
-/// Max last blocks to store for given peer
-pub const MAX_LAST_BLOCKS_TO_STORE: usize = 64;
+/// Max last blocks to store for given peer. TODO: how bitcoind deals with this?
+pub const MAX_LAST_BLOCKS_TO_STORE: usize = 2048;
 /// Max last transactions to store for given peer
 pub const MAX_LAST_TRANSACTIONS_TO_STORE: usize = 64;
 

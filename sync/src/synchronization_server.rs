@@ -245,25 +245,24 @@ impl SynchronizationServer {
 				// `getheaders` => `headers`
 				ServerTask::ServeGetHeaders(block_locator_hashes, hash_stop) => {
 					let chain = chain.read();
-					if let Some(best_common_block) = SynchronizationServer::locate_known_block_header(&chain, &block_locator_hashes) {
-						trace!(target: "sync", "Best common block header with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash.to_reversed_str());
 
-						// What if we have no common blocks with peer at all? Maybe drop connection or penalize peer?
-						// https://github.com/ethcore/parity-bitcoin/pull/91#discussion_r86734568
-						let blocks_headers = SynchronizationServer::blocks_headers_after(&chain, &best_common_block, &hash_stop, 2000);
-						if !blocks_headers.is_empty() {
-							trace!(target: "sync", "Going to respond with blocks headers with {} items to peer#{}", blocks_headers.len(), peer_index);
-							executor.lock().execute(Task::SendHeaders(peer_index, blocks_headers, indexed_task.id));
-						} else if let Some(response_id) = indexed_task.id.raw() {
-							executor.lock().execute(Task::Ignore(peer_index, response_id));
+					// TODO: if block_locator_hashes is empty => return hash_stop
+					let blocks_headers = match SynchronizationServer::locate_known_block_header(&chain, &block_locator_hashes) {
+						Some(best_common_block) => {
+							trace!(target: "sync", "Best common block header with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash.to_reversed_str());
+
+							// TODO: add test for this case
+							// we must respond with empty headers message even if we have no common blocks with this peer
+							SynchronizationServer::blocks_headers_after(&chain, &best_common_block, &hash_stop, 2000)
+						},
+						None => {
+							trace!(target: "sync", "No common blocks headers with peer#{}", peer_index);
+							Vec::new()
 						}
-					}
-					else {
-						trace!(target: "sync", "No common blocks headers with peer#{}", peer_index);
-						if let Some(response_id) = indexed_task.id.raw() {
-							executor.lock().execute(Task::Ignore(peer_index, response_id));
-						}
-					}
+					};
+
+					trace!(target: "sync", "Going to respond with blocks headers with {} items to peer#{}", blocks_headers.len(), peer_index);
+					executor.lock().execute(Task::SendHeaders(peer_index, blocks_headers, indexed_task.id));
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
 				},
