@@ -9,6 +9,7 @@ pub struct UpdateContext {
 	pub meta: HashMap<H256, TransactionMeta>,
 	pub db_transaction: DBTransaction,
 	meta_snapshot: Option<HashMap<H256, TransactionMeta>>,
+	target: Option<H256>,
 }
 
 impl UpdateContext {
@@ -17,7 +18,13 @@ impl UpdateContext {
 			meta: HashMap::new(),
 			db_transaction: db.transaction(),
 			meta_snapshot: None,
+			target: None,
 		}
+	}
+
+	pub fn target(&mut self, hash: &H256) {
+		self.target = Some(hash.clone());
+		trace!("Initialized transaction for block {:?}", self.target);
 	}
 
 	pub fn apply(mut self, db: &Database) -> Result<(), Error> {
@@ -27,6 +34,8 @@ impl UpdateContext {
 		}
 
 		try!(db.write(self.db_transaction));
+
+		trace!("Applied transaction for block {:?}", self.target);
 		Ok(())
 	}
 
