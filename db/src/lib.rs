@@ -69,7 +69,7 @@ pub use kvdb::Database;
 pub use transaction_provider::{TransactionProvider, AsTransactionProvider, PreviousTransactionOutputProvider};
 pub use transaction_meta_provider::TransactionMetaProvider;
 pub use block_stapler::{BlockStapler, BlockInsertedChain};
-pub use block_provider::BlockProvider;
+pub use block_provider::{BlockProvider, BlockHeaderProvider, AsBlockHeaderProvider};
 pub use indexed_block::{IndexedBlock, IndexedTransactions};
 
 #[cfg(feature="dev")]

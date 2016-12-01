@@ -123,14 +123,27 @@ impl SynchronizationServer {
 		server
 	}
 
-	fn locate_known_block_hash(chain: &Chain, block_locator_hashes: &Vec<H256>) -> Option<db::BestBlock> {
+	fn locate_known_block_hash(chain: &Chain, block_locator_hashes: &Vec<H256>, stop_hash: &H256) -> Option<db::BestBlock> {
 		block_locator_hashes.into_iter()
 			.filter_map(|hash| SynchronizationServer::locate_best_known_block_hash(&chain, hash))
 			.nth(0)
+			.or_else(|| if stop_hash != &H256::default() {
+					if let Some(stop_hash_number) = chain.storage().block_number(stop_hash) {
+						Some(db::BestBlock {
+							number: stop_hash_number,
+							hash: stop_hash.clone(),
+						})
+					} else {
+						None
+					}
+				} else {
+					None
+				}
+			)
 	}
 
-	fn locate_known_block_header(chain: &Chain, block_locator_hashes: &Vec<H256>) -> Option<db::BestBlock> {
-		SynchronizationServer::locate_known_block_hash(chain, block_locator_hashes)
+	fn locate_known_block_header(chain: &Chain, block_locator_hashes: &Vec<H256>, stop_hash: &H256) -> Option<db::BestBlock> {
+		SynchronizationServer::locate_known_block_hash(chain, block_locator_hashes, stop_hash)
 	}
 
 	fn server_worker<T: TaskExecutor>(queue_ready: Arc<Condvar>, queue: Arc<Mutex<ServerQueue>>, chain: ChainRef, executor: Arc<Mutex<T>>) {
@@ -223,47 +236,43 @@ impl SynchronizationServer {
 					assert_eq!(indexed_task.id, ServerTaskIndex::None);
 
 					let chain = chain.read();
-					if let Some(best_common_block) = SynchronizationServer::locate_known_block_hash(&chain, &block_locator_hashes) {
-						trace!(target: "sync", "Best common block with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);
+					let blocks_hashes = match SynchronizationServer::locate_known_block_hash(&chain, &block_locator_hashes, &hash_stop) {
+						Some(best_common_block) => {
+							trace!(target: "sync", "Best common block with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash);
+							SynchronizationServer::blocks_hashes_after(&chain, &best_common_block, &hash_stop, 500)
+						},
+						None => {
+							trace!(target: "sync", "No common blocks with peer#{}", peer_index);
+							Vec::new()
+						},
+					};
 
-						let blocks_hashes = SynchronizationServer::blocks_hashes_after(&chain, &best_common_block, &hash_stop, 500);
-						if !blocks_hashes.is_empty() {
-							trace!(target: "sync", "Going to respond with inventory with {} items to peer#{}", blocks_hashes.len(), peer_index);
-							let inventory = blocks_hashes.into_iter().map(|hash| InventoryVector {
-								inv_type: InventoryType::MessageBlock,
-								hash: hash,
-							}).collect();
-							executor.lock().execute(Task::SendInventory(peer_index, inventory));
-						}
-					}
-					else {
-						trace!(target: "sync", "No common blocks with peer#{}", peer_index);
-					}
+					trace!(target: "sync", "Going to respond with inventory with {} items to peer#{}", blocks_hashes.len(), peer_index);
+					let inventory = blocks_hashes.into_iter().map(|hash| InventoryVector {
+						inv_type: InventoryType::MessageBlock,
+						hash: hash,
+					}).collect();
+					executor.lock().execute(Task::SendInventory(peer_index, inventory));
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
 				},
 				// `getheaders` => `headers`
 				ServerTask::ServeGetHeaders(block_locator_hashes, hash_stop) => {
 					let chain = chain.read();
-					if let Some(best_common_block) = SynchronizationServer::locate_known_block_header(&chain, &block_locator_hashes) {
-						trace!(target: "sync", "Best common block header with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash.to_reversed_str());
 
-						// What if we have no common blocks with peer at all? Maybe drop connection or penalize peer?
-						// https://github.com/ethcore/parity-bitcoin/pull/91#discussion_r86734568
-						let blocks_headers = SynchronizationServer::blocks_headers_after(&chain, &best_common_block, &hash_stop, 2000);
-						if !blocks_headers.is_empty() {
-							trace!(target: "sync", "Going to respond with blocks headers with {} items to peer#{}", blocks_headers.len(), peer_index);
-							executor.lock().execute(Task::SendHeaders(peer_index, blocks_headers, indexed_task.id));
-						} else if let Some(response_id) = indexed_task.id.raw() {
-							executor.lock().execute(Task::Ignore(peer_index, response_id));
-						}
-					}
-					else {
-						trace!(target: "sync", "No common blocks headers with peer#{}", peer_index);
-						if let Some(response_id) = indexed_task.id.raw() {
-							executor.lock().execute(Task::Ignore(peer_index, response_id));
-						}
-					}
+					let blocks_headers = match SynchronizationServer::locate_known_block_header(&chain, &block_locator_hashes, &hash_stop) {
+						Some(best_common_block) => {
+							trace!(target: "sync", "Best common block header with peer#{} is block#{}: {:?}", peer_index, best_common_block.number, best_common_block.hash.to_reversed_str());
+							SynchronizationServer::blocks_headers_after(&chain, &best_common_block, &hash_stop, 2000)
+						},
+						None => {
+							trace!(target: "sync", "No common blocks headers with peer#{}", peer_index);
+							Vec::new()
+						},
+					};
+
+					trace!(target: "sync", "Going to respond with blocks headers with {} items to peer#{}", blocks_headers.len(), peer_index);
+					executor.lock().execute(Task::SendHeaders(peer_index, blocks_headers, indexed_task.id));
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
 				},
@@ -448,8 +457,6 @@ impl Server for SynchronizationServer {
 	}
 
 	fn serve_get_block_txn(&self, _peer_index: usize, block_hash: H256, indexes: Vec<usize>) -> Option<IndexedServerTask> {
-		// TODO: Upon receipt of a properly-formatted getblocktxn message, nodes which *recently provided the sender
-		// of such a message a cmpctblock for the block hash identified in this message* MUST respond ...
 		let task = IndexedServerTask::new(ServerTask::ServeGetBlockTxn(block_hash, indexes), ServerTaskIndex::None);
 		Some(task)
 	}
@@ -651,9 +658,9 @@ pub mod tests {
 			block_locator_hashes: vec![genesis_block_hash.clone()],
 			hash_stop: H256::default(),
 		}).map(|t| server.add_task(0, t));
-		// => no response
+		// => empty response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
-		assert_eq!(tasks, vec![]);
+		assert_eq!(tasks, vec![Task::SendInventory(0, vec![])]);
 	}
 
 	#[test]
@@ -688,7 +695,7 @@ pub mod tests {
 		}, Some(dummy_id)).map(|t| server.add_task(0, t));
 		// => no response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
-		assert_eq!(tasks, vec![Task::Ignore(0, dummy_id)]);
+		assert_eq!(tasks, vec![Task::SendHeaders(0, vec![], ServerTaskIndex::Final(dummy_id))]);
 	}
 
 	#[test]
@@ -815,5 +822,49 @@ pub mod tests {
 			Task::SendTransaction(0, tx_verifying),
 			Task::SendTransaction(0, tx_verified),
 		]);
+	}
+
+	#[test]
+	fn server_responds_with_nonempty_inventory_when_getdata_stop_hash_filled() {
+		let (chain, executor, server) = create_synchronization_server();
+		{
+			let mut chain = chain.write();
+			chain.insert_best_block(test_data::block_h1().hash(), &test_data::block_h1().into()).expect("no error");
+		}
+		// when asking with stop_hash
+		server.serve_getblocks(0, types::GetBlocks {
+			version: 0,
+			block_locator_hashes: vec![],
+			hash_stop: test_data::genesis().hash(),
+		}).map(|t| server.add_task(0, t));
+		// => respond with next block
+		let inventory = vec![InventoryVector {
+			inv_type: InventoryType::MessageBlock,
+			hash: test_data::block_h1().hash(),
+		}];
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendInventory(0, inventory)]);
+	}
+
+	#[test]
+	fn server_responds_with_nonempty_headers_when_getdata_stop_hash_filled() {
+		let (chain, executor, server) = create_synchronization_server();
+		{
+			let mut chain = chain.write();
+			chain.insert_best_block(test_data::block_h1().hash(), &test_data::block_h1().into()).expect("no error");
+		}
+		// when asking with stop_hash
+		let dummy_id = 6;
+		server.serve_getheaders(0, types::GetHeaders {
+			version: 0,
+			block_locator_hashes: vec![],
+			hash_stop: test_data::genesis().hash(),
+		}, Some(dummy_id)).map(|t| server.add_task(0, t));
+		// => respond with next block
+		let headers = vec![
+			test_data::block_h1().block_header,
+		];
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::SendHeaders(0, headers, ServerTaskIndex::Final(dummy_id))]);
 	}
 }

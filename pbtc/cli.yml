@@ -26,9 +26,9 @@ args:
         value_name: PORT
         help: Listen for connections on PORT
         takes_value: true
-    - printtoconsole:
-        long: printtoconsole
-        help: Send trace/debug info to console instead of debug.log file
+    - print-to-console:
+        long: print-to-console
+        help: Send sync info to console
     - data-dir:
         short: d
         long: data-dir

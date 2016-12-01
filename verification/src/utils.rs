@@ -62,7 +62,10 @@ pub fn check_nbits(max_nbits: u32, hash: &H256, n_bits: u32) -> bool {
 
 	let mut nb = [0u8; 4];
 	BigEndian::write_u32(&mut nb, n_bits);
-	let shift = (nb[0] - 3) as usize; // total shift for mantissa
+	let shift = match nb[0].checked_sub(3) {
+		Some(v) => v,
+		None => return false,
+	} as usize; // total shift for mantissa
 
 	if shift >= 30 { return false; } // invalid shift
 

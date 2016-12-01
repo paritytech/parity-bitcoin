@@ -7,14 +7,15 @@ use futures::{BoxFuture, Future, finished};
 use futures::stream::Stream;
 use tokio_core::reactor::{Handle, Interval};
 use futures_cpupool::CpuPool;
-use db::{self, IndexedBlock};
+use db::{self, IndexedBlock, BlockHeaderProvider, BlockRef};
 use chain::{BlockHeader, Transaction};
 use message::types;
 use message::common::{InventoryVector, InventoryType};
 use primitives::hash::H256;
+use primitives::bytes::Bytes;
 use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers::{Information as PeersInformation};
-use synchronization_chain::{ChainRef, BlockState, TransactionState, HeadersIntersection, BlockInsertionResult};
+use synchronization_chain::{ChainRef, Chain, BlockState, TransactionState, HeadersIntersection, BlockInsertionResult};
 #[cfg(test)]
 use synchronization_chain::{Information as ChainInformation};
 use synchronization_executor::{Task, TaskExecutor};
@@ -28,6 +29,8 @@ use synchronization_verifier::{Verifier, VerificationSink, VerificationTask};
 use compact_block_builder::build_compact_block;
 use hash_queue::HashPosition;
 use miner::transaction_fee_rate;
+use verification::ChainVerifier;
+use network::Magic;
 use time;
 use std::time::Duration;
 
@@ -185,6 +188,7 @@ pub struct Information {
 pub trait Client : Send + 'static {
 	fn best_block(&self) -> db::BestBlock;
 	fn state(&self) -> State;
+	fn is_compact_block_sent_recently(&mut self, peer_index: usize, hash: &H256) -> bool;
 	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory;
 	fn on_peer_connected(&mut self, peer_index: usize);
 	fn on_new_blocks_inventory(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
@@ -206,6 +210,7 @@ pub trait Client : Send + 'static {
 pub trait ClientCore : VerificationSink {
 	fn best_block(&self) -> db::BestBlock;
 	fn state(&self) -> State;
+	fn is_compact_block_sent_recently(&mut self, peer_index: usize, hash: &H256) -> bool;
 	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory;
 	fn on_peer_connected(&mut self, peer_index: usize);
 	fn on_new_blocks_inventory(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
@@ -283,12 +288,28 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	orphaned_blocks_pool: OrphanBlocksPool,
 	/// Orphaned transactions pool.
 	orphaned_transactions_pool: OrphanTransactionsPool,
+	/// Network config
+	network: Magic,
+	/// Verify block headers?
+	verify_headers: bool,
 	/// Verifying blocks by peer
 	verifying_blocks_by_peer: HashMap<H256, usize>,
 	/// Verifying blocks futures
 	verifying_blocks_futures: HashMap<usize, (HashSet<H256>, Vec<BoxFuture<(), ()>>)>,
 	/// Hashes of items we do not want to relay after verification is completed
 	do_not_relay: HashSet<H256>,
+}
+
+/// Block headers provider from `headers` message
+pub struct MessageBlockHeadersProvider<'a> {
+	/// sync chain
+	chain: &'a Chain,
+	/// headers offset
+	first_header_number: u32,
+	/// headers by hash
+	headers: HashMap<H256, BlockHeader>,
+	/// headers by order
+	headers_order: Vec<H256>,
 }
 
 impl Config {
@@ -351,6 +372,10 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 
 	fn state(&self) -> State {
 		self.core.lock().state()
+	}
+
+	fn is_compact_block_sent_recently(&mut self, peer_index: usize, hash: &H256) -> bool {
+		self.core.lock().is_compact_block_sent_recently(peer_index, hash)
 	}
 
 	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory {
@@ -469,6 +494,11 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		self.state
 	}
 
+	/// Returns true if compactblock with this hash has been sent to this peer recently
+	fn is_compact_block_sent_recently(&mut self, peer_index: usize, hash: &H256) -> bool {
+		self.peers.filter(peer_index).is_known_compact_block(hash)
+	}
+
 	/// Filter inventory from `getdata` message for given peer
 	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory {
 		let storage = {	self.chain.read().storage() };
@@ -489,7 +519,10 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 						None => notfound.push(item),
 						Some(block) => match filter.build_merkle_block(block) {
 							None => notfound.push(item),
-							Some(merkleblock) => filtered.push((merkleblock.merkleblock, merkleblock.matching_transactions)),
+							Some(merkleblock) => {
+								filtered.push((merkleblock.merkleblock, merkleblock.matching_transactions));
+								filter.known_block(&item.hash, false);
+							},
 						},
 					}
 				},
@@ -508,6 +541,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 								header: build_compact_block(indexed_block, prefilled_transactions_indexes),
 							};
 							compacted.push(compact_block);
+							filter.known_block(&item.hash, true);
 						},
 					}
 				},
@@ -594,17 +628,29 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 				return;
 			}
 
-			// TODO: add full blocks headers validation here
 			// validate blocks headers before scheduling
+			let chain = self.chain.read();
+			let verifier = ChainVerifier::new(chain.storage(), self.network);
+			let mut block_header_provider = MessageBlockHeadersProvider::new(&*chain);
 			let mut blocks_hashes: Vec<H256> = Vec::with_capacity(blocks_headers.len());
 			let mut prev_block_hash = header0.previous_header_hash.clone();
 			for block_header in &blocks_headers {
 				let block_header_hash = block_header.hash();
+				// check that this header is direct child of previous header
 				if block_header.previous_header_hash != prev_block_hash {
 					warn!(target: "sync", "Neighbour headers in peer#{} `headers` message are unlinked: Prev: {:?}, PrevLink: {:?}, Curr: {:?}", peer_index, prev_block_hash, block_header.previous_header_hash, block_header_hash);
 					return;
 				}
 
+				// verify header
+				if self.verify_headers {
+					if let Err(error) = verifier.verify_block_header(&block_header_provider, &block_header_hash, &block_header) {
+						warn!(target: "sync", "Error verifying header {:?} from peer#{} `headers` message: {:?}", block_header_hash.to_reversed_str(), peer_index, error);
+						return;
+					}
+				}
+
+				block_header_provider.append_header(block_header_hash.clone(), block_header.clone());
 				blocks_hashes.push(block_header_hash.clone());
 				prev_block_hash = block_header_hash;
 			}
@@ -933,7 +979,7 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 
 impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	/// Create new synchronization client core
-	pub fn new(config: Config, handle: &Handle, executor: Arc<Mutex<T>>, chain: ChainRef) -> Arc<Mutex<Self>> {
+	pub fn new(config: Config, handle: &Handle, executor: Arc<Mutex<T>>, chain: ChainRef, network: Magic) -> Arc<Mutex<Self>> {
 		let sync = Arc::new(Mutex::new(
 			SynchronizationClientCore {
 				state: State::Saturated,
@@ -944,6 +990,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				chain: chain.clone(),
 				orphaned_blocks_pool: OrphanBlocksPool::new(),
 				orphaned_transactions_pool: OrphanTransactionsPool::new(),
+				network: network,
+				verify_headers: true,
 				verifying_blocks_by_peer: HashMap::new(),
 				verifying_blocks_futures: HashMap::new(),
 				do_not_relay: HashSet::new(),
@@ -999,6 +1047,12 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			orphaned_blocks: self.orphaned_blocks_pool.len(),
 			orphaned_transactions: self.orphaned_transactions_pool.len(),
 		}
+	}
+
+	/// Verify block headers or not?
+	#[cfg(test)]
+	pub fn verify_headers(&mut self, verify: bool) {
+		self.verify_headers = verify;
 	}
 
 	/// Relay new blocks
@@ -1382,6 +1436,44 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 }
 
+impl<'a> MessageBlockHeadersProvider<'a> {
+	pub fn new(chain: &'a Chain) -> Self {
+		let first_header_number = chain.best_block_header().number + 1;
+		MessageBlockHeadersProvider {
+			chain: chain,
+			first_header_number: first_header_number,
+			headers: HashMap::new(),
+			headers_order: Vec::new(),
+		}
+	}
+
+	pub fn append_header(&mut self, hash: H256, header: BlockHeader) {
+		self.headers.insert(hash.clone(), header);
+		self.headers_order.push(hash);
+	}
+}
+
+impl<'a> BlockHeaderProvider for MessageBlockHeadersProvider<'a> {
+	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes> {
+		use ser::serialize;
+		self.block_header(block_ref).map(|h| serialize(&h))
+	}
+
+	fn block_header(&self, block_ref: BlockRef) -> Option<BlockHeader> {
+		match block_ref {
+			BlockRef::Hash(h) => self.chain.block_header_by_hash(&h)
+				.or_else(|| self.headers.get(&h).cloned()),
+			BlockRef::Number(n) => self.chain.block_header_by_number(n)
+				.or_else(|| if n >= self.first_header_number && n - self.first_header_number < self.headers_order.len() as u32 {
+					let ref header_hash = self.headers_order[(n - self.first_header_number) as usize];
+					Some(self.headers[header_hash].clone())
+				} else {
+					None
+				}),
+		}
+	}
+}
+
 #[cfg(test)]
 pub mod tests {
 	use std::sync::Arc;
@@ -1390,7 +1482,7 @@ pub mod tests {
 	use chain::{Block, Transaction};
 	use message::common::{InventoryVector, InventoryType};
 	use message::types;
-	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore, BlockAnnouncementType};
+	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore, BlockAnnouncementType, MessageBlockHeadersProvider};
 	use connection_filter::tests::*;
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
@@ -1398,9 +1490,10 @@ pub mod tests {
 	use synchronization_verifier::tests::DummyVerifier;
 	use synchronization_server::ServerTaskIndex;
 	use primitives::hash::H256;
+	use network::Magic;
 	use p2p::event_loop;
 	use test_data;
-	use db;
+	use db::{self, BlockHeaderProvider};
 	use devtools::RandomTempPath;
 
 	fn create_disk_storage() -> db::SharedStore {
@@ -1419,7 +1512,10 @@ pub mod tests {
 		let executor = DummyTaskExecutor::new();
 		let config = Config { threads_num: 1 };
 
-		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone());
+		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone(), Magic::Testnet);
+		{
+			client_core.lock().verify_headers(false);
+		}
 		let mut verifier = verifier.unwrap_or_default();
 		verifier.set_sink(client_core.clone());
 		let client = SynchronizationClient::new(client_core, verifier);
@@ -2348,5 +2444,27 @@ pub mod tests {
 			_ => panic!("unexpected task"),
 		}
 		assert_eq!(tasks[2], Task::SendInventory(3, inventory));
+	}
+
+	#[test]
+	fn test_message_block_headers_provider() {
+		let storage = Arc::new(db::TestStorage::with_genesis_block());
+		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
+		let chain = chain.read();
+		let mut headers_provider = MessageBlockHeadersProvider::new(&*chain);
+
+		assert_eq!(headers_provider.block_header(db::BlockRef::Hash(test_data::genesis().hash())), Some(test_data::genesis().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Number(0)), Some(test_data::genesis().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Hash(H256::from(1))), None);
+		assert_eq!(headers_provider.block_header(db::BlockRef::Number(1)), None);
+
+		headers_provider.append_header(test_data::block_h1().hash(), test_data::block_h1().block_header);
+
+		assert_eq!(headers_provider.block_header(db::BlockRef::Hash(test_data::genesis().hash())), Some(test_data::genesis().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Number(0)), Some(test_data::genesis().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Hash(test_data::block_h1().hash())), Some(test_data::block_h1().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Number(1)), Some(test_data::block_h1().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Hash(H256::from(1))), None);
+		assert_eq!(headers_provider.block_header(db::BlockRef::Number(2)), None);
 	}
 }
