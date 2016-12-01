@@ -1,7 +1,7 @@
 //! Bitcoin chain verifier
 
 use std::collections::BTreeSet;
-use db::{self, BlockLocation, PreviousTransactionOutputProvider};
+use db::{self, BlockLocation, PreviousTransactionOutputProvider, BlockHeaderProvider};
 use network::{Magic, ConsensusParams};
 use script::Script;
 use super::{Verify, VerificationResult, Chain, Error, TransactionError};
@@ -239,7 +239,12 @@ impl ChainVerifier {
 		Ok(())
 	}
 
-	pub fn verify_block_header(&self, hash: &H256, header: &chain::BlockHeader) -> Result<(), Error> {
+	pub fn verify_block_header(
+		&self,
+		block_header_provider: &BlockHeaderProvider,
+		hash: &H256,
+		header: &chain::BlockHeader
+	) -> Result<(), Error> {
 		// target difficulty threshold
 		if !self.skip_pow && !utils::check_nbits(self.network.max_nbits(), hash, header.nbits) {
 			return Err(Error::Pow);
@@ -250,7 +255,7 @@ impl ChainVerifier {
 			return Err(Error::Timestamp);
 		}
 
-		if let Some(median_timestamp) = self.median_timestamp(header) {
+		if let Some(median_timestamp) = self.median_timestamp(block_header_provider, header) {
 			if median_timestamp >= header.time {
 				trace!(
 					target: "verification", "median timestamp verification failed, median: {}, current: {}",
@@ -275,7 +280,7 @@ impl ChainVerifier {
 		}
 
 		// block header checks
-		try!(self.verify_block_header(&hash, block.header()));
+		try!(self.verify_block_header(self.store.as_block_header_provider(), &hash, block.header()));
 
 		// todo: serialized_size function is at least suboptimal
 		let size = block.size();
@@ -350,12 +355,12 @@ impl ChainVerifier {
 		}
 	}
 
-	fn median_timestamp(&self, header: &chain::BlockHeader) -> Option<u32> {
+	fn median_timestamp(&self, block_header_provider: &BlockHeaderProvider, header: &chain::BlockHeader) -> Option<u32> {
 		let mut timestamps = BTreeSet::new();
 		let mut block_ref = header.previous_header_hash.clone().into();
 		// TODO: optimize it, so it does not make 11 redundant queries each time
 		for _ in 0..11 {
-			let previous_header = match self.store.block_header(block_ref) {
+			let previous_header = match block_header_provider.block_header(block_ref) {
 				Some(h) => h,
 				None => { break; }
 			};

@@ -14,7 +14,7 @@ use transaction_meta::TransactionMeta;
 
 use error::{Error, ConsistencyError, MetaError};
 use update_context::UpdateContext;
-use block_provider::BlockProvider;
+use block_provider::{BlockProvider, BlockHeaderProvider, AsBlockHeaderProvider};
 use transaction_provider::TransactionProvider;
 use transaction_meta_provider::TransactionMetaProvider;
 use block_stapler::{BlockStapler, BlockInsertedChain, Reorganization};
@@ -38,7 +38,7 @@ const DB_VERSION: u32 = 1;
 const MAX_FORK_ROUTE_PRESET: usize = 2048;
 
 /// Blockchain storage interface
-pub trait Store : BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider {
+pub trait Store : BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider + AsBlockHeaderProvider {
 	/// get best block
 	fn best_block(&self) -> Option<BestBlock>;
 
@@ -400,6 +400,24 @@ impl Storage {
 	}
 }
 
+impl BlockHeaderProvider for Storage {
+	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes> {
+		self.resolve_hash(block_ref).and_then(|h| self.get(COL_BLOCK_HEADERS, &*h))
+	}
+
+	fn block_header(&self, block_ref: BlockRef) -> Option<chain::BlockHeader> {
+		self.block_header_bytes(block_ref).map(
+			|bytes| deserialize::<_, chain::BlockHeader>(bytes.as_ref())
+				.expect("Error deserializing header, possible db corruption"))
+	}
+}
+
+impl AsBlockHeaderProvider for Storage {
+	fn as_block_header_provider(&self) -> &BlockHeaderProvider {
+		&*self
+	}
+}
+
 impl BlockProvider for Storage {
 	fn block_number(&self, hash: &H256) -> Option<u32> {
 		self.get(COL_BLOCK_NUMBERS, &**hash)
@@ -409,16 +427,6 @@ impl BlockProvider for Storage {
 	fn block_hash(&self, number: u32) -> Option<H256> {
 		self.get(COL_BLOCK_HASHES, &u32_key(number))
 			.map(|val| H256::from(&**val))
-	}
-
-	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes> {
-		self.resolve_hash(block_ref).and_then(|h| self.get(COL_BLOCK_HEADERS, &*h))
-	}
-
-	fn block_header(&self, block_ref: BlockRef) -> Option<chain::BlockHeader> {
-		self.block_header_bytes(block_ref).map(
-			|bytes| deserialize::<_, chain::BlockHeader>(bytes.as_ref())
-				.expect("Error deserializing header, possible db corruption"))
 	}
 
 	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256> {
