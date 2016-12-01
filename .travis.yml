@@ -1,9 +1,6 @@
 sudo: required
 dist: trusty
 language: rust
-jdk:
-  - oraclejdk8
-
 branches:
   only:
   - master
@@ -26,6 +23,7 @@ addons:
     - libdw-dev
     - gcc-4.8
     - g++-4.8
+    - oracle-java8-set-default
 script:
   - ./tools/test.sh
   - cargo build --release
