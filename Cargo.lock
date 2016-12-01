@@ -315,6 +315,16 @@ version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "logs"
+version = "0.1.0"
+dependencies = [
+ "ansi_term 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "env_logger 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "memchr"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -516,6 +526,7 @@ dependencies = [
  "import 0.1.0",
  "keys 0.1.0",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "logs 0.1.0",
  "message 0.1.0",
  "miner 0.1.0",
  "network 0.1.0",
