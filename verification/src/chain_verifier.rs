@@ -7,6 +7,7 @@ use script::Script;
 use super::{Verify, VerificationResult, Chain, Error, TransactionError};
 use {chain, utils};
 use scoped_pool::Pool;
+use primitives::hash::H256;
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
 const COINBASE_MATURITY: u32 = 100; // 2 hours
@@ -238,6 +239,31 @@ impl ChainVerifier {
 		Ok(())
 	}
 
+	pub fn verify_block_header(&self, hash: &H256, header: &chain::BlockHeader) -> Result<(), Error> {
+		// target difficulty threshold
+		if !self.skip_pow && !utils::check_nbits(self.network.max_nbits(), hash, header.nbits) {
+			return Err(Error::Pow);
+		}
+
+		// check if block timestamp is not far in the future
+		if utils::age(header.time) < -BLOCK_MAX_FUTURE {
+			return Err(Error::Timestamp);
+		}
+
+		if let Some(median_timestamp) = self.median_timestamp(header) {
+			if median_timestamp >= header.time {
+				trace!(
+					target: "verification", "median timestamp verification failed, median: {}, current: {}",
+					median_timestamp,
+					header.time
+				);
+				return Err(Error::Timestamp);
+			}
+		}
+
+		Ok(())
+	}
+
 	fn verify_block(&self, block: &db::IndexedBlock) -> VerificationResult {
 		use task::Task;
 
@@ -248,26 +274,8 @@ impl ChainVerifier {
 			return Err(Error::Empty);
 		}
 
-		// target difficulty threshold
-		if !self.skip_pow && !utils::check_nbits(self.network.max_nbits(), &hash, block.header().nbits) {
-			return Err(Error::Pow);
-		}
-
-		// check if block timestamp is not far in the future
-		if utils::age(block.header().time) < -BLOCK_MAX_FUTURE {
-			return Err(Error::Timestamp);
-		}
-
-		if let Some(median_timestamp) = self.median_timestamp(block) {
-			if median_timestamp >= block.header().time {
-				trace!(
-					target: "verification", "median timestamp verification failed, median: {}, current: {}",
-					median_timestamp,
-					block.header().time
-				);
-				return Err(Error::Timestamp);
-			}
-		}
+		// block header checks
+		try!(self.verify_block_header(&hash, block.header()));
 
 		// todo: serialized_size function is at least suboptimal
 		let size = block.size();
@@ -342,9 +350,9 @@ impl ChainVerifier {
 		}
 	}
 
-	fn median_timestamp(&self, block: &db::IndexedBlock) -> Option<u32> {
+	fn median_timestamp(&self, header: &chain::BlockHeader) -> Option<u32> {
 		let mut timestamps = BTreeSet::new();
-		let mut block_ref = block.header().previous_header_hash.clone().into();
+		let mut block_ref = header.previous_header_hash.clone().into();
 		// TODO: optimize it, so it does not make 11 redundant queries each time
 		for _ in 0..11 {
 			let previous_header = match self.store.block_header(block_ref) {
