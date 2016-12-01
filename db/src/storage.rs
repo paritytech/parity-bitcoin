@@ -322,7 +322,7 @@ impl Storage {
 			Err(e) => {
 				// todo: log error here
 				context.restore();
-				error!("Error while reorganizing to {}: {:?}", hash, e);
+				warn!("Error while reorganizing to {}: {:?}", hash, e);
 				Err(e)
 			}
 		}
