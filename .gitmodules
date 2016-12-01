@@ -1,0 +1,3 @@
+[submodule "tools/test-scripts"]
+	path = tools/test-scripts
+	url = https://github.com/TheBlueMatt/test-scripts
