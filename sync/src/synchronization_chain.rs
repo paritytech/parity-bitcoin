@@ -212,6 +212,20 @@ impl Chain {
 		self.best_storage_block.clone()
 	}
 
+	/// Get best block header
+	pub fn best_block_header(&self) -> db::BestBlock {
+		let headers_chain_information = self.headers_chain.information();
+		if headers_chain_information.best == 0 {
+			return self.best_storage_block()
+		}
+		db::BestBlock {
+			number: self.best_storage_block.number + headers_chain_information.best,
+			hash: self.headers_chain.at(headers_chain_information.best - 1)
+				.expect("got this index above; qed")
+				.hash(),
+		}
+	}
+
 	/// Get block header by hash
 	pub fn block_hash(&self, number: u32) -> Option<H256> {
 		if number <= self.best_storage_block.number {
