@@ -28,6 +28,7 @@ addons:
     - g++-4.8
 script:
   - ./tools/test.sh
+  - cargo build --release
   - ./tools/bench.sh
   - git submodule update --init
   - ./tools/regtests.sh
