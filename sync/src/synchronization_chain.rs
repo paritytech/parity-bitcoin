@@ -196,6 +196,14 @@ impl Chain {
 		}
 	}
 
+	/// Get n best blocks of given state
+	pub fn best_n_of_blocks_state(&self, state: BlockState, n: u32) -> Vec<H256> {
+		match state {
+			BlockState::Scheduled | BlockState::Requested | BlockState::Verifying => self.hash_chain.front_n_at(state.to_queue_index(), n),
+			_ => unreachable!("must be checked by caller"),
+		}
+	}
+
 	/// Get best block
 	pub fn best_block(&self) -> db::BestBlock {
 		match self.hash_chain.back() {

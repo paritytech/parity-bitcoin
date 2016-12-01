@@ -121,7 +121,7 @@ impl Peers {
 		peers.difference(&except).cloned().collect()
 	}
 
-	/// Get idle peers.
+	/// Get idle peers for blocks request.
 	pub fn idle_peers_for_blocks(&self) -> Vec<usize> {
 		let peers: HashSet<_> = self.idle.iter().cloned()
 			.chain(self.inventory_requests.iter().cloned())
