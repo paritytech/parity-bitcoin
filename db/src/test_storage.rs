@@ -3,7 +3,7 @@
 use super::{
 	BlockRef, Store, Error, BestBlock, BlockLocation, BlockInsertedChain, BlockProvider,
 	BlockStapler, TransactionMetaProvider, TransactionProvider, AsTransactionProvider,
-	IndexedBlock,
+	IndexedBlock, BlockHeaderProvider, AsBlockHeaderProvider,
 };
 use chain::{self, Block};
 use primitives::hash::H256;
@@ -68,18 +68,7 @@ impl TestStorage {
 	}
 }
 
-impl BlockProvider for TestStorage {
-
-	fn block_number(&self, hash: &H256) -> Option<u32> {
-		let data = self.data.read();
-		data.hashes.get(hash).cloned()
-	}
-
-	fn block_hash(&self, number: u32) -> Option<H256> {
-		let data = self.data.read();
-		data.heights.get(&number).cloned()
-	}
-
+impl BlockHeaderProvider for TestStorage {
 	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes> {
 		let data = self.data.read();
 		self.resolve_hash(block_ref)
@@ -92,6 +81,24 @@ impl BlockProvider for TestStorage {
 		self.resolve_hash(block_ref)
 			.and_then(|ref h| data.blocks.get(h))
 			.map(|ref block| block.header().clone())
+	}
+}
+
+impl AsBlockHeaderProvider for TestStorage {
+	fn as_block_header_provider(&self) -> &BlockHeaderProvider {
+		&*self
+	}
+}
+
+impl BlockProvider for TestStorage {
+	fn block_number(&self, hash: &H256) -> Option<u32> {
+		let data = self.data.read();
+		data.hashes.get(hash).cloned()
+	}
+
+	fn block_hash(&self, number: u32) -> Option<H256> {
+		let data = self.data.read();
+		data.heights.get(&number).cloned()
 	}
 
 	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256> {

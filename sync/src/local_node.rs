@@ -265,6 +265,7 @@ mod tests {
 	use p2p::{event_loop, OutboundSyncConnection, OutboundSyncConnectionRef};
 	use message::types;
 	use message::common::{InventoryVector, InventoryType, BlockTransactionsRequest};
+	use network::Magic;
 	use db;
 	use super::LocalNode;
 	use test_data;
@@ -313,7 +314,7 @@ mod tests {
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
 		let config = Config { threads_num: 1 };
-		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone());
+		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone(), Magic::Mainnet);
 		let mut verifier = DummyVerifier::default();
 		verifier.set_sink(client_core.clone());
 		let client = SynchronizationClient::new(client_core, verifier);
