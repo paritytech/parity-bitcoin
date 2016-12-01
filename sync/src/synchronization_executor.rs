@@ -77,8 +77,6 @@ impl PeersConnections for LocalSynchronizationTaskExecutor {
 
 impl TaskExecutor for LocalSynchronizationTaskExecutor {
 	fn execute(&mut self, task: Task) {
-		// TODO: what is types::GetBlocks::version here? (@ PR#37)
-
 		match task {
 			Task::RequestBlocks(peer_index, blocks_hashes) => {
 				let getdata = types::GetData {
@@ -97,7 +95,7 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 			Task::RequestBlocksHeaders(peer_index) => {
 				let block_locator_hashes = self.chain.read().block_locator_hashes();
 				let getheaders = types::GetHeaders {
-					version: 0,
+					version: 0, // this field is ignored by clients
 					block_locator_hashes: block_locator_hashes,
 					hash_stop: H256::default(),
 				};

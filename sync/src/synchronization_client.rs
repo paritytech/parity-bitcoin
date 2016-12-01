@@ -185,6 +185,7 @@ pub struct Information {
 pub trait Client : Send + 'static {
 	fn best_block(&self) -> db::BestBlock;
 	fn state(&self) -> State;
+	fn is_compact_block_sent_recently(&mut self, peer_index: usize, hash: &H256) -> bool;
 	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory;
 	fn on_peer_connected(&mut self, peer_index: usize);
 	fn on_new_blocks_inventory(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
@@ -206,6 +207,7 @@ pub trait Client : Send + 'static {
 pub trait ClientCore : VerificationSink {
 	fn best_block(&self) -> db::BestBlock;
 	fn state(&self) -> State;
+	fn is_compact_block_sent_recently(&mut self, peer_index: usize, hash: &H256) -> bool;
 	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory;
 	fn on_peer_connected(&mut self, peer_index: usize);
 	fn on_new_blocks_inventory(&mut self, peer_index: usize, blocks_hashes: Vec<H256>);
@@ -353,6 +355,10 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().state()
 	}
 
+	fn is_compact_block_sent_recently(&mut self, peer_index: usize, hash: &H256) -> bool {
+		self.core.lock().is_compact_block_sent_recently(peer_index, hash)
+	}
+
 	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory {
 		self.core.lock().filter_getdata_inventory(peer_index, inventory)
 	}
@@ -469,6 +475,11 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		self.state
 	}
 
+	/// Returns true if compactblock with this hash has been sent to this peer recently
+	fn is_compact_block_sent_recently(&mut self, peer_index: usize, hash: &H256) -> bool {
+		self.peers.filter(peer_index).is_known_compact_block(hash)
+	}
+
 	/// Filter inventory from `getdata` message for given peer
 	fn filter_getdata_inventory(&mut self, peer_index: usize, inventory: Vec<InventoryVector>) -> FilteredInventory {
 		let storage = {	self.chain.read().storage() };
@@ -489,7 +500,10 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 						None => notfound.push(item),
 						Some(block) => match filter.build_merkle_block(block) {
 							None => notfound.push(item),
-							Some(merkleblock) => filtered.push((merkleblock.merkleblock, merkleblock.matching_transactions)),
+							Some(merkleblock) => {
+								filtered.push((merkleblock.merkleblock, merkleblock.matching_transactions));
+								filter.known_block(&item.hash, false);
+							},
 						},
 					}
 				},
@@ -508,6 +522,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 								header: build_compact_block(indexed_block, prefilled_transactions_indexes),
 							};
 							compacted.push(compact_block);
+							filter.known_block(&item.hash, true);
 						},
 					}
 				},

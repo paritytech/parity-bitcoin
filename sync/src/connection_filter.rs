@@ -24,7 +24,7 @@ pub struct ConnectionFilter {
 	/// Filter update type.
 	filter_flags: types::FilterFlags,
 	/// Last blocks from peer.
-	last_blocks: LinkedHashMap<H256, ()>,
+	last_blocks: LinkedHashMap<H256, bool>,
 	/// Last transactions from peer.
 	last_transactions: LinkedHashMap<H256, ()>,
 	/// Minimal fee in satoshis per 1000 bytes
@@ -91,14 +91,14 @@ impl ConnectionFilter {
 	}
 
 	/// We have a knowledge that block with given hash is known to this connection
-	pub fn known_block(&mut self, block_hash: &H256) {
+	pub fn known_block(&mut self, block_hash: &H256, is_sent_compact: bool) {
 		// remember that peer knows about this block
 		if !self.last_blocks.contains_key(block_hash) {
 			if self.last_blocks.len() == MAX_LAST_BLOCKS_TO_STORE {
 				self.last_blocks.pop_front();
 			}
 
-			self.last_blocks.insert(block_hash.clone(), ());
+			self.last_blocks.insert(block_hash.clone(), is_sent_compact);
 		}
 	}
 
@@ -112,6 +112,11 @@ impl ConnectionFilter {
 
 			self.last_transactions.insert(transaction_hash.clone(), ());
 		}
+	}
+
+	/// Is compact block with this hash has been sent recently
+	pub fn is_known_compact_block(&self, block_hash: &H256) -> bool {
+		self.last_blocks.get(block_hash).cloned().unwrap_or(false)
 	}
 
 	/// Check if block should be sent to this connection
@@ -662,15 +667,15 @@ pub mod tests {
 		let mut filter = ConnectionFilter::default();
 		assert!(filter.filter_block(&blocks[0].hash()));
 
-		filter.known_block(&blocks[0].hash());
+		filter.known_block(&blocks[0].hash(), false);
 		assert!(!filter.filter_block(&blocks[0].hash()));
 
 		for block in blocks.iter().skip(1).take(MAX_LAST_BLOCKS_TO_STORE - 1) {
-			filter.known_block(&block.hash());
+			filter.known_block(&block.hash(), false);
 			assert!(!filter.filter_block(&blocks[0].hash()));
 		}
 
-		filter.known_block(&blocks[MAX_LAST_BLOCKS_TO_STORE].hash());
+		filter.known_block(&blocks[MAX_LAST_BLOCKS_TO_STORE].hash(), false);
 		assert!(filter.filter_block(&blocks[0].hash()));
 	}
 
@@ -693,5 +698,14 @@ pub mod tests {
 
 		filter.known_transaction(&transactions[MAX_LAST_TRANSACTIONS_TO_STORE].hash());
 		assert!(filter.filter_transaction(&transactions[0].hash(), &transactions[0], None));
+	}
+
+	#[test]
+	fn known_compact_block() {
+		let mut filter = ConnectionFilter::default();
+		filter.known_block(&test_data::block_h1().hash(), true);
+		filter.known_block(&test_data::block_h2().hash(), false);
+		assert!(filter.is_known_compact_block(&test_data::block_h1().hash()));
+		assert!(!filter.is_known_compact_block(&test_data::block_h2().hash()));
 	}
 }
