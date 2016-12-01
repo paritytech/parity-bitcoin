@@ -9,6 +9,7 @@ use primitives::hash::H256;
 use synchronization_chain::ChainRef;
 use verification::{ChainVerifier, Verify as VerificationVerify, Chain};
 use db::{SharedStore, IndexedBlock, PreviousTransactionOutputProvider};
+use time::get_time;
 
 /// Verification events sink
 pub trait VerificationSink : Send + 'static {
@@ -169,11 +170,8 @@ fn execute_verification_task<T: VerificationSink, U: PreviousTransactionOutputPr
 				}
 			},
 			VerificationTask::VerifyTransaction(height, transaction) => {
-				// bitcoin: AcceptToMemoryPoolWorker
-
-				let time: u32 = 0; // TODO
-				let sequence: usize = 1; // TODO: change to bool
-				match verifier.verify_transaction(tx_output_provider, height, time, &transaction, sequence) {
+				let time: u32 = get_time().sec as u32;
+				match verifier.verify_transaction(tx_output_provider, height, time, &transaction, 1) {
 					Ok(_) => sink.lock().on_transaction_verification_success(transaction),
 					Err(e) => sink.lock().on_transaction_verification_error(&format!("{:?}", e), &transaction.hash()),
 				}

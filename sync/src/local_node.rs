@@ -216,7 +216,15 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 	pub fn on_peer_get_block_txn(&self, peer_index: usize, message: types::GetBlockTxn) {
 		trace!(target: "sync", "Got `getblocktxn` message from peer#{}", peer_index);
 
-		self.server.serve_get_block_txn(peer_index, message.request.blockhash, message.request.indexes).map(|t| self.server.add_task(peer_index, t));
+		// Upon receipt of a properly-formatted getblocktxn message, nodes which *recently provided the sender
+		// of such a message a cmpctblock for the block hash identified in this message* MUST respond ...
+		// => we should check if we have send cmpctblock before
+		if {
+			let mut client = self.client.lock();
+			client.is_compact_block_sent_recently(peer_index, &message.request.blockhash)
+		} {
+			self.server.serve_get_block_txn(peer_index, message.request.blockhash, message.request.indexes).map(|t| self.server.add_task(peer_index, t));
+		}
 	}
 
 	pub fn on_peer_block_txn(&self, peer_index: usize, _message: types::BlockTxn) {
@@ -256,7 +264,7 @@ mod tests {
 	use synchronization_chain::Chain;
 	use p2p::{event_loop, OutboundSyncConnection, OutboundSyncConnectionRef};
 	use message::types;
-	use message::common::{InventoryVector, InventoryType};
+	use message::common::{InventoryVector, InventoryType, BlockTransactionsRequest};
 	use db;
 	use super::LocalNode;
 	use test_data;
@@ -474,5 +482,68 @@ mod tests {
 			},
 			_ => panic!("unexpected"),
 		}
+	}
+
+	#[test]
+	fn local_node_serves_get_block_txn_when_recently_sent_compact_block() {
+		let (_, _, _, server, local_node) = create_local_node();
+
+		let genesis = test_data::genesis();
+		let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
+			.transaction().output().value(10).build().build()
+			.build(); // genesis -> b1
+		let b1_hash = b1.hash();
+
+		// Append block
+		let peer_index1 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		local_node.on_peer_block(peer_index1, types::Block { block: b1.clone() });
+
+		// Request compact block
+		let peer_index2 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		local_node.on_peer_getdata(peer_index2, types::GetData {inventory: vec![
+				InventoryVector { inv_type: InventoryType::MessageCompactBlock, hash: b1_hash.clone() },
+			]});
+
+		// forget tasks
+		server.take_tasks();
+
+		// Request compact transaction from this block
+		local_node.on_peer_get_block_txn(peer_index2, types::GetBlockTxn {
+			request: BlockTransactionsRequest {
+				blockhash: b1_hash.clone(),
+				indexes: vec![0],
+			}
+		});
+
+		let tasks = server.take_tasks();
+		assert_eq!(tasks, vec![(2, ServerTask::ServeGetBlockTxn(b1_hash, vec![0]))]);
+
+	}
+
+	#[test]
+	fn local_node_not_serves_get_block_txn_when_compact_block_was_not_sent() {
+		let (_, _, _, server, local_node) = create_local_node();
+
+		let genesis = test_data::genesis();
+		let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
+			.transaction().output().value(10).build().build()
+			.build(); // genesis -> b1
+		let b1_hash = b1.hash();
+
+		// Append block
+		let peer_index1 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		local_node.on_peer_block(peer_index1, types::Block { block: b1.clone() });
+
+		// Request compact transaction from this block
+		let peer_index2 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		local_node.on_peer_get_block_txn(peer_index2, types::GetBlockTxn {
+			request: BlockTransactionsRequest {
+				blockhash: b1_hash,
+				indexes: vec![0],
+			}
+		});
+
+		let tasks = server.take_tasks();
+		assert_eq!(tasks, vec![]);
 	}
 }

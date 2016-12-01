@@ -244,7 +244,7 @@ impl Peers {
 		}
 
 		// remember that peer knows about this block
-		self.filters.entry(peer_index).or_insert_with(ConnectionFilter::default).known_block(block_hash);
+		self.filters.entry(peer_index).or_insert_with(ConnectionFilter::default).known_block(block_hash, false);
 	}
 
 	/// Transaction is received from peer.
