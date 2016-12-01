@@ -1,6 +1,8 @@
 sudo: required
 dist: trusty
 language: rust
+jdk:
+  - oraclejdk8
 
 branches:
   only:
@@ -27,6 +29,8 @@ addons:
 script:
   - ./tools/test.sh
   - ./tools/bench.sh
+  - git submodule update --init
+  - ./tools/regtests.sh
 after_success: |
   [ false ] &&
   [ $TRAVIS_BRANCH = master ] &&
