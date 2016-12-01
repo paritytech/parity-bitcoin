@@ -301,7 +301,7 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 }
 
 /// Block headers provider from `headers` message
-struct MessageBlockHeadersProvider<'a> {
+pub struct MessageBlockHeadersProvider<'a> {
 	/// sync chain
 	chain: &'a Chain,
 	/// headers offset
@@ -1482,7 +1482,7 @@ pub mod tests {
 	use chain::{Block, Transaction};
 	use message::common::{InventoryVector, InventoryType};
 	use message::types;
-	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore, BlockAnnouncementType};
+	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore, BlockAnnouncementType, MessageBlockHeadersProvider};
 	use connection_filter::tests::*;
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
@@ -1493,7 +1493,7 @@ pub mod tests {
 	use network::Magic;
 	use p2p::event_loop;
 	use test_data;
-	use db;
+	use db::{self, BlockHeaderProvider};
 	use devtools::RandomTempPath;
 
 	fn create_disk_storage() -> db::SharedStore {
@@ -2444,5 +2444,27 @@ pub mod tests {
 			_ => panic!("unexpected task"),
 		}
 		assert_eq!(tasks[2], Task::SendInventory(3, inventory));
+	}
+
+	#[test]
+	fn test_message_block_headers_provider() {
+		let storage = Arc::new(db::TestStorage::with_genesis_block());
+		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
+		let chain = chain.read();
+		let mut headers_provider = MessageBlockHeadersProvider::new(&*chain);
+
+		assert_eq!(headers_provider.block_header(db::BlockRef::Hash(test_data::genesis().hash())), Some(test_data::genesis().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Number(0)), Some(test_data::genesis().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Hash(H256::from(1))), None);
+		assert_eq!(headers_provider.block_header(db::BlockRef::Number(1)), None);
+
+		headers_provider.append_header(test_data::block_h1().hash(), test_data::block_h1().block_header);
+
+		assert_eq!(headers_provider.block_header(db::BlockRef::Hash(test_data::genesis().hash())), Some(test_data::genesis().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Number(0)), Some(test_data::genesis().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Hash(test_data::block_h1().hash())), Some(test_data::block_h1().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Number(1)), Some(test_data::block_h1().block_header));
+		assert_eq!(headers_provider.block_header(db::BlockRef::Hash(H256::from(1))), None);
+		assert_eq!(headers_provider.block_header(db::BlockRef::Number(2)), None);
 	}
 }
