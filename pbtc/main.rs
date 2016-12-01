@@ -10,6 +10,7 @@ extern crate app_dirs;
 extern crate db;
 extern crate chain;
 extern crate keys;
+extern crate logs;
 extern crate script;
 extern crate message;
 extern crate network;
@@ -29,9 +30,9 @@ pub const PROTOCOL_VERSION: u32 = 70_014;
 pub const PROTOCOL_MINIMUM: u32 = 70_001;
 pub const USER_AGENT: &'static str = "pbtc";
 pub const REGTEST_USER_AGENT: &'static str = "/Satoshi:0.12.1/";
+pub const LOG_INFO: &'static str = "sync=info";
 
 fn main() {
-	env_logger::init().unwrap();
 	if let Err(err) = run() {
 		println!("{}", err);
 	}
@@ -41,6 +42,16 @@ fn run() -> Result<(), String> {
 	let yaml = load_yaml!("cli.yml");
 	let matches = clap::App::from_yaml(yaml).get_matches();
 	let cfg = try!(config::parse(&matches));
+
+	if cfg.print_to_console {
+		if cfg!(windows) {
+			logs::init(LOG_INFO, logs::DateLogFormatter);
+		} else {
+			logs::init(LOG_INFO, logs::DateAndColorLogFormatter);
+		}
+	} else {
+		env_logger::init().unwrap();
+	}
 
 	match matches.subcommand() {
 		("import", Some(import_matches)) => commands::import(cfg, import_matches),

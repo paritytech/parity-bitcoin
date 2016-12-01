@@ -23,7 +23,7 @@ pub struct Config {
 pub const DEFAULT_DB_CACHE: usize = 512;
 
 pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
-	let print_to_console = matches.is_present("printtoconsole");
+	let print_to_console = matches.is_present("print-to-console");
 	let magic = match (matches.is_present("testnet"), matches.is_present("regtest")) {
 		(true, false) => Magic::Testnet,
 		(false, true) => Magic::Regtest,
