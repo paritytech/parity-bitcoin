@@ -34,7 +34,7 @@ pub const SEQUENCE_LOCKTIME_MASK: u32 = 0x0000ffff;
 /// otherwise as UNIX timestamp.
 pub const LOCKTIME_THRESHOLD: u32 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct OutPoint {
 	pub hash: H256,
 	pub index: u32,
