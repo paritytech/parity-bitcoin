@@ -454,10 +454,6 @@ pub fn eval_script(
 			},
 			Opcode::OP_NOP => break,
 			Opcode::OP_CHECKLOCKTIMEVERIFY => {
-				if flags.verify_discourage_upgradable_nops {
-					return Err(Error::DiscourageUpgradableNops);
-				}
-
 				if flags.verify_clocktimeverify {
 					// Note that elsewhere numeric opcodes are limited to
 					// operands in the range -2**31+1 to 2**31-1, however it is
@@ -485,21 +481,24 @@ pub fn eval_script(
 					if !checker.check_lock_time(lock_time) {
 						return Err(Error::UnsatisfiedLocktime);
 					}
+				} else if flags.verify_discourage_upgradable_nops {
+					return Err(Error::DiscourageUpgradableNops);
 				}
 			},
 			Opcode::OP_CHECKSEQUENCEVERIFY => {
-				if !flags.verify_chechsequenceverify && flags.verify_discourage_upgradable_nops {
+				if flags.verify_checksequenceverify {
+					let sequence = try!(Num::from_slice(try!(stack.last()), flags.verify_minimaldata, 5));
+
+					if sequence.is_negative() {
+						return Err(Error::NegativeLocktime);
+					}
+
+					if (sequence & (SEQUENCE_LOCKTIME_DISABLE_FLAG as i64).into()).is_zero() && !checker.check_sequence(sequence) {
+						return Err(Error::UnsatisfiedLocktime);
+					}
+
+				} else if flags.verify_discourage_upgradable_nops {
 					return Err(Error::DiscourageUpgradableNops);
-				}
-
-				let sequence = try!(Num::from_slice(try!(stack.last()), flags.verify_minimaldata, 5));
-
-				if sequence.is_negative() {
-					return Err(Error::NegativeLocktime);
-				}
-
-				if (sequence & (SEQUENCE_LOCKTIME_DISABLE_FLAG as i64).into()).is_zero() && !checker.check_sequence(sequence) {
-					return Err(Error::UnsatisfiedLocktime);
 				}
 			},
 			Opcode::OP_NOP1 |
@@ -1940,6 +1939,27 @@ mod tests {
 			.push_opcode(Opcode::OP_ELSE)
 			.push_opcode(Opcode::OP_1)
 			.push_opcode(Opcode::OP_ENDIF)
+			.into_script();
+		let result = Ok(true);
+		basic_test(&script, result, vec![vec![1].into()].into());
+	}
+
+	#[test]
+	fn test_skipping_sequencetimeverify() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_1)
+			.push_opcode(Opcode::OP_NOP1)
+			.push_opcode(Opcode::OP_CHECKLOCKTIMEVERIFY)
+			.push_opcode(Opcode::OP_CHECKSEQUENCEVERIFY)
+			.push_opcode(Opcode::OP_NOP4)
+			.push_opcode(Opcode::OP_NOP5)
+			.push_opcode(Opcode::OP_NOP6)
+			.push_opcode(Opcode::OP_NOP7)
+			.push_opcode(Opcode::OP_NOP8)
+			.push_opcode(Opcode::OP_NOP9)
+			.push_opcode(Opcode::OP_NOP10)
+			.push_opcode(Opcode::OP_1)
+			.push_opcode(Opcode::OP_EQUAL)
 			.into_script();
 		let result = Ok(true);
 		basic_test(&script, result, vec![vec![1].into()].into());

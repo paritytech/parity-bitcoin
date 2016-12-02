@@ -57,7 +57,7 @@ pub struct VerificationFlags {
 	/// support CHECKSEQUENCEVERIFY opcode
 	///
 	/// See BIP112 for details
-	pub verify_chechsequenceverify: bool,
+	pub verify_checksequenceverify: bool,
 
 	/// Support segregated witness
 	pub verify_witness: bool,
