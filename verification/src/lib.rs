@@ -40,6 +40,8 @@ pub enum Error {
 	Empty,
 	/// Invalid proof-of-work (Block hash does not satisfy nBits)
 	Pow,
+	/// Futuristic timestamp
+	FuturisticTimestamp,
 	/// Invalid timestamp
 	Timestamp,
 	/// First transaction is not a coinbase transaction

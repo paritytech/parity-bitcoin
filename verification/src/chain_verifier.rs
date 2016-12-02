@@ -252,11 +252,12 @@ impl ChainVerifier {
 
 		// check if block timestamp is not far in the future
 		if utils::age(header.time) < -BLOCK_MAX_FUTURE {
-			return Err(Error::Timestamp);
+			return Err(Error::FuturisticTimestamp);
 		}
 
 		if let Some(median_timestamp) = self.median_timestamp(block_header_provider, header) {
-			if median_timestamp >= header.time {
+			// TODO: make timestamp validation on testnet work...
+			if self.network != Magic::Testnet && median_timestamp >= header.time {
 				trace!(
 					target: "verification", "median timestamp verification failed, median: {}, current: {}",
 					median_timestamp,
@@ -375,6 +376,28 @@ impl ChainVerifier {
 		else { None }
 	}
 
+	fn work_required_testnet(&self, header: &chain::BlockHeader, height: u32) -> u32 {
+		let mut bits = BTreeSet::new();
+		let mut block_ref = header.previous_header_hash.clone().into();
+		// TODO: optimize it, so it does not make 11 redundant queries each time
+		for _ in 0..11 {
+			let previous_header = match self.store.block_header(block_ref) {
+				Some(h) => h,
+				None => { break; }
+			};
+			bits.insert(previous_header.nbits);
+			block_ref = previous_header.previous_header_hash.into();
+		}
+
+		for (index, bit) in bits.into_iter().enumerate() {
+			if bit != self.network.max_nbits() || utils::is_retarget_height(height - index as u32) {
+				return bit;
+			}
+		}
+
+		self.network.max_nbits()
+	}
+
 	fn work_required(&self, block: &db::IndexedBlock, height: u32) -> Option<u32> {
 		if height == 0 {
 			return None;
@@ -396,7 +419,9 @@ impl ChainVerifier {
 			return Some(utils::work_required_retarget(self.network.max_nbits(), retarget_timestamp, last_timestamp, last_nbits));
 		}
 
-		// TODO: if.testnet
+		if let Magic::Testnet = self.network {
+			return Some(self.work_required_testnet(block.header(), height));
+		}
 
 		Some(previous_header.nbits)
 	}
