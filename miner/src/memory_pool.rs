@@ -1225,16 +1225,3 @@ println!("{:?}", chain);
 		assert_eq!(pool.information().transactions_count, 2);
 	}
 }
-/*
-5ea04b4fa956b5a00393ab57979396b8fdab84f29883fda5403878406b48272a
-1ea5f32ad0cdc457aa051a7ce974e168ac378317631ce732be97ad0329900532
-58d4d3f3f5091e03c875d56458c0dbab6362e88eeb8acce237d76952658bb8bb
-[
-	Transaction { version: 0, inputs: [], outputs: [TransactionOutput { value: 10, script_pubkey:  }], lock_time: 0 },
-	Transaction { version: 0, inputs: [TransactionInput { previous_output: OutPoint { hash: 5ea04b4fa956b5a00393ab57979396b8fdab84f29883fda5403878406b48272a, index: 0 }, script_sig: , sequence: 0 }], outputs: [TransactionOutput { value: 20, script_pubkey:  }], lock_time: 0 },
-	Transaction { version: 0, inputs: [TransactionInput { previous_output: OutPoint { hash: 1ea5f32ad0cdc457aa051a7ce974e168ac378317631ce732be97ad0329900532, index: 0 }, script_sig: , sequence: 0 }], outputs: [TransactionOutput { value: 30, script_pubkey:  }], lock_time: 0 },
-	Transaction { version: 0, inputs: [], outputs: [TransactionOutput { value: 40, script_pubkey:  }], lock_time: 0 }
-]
-thread 'memory_pool::tests::test_memory_pool_remove_by_prevout' panicked at 'assertion failed: `(left == right)` (left: `Some([Transaction { version: 0, inputs: [TransactionInput { previous_output: OutPoint { hash: 5ea04b4fa956b5a00393ab57979396b8fdab84f29883fda5403878406b48272a, index: 0 }, script_sig: , sequence: 0 }], outputs: [TransactionOutput { value: 20, script_pubkey:  }], lock_time: 0 }])`, right: `Some([Transaction { version: 0, inputs: [TransactionInput { previous_output: OutPoint { hash: 5ea04b4fa956b5a00393ab57979396b8fdab84f29883fda5403878406b48272a, index: 0 }, script_sig: , sequence: 0 }], outputs: [TransactionOutput { value: 20, script_pubkey:  }], lock_time: 0 }, Transaction { version: 0, inputs: [TransactionInput { previous_output: OutPoint { hash: 1ea5f32ad0cdc457aa051a7ce974e168ac378317631ce732be97ad0329900532, index: 0 }, script_sig: , sequence: 0 }], outputs: [TransactionOutput { value: 30, script_pubkey:  }], lock_time: 0 }])`)', miner/src/memory_pool.rs:1219
-stack backtrace:
-*/
