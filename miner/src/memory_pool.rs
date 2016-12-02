@@ -1211,10 +1211,7 @@ mod tests {
 			.into_input(0).add_output(30).store(chain)		// transaction0 -> transaction1 -> transaction2
 			.reset().add_output(40).store(chain);			// transaction3
 		let mut pool = MemoryPool::new();
-println!("{:?}", chain.hash(0));
-println!("{:?}", chain.hash(1));
-println!("{:?}", chain.hash(2));
-println!("{:?}", chain);
+
 		pool.insert_verified(chain.at(0));
 		pool.insert_verified(chain.at(1));
 		pool.insert_verified(chain.at(2));
