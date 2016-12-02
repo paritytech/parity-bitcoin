@@ -1,6 +1,6 @@
 use std::fmt;
 use std::sync::Arc;
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashSet};
 use linked_hash_map::LinkedHashMap;
 use parking_lot::RwLock;
 use chain::{BlockHeader, Transaction};
@@ -55,6 +55,8 @@ pub enum BlockState {
 	Verifying,
 	/// In storage
 	Stored,
+	/// This block has been marked as dead-end block
+	DeadEnd,
 }
 
 /// Transactions synchronization state
@@ -101,6 +103,8 @@ pub enum HeadersIntersection {
 	DbAllBlocksKnown,
 	/// 3.4: No intersection with in-memory queue && has intersection with db && some blocks are not yet stored in db
 	DbForkNewBlocks(usize),
+	/// Dead-end blocks are starting from given index
+	DeadEnd(usize),
 }
 
 /// Blockchain from synchroniation point of view, consisting of:
@@ -123,6 +127,8 @@ pub struct Chain {
 	verifying_transactions: LinkedHashMap<H256, Transaction>,
 	/// Transactions memory pool
 	memory_pool: MemoryPool,
+	/// Blocks that have been marked as dead-ends
+	dead_end_blocks: HashSet<H256>,
 }
 
 impl BlockState {
@@ -163,6 +169,7 @@ impl Chain {
 			headers_chain: BestHeadersChain::new(best_storage_block_hash),
 			verifying_transactions: LinkedHashMap::new(),
 			memory_pool: MemoryPool::new(),
+			dead_end_blocks: HashSet::new(),
 		}
 	}
 
@@ -276,7 +283,11 @@ impl Chain {
 			None => if self.storage.contains_block(db::BlockRef::Hash(hash.clone())) {
 				BlockState::Stored
 			} else {
-				BlockState::Unknown
+				if self.dead_end_blocks.contains(hash) {
+					BlockState::DeadEnd
+				} else {
+					BlockState::Unknown
+				}
 			},
 		}
 	}
@@ -332,6 +343,11 @@ impl Chain {
 		let requested = self.hash_chain.pop_front_n_at(REQUESTED_QUEUE, n);
 		self.hash_chain.push_back_n_at(VERIFYING_QUEUE, requested.clone());
 		requested
+	}
+
+	/// Mark this block as dead end, so these tasks won't be synchronized
+	pub fn mark_dead_end_block(&mut self, hash: &H256) {
+		self.dead_end_blocks.insert(hash.clone());
 	}
 
 	/// Insert new best block to storage
@@ -516,6 +532,10 @@ impl Chain {
 			state => (true, state),
 		};
 		match first_state {
+			// if first block of inventory is dead-end, then all other blocks are also dead-end blocks
+			BlockState::DeadEnd => {
+				HeadersIntersection::DeadEnd(0)
+			},
 			// if first block of inventory is unknown && its parent is unknonw => all other blocks are also unknown
 			BlockState::Unknown => {
 				HeadersIntersection::NoKnownBlocks(0)
@@ -542,14 +562,18 @@ impl Chain {
 					}
 				},
 				// if first block is known && last block is unknown => intersection with queue or with db
-				BlockState::Unknown if is_first_known => {
+				BlockState::Unknown | BlockState::DeadEnd if is_first_known => {
 					// find last known block
 					let mut previous_state = first_block_state;
 					for (index, hash) in hashes.iter().enumerate().take(hashes_len).skip(1) {
 						let state = self.block_state(hash);
-						if state == BlockState::Unknown {
+						if state == BlockState::Unknown || state == BlockState::DeadEnd {
+							// if state is dead end => there are no useful blocks
+							if state == BlockState::DeadEnd {
+								return HeadersIntersection::DeadEnd(index);
+							}
 							// previous block is stored => fork from stored block
-							if previous_state == BlockState::Stored {
+							else if previous_state == BlockState::Stored {
 								return HeadersIntersection::DbForkNewBlocks(index);
 							}
 							// previous block is best block => no fork
@@ -1193,5 +1217,50 @@ mod tests {
 		chain.insert_best_block(b0.hash(), &b0.into()).expect("no error");
 		// => tx2 is removed from memory pool, but tx3 remains
 		assert_eq!(chain.information().transactions.transactions_count, 1);
+	}
+
+	#[test]
+	fn chain_dead_end() {
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
+
+		let blocks = test_data::build_n_empty_blocks_from(5, 0, &test_data::genesis().block_header);
+		let headers: Vec<_> = blocks.iter().map(|b| b.block_header.clone()).collect();
+		let hashes: Vec<_> = headers.iter().map(|h| h.hash()).collect();
+
+		chain.insert_best_block(blocks[0].hash(), &blocks[0].clone().into()).expect("no error");
+		chain.insert_best_block(blocks[1].hash(), &blocks[1].clone().into()).expect("no error");
+		chain.mark_dead_end_block(&blocks[2].hash());
+
+		assert_eq!(chain.intersect_with_blocks_headers(&vec![
+			hashes[0].clone(),
+			hashes[1].clone(),
+			hashes[2].clone(),
+			hashes[3].clone(),
+			hashes[4].clone(),
+		], &vec![
+			headers[0].clone(),
+			headers[1].clone(),
+			headers[2].clone(),
+			headers[3].clone(),
+			headers[4].clone(),
+		]), HeadersIntersection::DeadEnd(2));
+
+		assert_eq!(chain.intersect_with_blocks_headers(&vec![
+			hashes[2].clone(),
+			hashes[3].clone(),
+			hashes[4].clone(),
+		], &vec![
+			headers[2].clone(),
+			headers[3].clone(),
+			headers[4].clone(),
+		]), HeadersIntersection::DeadEnd(0));
+
+		assert_eq!(chain.intersect_with_blocks_headers(&vec![
+			hashes[3].clone(),
+			hashes[4].clone(),
+		], &vec![
+			headers[3].clone(),
+			headers[4].clone(),
+		]), HeadersIntersection::DeadEnd(0));
 	}
 }

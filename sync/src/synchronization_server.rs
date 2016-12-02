@@ -280,11 +280,10 @@ impl SynchronizationServer {
 				},
 				// `getblocktxn` => `blocktxn`
 				ServerTask::ServeGetBlockTxn(block_hash, indexes) => {
-					let transactions = {
+					let (close, transactions) = {
 						let chain = chain.read();
 						let storage = chain.storage();
 						if let Some(block) = storage.block(db::BlockRef::Hash(block_hash.clone())) {
-
 							let requested_len = indexes.len();
 							let transactions_len = block.transactions.len();
 							let mut read_indexes = HashSet::new();
@@ -302,19 +301,22 @@ impl SynchronizationServer {
 								.map(Option::unwrap) // take_while above
 								.collect();
 							if transactions.len() == requested_len {
-								Some(transactions)
+								(false, Some(transactions))
 							} else {
-								// TODO: malformed
-								None
+								warn!(target: "sync", "Closing connection with peer#{} as it has requested unknown block_txn from block {:?}", peer_index, block_hash.to_reversed_str());
+								(true, None)
 							}
 						} else {
-							// TODO: else malformed
-							None
+							warn!(target: "sync", "Closing connection with peer#{} as it has requested block_txn from unknown block {:?}", peer_index, block_hash.to_reversed_str());
+							(true, None)
 						}
 					};
 					if let Some(transactions) = transactions {
 						trace!(target: "sync", "Going to respond with {} blocktxn transactions to peer#{}", transactions.len(), peer_index);
 						executor.lock().execute(Task::SendBlockTxn(peer_index, block_hash, transactions));
+					}
+					if close {
+						executor.lock().execute(Task::Close(peer_index));
 					}
 				},
 				// `mempool` => `inventory`
@@ -766,7 +768,7 @@ pub mod tests {
 		server.serve_get_block_txn(0, test_data::genesis().hash(), vec![1]).map(|t| server.add_task(0, t));
 		// server responds with transactions
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
-		assert_eq!(tasks, vec![]);
+		assert_eq!(tasks, vec![Task::Close(0)]);
 	}
 
 	#[test]

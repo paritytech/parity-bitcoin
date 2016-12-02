@@ -1016,12 +1016,21 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 
 		self.do_not_relay.remove(hash);
 
+		// close connection with this peer
+		if let Some(peer_index) = self.verifying_blocks_by_peer.get(hash) {
+			warn!(target: "sync", "Closing connection with peer#{} as it has provided us with wrong block {:?}", peer_index, hash.to_reversed_str());
+			self.executor.lock().execute(Task::Close(*peer_index));
+		}
+
 		{
 			let mut chain = self.chain.write();
 
 			// forget for this block and all its children
 			// headers are also removed as they all are invalid
 			chain.forget_block_with_children(hash);
+
+			// mark failed block as dead end (this branch won't be synchronized)
+			chain.mark_dead_end_block(hash);
 		}
 
 		// awake threads, waiting for this block insertion
@@ -1259,6 +1268,10 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 
 		let mut chain = self.chain.write();
 		match chain.intersect_with_blocks_headers(&hashes, &headers) {
+			HeadersIntersection::DeadEnd(dead_block_index) => {
+				warn!(target: "sync", "Closing connection with peer#{} as it has provided us with dead-end block {:?}", peer_index, hashes[dead_block_index].to_reversed_str());
+				self.executor.lock().execute(Task::Close(peer_index));
+			},
 			HeadersIntersection::NoKnownBlocks(_) if self.state.is_synchronizing() => {
 				warn!(target: "sync", "Ignoring {} headers from peer#{}. Unknown and we are synchronizing.", headers.len(), peer_index);
 			},
@@ -1281,7 +1294,18 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				// check that we do not know all blocks in range [new_block_index..]
 				// if we know some block => there has been verification error => all headers should be ignored
 				// see when_previous_block_verification_failed_fork_is_not_requested for details
-				if hashes.iter().skip(new_block_index).any(|h| chain.block_state(h) != BlockState::Unknown) {
+				if hashes.iter().skip(new_block_index).any(|h| {
+					let block_state = chain.block_state(h);
+					match block_state {
+						BlockState::Unknown => false,
+						BlockState::DeadEnd => {
+							warn!(target: "sync", "Closing connection with peer#{} as it has provided us with blocks lead to dead-end block {:?}", peer_index, h.to_reversed_str());
+							self.executor.lock().execute(Task::Close(peer_index));
+							true
+						},
+						_ => true,
+					}
+				}) {
 					return;
 				}
 
@@ -1319,6 +1343,10 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		let mut result: Option<VecDeque<(H256, IndexedBlock)>> = None;
 		let mut chain = self.chain.write();
 		match chain.block_state(&block_hash) {
+			BlockState::DeadEnd => {
+				warn!(target: "sync", "Closing connection with peer#{} as it has provided us with dead-end block {:?}", peer_index, block_hash.to_reversed_str());
+				self.executor.lock().execute(Task::Close(peer_index));
+			},
 			BlockState::Verifying | BlockState::Stored => {
 				// remember peer as useful
 				self.peers.useful_peer(peer_index);
@@ -1326,6 +1354,10 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			BlockState::Unknown | BlockState::Scheduled | BlockState::Requested => {
 				// check parent block state
 				match chain.block_state(&block.header().previous_header_hash) {
+					BlockState::DeadEnd => {
+						warn!(target: "sync", "Closing connection with peer#{} as it has provided us with dead-end block {:?}", peer_index, block_hash.to_reversed_str());
+						self.executor.lock().execute(Task::Close(peer_index));
+					},
 					BlockState::Unknown => {
 						if self.state.is_synchronizing() {
 							// when synchronizing, we tend to receive all blocks in-order
@@ -2605,4 +2637,85 @@ pub mod tests {
 		assert_eq!(headers_provider.block_header(db::BlockRef::Hash(H256::from(1))), None);
 		assert_eq!(headers_provider.block_header(db::BlockRef::Number(2)), None);
 	}
+
+	#[test]
+	fn collection_closed_on_block_verification_error() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+
+		// simulate verification error during b0 verification
+		let mut dummy_verifier = DummyVerifier::default();
+		dummy_verifier.error_when_verifying(b0.hash(), "simulated");
+
+		let (_, _, executor, _, sync) = create_sync(None, Some(dummy_verifier));
+		sync.lock().on_peer_block(0, b0.into());
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::Close(0)]);
+	}
+
+	#[test]
+	fn collection_closed_on_begin_dead_end_block_header() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+		let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
+		let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
+
+		let (_, _, executor, chain, sync) = create_sync(None, None);
+		{
+			chain.write().mark_dead_end_block(&b0.hash());
+		}
+		sync.lock().on_new_blocks_headers(0, vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::Close(0)]);
+	}
+
+	#[test]
+	fn collection_closed_on_in_middle_dead_end_block_header() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+		let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
+		let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
+
+		let (_, _, executor, chain, sync) = create_sync(None, None);
+		{
+			chain.write().mark_dead_end_block(&b1.hash());
+		}
+		sync.lock().on_new_blocks_headers(0, vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]);
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::Close(0)]);
+	}
+
+	#[test]
+	fn collection_closed_on_providing_dead_end_block() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+
+		let (_, _, executor, chain, sync) = create_sync(None, None);
+		{
+			chain.write().mark_dead_end_block(&b0.hash());
+		}
+		sync.lock().on_peer_block(0, b0.into());
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::Close(0)]);
+	}
+
+	#[test]
+	fn collection_closed_on_providing_child_dead_end_block() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+		let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
+
+		let (_, _, executor, chain, sync) = create_sync(None, None);
+		{
+			chain.write().mark_dead_end_block(&b0.hash());
+		}
+		sync.lock().on_peer_block(0, b1.into());
+
+		let tasks = executor.lock().take_tasks();
+		assert_eq!(tasks, vec![Task::Close(0)]);
+	}	
 }

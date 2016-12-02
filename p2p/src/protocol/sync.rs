@@ -60,6 +60,7 @@ pub trait OutboundSyncConnection : Send + Sync {
 	fn send_block_txn(&self, message: &types::BlockTxn);
 	fn send_notfound(&self, message: &types::NotFound);
 	fn ignored(&self, id: u32);
+	fn close(&self);
 }
 
 struct OutboundSync {
@@ -161,6 +162,10 @@ impl OutboundSyncConnection for OutboundSync {
 
 	fn ignored(&self, id: u32) {
 		self.context.ignore_response(id);
+	}
+
+	fn close(&self) {
+		self.context.close()
 	}
 }
 

@@ -3,6 +3,7 @@ use parking_lot::Mutex;
 use message::{Payload, Message};
 use p2p::Context;
 use util::{PeerInfo, ConfigurableSynchronizer, ResponseQueue, Synchronizer, Responses};
+use futures::{lazy, finished};
 
 pub struct PeerContext {
 	context: Arc<Context>,
@@ -102,6 +103,17 @@ impl PeerContext {
 		} else {
 			queue.push_unfinished_response(id, self.to_message(payload).into());
 		}
+	}
+
+	/// Closes this context
+	pub fn close(&self) {
+		let context = self.context.clone();
+		let peer_id = self.info.id;
+		let close = lazy(move || {
+			context.close_channel(peer_id);
+			finished::<(), ()>(())
+		});
+		self.context.spawn(close);
 	}
 
 	pub fn info(&self) -> &PeerInfo {
