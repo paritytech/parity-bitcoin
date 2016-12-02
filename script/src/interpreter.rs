@@ -738,7 +738,7 @@ pub fn eval_script(
 				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				let v3 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				if v2 <= v3 && v3 <= v1 {
+				if v2 <= v3 && v3 < v1 {
 					stack.push(vec![1].into());
 				} else {
 					stack.push(vec![0].into());
@@ -1814,6 +1814,20 @@ mod tests {
 			.into_script();
 		let result = Err(Error::InvalidStackOperation);
 		basic_test(&script, result, Stack::default());
+	}
+
+	#[test]
+	fn test_within_testnet_block_519() {
+		let script = Builder::default()
+			.push_num(1.into())
+			.push_num(0.into())
+			.push_num(1.into())
+			.push_opcode(Opcode::OP_WITHIN)
+			.push_opcode(Opcode::OP_NOT)
+			.into_script();
+		let result = Ok(true);
+		let stack = vec![vec![1].into()].into();
+		basic_test(&script, result, stack);
 	}
 
 	// https://blockchain.info/rawtx/3f285f083de7c0acabd9f106a43ec42687ab0bebe2e6f0d529db696794540fea
