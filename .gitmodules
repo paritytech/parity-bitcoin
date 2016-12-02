@@ -1,0 +1,3 @@
+[submodule "tools/compare-tool"]
+	path = tools/compare-tool
+	url = https://github.com/theuni/bitcoind-comparisontool

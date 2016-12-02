@@ -248,11 +248,13 @@ impl SynchronizationServer {
 					};
 
 					trace!(target: "sync", "Going to respond with inventory with {} items to peer#{}", blocks_hashes.len(), peer_index);
-					let inventory = blocks_hashes.into_iter().map(|hash| InventoryVector {
+					let inventory: Vec<_> = blocks_hashes.into_iter().map(|hash| InventoryVector {
 						inv_type: InventoryType::MessageBlock,
 						hash: hash,
 					}).collect();
-					executor.lock().execute(Task::SendInventory(peer_index, inventory));
+					if !inventory.is_empty() {
+						executor.lock().execute(Task::SendInventory(peer_index, inventory));
+					}
 					// inform that we have processed task for peer
 					queue.lock().task_processed(peer_index);
 				},
@@ -660,7 +662,7 @@ pub mod tests {
 		}).map(|t| server.add_task(0, t));
 		// => empty response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
-		assert_eq!(tasks, vec![Task::SendInventory(0, vec![])]);
+		assert_eq!(tasks, vec![]);
 	}
 
 	#[test]
