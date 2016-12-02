@@ -848,9 +848,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 				//    verifying: None <=== we are waiting for B1 to come
 				//    idle: [peer2]
 				//    peer1 responds with single block in ~20 seconds
-				//    => we could ask idle peer2 about [B3, B4]
-				//    => then after receiving, if not yet received B2 => about B2
-				//    => then finally about B1
+				//    => we could ask idle peer2 about [B1, B2, B3, B4]
 				// these requests has priority over new blocks requests below
 				let requested_hashes_len = chain.length_of_blocks_state(BlockState::Requested);
 				let verifying_hashes_len = chain.length_of_blocks_state(BlockState::Verifying);
