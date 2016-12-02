@@ -82,6 +82,11 @@ impl HashQueue {
 		self.set.contains(hash)
 	}
 
+	/// Returns n elements from the front of the queue
+	pub fn front_n(&self, n: u32) -> Vec<H256> {
+		self.queue.iter().cloned().take(n as usize).collect()
+	}
+
 	/// Removes element from the front of the queue.
 	pub fn pop_front(&mut self) -> Option<H256> {
 		match self.queue.pop_front() {
@@ -255,6 +260,11 @@ impl HashQueueChain {
 		None
 	}
 
+	/// Returns n elements from the front of the given queue
+	pub fn front_n_at(&self, queue_index: usize, n: u32) -> Vec<H256> {
+		self.chain[queue_index].front_n(n)
+	}
+
 	/// Remove a number of hashes from the front of the given queue.
 	pub fn pop_front_n_at(&mut self, queue_index: usize, n: u32) -> Vec<H256> {
 		self.chain[queue_index].pop_front_n(n)
@@ -372,5 +382,15 @@ mod tests {
 		assert_eq!(chain.contains_in(&H256::from(2)), Some(0));
 		assert_eq!(chain.contains_in(&H256::from(5)), Some(2));
 		assert_eq!(chain.contains_in(&H256::from(9)), None);
+	}
+
+	#[test]
+	fn hash_queue_front_n() {
+		let mut queue = HashQueue::new();
+		queue.push_back_n(vec![H256::from(0), H256::from(1)]);
+		assert_eq!(queue.front_n(3), vec![H256::from(0), H256::from(1)]);
+		assert_eq!(queue.front_n(3), vec![H256::from(0), H256::from(1)]);
+		assert_eq!(queue.pop_front_n(3), vec![H256::from(0), H256::from(1)]);
+		assert_eq!(queue.pop_front_n(3), vec![]);
 	}
 }

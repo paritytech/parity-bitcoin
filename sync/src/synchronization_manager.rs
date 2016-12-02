@@ -75,6 +75,7 @@ impl Default for ManageOrphanTransactionsConfig {
 pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &mut Peers) -> Option<Vec<H256>> {
 	let mut blocks_to_request: Vec<H256> = Vec::new();
 	let now = precise_time_s();
+
 	// reset tasks for peers, which has not responded during given period
 	for (worst_peer_index, worst_peer_time) in peers.ordered_blocks_requests() {
 		// check if peer has not responded within given time
