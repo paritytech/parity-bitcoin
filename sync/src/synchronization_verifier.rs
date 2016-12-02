@@ -142,7 +142,7 @@ impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
 
 	/// Verify transaction
 	fn verify_transaction(&self, height: u32, transaction: Transaction) {
-		execute_verification_task(&self.sink, &EmptyTransactionOutputProvider::default(), 																&self.verifier, VerificationTask::VerifyTransaction(height, transaction))
+		execute_verification_task(&self.sink, &EmptyTransactionOutputProvider::default(), &self.verifier, VerificationTask::VerifyTransaction(height, transaction))
 	}
 }
 
@@ -162,7 +162,8 @@ fn execute_verification_task<T: VerificationSink, U: PreviousTransactionOutputPr
 						}
 					},
 					Ok(Chain::Orphan) => {
-						unreachable!("sync will never put orphaned blocks to verification queue");
+						// this can happen for B1 if B0 verification has failed && we have already scheduled verification of B0
+						sink.lock().on_block_verification_error(&format!("orphaned block because parent block verification has failed"), &block.hash())
 					},
 					Err(e) => {
 						sink.lock().on_block_verification_error(&format!("{:?}", e), &block.hash())
