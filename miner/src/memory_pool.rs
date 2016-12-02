@@ -13,6 +13,8 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::BTreeSet;
+use std::collections::VecDeque;
+use std::hash::{Hash, Hasher};
 use ser::{Serializable, serialize};
 use heapsize::HeapSizeOf;
 
@@ -78,6 +80,8 @@ struct Storage {
 	transactions_size_in_bytes: usize,
 	/// By-hash storage
 	by_hash: HashMap<H256, Entry>,
+	/// Transactions by previous output
+	by_previous_output: HashMap<HashedOutPoint, H256>,
 	/// References storage
 	references: ReferenceStorage,
 }
@@ -134,6 +138,27 @@ struct ByPackageScoreOrderedEntry {
 	package_miner_fee: i64,
 	/// miner_virtual_fee + Sum(miner_virtual_fee) for all in-pool descendants
 	package_miner_virtual_fee: i64,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct HashedOutPoint {
+	/// Transasction output point
+	out_point: OutPoint,
+}
+
+impl From<OutPoint> for HashedOutPoint {
+	fn from(out_point: OutPoint) -> Self {
+		HashedOutPoint {
+			out_point: out_point,
+		}
+	}
+}
+
+impl Hash for HashedOutPoint {
+	fn hash<H>(&self, state: &mut H) where H: Hasher {
+		state.write(&serialize(&self.out_point));
+		state.finish();
+	}
 }
 
 impl<'a> From<&'a Entry> for ByTimestampOrderedEntry {
@@ -236,6 +261,7 @@ impl Storage {
 			counter: 0,
 			transactions_size_in_bytes: 0,
 			by_hash: HashMap::new(),
+			by_previous_output: HashMap::new(),
 			references: ReferenceStorage {
 				by_input: HashMap::new(),
 				pending: HashSet::new(),
@@ -280,6 +306,12 @@ impl Storage {
 			self.references.ordered.insert_to_orderings(&entry);
 		}
 
+		// remember that all inputs of this transaction are spent
+		for input in &entry.transaction.inputs {
+			let previous_tx = self.by_previous_output.insert(input.previous_output.clone().into(), entry.hash.clone());
+			assert_eq!(previous_tx, None); // transaction must be verified before => no double spend
+		}
+
 		// add to by_hash storage
 		self.by_hash.insert(entry.hash.clone(), entry);
 	}
@@ -290,6 +322,10 @@ impl Storage {
 
 	pub fn contains(&self, hash: &H256) -> bool {
 		self.by_hash.contains_key(hash)
+	}
+
+	pub fn is_output_spent(&self, prevout: &OutPoint) -> bool {
+		self.by_previous_output.contains_key(&prevout.clone().into())
 	}
 
 	pub fn set_virtual_fee(&mut self, h: &H256, virtual_fee: i64) {
@@ -392,11 +428,36 @@ impl Storage {
 				// update pool information
 				self.transactions_size_in_bytes -= entry.size;
 
+				// forget that all inputs of this transaction are spent
+				for input in &entry.transaction.inputs {
+					let spent_in_tx = self.by_previous_output.remove(&input.previous_output.clone().into()).expect("every spent output must be indexed");
+					assert_eq!(&spent_in_tx, h);
+				}
+
 				// remove from storage
 				self.references.remove(None, &self.by_hash, &entry);
 
 				entry
 			})
+	}
+
+	pub fn remove_by_prevout(&mut self, prevout: &OutPoint) -> Option<Vec<Transaction>> {
+		let mut queue: VecDeque<OutPoint> = VecDeque::new();
+		let mut removed: Vec<Transaction> = Vec::new();
+		queue.push_back(prevout.clone());
+
+		while let Some(prevout) = queue.pop_front() {
+			if let Some(entry_hash) = self.by_previous_output.get(&prevout.clone().into()).cloned() {
+				let entry = self.remove_by_hash(&entry_hash).expect("checket that it exists line above; qed");
+				queue.extend(entry.transaction.outputs.iter().enumerate().map(|(idx, _)| OutPoint {
+					hash: entry_hash.clone(),
+					index: idx as u32,
+				}));
+				removed.push(entry.transaction);
+			}
+		}
+
+		Some(removed)
 	}
 
 	pub fn remove_by_parent_hash(&mut self, h: &H256) -> Option<Vec<Transaction>> {
@@ -579,6 +640,11 @@ impl MemoryPool {
 		self.storage.remove_by_hash(h).map(|entry| entry.transaction)
 	}
 
+	/// Removes transaction (and all its descendants) which has spent given output
+	pub fn remove_by_prevout(&mut self, prevout: &OutPoint) -> Option<Vec<Transaction>> {
+		self.storage.remove_by_prevout(prevout)
+	}
+
 	/// Reads single transaction by its hash.
 	pub fn read_by_hash(&self, h: &H256) -> Option<&Transaction> {
 		self.storage.read_by_hash(h)
@@ -712,8 +778,8 @@ impl PreviousTransactionOutputProvider for MemoryPool {
 			.cloned()
 	}
 
-	fn is_spent(&self, _prevout: &OutPoint) -> bool {
-		false
+	fn is_spent(&self, prevout: &OutPoint) -> bool {
+		self.storage.is_output_spent(prevout)
 	}
 }
 
@@ -725,7 +791,8 @@ impl HeapSizeOf for MemoryPool {
 
 #[cfg(test)]
 mod tests {
-	use chain::Transaction;
+	use db::PreviousTransactionOutputProvider;
+	use chain::{Transaction, OutPoint};
 	use heapsize::HeapSizeOf;
 	use super::{MemoryPool, OrderingStrategy};
 	use test_data::{ChainBuilder, TransactionBuilder};
@@ -965,7 +1032,7 @@ mod tests {
 		// all transactions of same size
 		TransactionBuilder::with_default_input(0).set_output(30).store(chain)	// transaction0
 			.into_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
-			.set_default_input(0).set_output(35).store(chain)					// transaction2
+			.set_default_input(1).set_output(35).store(chain)					// transaction2
 			.into_input(0).set_output(10).store(chain)							// transaction2 -> transaction3
 			.into_input(0).set_output(100).store(chain);							// transaction2 -> transaction3 -> transaction4
 
@@ -1020,8 +1087,8 @@ mod tests {
 		// all transactions of same size
 		TransactionBuilder::with_default_input(0).set_output(17).store(chain)	// transaction0
 			.into_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
-			.into_input(0).set_output(7).store(chain)								// transaction0 -> transaction1 -> transaction2
-			.set_default_input(0).set_output(20).store(chain);					// transaction3
+			.into_input(0).set_output(7).store(chain)							// transaction0 -> transaction1 -> transaction2
+			.set_default_input(1).set_output(20).store(chain);					// transaction3
 
 		let mut pool = MemoryPool::new();
 
@@ -1046,14 +1113,14 @@ mod tests {
 		let chain = &mut ChainBuilder::new();
 		// all transactions of same size (=> 3 inputs)
 		// construct level0
-		TransactionBuilder::with_default_input(0).add_default_input(0).add_default_input(0).set_output(10).store(chain)	// transaction0
-			.set_default_input(0).add_default_input(0).add_default_input(0).set_output(20).store(chain)					// transaction1
-			.set_default_input(0).add_default_input(0).add_default_input(0).set_output(30).store(chain)					// transaction2
+		TransactionBuilder::with_default_input(0).add_default_input(1).add_default_input(2).set_output(10).add_output(10).store(chain)		// transaction0
+			.set_default_input(3).add_default_input(4).add_default_input(5).set_output(20).add_output(20).store(chain)						// transaction1
+			.set_default_input(6).add_default_input(7).add_default_input(8).set_output(30).add_output(30).store(chain)						// transaction2
 			// construct level1
-			.set_default_input(0).add_default_input(0).add_input(&chain.at(0), 0).set_output(40).store(chain)				// transaction0 -> transaction3
-			.set_default_input(0).add_input(&chain.at(0), 0).add_input(&chain.at(1), 0).set_output(50).store(chain)			// transaction0 + transaction1 -> transaction4
+			.set_default_input(9).add_default_input(10).add_input(&chain.at(0), 0).set_output(40).add_output(40).store(chain)				// transaction0 -> transaction3
+			.set_default_input(11).add_input(&chain.at(0), 1).add_input(&chain.at(1), 0).set_output(50).add_output(50).store(chain)			// transaction0 + transaction1 -> transaction4
 			// construct level3
-			.set_input(&chain.at(2), 0).add_input(&chain.at(3), 0).add_input(&chain.at(4), 0).set_output(60).store(chain);		// transaction2 + transaction3 + transaction4 -> transaction5
+			.set_input(&chain.at(2), 0).add_input(&chain.at(3), 0).add_input(&chain.at(4), 0).set_output(60).add_output(60).store(chain);	// transaction2 + transaction3 + transaction4 -> transaction5
 
 		let mut pool = MemoryPool::new();
 
@@ -1096,4 +1163,78 @@ mod tests {
 		assert_eq!(pool.read_n_with_strategy(6, OrderingStrategy::ByTransactionScore), expected);
 		assert_eq!(pool.read_n_with_strategy(6, OrderingStrategy::ByPackageScore), expected);
 	}
+
+	#[test]
+	fn test_memory_pool_spent_transaction_output() {
+		let chain = &mut ChainBuilder::new();
+
+		// all transactions of same size (=> 3 inputs)
+		// construct level0
+		TransactionBuilder::with_output(10).store(chain)				// transaction0
+			.set_output(20).store(chain)								// transaction1
+			.set_input(&chain.at(0), 0).add_output(30).store(chain);	// transaction0 -> transaction2
+
+		let mut pool = MemoryPool::new();
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(0), index: 0, }));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(1), index: 0, }));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(2), index: 0, }));
+
+		pool.insert_verified(chain.at(0));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(0), index: 0, }));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(1), index: 0, }));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(2), index: 0, }));
+
+		pool.insert_verified(chain.at(1));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(0), index: 0, }));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(1), index: 0, }));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(2), index: 0, }));
+
+		pool.insert_verified(chain.at(2));
+		assert!(pool.is_spent(&OutPoint { hash: chain.hash(0), index: 0, }));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(1), index: 0, }));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(2), index: 0, }));
+
+		pool.remove_by_hash(&chain.at(2).hash());
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(0), index: 0, }));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(1), index: 0, }));
+		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(2), index: 0, }));
+	}
+
+	#[test]
+	fn test_memory_pool_remove_by_prevout() {
+		let chain = &mut ChainBuilder::new();
+
+		// all transactions of same size (=> 3 inputs)
+		// construct level0
+		TransactionBuilder::with_output(10).store(chain)	// transaction0
+			.into_input(0).add_output(20).store(chain)		// transaction0 -> transaction1
+			.into_input(0).add_output(30).store(chain)		// transaction0 -> transaction1 -> transaction2
+			.reset().add_output(40).store(chain);			// transaction3
+		let mut pool = MemoryPool::new();
+println!("{:?}", chain.hash(0));
+println!("{:?}", chain.hash(1));
+println!("{:?}", chain.hash(2));
+println!("{:?}", chain);
+		pool.insert_verified(chain.at(0));
+		pool.insert_verified(chain.at(1));
+		pool.insert_verified(chain.at(2));
+		pool.insert_verified(chain.at(3));
+		assert_eq!(pool.information().transactions_count, 4);
+
+		assert_eq!(pool.remove_by_prevout(&OutPoint { hash: chain.hash(0), index: 0 }), Some(vec![chain.at(1), chain.at(2)]));
+		assert_eq!(pool.information().transactions_count, 2);
+	}
 }
+/*
+5ea04b4fa956b5a00393ab57979396b8fdab84f29883fda5403878406b48272a
+1ea5f32ad0cdc457aa051a7ce974e168ac378317631ce732be97ad0329900532
+58d4d3f3f5091e03c875d56458c0dbab6362e88eeb8acce237d76952658bb8bb
+[
+	Transaction { version: 0, inputs: [], outputs: [TransactionOutput { value: 10, script_pubkey:  }], lock_time: 0 },
+	Transaction { version: 0, inputs: [TransactionInput { previous_output: OutPoint { hash: 5ea04b4fa956b5a00393ab57979396b8fdab84f29883fda5403878406b48272a, index: 0 }, script_sig: , sequence: 0 }], outputs: [TransactionOutput { value: 20, script_pubkey:  }], lock_time: 0 },
+	Transaction { version: 0, inputs: [TransactionInput { previous_output: OutPoint { hash: 1ea5f32ad0cdc457aa051a7ce974e168ac378317631ce732be97ad0329900532, index: 0 }, script_sig: , sequence: 0 }], outputs: [TransactionOutput { value: 30, script_pubkey:  }], lock_time: 0 },
+	Transaction { version: 0, inputs: [], outputs: [TransactionOutput { value: 40, script_pubkey:  }], lock_time: 0 }
+]
+thread 'memory_pool::tests::test_memory_pool_remove_by_prevout' panicked at 'assertion failed: `(left == right)` (left: `Some([Transaction { version: 0, inputs: [TransactionInput { previous_output: OutPoint { hash: 5ea04b4fa956b5a00393ab57979396b8fdab84f29883fda5403878406b48272a, index: 0 }, script_sig: , sequence: 0 }], outputs: [TransactionOutput { value: 20, script_pubkey:  }], lock_time: 0 }])`, right: `Some([Transaction { version: 0, inputs: [TransactionInput { previous_output: OutPoint { hash: 5ea04b4fa956b5a00393ab57979396b8fdab84f29883fda5403878406b48272a, index: 0 }, script_sig: , sequence: 0 }], outputs: [TransactionOutput { value: 20, script_pubkey:  }], lock_time: 0 }, Transaction { version: 0, inputs: [TransactionInput { previous_output: OutPoint { hash: 1ea5f32ad0cdc457aa051a7ce974e168ac378317631ce732be97ad0329900532, index: 0 }, script_sig: , sequence: 0 }], outputs: [TransactionOutput { value: 30, script_pubkey:  }], lock_time: 0 }])`)', miner/src/memory_pool.rs:1219
+stack backtrace:
+*/

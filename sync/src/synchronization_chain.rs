@@ -354,10 +354,13 @@ impl Chain {
 
 			// all transactions from this block were accepted
 			// => delete accepted transactions from verification queue and from the memory pool
-			let this_block_transactions_hashes: Vec<H256> = block.transaction_hashes().iter().cloned().collect();
-			for transaction_accepted in this_block_transactions_hashes {
-				self.memory_pool.remove_by_hash(&transaction_accepted);
-				self.verifying_transactions.remove(&transaction_accepted);
+			// + also remove transactions which spent outputs which have been spent by transactions from the block
+			for (tx_hash, tx) in block.transactions() {
+				self.memory_pool.remove_by_hash(tx_hash);
+				self.verifying_transactions.remove(tx_hash);
+				for tx_input in &tx.inputs {
+					self.memory_pool.remove_by_prevout(&tx_input.previous_output);
+				}
 			}
 			// no transactions to reverify, because we have just appended new transactions to the blockchain
 
@@ -403,8 +406,7 @@ impl Chain {
 				.map(|h| (h.clone(), self.storage.transaction(&h).expect("block in storage => block transaction in storage")))
 				.collect();
 
-			// reverify memory pool transactions
-			// TODO: maybe reverify only transactions, which depends on other reverifying transactions + transactions from new main branch?
+			// reverify memory pool transactions, sorted by timestamp
 			let memory_pool_transactions_count = self.memory_pool.information().transactions_count;
 			let memory_pool_transactions: Vec<_> = self.memory_pool
 				.remove_n_with_strategy(memory_pool_transactions_count, MemoryPoolOrderingStrategy::ByTimestamp)
@@ -1167,5 +1169,29 @@ mod tests {
 		assert_eq!(transactions_to_reverify_hashes, vec![tx1_hash, tx2_hash]);
 		assert_eq!(insert_result.canonized_blocks_hashes, vec![b3.hash(), b4.hash(), b5.hash()]);
 		assert_eq!(chain.information().transactions.transactions_count, 0); // tx3, tx4, tx5 are added to the database
+	}
+
+	#[test]
+	fn double_spend_transaction_is_removed_from_memory_pool_when_output_is_spent_in_block_transaction() {
+		let genesis = test_data::genesis();
+		let tx0 = genesis.transactions[0].clone();
+		let b0 = test_data::block_builder().header().nonce(1).parent(genesis.hash()).build()
+			.transaction()
+				.lock_time(1)
+				.input().hash(tx0.hash()).index(0).build()
+				.build()
+			.build(); // genesis -> b0[tx1]
+		// tx1 && tx2 are spending same output
+		let tx2: Transaction = test_data::TransactionBuilder::with_output(20).add_input(&tx0, 0).into();
+		let tx3: Transaction = test_data::TransactionBuilder::with_output(20).add_input(&tx0, 1).into();
+
+		// insert tx2 to memory pool
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
+		chain.insert_verified_transaction(tx2.clone());
+		chain.insert_verified_transaction(tx3.clone());
+		// insert verified block with tx1
+		chain.insert_best_block(b0.hash(), &b0.into()).expect("no error");
+		// => tx2 is removed from memory pool, but tx3 remains
+		assert_eq!(chain.information().transactions.transactions_count, 1);
 	}
 }
