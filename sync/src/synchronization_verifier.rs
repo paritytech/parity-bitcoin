@@ -60,9 +60,8 @@ struct EmptyTransactionOutputProvider {
 
 impl AsyncVerifier {
 	/// Create new async verifier
-	pub fn new<T: VerificationSink>(network: Magic, chain: ChainRef, sink: Arc<Mutex<T>>) -> Self {
+	pub fn new<T: VerificationSink>(verifier: Arc<ChainVerifier>, chain: ChainRef, sink: Arc<Mutex<T>>) -> Self {
 		let (verification_work_sender, verification_work_receiver) = channel();
-		let verifier = ChainVerifier::new(chain.read().storage(), network);
 		AsyncVerifier {
 			verification_work_sender: verification_work_sender,
 			verification_worker_thread: Some(thread::Builder::new()
@@ -75,7 +74,7 @@ impl AsyncVerifier {
 	}
 
 	/// Thread procedure for handling verification tasks
-	fn verification_worker_proc<T: VerificationSink>(sink: Arc<Mutex<T>>, chain: ChainRef, verifier: ChainVerifier, work_receiver: Receiver<VerificationTask>) {
+	fn verification_worker_proc<T: VerificationSink>(sink: Arc<Mutex<T>>, chain: ChainRef, verifier: Arc<ChainVerifier>, work_receiver: Receiver<VerificationTask>) {
 		while let Ok(task) = work_receiver.recv() {
 			match task {
 				VerificationTask::Stop => break,

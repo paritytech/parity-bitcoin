@@ -30,7 +30,6 @@ use compact_block_builder::build_compact_block;
 use hash_queue::HashPosition;
 use miner::transaction_fee_rate;
 use verification::ChainVerifier;
-use network::Magic;
 use time;
 use std::time::Duration;
 
@@ -298,8 +297,8 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	orphaned_blocks_pool: OrphanBlocksPool,
 	/// Orphaned transactions pool.
 	orphaned_transactions_pool: OrphanTransactionsPool,
-	/// Network config
-	network: Magic,
+	/// Chain verifier
+	chain_verifier: Arc<ChainVerifier>,
 	/// Verify block headers?
 	verify_headers: bool,
 	/// Verifying blocks by peer
@@ -655,7 +654,6 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 			// validate blocks headers before scheduling
 			let chain = self.chain.read();
-			let verifier = ChainVerifier::new(chain.storage(), self.network);
 			let mut block_header_provider = MessageBlockHeadersProvider::new(&*chain);
 			let mut blocks_hashes: Vec<H256> = Vec::with_capacity(blocks_headers.len());
 			let mut prev_block_hash = header0.previous_header_hash.clone();
@@ -669,7 +667,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 				// verify header
 				if self.verify_headers {
-					if let Err(error) = verifier.verify_block_header(&block_header_provider, &block_header_hash, &block_header) {
+					if let Err(error) = self.chain_verifier.verify_block_header(&block_header_provider, &block_header_hash, &block_header) {
 						warn!(target: "sync", "Error verifying header {:?} from peer#{} `headers` message: {:?}", block_header_hash.to_reversed_str(), peer_index, error);
 						return;
 					}
@@ -1088,7 +1086,7 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 
 impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	/// Create new synchronization client core
-	pub fn new(config: Config, handle: &Handle, executor: Arc<Mutex<T>>, chain: ChainRef, network: Magic) -> Arc<Mutex<Self>> {
+	pub fn new(config: Config, handle: &Handle, executor: Arc<Mutex<T>>, chain: ChainRef, chain_verifier: Arc<ChainVerifier>) -> Arc<Mutex<Self>> {
 		let sync = Arc::new(Mutex::new(
 			SynchronizationClientCore {
 				state: State::Saturated,
@@ -1099,7 +1097,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				chain: chain.clone(),
 				orphaned_blocks_pool: OrphanBlocksPool::new(),
 				orphaned_transactions_pool: OrphanTransactionsPool::new(),
-				network: network,
+				chain_verifier: chain_verifier,
 				verify_headers: true,
 				verifying_blocks_by_peer: HashMap::new(),
 				verifying_blocks_futures: HashMap::new(),
@@ -1683,7 +1681,6 @@ pub mod tests {
 	use synchronization_verifier::tests::DummyVerifier;
 	use synchronization_server::ServerTaskIndex;
 	use primitives::hash::H256;
-	use network::Magic;
 	use p2p::event_loop;
 	use test_data;
 	use db::{self, BlockHeaderProvider};
