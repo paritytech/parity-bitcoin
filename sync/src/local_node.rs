@@ -274,6 +274,7 @@ mod tests {
 	use synchronization_verifier::tests::DummyVerifier;
 	use tokio_core::reactor::{Core, Handle};
 	use primitives::bytes::Bytes;
+	use verification::ChainVerifier;
 
 	struct DummyOutboundSyncConnection;
 
@@ -315,7 +316,8 @@ mod tests {
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
 		let config = Config { threads_num: 1, close_connection_on_bad_block: true };
-		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone(), Magic::Mainnet);
+		let chain_verifier = Arc::new(ChainVerifier::new(chain.read().storage(), Magic::Mainnet));
+		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone(), chain_verifier);
 		let mut verifier = DummyVerifier::default();
 		verifier.set_sink(client_core.clone());
 		let client = SynchronizationClient::new(client_core, verifier);

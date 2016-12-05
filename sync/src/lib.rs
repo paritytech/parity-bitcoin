@@ -47,6 +47,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tokio_core::reactor::Handle;
 use network::Magic;
+use verification::ChainVerifier;
 
 /// Sync errors.
 #[derive(Debug)]
@@ -81,11 +82,12 @@ pub fn create_sync_connection_factory(handle: &Handle, network: Magic, db: db::S
 		threads_num: 4,
 	};
 
-	let sync_chain = Arc::new(RwLock::new(SyncChain::new(db)));
+	let sync_chain = Arc::new(RwLock::new(SyncChain::new(db.clone())));
+	let chain_verifier = Arc::new(ChainVerifier::new(db, network));
 	let sync_executor = SyncExecutor::new(sync_chain.clone());
 	let sync_server = Arc::new(SynchronizationServer::new(sync_chain.clone(), sync_executor.clone()));
-	let sync_client_core = SynchronizationClientCore::new(sync_client_config, handle, sync_executor.clone(), sync_chain.clone(), network);
-	let verifier = AsyncVerifier::new(network, sync_chain, sync_client_core.clone());
+	let sync_client_core = SynchronizationClientCore::new(sync_client_config, handle, sync_executor.clone(), sync_chain.clone(), chain_verifier.clone());
+	let verifier = AsyncVerifier::new(chain_verifier, sync_chain, sync_client_core.clone());
 	let sync_client = SynchronizationClient::new(sync_client_core, verifier);
 	let sync_node = Arc::new(SyncNode::new(sync_server, sync_client, sync_executor));
 	SyncConnectionFactory::with_local_node(sync_node)
