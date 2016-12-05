@@ -74,10 +74,17 @@ pub fn create_sync_connection_factory(handle: &Handle, network: Magic, db: db::S
 	use synchronization_client::{SynchronizationClient, SynchronizationClientCore, Config as SynchronizationConfig};
 	use synchronization_verifier::AsyncVerifier;
 
+	let sync_client_config = SynchronizationConfig {
+		// during regtests, peer is providing us with bad blocks => we shouldn't close connection because of this
+		close_connection_on_bad_block: network != Magic::Regtest,
+		// TODO: remove me
+		threads_num: 4,
+	};
+
 	let sync_chain = Arc::new(RwLock::new(SyncChain::new(db)));
 	let sync_executor = SyncExecutor::new(sync_chain.clone());
 	let sync_server = Arc::new(SynchronizationServer::new(sync_chain.clone(), sync_executor.clone()));
-	let sync_client_core = SynchronizationClientCore::new(SynchronizationConfig::new(), handle, sync_executor.clone(), sync_chain.clone(), network);
+	let sync_client_core = SynchronizationClientCore::new(sync_client_config, handle, sync_executor.clone(), sync_chain.clone(), network);
 	let verifier = AsyncVerifier::new(network, sync_chain, sync_client_core.clone());
 	let sync_client = SynchronizationClient::new(sync_client_core, verifier);
 	let sync_node = Arc::new(SyncNode::new(sync_server, sync_client, sync_executor));
