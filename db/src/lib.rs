@@ -29,6 +29,7 @@ mod error;
 mod update_context;
 mod indexed_block;
 
+#[derive(Debug, Clone)]
 pub enum BlockRef {
 	Number(u32),
 	Hash(primitives::hash::H256),

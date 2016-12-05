@@ -1,7 +1,7 @@
 //! Bitcoin chain verifier
 
 use std::collections::BTreeSet;
-use db::{self, BlockLocation, PreviousTransactionOutputProvider, BlockHeaderProvider};
+use db::{self, BlockLocation, PreviousTransactionOutputProvider, BlockHeaderProvider, BlockRef};
 use network::{Magic, ConsensusParams};
 use script::Script;
 use super::{Verify, VerificationResult, Chain, Error, TransactionError};
@@ -377,20 +377,27 @@ impl ChainVerifier {
 	}
 
 	fn work_required_testnet(&self, header: &chain::BlockHeader, height: u32) -> u32 {
-		let mut bits = BTreeSet::new();
-		let mut block_ref = header.previous_header_hash.clone().into();
-		// TODO: optimize it, so it does not make 11 redundant queries each time
-		for _ in 0..11 {
+		let mut bits = Vec::new();
+		let mut block_ref: BlockRef = header.previous_header_hash.clone().into();
+
+		let parent_header = self.store.block_header(block_ref.clone()).expect("can be called only during ordered verification");
+		let max_time_gap = parent_header.time + utils::DOUBLE_SPACING_SECONDS;
+		if header.time > max_time_gap {
+			return self.network.max_nbits();
+		}
+
+		// TODO: optimize it, so it does not make 2016!!! redundant queries each time
+		for _ in 0..utils::RETARGETING_INTERVAL {
 			let previous_header = match self.store.block_header(block_ref) {
 				Some(h) => h,
 				None => { break; }
 			};
-			bits.insert(previous_header.nbits);
+			bits.push(previous_header.nbits);
 			block_ref = previous_header.previous_header_hash.into();
 		}
 
 		for (index, bit) in bits.into_iter().enumerate() {
-			if bit != self.network.max_nbits() || utils::is_retarget_height(height - index as u32) {
+			if bit != self.network.max_nbits() || utils::is_retarget_height(height - index as u32 - 1) {
 				return bit;
 			}
 		}

@@ -9,7 +9,7 @@ use compact::Compact;
 // Timespan constants
 const RETARGETING_FACTOR: u32 = 4;
 const TARGET_SPACING_SECONDS: u32 = 10 * 60;
-const DOUBLE_SPACING_SECONDS: u32 = 2 * TARGET_SPACING_SECONDS;
+pub const DOUBLE_SPACING_SECONDS: u32 = 2 * TARGET_SPACING_SECONDS;
 const TARGET_TIMESPAN_SECONDS: u32 = 2 * 7 * 24 * 60 * 60;
 
 // The upper and lower bounds for retargeting timespan
@@ -24,8 +24,10 @@ pub fn is_retarget_height(height: u32) -> bool {
 }
 
 fn retarget_timespan(retarget_timestamp: u32, last_timestamp: u32) -> u32 {
-	let timespan = last_timestamp - retarget_timestamp;
-	range_constrain(timespan as u32, MIN_TIMESPAN, MAX_TIMESPAN)
+	// According to libbitcoin we need to
+	// Subtract 32 bit numbers in 64 bit space and constrain result to 32 bits.
+	let timespan = last_timestamp as u64 - retarget_timestamp as u64;
+	range_constrain(timespan, MIN_TIMESPAN as u64, MAX_TIMESPAN as u64) as u32
 }
 
 pub fn work_required_retarget(max_nbits: u32, retarget_timestamp: u32, last_timestamp: u32, last_nbits: u32) -> u32 {
@@ -44,11 +46,7 @@ pub fn work_required_retarget(max_nbits: u32, retarget_timestamp: u32, last_time
 	}
 }
 
-pub fn work_required_testnet() -> u32 {
-	unimplemented!();
-}
-
-fn range_constrain(value: u32, min: u32, max: u32) -> u32 {
+fn range_constrain(value: u64, min: u64, max: u64) -> u64 {
 	cmp::min(cmp::max(value, min), max)
 }
 
