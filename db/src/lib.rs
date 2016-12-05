@@ -8,7 +8,7 @@ extern crate byteorder;
 extern crate chain;
 extern crate serialization;
 extern crate bit_vec;
-extern crate libc;
+extern crate fdlimit;
 #[macro_use] extern crate log;
 
 #[cfg(test)]
@@ -29,7 +29,6 @@ mod transaction_meta_provider;
 mod error;
 mod update_context;
 mod indexed_block;
-mod fdlimit;
 
 pub enum BlockRef {
 	Number(u32),
