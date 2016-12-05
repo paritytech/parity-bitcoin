@@ -340,16 +340,6 @@ struct AverageSpeedMeter {
 	last_timestamp: Option<f64>,
 }
 
-impl Config {
-	#[cfg(test)]
-	pub fn new() -> Self {
-		Config {
-			close_connection_on_bad_block: true,
-			threads_num: 4,
-		}
-	}
-}
-
 impl FilteredInventory {
 	#[cfg(test)]
 	pub fn with_unfiltered(unfiltered: Vec<InventoryVector>) -> Self {
@@ -1713,7 +1703,7 @@ pub mod tests {
 		};
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = DummyTaskExecutor::new();
-		let config = Config { threads_num: 1 };
+		let config = Config { threads_num: 1, close_connection_on_bad_block: true };
 
 		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone(), Magic::Testnet);
 		{
