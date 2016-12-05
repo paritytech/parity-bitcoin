@@ -1671,6 +1671,7 @@ pub mod tests {
 	use parking_lot::{Mutex, RwLock};
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, Transaction};
+	use network::Magic;
 	use message::common::{InventoryVector, InventoryType};
 	use message::types;
 	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore, BlockAnnouncementType, MessageBlockHeadersProvider};
@@ -1681,6 +1682,7 @@ pub mod tests {
 	use synchronization_verifier::tests::DummyVerifier;
 	use synchronization_server::ServerTaskIndex;
 	use primitives::hash::H256;
+	use verification::ChainVerifier;
 	use p2p::event_loop;
 	use test_data;
 	use db::{self, BlockHeaderProvider};
@@ -1702,7 +1704,8 @@ pub mod tests {
 		let executor = DummyTaskExecutor::new();
 		let config = Config { threads_num: 1, close_connection_on_bad_block: true };
 
-		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone(), Magic::Testnet);
+		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Testnet));
+		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone(), chain_verifier);
 		{
 			client_core.lock().verify_headers(false);
 		}
@@ -2737,5 +2740,5 @@ pub mod tests {
 
 		let tasks = executor.lock().take_tasks();
 		assert_eq!(tasks, vec![Task::Close(0)]);
-	}	
+	}
 }
