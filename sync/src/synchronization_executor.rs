@@ -46,6 +46,8 @@ pub enum Task {
 	SendCompactBlocks(usize, Vec<BlockHeaderAndIDs>),
 	/// Notify io about ignored request
 	Ignore(usize, u32),
+	/// Close connection with this peer
+	Close(usize),
 }
 
 /// Synchronization tasks executor
@@ -54,6 +56,28 @@ pub struct LocalSynchronizationTaskExecutor {
 	peers: HashMap<usize, OutboundSyncConnectionRef>,
 	/// Synchronization chain
 	chain: ChainRef,
+}
+
+impl Task {
+	#[cfg(test)]
+	pub fn peer_index(&self) -> usize {
+		match *self {
+			Task::RequestBlocks(peer_index, _) => peer_index,
+			Task::RequestBlocksHeaders(peer_index) => peer_index,
+			Task::RequestTransactions(peer_index, _) => peer_index,
+			Task::RequestMemoryPool(peer_index) => peer_index,
+			Task::SendBlock(peer_index, _) => peer_index,
+			Task::SendMerkleBlock(peer_index, _) => peer_index,
+			Task::SendTransaction(peer_index, _) => peer_index,
+			Task::SendBlockTxn(peer_index, _, _) => peer_index,
+			Task::SendNotFound(peer_index, _) => peer_index,
+			Task::SendInventory(peer_index, _) => peer_index,
+			Task::SendHeaders(peer_index, _, _) => peer_index,
+			Task::SendCompactBlocks(peer_index, _) => peer_index,
+			Task::Ignore(peer_index, _) => peer_index,
+			Task::Close(peer_index) => peer_index,
+		}
+	}
 }
 
 impl LocalSynchronizationTaskExecutor {
@@ -215,6 +239,12 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 					connection.ignored(id);
 				}
 			},
+			Task::Close(peer_index) => {
+				if let Some(connection) = self.peers.get_mut(&peer_index) {
+					trace!(target: "sync", "Closing request with peer#{}", peer_index);
+					connection.close();
+				}
+			},
 		}
 	}
 }
@@ -228,10 +258,12 @@ pub mod tests {
 	use parking_lot::{Mutex, Condvar};
 	use local_node::PeersConnections;
 	use p2p::OutboundSyncConnectionRef;
+	use std::collections::HashSet;
 
 	pub struct DummyTaskExecutor {
 		tasks: Vec<Task>,
 		waiter: Arc<Condvar>,
+		closed: HashSet<usize>,
 	}
 
 	impl DummyTaskExecutor {
@@ -239,6 +271,7 @@ pub mod tests {
 			Arc::new(Mutex::new(DummyTaskExecutor {
 				tasks: Vec::new(),
 				waiter: Arc::new(Condvar::new()),
+				closed: HashSet::new(),
 			}))
 		}
 
@@ -267,6 +300,13 @@ pub mod tests {
 
 	impl TaskExecutor for DummyTaskExecutor {
 		fn execute(&mut self, task: Task) {
+			match task {
+				Task::Close(id) => {
+					self.closed.insert(id);
+					()
+				},
+				_ => if self.closed.contains(&task.peer_index()) { return },
+			}
 			self.tasks.push(task);
 			self.waiter.notify_one();
 		}

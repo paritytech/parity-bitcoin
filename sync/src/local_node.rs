@@ -305,6 +305,7 @@ mod tests {
 		fn send_block_txn(&self, _message: &types::BlockTxn) {}
 		fn send_notfound(&self, _message: &types::NotFound) {}
 		fn ignored(&self, _id: u32) {}
+		fn close(&self) {}
 	}
 
 	fn create_local_node() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
@@ -313,7 +314,7 @@ mod tests {
 		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
-		let config = Config { threads_num: 1 };
+		let config = Config { threads_num: 1, close_connection_on_bad_block: true };
 		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone(), Magic::Mainnet);
 		let mut verifier = DummyVerifier::default();
 		verifier.set_sink(client_core.clone());
