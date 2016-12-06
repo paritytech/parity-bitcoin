@@ -3,8 +3,11 @@ use sync::create_sync_connection_factory;
 use message::Services;
 use util::{open_db, init_db, node_table_path};
 use {config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM};
+use db;
 
 pub fn start(cfg: config::Config) -> Result<(), String> {
+	db::raise_fd_limit();
+
 	let mut el = p2p::event_loop();
 
 	let db = open_db(&cfg);

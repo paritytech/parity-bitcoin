@@ -15,6 +15,7 @@ parking_lot = "0.3"
 test-data = { path = "../test-data" }
 bit-vec = "0.4"
 log = "0.3"
+fdlimit = "0.1"
 
 [features]
 dev = []
