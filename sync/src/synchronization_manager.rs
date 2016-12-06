@@ -72,8 +72,9 @@ impl Default for ManageOrphanTransactionsConfig {
 }
 
 /// Manage stalled synchronization peers blocks tasks
-pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &mut Peers) -> Option<Vec<H256>> {
+pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &mut Peers) -> (Vec<H256>, Vec<H256>) {
 	let mut blocks_to_request: Vec<H256> = Vec::new();
+	let mut blocks_to_forget: Vec<H256> = Vec::new();
 	let now = precise_time_s();
 
 	// reset tasks for peers, which has not responded during given period
@@ -86,8 +87,12 @@ pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &m
 
 		// decrease score && move to the idle queue
 		warn!(target: "sync", "Failed to get requested block from peer#{} in {} seconds", worst_peer_index, time_diff);
-		let peer_tasks = peers.reset_blocks_tasks(worst_peer_index);
-		blocks_to_request.extend(peer_tasks);
+		let failed_blocks = peers.reset_blocks_tasks(worst_peer_index);
+
+		// mark blocks as failed
+		let (normal_blocks, failed_blocks) = peers.on_blocks_failure(failed_blocks);
+		blocks_to_request.extend(normal_blocks);
+		blocks_to_forget.extend(failed_blocks);
 
 		// if peer failed many times => forget it
 		if peers.on_peer_block_failure(worst_peer_index) {
@@ -95,7 +100,7 @@ pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &m
 		}
 	}
 
-	if blocks_to_request.is_empty() { None } else { Some(blocks_to_request) }
+	(blocks_to_request, blocks_to_forget)
 }
 
 /// Manage stalled synchronization peers inventory tasks
@@ -198,7 +203,7 @@ mod tests {
 		let mut peers = Peers::new();
 		peers.on_blocks_requested(1, &vec![H256::from(0), H256::from(1)]);
 		peers.on_block_received(1, &H256::from(0));
-		assert_eq!(manage_synchronization_peers_blocks(&config, &mut peers), None);
+		assert_eq!(manage_synchronization_peers_blocks(&config, &mut peers), (vec![], vec![]));
 		assert_eq!(peers.idle_peers_for_blocks(), vec![]);
 	}
 
@@ -212,7 +217,7 @@ mod tests {
 		peers.on_blocks_requested(2, &vec![H256::from(1)]);
 		sleep(Duration::from_millis(1));
 
-		let managed_tasks = manage_synchronization_peers_blocks(&config, &mut peers).expect("managed tasks");
+		let managed_tasks = manage_synchronization_peers_blocks(&config, &mut peers).0;
 		assert!(managed_tasks.contains(&H256::from(0)));
 		assert!(managed_tasks.contains(&H256::from(1)));
 		let idle_peers = peers.idle_peers_for_blocks();
