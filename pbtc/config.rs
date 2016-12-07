@@ -3,6 +3,7 @@ use clap;
 use network::Magic;
 use p2p::InternetProtocol;
 use seednodes::{mainnet_seednodes, testnet_seednodes};
+use rpc_apis::ApiSet;
 use {USER_AGENT, REGTEST_USER_AGENT};
 use rpc::HttpConfiguration as RpcHttpConfig;
 
@@ -116,13 +117,21 @@ fn parse_rpc_config(magic: Magic, matches: &clap::ArgMatches) -> Result<RpcHttpC
 		return Ok(config);
 	}
 
+	if let Some(apis) = matches.value_of("jsonrpc-apis") {
+		config.apis = ApiSet::List(vec![try!(apis.parse().map_err(|_| "Invalid APIs".to_owned()))].into_iter().collect());
+	}
 	if let Some(port) = matches.value_of("jsonrpc-port") {
 		config.port = try!(port.parse().map_err(|_| "Invalid JSON RPC port".to_owned()));
 	}
 	if let Some(interface) = matches.value_of("jsonrpc-interface") {
 		config.interface = interface.to_owned();
 	}
-	// TODO: support other options
+	if let Some(cors) = matches.value_of("jsonrpc-cors") {
+		config.cors = Some(vec![try!(cors.parse().map_err(|_| "Invalid JSON RPC CORS".to_owned()))]);
+	}
+	if let Some(hosts) = matches.value_of("jsonrpc-hosts") {
+		config.hosts = Some(vec![try!(hosts.parse().map_err(|_| "Invalid JSON RPC hosts".to_owned()))]);
+	}
 
 	Ok(config)
 }
