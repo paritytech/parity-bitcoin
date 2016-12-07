@@ -1,5 +1,6 @@
 use std::str::FromStr;
 use std::collections::HashSet;
+use rpc::Dependencies;
 use ethcore_rpc::Extendable;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
@@ -38,12 +39,12 @@ impl ApiSet {
 	}
 }
 
-pub fn setup_rpc<T: Extendable>(server: T, apis: ApiSet) -> T {
+pub fn setup_rpc<T: Extendable>(server: T, apis: ApiSet, deps: Dependencies) -> T {
 	use ethcore_rpc::v1::*;
 
 	for api in apis.list_apis() {
 		match api {
-			Api::Raw => server.add_delegate(RawClient::new().to_delegate()),
+			Api::Raw => server.add_delegate(RawClient::new(deps.local_sync_node.clone()).to_delegate()),
 		}
 	}
 	server

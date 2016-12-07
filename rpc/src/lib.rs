@@ -7,6 +7,10 @@ extern crate serde;
 extern crate serde_json;
 extern crate jsonrpc_core;
 extern crate jsonrpc_http_server;
+extern crate sync;
+extern crate chain;
+extern crate serialization as ser;
+extern crate primitives;
 
 pub mod v1;
 pub mod rpc_server;

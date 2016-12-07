@@ -25,7 +25,7 @@ use synchronization_server::ServerTaskIndex;
 use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchronization_peers_inventory,
 	manage_unknown_orphaned_blocks, manage_orphaned_transactions, MANAGEMENT_INTERVAL_MS,
 	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
-use synchronization_verifier::{Verifier, VerificationSink, VerificationTask};
+use synchronization_verifier::{Verifier, VerificationSink, BlockVerificationSink, TransactionVerificationSink, VerificationTask};
 use compact_block_builder::build_compact_block;
 use hash_queue::HashPosition;
 use miner::transaction_fee_rate;
@@ -164,6 +164,9 @@ const SYNC_SPEED_BLOCKS_TO_INSPECT: usize = 512;
 /// Number of blocks to inspect when calculating average blocks speed
 const BLOCKS_SPEED_BLOCKS_TO_INSPECT: usize = 512;
 
+// No-error, no-result future
+type EmptyBoxFuture = BoxFuture<(), ()>;
+
 /// Synchronization state
 #[derive(Debug, Clone, Copy)]
 pub enum State {
@@ -210,11 +213,12 @@ pub trait Client : Send + 'static {
 	fn on_peer_block_announcement_type(&mut self, peer_index: usize, announcement_type: BlockAnnouncementType);
 	fn on_peer_feefilter(&mut self, peer_index: usize, message: &types::FeeFilter);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
-	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
+	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: EmptyBoxFuture);
+	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<(), String>;
 }
 
 /// Synchronization client trait
-pub trait ClientCore : VerificationSink {
+pub trait ClientCore {
 	fn best_block(&self) -> db::BestBlock;
 	fn state(&self) -> State;
 	fn is_compact_block_sent_recently(&mut self, peer_index: usize, hash: &H256) -> bool;
@@ -232,9 +236,14 @@ pub trait ClientCore : VerificationSink {
 	fn on_peer_block_announcement_type(&mut self, peer_index: usize, announcement_type: BlockAnnouncementType);
 	fn on_peer_feefilter(&mut self, peer_index: usize, message: &types::FeeFilter);
 	fn on_peer_disconnected(&mut self, peer_index: usize);
-	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>);
+	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: EmptyBoxFuture);
+	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<(H256, Transaction)>, String>;
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>);
 	fn try_switch_to_saturated_state(&mut self) -> bool;
+	fn on_block_verification_success(&mut self, block: IndexedBlock) -> Option<Vec<VerificationTask>>;
+	fn on_block_verification_error(&mut self, err: &str, hash: &H256);
+	fn on_transaction_verification_success(&mut self, transaction: Transaction);
+	fn on_transaction_verification_error(&mut self, err: &str, hash: &H256);
 }
 
 
@@ -286,7 +295,7 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	/// Cpu pool.
 	pool: CpuPool,
 	/// Sync management worker.
-	management_worker: Option<BoxFuture<(), ()>>,
+	management_worker: Option<EmptyBoxFuture>,
 	/// Synchronization peers.
 	peers: Peers,
 	/// Task executor.
@@ -304,7 +313,9 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	/// Verifying blocks by peer
 	verifying_blocks_by_peer: HashMap<H256, usize>,
 	/// Verifying blocks futures
-	verifying_blocks_futures: HashMap<usize, (HashSet<H256>, Vec<BoxFuture<(), ()>>)>,
+	verifying_blocks_futures: HashMap<usize, (HashSet<H256>, Vec<EmptyBoxFuture>)>,
+	/// Verifying transactions futures
+	verifying_transactions_sinks: HashMap<H256, Box<TransactionVerificationSink>>,
 	/// Hashes of items we do not want to relay after verification is completed
 	do_not_relay: HashSet<H256>,
 	/// Block processing speed meter
@@ -313,6 +324,12 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	sync_speed_meter: AverageSpeedMeter,
 	/// Configuration
 	config: Config,
+}
+
+/// Verification sink for synchronization client core
+pub struct CoreVerificationSink<T: TaskExecutor> {
+	/// Client core reference
+	core: Arc<Mutex<SynchronizationClientCore<T>>>,
 }
 
 /// Block headers provider from `headers` message
@@ -337,6 +354,12 @@ struct AverageSpeedMeter {
 	speed: f64,
 	/// Last timestamp
 	last_timestamp: Option<f64>,
+}
+
+/// Transaction append error
+enum AppendTransactionError {
+	Synchronizing,
+	Orphan(HashSet<H256>),
 }
 
 impl FilteredInventory {
@@ -479,8 +502,17 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().on_peer_disconnected(peer_index);
 	}
 
-	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>) {
+	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: EmptyBoxFuture) {
 		self.core.lock().after_peer_nearly_blocks_verified(peer_index, future);
+	}
+
+	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<(), String> {
+		let mut transactions_to_verify = try!(self.core.lock().accept_transaction(transaction, sink));
+		let next_block_height = self.best_block().number + 1;
+		while let Some((_, tx)) = transactions_to_verify.pop_front() {
+			self.verifier.verify_transaction(next_block_height, tx);
+		}
+		Ok(())
 	}
 }
 
@@ -778,7 +810,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 	/// Execute after last block from this peer in NearlySaturated state is verified.
 	/// If there are no verifying blocks from this peer or we are not in the NearlySaturated state => execute immediately.
-	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: BoxFuture<(), ()>) {
+	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: EmptyBoxFuture) {
 		// if we are currently synchronizing => no need to wait
 		if self.state.is_synchronizing() {
 			future.wait().expect("no-error future");
@@ -791,6 +823,18 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 				entry.get_mut().1.push(future);
 			},
 			_ => future.wait().expect("no-error future"),
+		}
+	}
+
+	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<(H256, Transaction)>, String> {
+		let hash = transaction.hash();
+		match self.try_append_transaction(hash.clone(), transaction, true) {
+			Err(AppendTransactionError::Orphan(_)) => Err("Cannot append transaction as its inputs are unknown".to_owned()),
+			Err(AppendTransactionError::Synchronizing) => Err("Cannot append transaction as node is not yet fully synchronized".to_owned()),
+			Ok(transactions) => {
+				self.verifying_transactions_sinks.insert(hash, sink);
+				Ok(transactions)
+			},
 		}
 	}
 
@@ -942,10 +986,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 		switch_to_saturated
 	}
-}
 
-impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor {
-	/// Process successful block verification
 	fn on_block_verification_success(&mut self, block: IndexedBlock) -> Option<Vec<VerificationTask>> {
 		// update block processing speed
 		self.block_speed_meter.checkpoint();
@@ -1009,7 +1050,6 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 		}
 	}
 
-	/// Process failed block verification
 	fn on_block_verification_error(&mut self, err: &str, hash: &H256) {
 		warn!(target: "sync", "Block {:?} verification failed with error {:?}", hash.to_reversed_str(), err);
 
@@ -1041,7 +1081,6 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 		self.execute_synchronization_tasks(None);
 	}
 
-	/// Process successful transaction verification
 	fn on_transaction_verification_success(&mut self, transaction: Transaction) {
 		let hash = transaction.hash();
 		let needs_relay = !self.do_not_relay.remove(&hash);
@@ -1065,11 +1104,15 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 
 		// relay transaction to peers
 		if needs_relay {
-			self.relay_new_transactions(vec![(hash, &transaction, transaction_fee_rate)]);
+			self.relay_new_transactions(vec![(hash.clone(), &transaction, transaction_fee_rate)]);
+		}
+
+		// call verification future, if any
+		if let Some(mut future_sink) = self.verifying_transactions_sinks.remove(&hash) {
+			(&mut future_sink).on_transaction_verification_success(transaction);
 		}
 	}
 
-	/// Process failed transaction verification
 	fn on_transaction_verification_error(&mut self, err: &str, hash: &H256) {
 		warn!(target: "sync", "Transaction {:?} verification failed with error {:?}", hash.to_reversed_str(), err);
 
@@ -1081,6 +1124,46 @@ impl<T> VerificationSink for SynchronizationClientCore<T> where T: TaskExecutor 
 			// forget for this transaction and all its children
 			chain.forget_verifying_transaction_with_children(hash);
 		}
+
+		// call verification future, if any
+		if let Some(mut future_sink) = self.verifying_transactions_sinks.remove(hash) {
+			(&mut future_sink).on_transaction_verification_error(err, hash);
+		}
+	}
+}
+
+impl<T> CoreVerificationSink<T> where T: TaskExecutor {
+	pub fn new(core: Arc<Mutex<SynchronizationClientCore<T>>>) -> Self {
+		CoreVerificationSink {
+			core: core,
+		}
+	}
+}
+
+impl<T> VerificationSink for CoreVerificationSink<T> where T: TaskExecutor {
+}
+
+impl<T> BlockVerificationSink for CoreVerificationSink<T> where T: TaskExecutor {
+	/// Process successful block verification
+	fn on_block_verification_success(&self, block: IndexedBlock) -> Option<Vec<VerificationTask>> {
+		self.core.lock().on_block_verification_success(block)
+	}
+
+	/// Process failed block verification
+	fn on_block_verification_error(&self, err: &str, hash: &H256) {
+		self.core.lock().on_block_verification_error(err, hash)
+	}
+}
+
+impl<T> TransactionVerificationSink for CoreVerificationSink<T> where T: TaskExecutor {
+	/// Process successful transaction verification
+	fn on_transaction_verification_success(&self, transaction: Transaction) {
+		self.core.lock().on_transaction_verification_success(transaction)
+	}
+
+	/// Process failed transaction verification
+	fn on_transaction_verification_error(&self, err: &str, hash: &H256) {
+		self.core.lock().on_transaction_verification_error(err, hash)
 	}
 }
 
@@ -1101,6 +1184,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				verify_headers: true,
 				verifying_blocks_by_peer: HashMap::new(),
 				verifying_blocks_futures: HashMap::new(),
+				verifying_transactions_sinks: HashMap::new(),
 				do_not_relay: HashSet::new(),
 				block_speed_meter: AverageSpeedMeter::with_inspect_items(SYNC_SPEED_BLOCKS_TO_INSPECT),
 				sync_speed_meter: AverageSpeedMeter::with_inspect_items(BLOCKS_SPEED_BLOCKS_TO_INSPECT),
@@ -1445,9 +1529,20 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 
 	/// Process new peer transaction
 	fn process_peer_transaction(&mut self, _peer_index: Option<usize>, hash: H256, transaction: Transaction, relay: bool) -> Option<VecDeque<(H256, Transaction)>> {
+		match self.try_append_transaction(hash.clone(), transaction.clone(), relay) {
+			Err(AppendTransactionError::Orphan(unknown_parents)) => {
+				self.orphaned_transactions_pool.insert(hash, transaction, unknown_parents);
+				None
+			},
+			Err(AppendTransactionError::Synchronizing) => None,
+			Ok(transactions) => Some(transactions),
+		}
+	}
+
+	fn try_append_transaction(&mut self, hash: H256, transaction: Transaction, relay: bool) -> Result<VecDeque<(H256, Transaction)>, AppendTransactionError> {
 		// if we are in synchronization state, we will ignore this message
 		if self.state.is_synchronizing() {
-			return None;
+			return Err(AppendTransactionError::Synchronizing);
 		}
 
 		// else => verify transaction + it's orphans and then add to the memory pool
@@ -1459,8 +1554,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			.map(|input| input.previous_output.hash.clone())
 			.collect();
 		if !unknown_parents.is_empty() {
-			self.orphaned_transactions_pool.insert(hash, transaction, unknown_parents);
-			return None;
+			return Err(AppendTransactionError::Orphan(unknown_parents));
 		}
 
 		// else verify && insert this transaction && all dependent orphans
@@ -1474,7 +1568,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				self.do_not_relay.insert(h.clone());
 			}
 		}
-		Some(transactions)
+		Ok(transactions)
 	}
 
 	fn prepare_blocks_requests_tasks(&mut self, peers: Vec<usize>, mut hashes: Vec<H256>) -> Vec<Task> {
@@ -1539,7 +1633,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 	}
 
-	/// Awake threads, waiting for this block
+	/// Execute futures, which were waiting for this block verification
 	fn awake_waiting_threads(&mut self, hash: &H256) {
 		// find a peer, which has supplied us with this block
 		if let Entry::Occupied(block_entry) = self.verifying_blocks_by_peer.entry(hash.clone()) {
@@ -1674,7 +1768,8 @@ pub mod tests {
 	use network::Magic;
 	use message::common::{InventoryVector, InventoryType};
 	use message::types;
-	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore, BlockAnnouncementType, MessageBlockHeadersProvider};
+	use super::{Client, Config, SynchronizationClient, SynchronizationClientCore, CoreVerificationSink,
+		BlockAnnouncementType, MessageBlockHeadersProvider};
 	use connection_filter::tests::*;
 	use synchronization_executor::Task;
 	use synchronization_chain::{Chain, ChainRef};
@@ -1710,7 +1805,7 @@ pub mod tests {
 			client_core.lock().verify_headers(false);
 		}
 		let mut verifier = verifier.unwrap_or_default();
-		verifier.set_sink(client_core.clone());
+		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
 		let client = SynchronizationClient::new(client_core, verifier);
 		(event_loop, handle, executor, chain, client)
 	}
