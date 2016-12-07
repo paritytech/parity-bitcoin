@@ -84,15 +84,13 @@ mod tests {
 		let bytes2: Result<Bytes, serde_json::Error> = serde_json::from_str(r#""123""#);
 		let bytes3: Result<Bytes, serde_json::Error> = serde_json::from_str(r#""gg""#);
 
-		let bytes4: Bytes = serde_json::from_str(r#""""#).unwrap();
-		let bytes5: Bytes = serde_json::from_str(r#""12""#).unwrap();
-		let bytes6: Bytes = serde_json::from_str(r#""0123""#).unwrap();
+		let bytes4: Bytes = serde_json::from_str(r#""12""#).unwrap();
+		let bytes5: Bytes = serde_json::from_str(r#""0123""#).unwrap();
 
 		assert!(bytes1.is_err());
 		assert!(bytes2.is_err());
 		assert!(bytes3.is_err());
-		assert_eq!(bytes4, Bytes(vec![]));
-		assert_eq!(bytes5, Bytes(vec![0x12]));
-		assert_eq!(bytes6, Bytes(vec![0x1, 0x23]));
+		assert_eq!(bytes4, Bytes(vec![0x12]));
+		assert_eq!(bytes5, Bytes(vec![0x1, 0x23]));
 	}
 }
