@@ -4,6 +4,7 @@ use network::Magic;
 use p2p::InternetProtocol;
 use seednodes::{mainnet_seednodes, testnet_seednodes};
 use {USER_AGENT, REGTEST_USER_AGENT};
+use rpc::HttpConfiguration as RpcHttpConfig;
 
 pub struct Config {
 	pub magic: Magic,
@@ -18,6 +19,7 @@ pub struct Config {
 	pub data_dir: Option<String>,
 	pub user_agent: String,
 	pub internet_protocol: InternetProtocol,
+	pub rpc_config: RpcHttpConfig,
 }
 
 pub const DEFAULT_DB_CACHE: usize = 512;
@@ -86,6 +88,8 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => InternetProtocol::default(),
 	};
 
+	let rpc_config = try!(parse_rpc_config(magic, matches));
+
 	let config = Config {
 		print_to_console: print_to_console,
 		magic: magic,
@@ -99,7 +103,26 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		data_dir: data_dir,
 		user_agent: user_agent.to_string(),
 		internet_protocol: only_net,
+		rpc_config: rpc_config,
 	};
+
+	Ok(config)
+}
+
+fn parse_rpc_config(magic: Magic, matches: &clap::ArgMatches) -> Result<RpcHttpConfig, String> {
+	let mut config = RpcHttpConfig::with_port(magic.rpc_port());
+	config.enabled = !matches.is_present("no-jsonrpc");
+	if !config.enabled {
+		return Ok(config);
+	}
+
+	if let Some(port) = matches.value_of("jsonrpc-port") {
+		config.port = try!(port.parse().map_err(|_| "Invalid JSON RPC port".to_owned()));
+	}
+	if let Some(interface) = matches.value_of("jsonrpc-interface") {
+		config.interface = interface.to_owned();
+	}
+	// TODO: support other options
 
 	Ok(config)
 }

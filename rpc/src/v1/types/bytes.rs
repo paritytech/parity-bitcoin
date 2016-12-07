@@ -34,7 +34,7 @@ impl Into<Vec<u8>> for Bytes {
 impl Serialize for Bytes {
 	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error>
 	where S: Serializer {
-		let mut serialized = "0x".to_owned();
+		let mut serialized = String::new();
 		serialized.push_str(self.0.to_hex().as_ref());
 		serializer.serialize_str(serialized.as_ref())
 	}
@@ -53,8 +53,8 @@ impl Visitor for BytesVisitor {
 	type Value = Bytes;
 
 	fn visit_str<E>(&mut self, value: &str) -> Result<Self::Value, E> where E: Error {
-		if value.len() >= 2 && &value[0..2] == "0x" && value.len() & 1 == 0 {
-			Ok(Bytes::new(try!(FromHex::from_hex(&value[2..]).map_err(|_| Error::custom("invalid hex")))))
+		if value.len() > 0 && value.len() & 1 == 0 {
+			Ok(Bytes::new(try!(FromHex::from_hex(&value).map_err(|_| Error::custom("invalid hex")))))
 		} else {
 			Err(Error::custom("invalid format"))
 		}
@@ -75,18 +75,18 @@ mod tests {
 	fn test_bytes_serialize() {
 		let bytes = Bytes("0123456789abcdef".from_hex().unwrap());
 		let serialized = serde_json::to_string(&bytes).unwrap();
-		assert_eq!(serialized, r#""0x0123456789abcdef""#);
+		assert_eq!(serialized, r#""0123456789abcdef""#);
 	}
 
 	#[test]
 	fn test_bytes_deserialize() {
 		let bytes1: Result<Bytes, serde_json::Error> = serde_json::from_str(r#""""#);
-		let bytes2: Result<Bytes, serde_json::Error> = serde_json::from_str(r#""0x123""#);
-		let bytes3: Result<Bytes, serde_json::Error> = serde_json::from_str(r#""0xgg""#);
+		let bytes2: Result<Bytes, serde_json::Error> = serde_json::from_str(r#""123""#);
+		let bytes3: Result<Bytes, serde_json::Error> = serde_json::from_str(r#""gg""#);
 
-		let bytes4: Bytes = serde_json::from_str(r#""0x""#).unwrap();
-		let bytes5: Bytes = serde_json::from_str(r#""0x12""#).unwrap();
-		let bytes6: Bytes = serde_json::from_str(r#""0x0123""#).unwrap();
+		let bytes4: Bytes = serde_json::from_str(r#""""#).unwrap();
+		let bytes5: Bytes = serde_json::from_str(r#""12""#).unwrap();
+		let bytes6: Bytes = serde_json::from_str(r#""0123""#).unwrap();
 
 		assert!(bytes1.is_err());
 		assert!(bytes2.is_err());
