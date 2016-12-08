@@ -37,6 +37,10 @@ impl BlocksWriter {
 
 	pub fn append_block(&mut self, block: chain::Block) -> Result<(), Error> {
 		let indexed_block: db::IndexedBlock = block.into();
+		// do not append block if it is already there
+		if self.storage.contains_block(db::BlockRef::Hash(indexed_block.hash().clone())) {
+			return Ok(());
+		}
 		// verify && insert only if parent block is already in the storage
 		if !self.storage.contains_block(db::BlockRef::Hash(indexed_block.header().previous_header_hash.clone())) {
 			self.orphaned_blocks_pool.insert_orphaned_block(indexed_block.hash().clone(), indexed_block);
