@@ -146,4 +146,16 @@ mod tests {
 		};
 		assert_eq!(db.best_block().expect("Block is inserted").number, 0);
 	}
+
+	#[test]
+	fn blocks_writer_append_to_existing_db() {
+		let db = Arc::new(db::TestStorage::with_genesis_block());
+		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet);
+
+		assert!(blocks_target.append_block(test_data::genesis()).is_ok());
+		assert_eq!(db.best_block().expect("Block is inserted").number, 0);
+
+		assert!(blocks_target.append_block(test_data::block_h1()).is_ok());
+		assert_eq!(db.best_block().expect("Block is inserted").number, 1);
+	}
 }
