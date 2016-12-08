@@ -8,6 +8,8 @@ use synchronization_client::BlockAnnouncementType;
 
 /// Max peer failures # before excluding from sync process
 const MAX_PEER_FAILURES: usize = 2;
+/// Max blocks failures # before forgetiing this block and restarting sync
+const MAX_BLOCKS_FAILURES: usize = 6;
 
 /// Set of peers selected for synchronization.
 #[derive(Debug)]
@@ -18,6 +20,8 @@ pub struct Peers {
 	unuseful: HashSet<usize>,
 	/// # of failures for given peer.
 	failures: HashMap<usize, usize>,
+	/// # of failures for given block.
+	blocks_failures: HashMap<H256, usize>,
 	/// Peers that are marked as useful for current synchronization session && have pending blocks requests.
 	blocks_requests: HashMap<usize, HashSet<H256>>,
 	/// Last block message time from peer.
@@ -50,6 +54,7 @@ impl Peers {
 			idle: HashSet::new(),
 			unuseful: HashSet::new(),
 			failures: HashMap::new(),
+			blocks_failures: HashMap::new(),
 			blocks_requests: HashMap::new(),
 			blocks_requests_order: LinkedHashMap::new(),
 			inventory_requests: HashSet::new(),
@@ -222,6 +227,9 @@ impl Peers {
 
 	/// Block is received from peer.
 	pub fn on_block_received(&mut self, peer_index: usize, block_hash: &H256) {
+		// forget block failures
+		self.blocks_failures.remove(block_hash);
+
 		// if this is requested block && it is last requested block => remove from blocks_requests
 		let try_mark_as_idle = match self.blocks_requests.entry(peer_index) {
 			Entry::Occupied(mut requests_entry) => { 
@@ -285,6 +293,31 @@ impl Peers {
 		// peer is now out-of-synchronization process (will not request blocks from him), because:
 		// 1) if it has new blocks, it will respond with `inventory` message && will be inserted back here
 		// 2) if it has no new blocks => either synchronization is completed, or it is behind us in sync
+	}
+
+	/// We have failed to get blocks
+	pub fn on_blocks_failure(&mut self, hashes: Vec<H256>) -> (Vec<H256>, Vec<H256>) {
+		let mut failed_blocks: Vec<H256> = Vec::new();
+		let mut normal_blocks: Vec<H256> = Vec::with_capacity(hashes.len());
+		for hash in hashes {
+			match self.blocks_failures.entry(hash.clone()) {
+				Entry::Vacant(entry) => {
+					normal_blocks.push(hash);
+					entry.insert(0);
+				},
+				Entry::Occupied(mut entry) => {
+					*entry.get_mut() += 1;
+					if *entry.get() >= MAX_BLOCKS_FAILURES {
+						entry.remove();
+						failed_blocks.push(hash);
+					} else {
+						normal_blocks.push(hash);
+					}
+				}
+			}
+		}
+
+		(normal_blocks, failed_blocks)
 	}
 
 	/// We have failed to get block from peer during given period
@@ -353,7 +386,7 @@ impl Peers {
 
 #[cfg(test)]
 mod tests {
-	use super::{Peers, MAX_PEER_FAILURES};
+	use super::{Peers, MAX_PEER_FAILURES, MAX_BLOCKS_FAILURES};
 	use primitives::hash::H256;
 
 	#[test]
@@ -529,5 +562,23 @@ mod tests {
 		}
 		peers.useful_peer(1);
 		assert_eq!(peers.information().active + peers.information().idle + peers.information().unuseful, 1);
+	}
+
+	#[test]
+	fn peer_block_failures() {
+		let mut peers = Peers::new();
+		peers.useful_peer(1);
+		peers.on_blocks_requested(1, &vec![H256::from(1)]);
+		for _ in 0..MAX_BLOCKS_FAILURES {
+			let requested_blocks = peers.reset_blocks_tasks(1);
+			let (blocks_to_request, blocks_to_forget) = peers.on_blocks_failure(requested_blocks);
+			assert_eq!(blocks_to_request, vec![H256::from(1)]);
+			assert_eq!(blocks_to_forget, vec![]);
+			peers.on_blocks_requested(1, &vec![H256::from(1)]);
+		}
+		let requested_blocks = peers.reset_blocks_tasks(1);
+		let (blocks_to_request, blocks_to_forget) = peers.on_blocks_failure(requested_blocks);
+		assert_eq!(blocks_to_request, vec![]);
+		assert_eq!(blocks_to_forget, vec![H256::from(1)]);
 	}
 }
