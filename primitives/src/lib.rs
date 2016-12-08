@@ -4,6 +4,7 @@
 extern crate rustc_serialize;
 
 pub mod bytes;
+pub mod compact;
 pub mod hash;
 pub mod uint;
 

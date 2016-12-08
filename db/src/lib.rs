@@ -28,6 +28,7 @@ mod transaction_meta_provider;
 mod error;
 mod update_context;
 mod indexed_block;
+mod indexed_transaction;
 
 #[derive(Debug, Clone)]
 pub enum BlockRef {
@@ -72,6 +73,7 @@ pub use transaction_meta_provider::TransactionMetaProvider;
 pub use block_stapler::{BlockStapler, BlockInsertedChain};
 pub use block_provider::{BlockProvider, BlockHeaderProvider, AsBlockHeaderProvider};
 pub use indexed_block::{IndexedBlock, IndexedTransactions};
+pub use indexed_transaction::{IndexedTransaction};
 
 #[cfg(feature="dev")]
 pub use test_storage::TestStorage;

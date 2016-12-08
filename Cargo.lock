@@ -348,6 +348,8 @@ dependencies = [
 name = "miner"
 version = "0.1.0"
 dependencies = [
+ "bitcrypto 0.1.0",
+ "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "chain 0.1.0",
  "db 0.1.0",
  "heapsize 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",

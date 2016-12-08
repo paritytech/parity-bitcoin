@@ -21,11 +21,10 @@ extern crate ethcore_devtools as devtools;
 extern crate test_data;
 
 mod chain_verifier;
-mod compact;
 mod utils;
 mod task;
 
-pub use primitives::{uint, hash};
+pub use primitives::{uint, hash, compact};
 
 pub use chain_verifier::ChainVerifier;
 
