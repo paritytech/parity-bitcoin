@@ -353,6 +353,7 @@ dependencies = [
  "chain 0.1.0",
  "db 0.1.0",
  "heapsize 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "network 0.1.0",
  "primitives 0.1.0",
  "serialization 0.1.0",
  "test-data 0.1.0",

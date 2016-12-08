@@ -1,6 +1,12 @@
 use primitives::hash::H256;
 use db::{SharedStore, IndexedTransaction};
+use network::Magic;
 use memory_pool::{MemoryPool, OrderingStrategy};
+use pow::{work_required, block_reward_satoshi};
+
+const BLOCK_VERSION: u32 = 0x20000000;
+const MAX_BLOCK_SIZE: u32 = 1_000_000;
+const MAX_BLOCK_SIGOPS: u32 = 20_000;
 
 /// Block template as described in BIP0022
 /// Minimal version
@@ -19,7 +25,11 @@ pub struct BlockTemplate {
 	/// Block transactions (excluding coinbase)
 	pub transactions: Vec<IndexedTransaction>,
 	/// Total funds available for the coinbase (in Satoshis)
-	pub coinbase_value: u32,
+	pub coinbase_value: u64,
+	/// Number of bytes allowed in the block
+	pub size_limit: u32,
+	/// Number of sigops allowed in the block
+	pub sigop_limit: u32,
 }
 
 /// Block size and number of signatures opcodes is limited
@@ -105,28 +115,33 @@ impl SizePolicy {
 }
 
 /// Block assembler
-pub struct BlockAssembler;
+pub struct BlockAssembler {
+	max_block_size: u32,
+	max_block_sigops: u32,
+}
+
+impl Default for BlockAssembler {
+	fn default() -> Self {
+		BlockAssembler {
+			max_block_size: MAX_BLOCK_SIZE,
+			max_block_sigops: MAX_BLOCK_SIGOPS,
+		}
+	}
+}
 
 impl BlockAssembler {
-	pub fn create_new_block(store: &SharedStore, mempool: &MemoryPool, time: u32) -> BlockTemplate {
+	pub fn create_new_block(&self, store: &SharedStore, mempool: &MemoryPool, time: u32, network: Magic) -> BlockTemplate {
 		// get best block
 		// take it's hash && height
 		let best_block = store.best_block().expect("Cannot assemble new block without genesis block");
 		let previous_header_hash = best_block.hash;
 		let height = best_block.number + 1;
+		let nbits = work_required(previous_header_hash.clone(), time, height, store.as_block_header_provider(), network);
+		let version = BLOCK_VERSION;
 
-		// TODO: calculate nbits (retarget may be required)
-		let nbits = 0;
-
-		// TODO: calculate version
-		let version = 0;
-
-		// TODO: use constants and real values
-		let mut block_size = SizePolicy::new(0, 1_000_000, 100_000, 50);
-		// TODO: use constants and real values
-		let mut sigops = SizePolicy::new(0, 2000, 8, 50);
-		// TODO: calculate coinbase fee
-		let mut coinbase_value = 0u32;
+		let mut block_size = SizePolicy::new(0, self.max_block_size, 1_000, 50);
+		let mut sigops = SizePolicy::new(0, self.max_block_sigops, 8, 50);
+		let mut coinbase_value = block_reward_satoshi(height);
 
 		let mut transactions = Vec::new();
 		// add priority transactions
@@ -138,10 +153,12 @@ impl BlockAssembler {
 			version: version,
 			previous_header_hash: previous_header_hash,
 			time: time,
-			nbits: nbits,
+			nbits: nbits.into(),
 			height: height,
 			transactions: transactions,
 			coinbase_value: coinbase_value,
+			size_limit: self.max_block_size,
+			sigop_limit: self.max_block_sigops,
 		}
 	}
 
@@ -149,7 +166,7 @@ impl BlockAssembler {
 		mempool: &MemoryPool,
 		block_size: &mut SizePolicy,
 		sigops: &mut SizePolicy,
-		coinbase_value: &mut u32,
+		coinbase_value: &mut u64,
 		transactions: &mut Vec<IndexedTransaction>,
 		strategy: OrderingStrategy
 	) {
@@ -172,9 +189,9 @@ impl BlockAssembler {
 
 			match size_step.and(sigops_step) {
 				NextStep::Append => {
-					// miner_fee is i64, but we can safely cast it to u32
+					// miner_fee is i64, but we can safely cast it to u64
 					// memory pool should restrict miner fee to be positive
-					*coinbase_value += entry.miner_fee as u32;
+					*coinbase_value += entry.miner_fee as u64;
 					transactions.push(transaction);
 				},
 				NextStep::FinishAndAppend => {

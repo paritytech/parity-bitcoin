@@ -2,13 +2,24 @@ use std::cmp;
 use primitives::compact::Compact;
 use primitives::hash::H256;
 use primitives::uint::U256;
+use network::Magic;
+use db::{BlockHeaderProvider, BlockRef};
 
 const RETARGETING_FACTOR: u32 = 4;
+const TARGET_SPACING_SECONDS: u32 = 10 * 60;
+const DOUBLE_SPACING_SECONDS: u32 = 2 * TARGET_SPACING_SECONDS;
 const TARGET_TIMESPAN_SECONDS: u32 = 2 * 7 * 24 * 60 * 60;
 
 // The upper and lower bounds for retargeting timespan
 const MIN_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS / RETARGETING_FACTOR;
 const MAX_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS * RETARGETING_FACTOR;
+
+// Target number of blocks, 2 weaks, 2016
+pub const RETARGETING_INTERVAL: u32 = TARGET_TIMESPAN_SECONDS / TARGET_SPACING_SECONDS;
+
+pub fn is_retarget_height(height: u32) -> bool {
+	height % RETARGETING_INTERVAL == 0
+}
 
 fn range_constrain(value: i64, min: i64, max: i64) -> i64 {
 	cmp::min(cmp::max(value, min), max)
@@ -50,6 +61,64 @@ pub fn retarget_timespan(retarget_timestamp: u32, last_timestamp: u32) -> u32 {
 	range_constrain(timespan, MIN_TIMESPAN as i64, MAX_TIMESPAN as i64) as u32
 }
 
+/// Returns work required for given header
+pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, network: Magic) -> Compact {
+	assert!(height != 0, "cannot calculate required work for genesis block");
+
+	let parent_header = store.block_header(parent_hash.clone().into()).expect("self.height != 0; qed");
+
+	if is_retarget_height(height) {
+		let retarget_ref = (height - RETARGETING_INTERVAL).into();
+		let retarget_header = store.block_header(retarget_ref).expect("self.height != 0 && self.height % RETARGETING_INTERVAL == 0; qed");
+
+		// timestamp of block(height - RETARGETING_INTERVAL)
+		let retarget_timestamp = retarget_header.time;
+		// timestamp of parent block
+		let last_timestamp = parent_header.time;
+		// nbits of last block
+		let last_nbits = parent_header.nbits;
+
+		return work_required_retarget(network.max_nbits().into(), retarget_timestamp, last_timestamp, last_nbits.into());
+	}
+
+	if network == Magic::Testnet {
+		return work_required_testnet(parent_hash, time, height, store, network)
+	}
+
+	parent_header.nbits.into()
+}
+
+pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, network: Magic) -> Compact {
+	assert!(height != 0, "cannot calculate required work for genesis block");
+
+	let mut bits = Vec::new();
+	let mut block_ref: BlockRef = parent_hash.into();
+
+	let parent_header = store.block_header(block_ref.clone()).expect("height != 0; qed");
+	let max_time_gap = parent_header.time + DOUBLE_SPACING_SECONDS;
+	if time > max_time_gap {
+		return network.max_nbits().into();
+	}
+
+	// TODO: optimize it, so it does not make 2016!!! redundant queries each time
+	for _ in 0..RETARGETING_INTERVAL {
+		let previous_header = match store.block_header(block_ref) {
+			Some(h) => h,
+			None => { break; }
+		};
+		bits.push(previous_header.nbits);
+		block_ref = previous_header.previous_header_hash.into();
+	}
+
+	for (index, bit) in bits.into_iter().enumerate() {
+		if bit != network.max_nbits() || is_retarget_height(height - index as u32 - 1) {
+			return bit.into();
+		}
+	}
+
+	network.max_nbits().into()
+}
+
 /// Algorithm used for retargeting work every 2 weeks
 pub fn work_required_retarget(max_work_bits: Compact, retarget_timestamp: u32, last_timestamp: u32, last_bits: Compact) -> Compact {
 	let mut retarget: U256 = last_bits.into();
@@ -63,6 +132,12 @@ pub fn work_required_retarget(max_work_bits: Compact, retarget_timestamp: u32, l
 	} else {
 		retarget.into()
 	}
+}
+
+pub fn block_reward_satoshi(block_height: u32) -> u64 {
+	let mut res = 50 * 100 * 1000 * 1000;
+	for _ in 0..block_height / 210000 { res /= 2 }
+	res
 }
 
 #[cfg(test)]
