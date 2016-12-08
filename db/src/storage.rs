@@ -185,6 +185,7 @@ impl Storage {
 			);
 		}
 
+		// here the iteration continues from 1th element (0th consumed above ^^^)
 		for (accepted_hash, accepted_tx) in accepted_txs {
 			context.meta.insert(
 				accepted_hash.clone(),
