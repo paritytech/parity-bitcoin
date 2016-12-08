@@ -1831,7 +1831,7 @@ pub mod tests {
 		}
 		let mut verifier = verifier.unwrap_or_default();
 		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
-		let client = SynchronizationClient::new(client_core, verifier);
+		let client = SynchronizationClient::new(client_core.clone(), verifier);
 		(event_loop, handle, executor, chain, client_core, client)
 	}
 

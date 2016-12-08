@@ -89,6 +89,8 @@ pub mod tests {
 			}"#)
 		).unwrap();
 
+		// direct hash is 0791efccd035c5fe501023ff888106eba5eff533965de4a6e06400f623bcac34
+		// but client expects reverse hash
 		assert_eq!(r#"{"jsonrpc":"2.0","result":"34acbc23f60064e0a6e45d9633f5efa5eb068188ff231050fec535d0ccef9107","id":1}"#, &sample);
 	}
 
