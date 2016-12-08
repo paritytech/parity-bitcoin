@@ -12,4 +12,5 @@ db = { path = "../db" }
 network = { path = "../network" }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
+verification = { path = "../verification" }
 test-data = { path = "../test-data" }

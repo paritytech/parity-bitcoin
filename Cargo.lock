@@ -357,6 +357,7 @@ dependencies = [
  "primitives 0.1.0",
  "serialization 0.1.0",
  "test-data 0.1.0",
+ "verification 0.1.0",
 ]
 
 [[package]]

@@ -2,7 +2,7 @@ use primitives::hash::H256;
 use db::{SharedStore, IndexedTransaction};
 use network::Magic;
 use memory_pool::{MemoryPool, OrderingStrategy};
-use pow::{work_required, block_reward_satoshi};
+use verification::{work_required, block_reward_satoshi};
 
 const BLOCK_VERSION: u32 = 0x20000000;
 const MAX_BLOCK_SIZE: u32 = 1_000_000;

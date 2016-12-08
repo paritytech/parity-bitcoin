@@ -6,7 +6,7 @@ use chain::{merkle_root, Transaction};
 use crypto::dhash256;
 use ser::Stream;
 use block_assembler::BlockTemplate;
-use pow::is_valid_proof_of_work_hash;
+use verification::is_valid_proof_of_work_hash;
 
 /// Instead of serializing `BlockHeader` from scratch over and over again,
 /// let's keep it serialized in memory and replace needed bytes
@@ -92,7 +92,6 @@ pub struct Solution {
 /// It's possible to also experiment with time, but I find it pointless
 /// to implement on CPU.
 pub fn find_solution<T>(block: BlockTemplate, mut coinbase_transaction: T) -> Option<Solution> where T: CoinbaseTransaction {
-	let mut nonce = 0u32;
 	let max_extranonce = coinbase_transaction.max_extranonce();
 	let mut extranonce = U256::default();
 

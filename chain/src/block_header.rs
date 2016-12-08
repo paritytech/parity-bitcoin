@@ -5,6 +5,7 @@ use ser::{
 	Serializable, Stream, serialize
 };
 use crypto::dhash256;
+use compact::Compact;
 use hash::H256;
 
 #[derive(PartialEq, Clone)]
@@ -13,7 +14,7 @@ pub struct BlockHeader {
 	pub previous_header_hash: H256,
 	pub merkle_root_hash: H256,
 	pub time: u32,
-	pub nbits: u32,
+	pub bits: Compact,
 	pub nonce: u32,
 }
 
@@ -30,7 +31,7 @@ impl fmt::Debug for BlockHeader {
 			.field("previous_header_hash", &self.previous_header_hash.reversed())
 			.field("merkle_root_hash", &self.merkle_root_hash.reversed())
 			.field("time", &self.time)
-			.field("nbits", &self.nbits)
+			.field("bits", &self.bits)
 			.field("nonce", &self.nonce)
 			.finish()
 	}
@@ -43,7 +44,7 @@ impl Serializable for BlockHeader {
 			.append(&self.previous_header_hash)
 			.append(&self.merkle_root_hash)
 			.append(&self.time)
-			.append(&self.nbits)
+			.append(&self.bits)
 			.append(&self.nonce);
 	}
 }
@@ -55,7 +56,7 @@ impl Deserializable for BlockHeader {
 			previous_header_hash: try!(reader.read()),
 			merkle_root_hash: try!(reader.read()),
 			time: try!(reader.read()),
-			nbits: try!(reader.read()),
+			bits: try!(reader.read()),
 			nonce: try!(reader.read()),
 		};
 
@@ -81,7 +82,7 @@ mod tests {
 			previous_header_hash: [2; 32].into(),
 			merkle_root_hash: [3; 32].into(),
 			time: 4,
-			nbits: 5,
+			bits: 5.into(),
 			nonce: 6,
 		};
 
@@ -118,7 +119,7 @@ mod tests {
 			previous_header_hash: [2; 32].into(),
 			merkle_root_hash: [3; 32].into(),
 			time: 4,
-			nbits: 5,
+			bits: 5.into(),
 			nonce: 6,
 		};
 
