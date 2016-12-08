@@ -381,47 +381,6 @@ impl Storage {
 		}
 	}
 
-	pub fn read_n_with_strategy(&self, mut n: usize, strategy: OrderingStrategy) -> Vec<H256> {
-		if n == 0 {
-			return Vec::new();
-		}
-
-		if n == 1 {
-			return self.read_with_strategy(strategy)
-				.map_or(Vec::new(), |h| vec![h]);
-		}
-
-		let mut references = self.references.clone();
-		let mut result: Vec<H256> = Vec::new();
-		let mut removed: HashSet<H256> = HashSet::new();
-		loop {
-			if n == 0 {
-				break;
-			}
-			n -= 1;
-
-			let top_hash = match strategy {
-				OrderingStrategy::ByTimestamp => references.ordered.by_storage_index.iter().map(|entry| entry.hash.clone()).nth(0),
-				OrderingStrategy::ByTransactionScore => references.ordered.by_transaction_score.iter().map(|entry| entry.hash.clone()).nth(0),
-				OrderingStrategy::ByPackageScore => references.ordered.by_package_score.iter().map(|entry| entry.hash.clone()).nth(0),
-			};
-			match top_hash {
-				None => break,
-				Some(top_hash) => {
-					self.by_hash.get(&top_hash).map(|entry| {
-						// simulate removal
-						removed.insert(top_hash.clone());
-						references.remove(Some(&removed), &self.by_hash, entry);
-
-						// return this entry
-						result.push(top_hash);
-					});
-				},
-			}
-		}
-		result
-	}
-
 	pub fn remove_by_hash(&mut self, h: &H256) -> Option<Entry> {
 		self.by_hash.remove(h)
 			.map(|entry| {
@@ -634,6 +593,11 @@ impl MemoryPool {
 		}
 	}
 
+	/// Iterator over memory pool transactions according to specified strategy
+	pub fn iter(&self, strategy: OrderingStrategy) -> MemoryPoolIterator {
+		MemoryPoolIterator::new(self, strategy)
+	}
+
 	/// Removes single transaction by its hash.
 	/// All descedants remain in the pool.
 	pub fn remove_by_hash(&mut self, h: &H256) -> Option<Transaction> {
@@ -660,7 +624,7 @@ impl MemoryPool {
 	/// Ancestors are always returned before descendant transactions.
 	/// Use this function with care, only if really needed (heavy memory usage)
 	pub fn read_n_with_strategy(&mut self, n: usize, strategy: OrderingStrategy) -> Vec<H256> {
-		self.storage.read_n_with_strategy(n, strategy)
+		self.iter(strategy).take(n).collect()
 	}
 
 	/// Removes the 'top' transaction from the `MemoryPool` using selected strategy.
@@ -786,6 +750,44 @@ impl PreviousTransactionOutputProvider for MemoryPool {
 impl HeapSizeOf for MemoryPool {
 	fn heap_size_of_children(&self) -> usize {
 		self.storage.heap_size_of_children()
+	}
+}
+
+pub struct MemoryPoolIterator<'a> {
+	memory_pool: &'a MemoryPool,
+	references: ReferenceStorage,
+	removed: HashSet<H256>,
+	strategy: OrderingStrategy,
+}
+
+impl<'a> MemoryPoolIterator<'a> {
+	fn new(memory_pool: &'a MemoryPool, strategy: OrderingStrategy) -> Self {
+		MemoryPoolIterator {
+			memory_pool: memory_pool,
+			references: memory_pool.storage.references.clone(),
+			removed: HashSet::new(),
+			strategy: strategy,
+		}
+	}
+}
+
+impl<'a> Iterator for MemoryPoolIterator<'a> {
+	type Item = H256;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		let top_hash = match self.strategy {
+			OrderingStrategy::ByTimestamp => self.references.ordered.by_storage_index.iter().map(|entry| entry.hash.clone()).nth(0),
+			OrderingStrategy::ByTransactionScore => self.references.ordered.by_transaction_score.iter().map(|entry| entry.hash.clone()).nth(0),
+			OrderingStrategy::ByPackageScore => self.references.ordered.by_package_score.iter().map(|entry| entry.hash.clone()).nth(0),
+		};
+
+		if let Some(ref top_hash) = top_hash {
+			let entry = self.memory_pool.storage.by_hash.get(top_hash).expect("missing hash is a sign of MemoryPool internal inconsistancy");
+			self.removed.insert(top_hash.clone());
+			self.references.remove(Some(&self.removed), &self.memory_pool.storage.by_hash, entry);
+		}
+
+		top_hash
 	}
 }
 
