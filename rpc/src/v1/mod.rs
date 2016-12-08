@@ -5,4 +5,4 @@ pub mod traits;
 pub mod types;
 
 pub use self::traits::Raw;
-pub use self::impls::RawClient;
+pub use self::impls::{RawClient, RawClientCore};

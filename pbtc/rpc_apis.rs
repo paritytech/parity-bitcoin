@@ -44,7 +44,7 @@ pub fn setup_rpc<T: Extendable>(server: T, apis: ApiSet, deps: Dependencies) -> 
 
 	for api in apis.list_apis() {
 		match api {
-			Api::Raw => server.add_delegate(RawClient::new(deps.local_sync_node.clone()).to_delegate()),
+			Api::Raw => server.add_delegate(RawClient::new(RawClientCore::new(deps.local_sync_node.clone())).to_delegate()),
 		}
 	}
 	server

@@ -25,7 +25,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 			services: Services::default().with_network(true),
 			user_agent: cfg.user_agent,
 			start_height: 0,
-			relay: false,
+			relay: true,
 		},
 		peers: cfg.connect.map_or_else(|| vec![], |x| vec![x]),
 		seeds: cfg.seednodes,
