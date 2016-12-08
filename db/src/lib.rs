@@ -28,6 +28,7 @@ mod transaction_meta_provider;
 mod error;
 mod update_context;
 mod indexed_block;
+mod expanded_block;
 
 #[derive(Debug, Clone)]
 pub enum BlockRef {
