@@ -583,9 +583,9 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 						None => notfound.push(item),
 						Some(block) => {
 							let indexed_block: IndexedBlock = block.into();
-							let prefilled_transactions_indexes = indexed_block.transactions().enumerate()
+							let prefilled_transactions_indexes = indexed_block.transactions.iter().enumerate()
 								// we do not filter by fee rate here, because it only reasonable for non-mined transactions
-								.filter(|&(_, (h, t))| filter.filter_transaction(h, t, None))
+								.filter(|&(_, tx)| filter.filter_transaction(&tx.hash, &tx.raw, None))
 								.map(|(idx, _)| idx)
 								.collect();
 							let compact_block = types::CompactBlock {
@@ -1296,9 +1296,9 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 
 							let block_header_and_ids: Vec<_> = indexed_blocks.into_iter()
 								.filter_map(|b| if self.peers.filter(peer_index).filter_block(&b.hash()) {
-									let prefilled_transactions_indexes = b.transactions().enumerate()
+									let prefilled_transactions_indexes = b.transactions.iter().enumerate()
 										// we do not filter by fee rate here, because it only reasonable for non-mined transactions
-										.filter(|&(_, (h, t))| self.peers.filter_mut(peer_index).filter_transaction(h, t, None))
+										.filter(|&(_, tx)| self.peers.filter_mut(peer_index).filter_transaction(&tx.hash, &tx.raw, None))
 										.map(|(idx, _)| idx)
 										.collect();
 									Some(build_compact_block(b, prefilled_transactions_indexes))

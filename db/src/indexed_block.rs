@@ -1,158 +1,68 @@
-use chain;
 use primitives::hash::H256;
+use chain::{Block, BlockHeader, OutPoint, TransactionOutput, merkle_root};
 use serialization::Serializable;
+use indexed_header::IndexedBlockHeader;
+use indexed_transaction::IndexedTransaction;
 use PreviousTransactionOutputProvider;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IndexedBlock {
-	header: chain::BlockHeader,
-	header_hash: H256,
-	transactions: Vec<chain::Transaction>,
-	// guaranteed to be the same length as transactions
-	transaction_hashes: Vec<H256>,
+	pub header: IndexedBlockHeader,
+	pub transactions: Vec<IndexedTransaction>,
 }
 
 impl PreviousTransactionOutputProvider for IndexedBlock {
-	fn previous_transaction_output(&self, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput> {
-		self.transaction(&prevout.hash)
-			.and_then(|tx| tx.outputs.get(prevout.index as usize))
-			.cloned()
+	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
+		let txs: &[_] = &self.transactions;
+		txs.previous_transaction_output(prevout)
 	}
 
-	fn is_spent(&self, _prevout: &chain::OutPoint) -> bool {
-		// block does not need it to be checked
-		false
+	fn is_spent(&self, _prevout: &OutPoint) -> bool {
+		unimplemented!();
 	}
 }
 
-impl From<chain::Block> for IndexedBlock {
-	fn from(block: chain::Block) -> Self {
-		let chain::Block { block_header, transactions } = block;
-		let header_hash = block_header.hash();
-		let hashes = transactions.iter().map(chain::Transaction::hash).collect();
+impl From<Block> for IndexedBlock {
+	fn from(block: Block) -> Self {
+		let Block { block_header, transactions } = block;
 
 		IndexedBlock {
-			header: block_header,
-			header_hash: header_hash,
-			transactions: transactions,
-			transaction_hashes: hashes,
+			header: block_header.into(),
+			transactions: transactions.into_iter().map(Into::into).collect(),
 		}
 	}
 }
 
 impl IndexedBlock {
-	pub fn new(header: chain::BlockHeader, transaction_index: Vec<(H256, chain::Transaction)>) -> Self {
-		let mut block = IndexedBlock {
-			header_hash: header.hash(),
+	pub fn new(header: IndexedBlockHeader, transactions: Vec<IndexedTransaction>) -> Self {
+		IndexedBlock {
 			header: header,
-			transactions: Vec::with_capacity(transaction_index.len()),
-			transaction_hashes: Vec::with_capacity(transaction_index.len()),
-		};
-
-		for (h256, tx) in transaction_index {
-			block.transactions.push(tx);
-			block.transaction_hashes.push(h256);
+			transactions: transactions,
 		}
-
-		block
-	}
-
-	pub fn transaction(&self, hash: &H256) -> Option<&chain::Transaction> {
-		self.transaction_hashes.iter()
-			.position(|x| x == hash)
-			.map(|position| &self.transactions[position])
-	}
-
-	pub fn transactions(&self) -> IndexedTransactions {
-		IndexedTransactions {
-			position: 0,
-			block: self,
-		}
-	}
-
-	pub fn transaction_hashes(&self) -> &[H256] {
-		&self.transaction_hashes
-	}
-
-	pub fn header(&self) -> &chain::BlockHeader {
-		&self.header
 	}
 
 	pub fn hash(&self) -> &H256 {
-		&self.header_hash
+		&self.header.hash
 	}
 
-	pub fn transaction_count(&self) -> usize {
-		self.transaction_hashes.len()
+	pub fn header(&self) -> &BlockHeader {
+		&self.header.raw
 	}
 
-	pub fn to_block(&self) -> chain::Block {
-		chain::Block::new(
-			self.header.clone(),
-			self.transactions.clone(),
-		)
+	pub fn to_raw_block(self) -> Block {
+		Block::new(self.header.raw, self.transactions.into_iter().map(|tx| tx.raw).collect())
 	}
 
 	pub fn size(&self) -> usize {
-		// todo: optimize
-		self.to_block().serialized_size()
+		let txs_size = self.transactions.iter().map(|tx| tx.raw.serialized_size()).sum::<usize>();
+		self.header.raw.serialized_size() + txs_size
 	}
 
 	pub fn merkle_root(&self) -> H256 {
-		chain::merkle_root(&self.transaction_hashes)
+		merkle_root(&self.transactions.iter().map(|tx| tx.hash.clone()).collect::<Vec<_>>())
 	}
 
 	pub fn is_final(&self, height: u32) -> bool {
-		self.transactions.iter().all(|t| t.is_final(height, self.header.time))
-	}
-
-	pub fn transaction_at(&self, index: usize) -> (&H256, &chain::Transaction) {
-		(&self.transaction_hashes[index], &self.transactions[index])
-	}
-}
-
-pub struct IndexedTransactions<'a> {
-	position: usize,
-	block: &'a IndexedBlock,
-}
-
-impl<'a> Iterator for IndexedTransactions<'a> {
-	type Item = (&'a H256, &'a chain::Transaction);
-
-	fn next(&mut self) -> Option<(&'a H256, &'a chain::Transaction)> {
-		if self.position >= self.block.transactions.len() {
-			None
-		}
-		else {
-			let result = Some((&self.block.transaction_hashes[self.position], &self.block.transactions[self.position]));
-			self.position += 1;
-			result
-		}
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use test_data;
-	use super::IndexedBlock;
-
-	#[test]
-	fn index() {
-		let block = test_data::block_h1();
-		let indexed_block: IndexedBlock = block.clone().into();
-
-		assert_eq!(*indexed_block.transactions().nth(0).unwrap().0, block.transactions()[0].hash());
-	}
-
-	#[test]
-	fn iter() {
-		let block = test_data::block_builder()
-			.header().build()
-			.transaction().coinbase().output().value(3).build().build()
-			.transaction().coinbase().output().value(5).build().build()
-			.build();
-		let indexed_block: IndexedBlock = block.clone().into();
-
-		assert_eq!(*indexed_block.transactions().nth(1).unwrap().0, block.transactions()[1].hash());
+		self.transactions.iter().all(|tx| tx.raw.is_final(height, self.header.raw.time))
 	}
 }

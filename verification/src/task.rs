@@ -25,7 +25,7 @@ impl<'a> Task<'a> {
 
 	pub fn progress(&mut self, verifier: &ChainVerifier) {
 		for index in self.from..self.to {
-			if let Err(e) = verifier.verify_transaction(self.block, self.block_height, self.block.header().time, self.block.transaction_at(index).1, index) {
+			if let Err(e) = verifier.verify_transaction(self.block, self.block_height, self.block.header.raw.time, &self.block.transactions[index].raw, index) {
 				self.result = Err((index, e))
 			}
 		}

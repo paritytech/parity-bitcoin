@@ -126,7 +126,7 @@ impl BlockProvider for TestStorage {
 impl BlockStapler for TestStorage {
 	/// insert pre-processed block in the storage
 	fn insert_indexed_block(&self, block: &IndexedBlock) -> Result<BlockInsertedChain, Error> {
-		self.insert_block(&block.to_block())
+		self.insert_block(&block.clone().to_raw_block())
 	}
 
 	fn insert_block(&self, block: &chain::Block) -> Result<BlockInsertedChain, Error> {
