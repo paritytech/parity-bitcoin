@@ -1,3 +1,3 @@
 mod raw;
 
-pub use self::raw::RawClient;
+pub use self::raw::{RawClient, RawClientCore};

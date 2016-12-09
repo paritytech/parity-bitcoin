@@ -5,7 +5,8 @@ use chain;
 use db;
 use network::Magic;
 use orphan_blocks_pool::OrphanBlocksPool;
-use synchronization_verifier::{Verifier, SyncVerifier, VerificationSink, VerificationTask};
+use synchronization_verifier::{Verifier, SyncVerifier, VerificationTask,
+	VerificationSink, BlockVerificationSink, TransactionVerificationSink};
 use primitives::hash::H256;
 use super::Error;
 
@@ -15,23 +16,28 @@ pub struct BlocksWriter {
 	storage: db::SharedStore,
 	orphaned_blocks_pool: OrphanBlocksPool,
 	verifier: SyncVerifier<BlocksWriterSink>,
-	sink: Arc<Mutex<BlocksWriterSink>>,
+	sink: Arc<BlocksWriterSinkData>,
 }
 
 struct BlocksWriterSink {
+	data: Arc<BlocksWriterSinkData>,
+}
+
+struct BlocksWriterSinkData {
 	storage: db::SharedStore,
-	err: Option<Error>,
+	err: Mutex<Option<Error>>,
 }
 
 impl BlocksWriter {
 	pub fn new(storage: db::SharedStore, network: Magic) -> BlocksWriter {
-		let sink = Arc::new(Mutex::new(BlocksWriterSink::new(storage.clone())));
-		let verifier = SyncVerifier::new(network, storage.clone(), sink.clone());
+		let sink_data = Arc::new(BlocksWriterSinkData::new(storage.clone()));
+		let sink = Arc::new(BlocksWriterSink::new(sink_data.clone()));
+		let verifier = SyncVerifier::new(network, storage.clone(), sink);
 		BlocksWriter {
 			storage: storage,
 			orphaned_blocks_pool: OrphanBlocksPool::new(),
 			verifier: verifier,
-			sink: sink,
+			sink: sink_data,
 		}
 	}
 
@@ -56,7 +62,8 @@ impl BlocksWriter {
 		verification_queue.push_front(indexed_block);
 		while let Some(block) = verification_queue.pop_front() {
 			self.verifier.verify_block(block);
-			if let Some(err) = self.sink.lock().error() {
+
+			if let Some(err) = self.sink.error() {
 				return Err(err);
 			}
 		}
@@ -66,35 +73,48 @@ impl BlocksWriter {
 }
 
 impl BlocksWriterSink {
-	pub fn new(storage: db::SharedStore) -> Self {
+	pub fn new(data: Arc<BlocksWriterSinkData>) -> Self {
 		BlocksWriterSink {
+			data: data,
+		}
+	}
+}
+
+impl BlocksWriterSinkData {
+	pub fn new(storage: db::SharedStore) -> Self {
+		BlocksWriterSinkData {
 			storage: storage,
-			err: None,
+			err: Mutex::new(None),
 		}
 	}
 
-	pub fn error(&mut self) -> Option<Error> {
-		self.err.take()
+	pub fn error(&self) -> Option<Error> {
+		self.err.lock().take()
 	}
 }
 
 impl VerificationSink for BlocksWriterSink {
-	fn on_block_verification_success(&mut self, block: db::IndexedBlock) -> Option<Vec<VerificationTask>> {
-		if let Err(err) = self.storage.insert_indexed_block(&block) {
-			self.err = Some(Error::Database(err));
+}
+
+impl BlockVerificationSink for BlocksWriterSink {
+	fn on_block_verification_success(&self, block: db::IndexedBlock) -> Option<Vec<VerificationTask>> {
+		if let Err(err) = self.data.storage.insert_indexed_block(&block) {
+			*self.data.err.lock() = Some(Error::Database(err));
 		}
 		None
 	}
 
-	fn on_block_verification_error(&mut self, err: &str, _hash: &H256) {
-		self.err = Some(Error::Verification(err.into()));
+	fn on_block_verification_error(&self, err: &str, _hash: &H256) {
+		*self.data.err.lock() = Some(Error::Verification(err.into()));
 	}
+}
 
-	fn on_transaction_verification_success(&mut self, _transaction: chain::Transaction) {
+impl TransactionVerificationSink for BlocksWriterSink {
+	fn on_transaction_verification_success(&self, _transaction: chain::Transaction) {
 		unreachable!("not intended to verify transactions")
 	}
 
-	fn on_transaction_verification_error(&mut self, _err: &str, _hash: &H256) {
+	fn on_transaction_verification_error(&self, _err: &str, _hash: &H256) {
 		unreachable!("not intended to verify transactions")
 	}
 }

@@ -2,6 +2,11 @@ use std::net::SocketAddr;
 use rpc_apis::{self, ApiSet};
 use ethcore_rpc::{Server, RpcServer, RpcServerError};
 use std::io;
+use sync;
+
+pub struct Dependencies {
+	pub local_sync_node: sync::LocalNodeRef,
+}
 
 #[derive(Debug, PartialEq)]
 pub struct HttpConfiguration {
@@ -26,23 +31,24 @@ impl HttpConfiguration {
 	}
 }
 
-pub fn new_http(conf: HttpConfiguration) -> Result<Option<Server>, String> {
+pub fn new_http(conf: HttpConfiguration, deps: Dependencies) -> Result<Option<Server>, String> {
 	if !conf.enabled {
 		return Ok(None);
 	}
 
 	let url = format!("{}:{}", conf.interface, conf.port);
 	let addr = try!(url.parse().map_err(|_| format!("Invalid JSONRPC listen host/port given: {}", url)));
-	Ok(Some(try!(setup_http_rpc_server(&addr, conf.cors, conf.hosts, conf.apis))))
+	Ok(Some(try!(setup_http_rpc_server(&addr, conf.cors, conf.hosts, conf.apis, deps))))
 }
 
 pub fn setup_http_rpc_server(
 	url: &SocketAddr,
 	cors_domains: Option<Vec<String>>,
 	allowed_hosts: Option<Vec<String>>,
-	apis: ApiSet
+	apis: ApiSet,
+	deps: Dependencies,
 ) -> Result<Server, String> {
-	let server = try!(setup_rpc_server(apis));
+	let server = try!(setup_rpc_server(apis, deps));
 	// TODO: PanicsHandler
 	let start_result = server.start_http(url, cors_domains, allowed_hosts);
 	match start_result {
@@ -55,7 +61,7 @@ pub fn setup_http_rpc_server(
 	}
 }
 
-fn setup_rpc_server(apis: ApiSet) -> Result<RpcServer, String> {
+fn setup_rpc_server(apis: ApiSet, deps: Dependencies) -> Result<RpcServer, String> {
 	let server = RpcServer::new();
-	Ok(rpc_apis::setup_rpc(server, apis))
+	Ok(rpc_apis::setup_rpc(server, apis, deps))
 }
