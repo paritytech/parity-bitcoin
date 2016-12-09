@@ -116,8 +116,8 @@ impl SizePolicy {
 
 /// Block assembler
 pub struct BlockAssembler {
-	max_block_size: u32,
-	max_block_sigops: u32,
+	pub max_block_size: u32,
+	pub max_block_sigops: u32,
 }
 
 impl Default for BlockAssembler {
