@@ -4,6 +4,7 @@ use super::genesis;
 use chain;
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
+use primitives::compact::Compact;
 use invoke::{Invoke, Identity};
 use std::cell::Cell;
 
@@ -178,7 +179,7 @@ pub struct BlockHeaderBuilder<F=Identity> {
 	time: u32,
 	parent: H256,
 	nonce: u32,
-	nbits: u32,
+	bits: Compact,
 	version: u32,
 	merkle_root: H256,
 }
@@ -189,9 +190,9 @@ impl<F> BlockHeaderBuilder<F> where F: Invoke<chain::BlockHeader> {
 			callback: callback,
 			time: TIMESTAMP_COUNTER.with(|counter| { let val = counter.get(); counter.set(val+1); val }),
 			nonce: 0,
-			merkle_root: H256::from(0),
-			parent: H256::from(0),
-			nbits: 0,
+			merkle_root: 0.into(),
+			parent: 0.into(),
+			bits: 0.into(),
 			version: 1,
 		}
 	}
@@ -211,8 +212,8 @@ impl<F> BlockHeaderBuilder<F> where F: Invoke<chain::BlockHeader> {
 		self
 	}
 
-	pub fn nbits(mut self, nbits: u32) -> Self {
-		self.nbits = nbits;
+	pub fn bits(mut self, bits: Compact) -> Self {
+		self.bits = bits;
 		self
 	}
 
@@ -226,7 +227,7 @@ impl<F> BlockHeaderBuilder<F> where F: Invoke<chain::BlockHeader> {
 			chain::BlockHeader {
 				time: self.time,
 				previous_header_hash: self.parent,
-				nbits: self.nbits,
+				bits: self.bits,
 				nonce: self.nonce,
 				merkle_root_hash: self.merkle_root,
 				version: self.version,

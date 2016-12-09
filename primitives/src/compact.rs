@@ -15,13 +15,26 @@ impl From<Compact> for u32 {
 	}
 }
 
+impl From<U256> for Compact {
+	fn from(u: U256) -> Self {
+		Compact::from_u256(u)
+	}
+}
+
+impl From<Compact> for U256 {
+	fn from(c: Compact) -> Self {
+		// ignore overflows and negative values
+		c.to_u256().unwrap_or_else(|x| x)
+	}
+}
+
 impl Compact {
 	pub fn new(u: u32) -> Self {
 		Compact(u)
 	}
 
 	/// Computes the target [0, T] that a blockhash must land in to be valid
-	/// Returns None, if there is an overflow or its negative value
+	/// Returns value in error, if there is an overflow or its negative value
 	pub fn to_u256(&self) -> Result<U256, U256> {
 		let size = self.0 >> 24;
 		let mut word = self.0 & 0x007fffff;

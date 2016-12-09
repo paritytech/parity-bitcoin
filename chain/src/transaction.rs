@@ -65,6 +65,13 @@ impl Deserializable for OutPoint {
 }
 
 impl OutPoint {
+	pub fn null() -> Self {
+		OutPoint {
+			hash: H256::default(),
+			index: u32::max_value(),
+		}
+	}
+
 	pub fn hash(&self) -> &H256 {
 		&self.hash
 	}

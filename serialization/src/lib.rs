@@ -6,7 +6,7 @@ mod impls;
 pub mod reader;
 pub mod stream;
 
-pub use primitives::{hash, bytes};
+pub use primitives::{hash, bytes, compact};
 
 pub use compact_integer::CompactInteger;
 pub use self::reader::{Reader, Deserializable, deserialize, deserialize_iterator, ReadIterator, Error};

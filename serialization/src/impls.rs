@@ -1,6 +1,7 @@
 use std::io;
-use bytes::Bytes;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+use bytes::Bytes;
+use compact::Compact;
 use hash::{H32, H48, H96, H160, H256, H264, H512, H520};
 use compact_integer::CompactInteger;
 use {Serializable, Stream, Deserializable, Reader, Error};
@@ -216,6 +217,18 @@ impl Deserializable for Bytes {
 		let mut bytes = Bytes::new_with_len(len.into());
 		try!(reader.read_slice(&mut bytes));
 		Ok(bytes)
+	}
+}
+
+impl Serializable for Compact {
+	fn serialize(&self, stream: &mut Stream) {
+		stream.append(&u32::from(*self));
+	}
+}
+
+impl Deserializable for Compact {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
+		reader.read::<u32>().map(Compact::new)
 	}
 }
 
