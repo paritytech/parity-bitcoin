@@ -2,11 +2,13 @@ use primitives::hash::H256;
 use db::{SharedStore, IndexedTransaction};
 use network::Magic;
 use memory_pool::{MemoryPool, OrderingStrategy};
-use verification::{work_required, block_reward_satoshi, transaction_sigops, StoreWithUnretainedOutputs};
+use verification::{
+	work_required, block_reward_satoshi, transaction_sigops,
+	StoreWithUnretainedOutputs, MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS
+};
 
 const BLOCK_VERSION: u32 = 0x20000000;
-const MAX_BLOCK_SIZE: u32 = 1_000_000;
-const MAX_BLOCK_SIGOPS: u32 = 20_000;
+const BLOCK_HEADER_SIZE: u32 = 4 + 32 + 32 + 4 + 4 + 4;
 
 /// Block template as described in BIP0022
 /// Minimal version
@@ -123,8 +125,8 @@ pub struct BlockAssembler {
 impl Default for BlockAssembler {
 	fn default() -> Self {
 		BlockAssembler {
-			max_block_size: MAX_BLOCK_SIZE,
-			max_block_sigops: MAX_BLOCK_SIGOPS,
+			max_block_size: MAX_BLOCK_SIZE as u32,
+			max_block_sigops: MAX_BLOCK_SIGOPS as u32,
 		}
 	}
 }
@@ -139,15 +141,13 @@ impl BlockAssembler {
 		let nbits = work_required(previous_header_hash.clone(), time, height, store.as_block_header_provider(), network);
 		let version = BLOCK_VERSION;
 
-		let mut block_size = SizePolicy::new(0, self.max_block_size, 1_000, 50);
+		let mut block_size = SizePolicy::new(BLOCK_HEADER_SIZE, self.max_block_size, 1_000, 50);
 		let mut sigops = SizePolicy::new(0, self.max_block_sigops, 8, 50);
 		let mut coinbase_value = block_reward_satoshi(height);
 
 		let mut transactions = Vec::new();
 		// add priority transactions
 		BlockAssembler::fill_transactions(store, mempool, &mut block_size, &mut sigops, &mut coinbase_value, &mut transactions, OrderingStrategy::ByTransactionScore);
-		// add package transactions
-		BlockAssembler::fill_transactions(store, mempool, &mut block_size, &mut sigops, &mut coinbase_value, &mut transactions, OrderingStrategy::ByPackageScore);
 
 		BlockTemplate {
 			version: version,
@@ -172,10 +172,6 @@ impl BlockAssembler {
 		strategy: OrderingStrategy
 	) {
 		for entry in mempool.iter(strategy) {
-			if transactions.iter().any(|x| x.hash == entry.hash) {
-				break;
-			}
-
 			let transaction_size = entry.size as u32;
 			let sigops_count = {
 				let txs: &[_] = &*transactions;

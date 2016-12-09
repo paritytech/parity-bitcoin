@@ -27,7 +27,7 @@ mod utils;
 
 pub use primitives::{uint, hash, compact};
 
-pub use chain_verifier::{Chain, ChainVerifier, VerificationResult};
+pub use chain_verifier::{Chain, ChainVerifier, VerificationResult, MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 pub use error::{Error, TransactionError};
 pub use sigops::{transaction_sigops, StoreWithUnretainedOutputs};
 pub use utils::{work_required, is_valid_proof_of_work, is_valid_proof_of_work_hash, block_reward_satoshi};

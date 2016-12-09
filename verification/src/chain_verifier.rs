@@ -11,8 +11,8 @@ use {Verify, chain, utils};
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
 const COINBASE_MATURITY: u32 = 100; // 2 hours
-const MAX_BLOCK_SIGOPS: usize = 20000;
-const MAX_BLOCK_SIZE: usize = 1000000;
+pub const MAX_BLOCK_SIZE: usize = 1_000_000;
+pub const MAX_BLOCK_SIGOPS: usize = 20_000;
 
 const TRANSACTIONS_VERIFY_THREADS: usize = 4;
 const TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD: usize = 16;
