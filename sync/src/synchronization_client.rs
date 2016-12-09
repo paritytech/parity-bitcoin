@@ -1840,7 +1840,7 @@ pub mod tests {
 		};
 		let chain = ChainRef::new(RwLock::new(Chain::new(storage.clone())));
 		let executor = DummyTaskExecutor::new();
-		let config = Config { threads_num: 1, close_connection_on_bad_block: true };
+		let config = Config { network: Magic::Mainnet, threads_num: 1, close_connection_on_bad_block: true };
 
 		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Testnet));
 		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone(), chain_verifier);
