@@ -1,12 +1,13 @@
+use serde::{Serialize, Serializer};
 use super::bytes::Bytes;
 use super::hash::H256;
 use super::raw_block::RawBlock;
 
 /// Response to getblock RPC request
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub enum GetBlockResponse {
 	/// When asking for short response
-	Short(RawBlock),
+	Raw(RawBlock),
 	/// When asking for verbose response
 	Verbose(Block),
 }
@@ -51,6 +52,15 @@ pub struct Block {
 	pub previousblockhash: Option<H256>,
 	/// Hash of next block
 	pub nextblockhash: Option<H256>,
+}
+
+impl Serialize for GetBlockResponse {
+	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: Serializer {
+		match *self {
+			GetBlockResponse::Raw(ref raw_block) => raw_block.serialize(serializer),
+			GetBlockResponse::Verbose(ref block) => block.serialize(serializer),
+		}
+	}
 }
 
 #[cfg(test)]
@@ -124,5 +134,21 @@ mod tests {
 		assert_eq!(
 			serde_json::from_str::<Block>(r#"{"hash":"0100000000000000000000000000000000000000000000000000000000000000","confirmations":-1,"size":500000,"strippedsize":444444,"weight":5236235,"height":3513513,"version":1,"versionHex":"01","merkleroot":"0200000000000000000000000000000000000000000000000000000000000000","tx":["0300000000000000000000000000000000000000000000000000000000000000","0400000000000000000000000000000000000000000000000000000000000000"],"time":111,"mediantime":100,"nonce":124,"bits":13513,"difficulty":555.555,"chainwork":"0300000000000000000000000000000000000000000000000000000000000000","previousblockhash":"0400000000000000000000000000000000000000000000000000000000000000","nextblockhash":"0500000000000000000000000000000000000000000000000000000000000000"}"#).unwrap(),
 			block);
+	}
+
+	#[test]
+	fn get_block_response_raw_serialize() {
+		let raw_response = GetBlockResponse::Raw(Bytes::new(vec![0]));
+		assert_eq!(serde_json::to_string(&raw_response).unwrap(), r#""00""#);
+	}
+
+	#[test]
+	fn get_block_response_verbose_serialize() {
+		let block = Block {
+			version_hex: Bytes::new(vec![0]),
+			..Default::default()
+		};
+		let verbose_response = GetBlockResponse::Verbose(block);
+		assert_eq!(serde_json::to_string(&verbose_response).unwrap(), r#"{"hash":"0000000000000000000000000000000000000000000000000000000000000000","confirmations":0,"size":0,"strippedsize":0,"weight":0,"height":0,"version":0,"versionHex":"00","merkleroot":"0000000000000000000000000000000000000000000000000000000000000000","tx":[],"time":0,"mediantime":0,"nonce":0,"bits":0,"difficulty":0.0,"chainwork":"0000000000000000000000000000000000000000000000000000000000000000","previousblockhash":null,"nextblockhash":null}"#);
 	}
 }
