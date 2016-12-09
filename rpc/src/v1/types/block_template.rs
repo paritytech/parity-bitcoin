@@ -99,7 +99,7 @@ impl From<miner::BlockTemplate> for BlockTemplate {
 impl From<db::IndexedTransaction> for BlockTemplateTransaction {
 	fn from(transaction: db::IndexedTransaction) -> Self {
 		use ser::serialize;
-		let serialize = serialize(&transaction.transaction);
+		let serialize = serialize(&transaction.raw);
 		BlockTemplateTransaction {
 			data: RawTransaction::new(Vec::from((*serialize).clone())),
 			..Default::default()

@@ -76,7 +76,7 @@ impl OrphanTransactionsPool {
 						let child_entry = self.by_hash.get_mut(child).expect("every entry in by_parent.values() has corresponding entry in by_hash.keys()");
 						child_entry.remove_known_parent(&hash)
 					};
-					
+
 					if all_parents_are_known {
 						removed_orphans_hashes.push(child.clone());
 						removed_orphans.push((child.clone(), self.by_hash.remove(child).expect("checked couple of lines above").transaction));
