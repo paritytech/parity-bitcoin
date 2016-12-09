@@ -791,6 +791,7 @@ dependencies = [
  "jsonrpc-core 4.0.0 (git+https://github.com/ethcore/jsonrpc.git)",
  "jsonrpc-http-server 6.1.1 (git+https://github.com/ethcore/jsonrpc.git)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "miner 0.1.0",
  "network 0.1.0",
  "p2p 0.1.0",
  "primitives 0.1.0",
