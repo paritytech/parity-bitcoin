@@ -246,8 +246,9 @@ impl Storage {
 			let tx = self.transaction(tx_hash)
 				.expect("Transaction in the saved block should exist as a separate entity indefinitely");
 
-			// remove meta
+			// remove meta & meta cache
 			context.db_transaction.delete(Some(COL_TRANSACTIONS_META), &**tx_hash);
+			self.meta_cache.write().remove(&tx_hash);
 
 			// coinbase transaction does not have inputs
 			if tx_hash_num == 0 {
