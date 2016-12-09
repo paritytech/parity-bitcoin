@@ -37,7 +37,8 @@ impl<'a> PreviousTransactionOutputProvider for &'a [IndexedTransaction] {
 	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
 		self.iter()
 			.find(|tx| tx.hash == prevout.hash)
-			.map(|tx| tx.raw.outputs[prevout.index as usize].clone())
+			.and_then(|tx| tx.raw.outputs.get(prevout.index as usize))
+			.cloned()
 	}
 
 	fn is_spent(&self, _prevout: &OutPoint) -> bool {
