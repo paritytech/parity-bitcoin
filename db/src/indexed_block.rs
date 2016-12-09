@@ -1,5 +1,5 @@
 use primitives::hash::H256;
-use chain::{Block, BlockHeader, OutPoint, TransactionOutput, merkle_root};
+use chain::{Block, OutPoint, TransactionOutput, merkle_root};
 use serialization::Serializable;
 use indexed_header::IndexedBlockHeader;
 use indexed_transaction::IndexedTransaction;
@@ -18,7 +18,7 @@ impl PreviousTransactionOutputProvider for IndexedBlock {
 	}
 
 	fn is_spent(&self, _prevout: &OutPoint) -> bool {
-		unimplemented!();
+		false
 	}
 }
 
@@ -43,10 +43,6 @@ impl IndexedBlock {
 
 	pub fn hash(&self) -> &H256 {
 		&self.header.hash
-	}
-
-	pub fn header(&self) -> &BlockHeader {
-		&self.header.raw
 	}
 
 	pub fn to_raw_block(self) -> Block {

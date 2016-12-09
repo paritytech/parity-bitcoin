@@ -352,7 +352,7 @@ impl Chain {
 
 	/// Insert new best block to storage
 	pub fn insert_best_block(&mut self, hash: H256, block: &IndexedBlock) -> Result<BlockInsertionResult, db::Error> {
-		let is_appending_to_main_branch = self.best_storage_block.hash == block.header().previous_header_hash;
+		let is_appending_to_main_branch = self.best_storage_block.hash == block.header.raw.previous_header_hash;
 
 		// insert to storage
 		let storage_insertion = try!(self.storage.insert_indexed_block(&block));

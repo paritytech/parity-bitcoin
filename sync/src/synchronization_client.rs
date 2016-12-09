@@ -1466,7 +1466,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				}
 
 				// check parent block state
-				let parent_block_state = chain.block_state(&block.header().previous_header_hash);
+				let parent_block_state = chain.block_state(&block.header.raw.previous_header_hash);
 				match parent_block_state {
 					BlockState::Unknown | BlockState::DeadEnd => {
 						if parent_block_state == BlockState::DeadEnd {
@@ -1510,7 +1510,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 						let blocks_hashes_to_forget: Vec<_> = blocks_to_verify.iter().map(|t| t.0.clone()).collect();
 						chain.forget_blocks_leave_header(&blocks_hashes_to_forget);
 						// remember that we are verifying these blocks
-						let blocks_headers_to_verify: Vec<_> = blocks_to_verify.iter().map(|&(ref h, ref b)| (h.clone(), b.header().clone())).collect();
+						let blocks_headers_to_verify: Vec<_> = blocks_to_verify.iter().map(|&(ref h, ref b)| (h.clone(), b.header.raw.clone())).collect();
 						chain.verify_blocks(blocks_headers_to_verify);
 						// remember that we are verifying block from this peer
 						for verifying_block_hash in blocks_to_verify.iter().map(|&(ref h, _)| h.clone()) {

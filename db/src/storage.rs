@@ -190,7 +190,7 @@ impl Storage {
 			);
 		}
 
-		for tx in accepted_txs {
+		for tx in accepted_txs.iter().skip(1) {
 			context.meta.insert(
 				tx.hash.clone(),
 				TransactionMeta::new(number, tx.raw.outputs.len())

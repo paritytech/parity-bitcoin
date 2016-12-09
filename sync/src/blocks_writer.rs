@@ -48,7 +48,7 @@ impl BlocksWriter {
 			return Ok(());
 		}
 		// verify && insert only if parent block is already in the storage
-		if !self.storage.contains_block(db::BlockRef::Hash(indexed_block.header().previous_header_hash.clone())) {
+		if !self.storage.contains_block(db::BlockRef::Hash(indexed_block.header.raw.previous_header_hash.clone())) {
 			self.orphaned_blocks_pool.insert_orphaned_block(indexed_block.hash().clone(), indexed_block);
 			// we can't hold many orphaned blocks in memory during import
 			if self.orphaned_blocks_pool.len() > MAX_ORPHANED_BLOCKS {

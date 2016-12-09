@@ -42,7 +42,7 @@ impl OrphanBlocksPool {
 	/// Insert orphaned block, for which we have already requested its parent block
 	pub fn insert_orphaned_block(&mut self, hash: H256, block: IndexedBlock) {
 		self.orphaned_blocks
-			.entry(block.header().previous_header_hash.clone())
+			.entry(block.header.raw.previous_header_hash.clone())
 			.or_insert_with(HashMap::new)
 			.insert(hash, block);
 	}
