@@ -13,6 +13,7 @@ cargo test\
 	-p pbtc\
 	-p p2p\
 	-p primitives\
+	-p rpc\
 	-p script\
 	-p serialization\
 	-p sync\

@@ -1,8 +1,9 @@
 use std::net::SocketAddr;
-use sync::create_sync_connection_factory;
+use sync::{create_local_sync_node, create_sync_connection_factory};
 use message::Services;
 use util::{open_db, init_db, node_table_path};
 use {config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM};
+use super::super::rpc;
 
 pub fn start(cfg: config::Config) -> Result<(), String> {
 	let mut el = p2p::event_loop();
@@ -24,7 +25,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 			services: Services::default().with_network(true),
 			user_agent: cfg.user_agent,
 			start_height: 0,
-			relay: false,
+			relay: true,
 		},
 		peers: cfg.connect.map_or_else(|| vec![], |x| vec![x]),
 		seeds: cfg.seednodes,
@@ -33,7 +34,13 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 	};
 
 	let sync_handle = el.handle();
-	let sync_connection_factory = create_sync_connection_factory(&sync_handle, cfg.magic, db);
+	let local_sync_node = create_local_sync_node(&sync_handle, cfg.magic, db);
+	let sync_connection_factory = create_sync_connection_factory(local_sync_node.clone());
+
+	let rpc_deps = rpc::Dependencies {
+		local_sync_node: local_sync_node,
+	};
+	let _rpc_server = try!(rpc::new_http(cfg.rpc_config, rpc_deps));
 
 	let p2p = try!(p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle()).map_err(|x| x.to_string()));
 	try!(p2p.run().map_err(|_| "Failed to start p2p module"));

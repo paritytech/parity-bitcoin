@@ -124,6 +124,10 @@ macro_rules! impl_hash {
 		impl Eq for $name { }
 
 		impl $name {
+			pub fn take(self) -> [u8; $size] {
+				self.0
+			}
+
 			pub fn reversed(&self) -> Self {
 				let mut result = self.clone();
 				result.reverse();
