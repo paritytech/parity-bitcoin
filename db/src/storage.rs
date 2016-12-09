@@ -10,8 +10,9 @@ use super::{BlockRef, BestBlock, BlockLocation, IndexedBlock, IndexedTransaction
 use serialization::{serialize, deserialize};
 use chain;
 use parking_lot::RwLock;
-use transaction_meta::TransactionMeta;
+use lru_cache::LruCache;
 
+use transaction_meta::TransactionMeta;
 use error::{Error, ConsistencyError, MetaError};
 use update_context::UpdateContext;
 use block_provider::{BlockProvider, BlockHeaderProvider, AsBlockHeaderProvider};
@@ -36,6 +37,7 @@ const DB_VERSION: u32 = 1;
 
 // TODO: check how bitcoin core deals with long forks
 const MAX_FORK_ROUTE_PRESET: usize = 2048;
+const TRANSACTION_CACHE_SIZE: usize = 524288;
 
 /// Blockchain storage interface
 pub trait Store : BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider + AsBlockHeaderProvider {
@@ -50,6 +52,8 @@ pub trait Store : BlockProvider + BlockStapler + TransactionProvider + Transacti
 pub struct Storage {
 	database: Database,
 	best_block: RwLock<Option<BestBlock>>,
+	transaction_cache: RwLock<LruCache<H256, chain::Transaction>>,
+	meta_cache: RwLock<LruCache<H256, TransactionMeta>>,
 }
 
 const KEY_VERSION: &'static[u8] = b"version";
@@ -83,6 +87,8 @@ impl Storage {
 		let storage = Storage {
 			database: db,
 			best_block: RwLock::default(),
+			transaction_cache: RwLock::new(LruCache::new(TRANSACTION_CACHE_SIZE)),
+			meta_cache: RwLock::new(LruCache::new(TRANSACTION_CACHE_SIZE)),
 		};
 
 		match storage.read_meta_u32(KEY_VERSION) {
@@ -185,6 +191,7 @@ impl Storage {
 			);
 		}
 
+		// here the iteration continues from 1th element (0th consumed above ^^^)
 		for (accepted_hash, accepted_tx) in accepted_txs {
 			context.meta.insert(
 				accepted_hash.clone(),
@@ -239,8 +246,9 @@ impl Storage {
 			let tx = self.transaction(tx_hash)
 				.expect("Transaction in the saved block should exist as a separate entity indefinitely");
 
-			// remove meta
+			// remove meta & meta cache
 			context.db_transaction.delete(Some(COL_TRANSACTIONS_META), &**tx_hash);
+			self.meta_cache.write().remove(&tx_hash);
 
 			// coinbase transaction does not have inputs
 			if tx_hash_num == 0 {
@@ -585,7 +593,11 @@ impl BlockStapler for Storage {
 		// we always update best hash even if it is not changed
 		context.db_transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, &*new_best_hash);
 
-		// write accumulated transactions meta
+		// write accumulated transactions meta and update cache
+		{
+			let mut cache = self.meta_cache.write();
+			for (hash, meta) in context.meta.iter() { cache.insert(hash.clone(), meta.clone()); }
+		}
 		try!(context.apply(&self.database));
 
 		trace!(target: "db", "Best block now ({}, {})", &new_best_hash.to_reversed_str(), &new_best_number);
@@ -625,18 +637,57 @@ impl TransactionProvider for Storage {
 	}
 
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
-		self.transaction_bytes(hash).map(|tx_bytes| {
-			deserialize(tx_bytes.as_ref()).expect("Failed to deserialize transaction: db corrupted?")
-		})
+		let mut cache = self.transaction_cache.write();
+
+		let (tx, is_cached) = {
+			let cached_transaction = cache.get_mut(hash);
+			match cached_transaction {
+				None => {
+					(
+						self.transaction_bytes(hash).map(|tx_bytes| {
+							let tx: chain::Transaction = deserialize(tx_bytes.as_ref())
+								.expect("Failed to deserialize transaction: db corrupted?");
+							tx
+						}),
+						false
+					)
+				},
+				Some(tx) => (Some(tx.clone()), true)
+			}
+		};
+
+		match tx {
+			Some(ref tx) => { if !is_cached { cache.insert(hash.clone(), tx.clone()); } }
+			None => {}
+		};
+
+		tx
 	}
 }
 
 impl TransactionMetaProvider for Storage {
 
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
-		self.get(COL_TRANSACTIONS_META, &**hash).map(|val|
-			TransactionMeta::from_bytes(&val).expect("Invalid transaction metadata: db corrupted?")
-		)
+		let mut cache = self.meta_cache.write();
+
+		let (meta, is_cached) = {
+			let cached_meta = cache.get_mut(hash);
+			match cached_meta {
+				None => {
+					(self.get(COL_TRANSACTIONS_META, &**hash).map(|val|
+						TransactionMeta::from_bytes(&val).expect("Invalid transaction metadata: db corrupted?")
+					), false)
+				},
+				Some(meta) => (Some(meta.clone()), true)
+			}
+		};
+
+		match meta {
+			Some(ref meta) => { if !is_cached { cache.insert(hash.clone(), meta.clone()); } }
+			None => {}
+		};
+
+		meta
 	}
 }
 
@@ -1195,6 +1246,7 @@ mod tests {
 		store.decanonize_block(&mut update_context, &block_hash)
 			.expect("Decanonizing block #1 which was just inserted should not fail");
 		update_context.apply(&store.database).unwrap();
+		store.meta_cache.write().clear();
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase)
 			.expect("Transaction meta for the genesis coinbase transaction should exist");
