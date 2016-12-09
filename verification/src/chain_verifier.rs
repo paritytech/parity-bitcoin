@@ -5,8 +5,8 @@ use scoped_pool::Pool;
 use hash::H256;
 use db::{self, BlockLocation, PreviousTransactionOutputProvider, BlockHeaderProvider};
 use network::{Magic, ConsensusParams};
-use script::Script;
 use error::{Error, TransactionError};
+use sigops::{StoreWithUnretainedOutputs, transaction_sigops};
 use {Verify, chain, utils};
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
@@ -72,49 +72,14 @@ impl ChainVerifier {
 		height >= self.consensus_params.bip65_height
 	}
 
-	/// Returns previous transaction output.
-	/// NOTE: This function expects all previous blocks to be already in database.
-	fn previous_transaction_output<T>(&self, prevout_provider: &T, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput>
-		where T: PreviousTransactionOutputProvider {
-		self.store.transaction(&prevout.hash)
-			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
-			.or_else(|| prevout_provider.previous_transaction_output(prevout))
-	}
-
-	/// Returns number of transaction signature operations.
-	/// NOTE: This function expects all previous blocks to be already in database.
-	fn transaction_sigops(&self, block: &db::IndexedBlock, transaction: &chain::Transaction, bip16_active: bool) -> usize {
-		let output_sigops: usize = transaction.outputs.iter().map(|output| {
-			let output_script: Script = output.script_pubkey.clone().into();
-			output_script.sigops_count(false)
-		}).sum();
-
-		if transaction.is_coinbase() {
-			return output_sigops;
-		}
-
-		let input_sigops: usize = transaction.inputs.iter().map(|input| {
-			let input_script: Script = input.script_sig.clone().into();
-			let mut sigops = input_script.sigops_count(false);
-			if bip16_active {
-				let previous_output = self.previous_transaction_output(block, &input.previous_output)
-					.expect("missing tx, out of order verification or malformed db");
-				let prevout_script: Script = previous_output.script_pubkey.into();
-				sigops += input_script.pay_to_script_hash_sigops(&prevout_script);
-			}
-			sigops
-		}).sum();
-
-		input_sigops + output_sigops
-	}
-
 	/// Returns number of block signature operations.
 	/// NOTE: This function expects all previous blocks to be already in database.
 	fn block_sigops(&self, block: &db::IndexedBlock) -> usize {
 		// strict pay-to-script-hash signature operations count toward block
 		// signature operations limit is enforced with BIP16
+		let store = StoreWithUnretainedOutputs::new(self.store.clone(), block);
 		let bip16_active = self.verify_p2sh(block.header().time);
-		block.transactions().map(|(_, tx)| self.transaction_sigops(block, tx, bip16_active)).sum()
+		block.transactions().map(|(_, tx)| transaction_sigops(tx, &store, bip16_active)).sum()
 	}
 
 	fn ordered_verify(&self, block: &db::IndexedBlock, at_height: u32) -> Result<(), Error> {
@@ -161,6 +126,7 @@ impl ChainVerifier {
 			}
 		}
 
+		let unretained_store = StoreWithUnretainedOutputs::new(self.store.clone(), block);
 		let mut total_unspent = 0u64;
 		for (tx_index, (_, tx)) in block.transactions().enumerate().skip(1) {
 			let mut total_claimed: u64 = 0;
@@ -175,7 +141,7 @@ impl ChainVerifier {
 					}
 				}
 
-				let previous_output = self.previous_transaction_output(block, &input.previous_output)
+				let previous_output = unretained_store.previous_transaction_output(&input.previous_output)
 					.expect("missing tx, out of order verification or malformed db");
 
 				total_claimed += previous_output.value;
@@ -223,10 +189,11 @@ impl ChainVerifier {
 		// must not be coinbase (sequence = 0 is returned above)
 		if transaction.is_coinbase() { return Err(TransactionError::MisplacedCoinbase(sequence)); }
 
+		let unretained_store = StoreWithUnretainedOutputs::new(self.store.clone(), prevout_provider);
 		for (input_index, input) in transaction.inputs().iter().enumerate() {
 			// signature verification
 			let signer: TransactionInputSigner = transaction.clone().into();
-			let paired_output = match self.previous_transaction_output(prevout_provider, &input.previous_output) {
+			let paired_output = match unretained_store.previous_transaction_output(&input.previous_output) {
 				Some(output) => output,
 				_ => return Err(TransactionError::UnknownReference(input.previous_output.hash.clone()))
 			};
