@@ -1,6 +1,7 @@
 //! Bitcoin network magic number
 //! https://www.anintegratedworld.com/unravelling-the-mysterious-block-chain-magic-number/
 
+use compact::Compact;
 use ser::{Stream, Serializable};
 use chain::Block;
 use super::ConsensusParams;
@@ -9,9 +10,9 @@ const MAGIC_MAINNET: u32 = 0xD9B4BEF9;
 const MAGIC_TESTNET: u32 = 0x0709110B;
 const MAGIC_REGTEST: u32 = 0xDAB5BFFA;
 
-const MAX_NBITS_MAINNET: u32 = 0x1d00ffff;
-const MAX_NBITS_TESTNET: u32 = 0x1d00ffff;
-const MAX_NBITS_REGTEST: u32 = 0x207fffff;
+const MAX_BITS_MAINNET: u32 = 0x1d00ffff;
+const MAX_BITS_TESTNET: u32 = 0x1d00ffff;
+const MAX_BITS_REGTEST: u32 = 0x207fffff;
 
 /// Bitcoin network
 /// https://bitcoin.org/en/glossary/mainnet
@@ -50,12 +51,12 @@ impl From<u32> for Magic {
 }
 
 impl Magic {
-	pub fn max_nbits(&self) -> u32 {
+	pub fn max_bits(&self) -> Compact {
 		match *self {
-			Magic::Mainnet | Magic::Other(_) => MAX_NBITS_MAINNET,
-			Magic::Testnet => MAX_NBITS_TESTNET,
-			Magic::Regtest => MAX_NBITS_REGTEST,
-		}
+			Magic::Mainnet | Magic::Other(_) => MAX_BITS_MAINNET,
+			Magic::Testnet => MAX_BITS_TESTNET,
+			Magic::Regtest => MAX_BITS_REGTEST,
+		}.into()
 	}
 
 	pub fn port(&self) -> u16 {
@@ -97,7 +98,7 @@ impl Serializable for Magic {
 mod tests {
 	use super::{
 		Magic, MAGIC_MAINNET, MAGIC_TESTNET, MAGIC_REGTEST,
-		MAX_NBITS_MAINNET, MAX_NBITS_TESTNET, MAX_NBITS_REGTEST,
+		MAX_BITS_MAINNET, MAX_BITS_TESTNET, MAX_BITS_REGTEST,
 	};
 
 	#[test]
@@ -112,10 +113,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_network_max_nbits() {
-		assert_eq!(Magic::Mainnet.max_nbits(), MAX_NBITS_MAINNET);
-		assert_eq!(Magic::Testnet.max_nbits(), MAX_NBITS_TESTNET);
-		assert_eq!(Magic::Regtest.max_nbits(), MAX_NBITS_REGTEST);
+	fn test_network_max_bits() {
+		assert_eq!(Magic::Mainnet.max_bits(), MAX_BITS_MAINNET.into());
+		assert_eq!(Magic::Testnet.max_bits(), MAX_BITS_TESTNET.into());
+		assert_eq!(Magic::Regtest.max_bits(), MAX_BITS_REGTEST.into());
 	}
 
 	#[test]

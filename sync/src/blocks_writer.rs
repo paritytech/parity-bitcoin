@@ -43,6 +43,10 @@ impl BlocksWriter {
 
 	pub fn append_block(&mut self, block: chain::Block) -> Result<(), Error> {
 		let indexed_block: db::IndexedBlock = block.into();
+		// do not append block if it is already there
+		if self.storage.contains_block(db::BlockRef::Hash(indexed_block.hash().clone())) {
+			return Ok(());
+		}
 		// verify && insert only if parent block is already in the storage
 		if !self.storage.contains_block(db::BlockRef::Hash(indexed_block.header().previous_header_hash.clone())) {
 			self.orphaned_blocks_pool.insert_orphaned_block(indexed_block.hash().clone(), indexed_block);
@@ -161,5 +165,17 @@ mod tests {
 			_ => panic!("Unexpected error"),
 		};
 		assert_eq!(db.best_block().expect("Block is inserted").number, 0);
+	}
+
+	#[test]
+	fn blocks_writer_append_to_existing_db() {
+		let db = Arc::new(db::TestStorage::with_genesis_block());
+		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet);
+
+		assert!(blocks_target.append_block(test_data::genesis()).is_ok());
+		assert_eq!(db.best_block().expect("Block is inserted").number, 0);
+
+		assert!(blocks_target.append_block(test_data::block_h1()).is_ok());
+		assert_eq!(db.best_block().expect("Block is inserted").number, 1);
 	}
 }

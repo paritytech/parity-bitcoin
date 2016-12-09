@@ -1,21 +1,35 @@
 //! Bitcoin chain verifier
 
 use std::collections::BTreeSet;
-use db::{self, BlockLocation, PreviousTransactionOutputProvider, BlockHeaderProvider, BlockRef};
-use network::{Magic, ConsensusParams};
-use script::Script;
-use super::{Verify, VerificationResult, Chain, Error, TransactionError};
-use {chain, utils};
 use scoped_pool::Pool;
-use primitives::hash::H256;
+use hash::H256;
+use db::{self, BlockLocation, PreviousTransactionOutputProvider, BlockHeaderProvider};
+use network::{Magic, ConsensusParams};
+use error::{Error, TransactionError};
+use sigops::{StoreWithUnretainedOutputs, transaction_sigops};
+use {Verify, chain, utils};
 
 const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
 const COINBASE_MATURITY: u32 = 100; // 2 hours
-const MAX_BLOCK_SIGOPS: usize = 20000;
-const MAX_BLOCK_SIZE: usize = 1000000;
+pub const MAX_BLOCK_SIZE: usize = 1_000_000;
+pub const MAX_BLOCK_SIGOPS: usize = 20_000;
 
 const TRANSACTIONS_VERIFY_THREADS: usize = 4;
 const TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD: usize = 16;
+
+#[derive(PartialEq, Debug)]
+/// Block verification chain
+pub enum Chain {
+	/// Main chain
+	Main,
+	/// Side chain
+	Side,
+	/// Orphan (no known parent)
+	Orphan,
+}
+
+/// Verification result
+pub type VerificationResult = Result<Chain, Error>;
 
 pub struct ChainVerifier {
 	store: db::SharedStore,
@@ -58,49 +72,14 @@ impl ChainVerifier {
 		height >= self.consensus_params.bip65_height
 	}
 
-	/// Returns previous transaction output.
-	/// NOTE: This function expects all previous blocks to be already in database.
-	fn previous_transaction_output<T>(&self, prevout_provider: &T, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput>
-		where T: PreviousTransactionOutputProvider {
-		self.store.transaction(&prevout.hash)
-			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
-			.or_else(|| prevout_provider.previous_transaction_output(prevout))
-	}
-
-	/// Returns number of transaction signature operations.
-	/// NOTE: This function expects all previous blocks to be already in database.
-	fn transaction_sigops(&self, block: &db::IndexedBlock, transaction: &chain::Transaction, bip16_active: bool) -> usize {
-		let output_sigops: usize = transaction.outputs.iter().map(|output| {
-			let output_script: Script = output.script_pubkey.clone().into();
-			output_script.sigops_count(false)
-		}).sum();
-
-		if transaction.is_coinbase() {
-			return output_sigops;
-		}
-
-		let input_sigops: usize = transaction.inputs.iter().map(|input| {
-			let input_script: Script = input.script_sig.clone().into();
-			let mut sigops = input_script.sigops_count(false);
-			if bip16_active {
-				let previous_output = self.previous_transaction_output(block, &input.previous_output)
-					.expect("missing tx, out of order verification or malformed db");
-				let prevout_script: Script = previous_output.script_pubkey.into();
-				sigops += input_script.pay_to_script_hash_sigops(&prevout_script);
-			}
-			sigops
-		}).sum();
-
-		input_sigops + output_sigops
-	}
-
 	/// Returns number of block signature operations.
 	/// NOTE: This function expects all previous blocks to be already in database.
 	fn block_sigops(&self, block: &db::IndexedBlock) -> usize {
 		// strict pay-to-script-hash signature operations count toward block
 		// signature operations limit is enforced with BIP16
+		let store = StoreWithUnretainedOutputs::new(&self.store, block);
 		let bip16_active = self.verify_p2sh(block.header().time);
-		block.transactions().map(|(_, tx)| self.transaction_sigops(block, tx, bip16_active)).sum()
+		block.transactions().map(|(_, tx)| transaction_sigops(tx, &store, bip16_active)).sum()
 	}
 
 	fn ordered_verify(&self, block: &db::IndexedBlock, at_height: u32) -> Result<(), Error> {
@@ -116,10 +95,18 @@ impl ChainVerifier {
 		let block_hash = block.hash();
 
 		// check that difficulty matches the adjusted level
-		if let Some(work) = self.work_required(block, at_height) {
-			if !self.skip_pow && work != block.header().nbits {
+		//if let Some(work) = self.work_required(block, at_height) {
+		if at_height != 0 && !self.skip_pow {
+			let work = utils::work_required(
+				block.header().previous_header_hash.clone(),
+				block.header().time,
+				at_height,
+				self.store.as_block_header_provider(),
+				self.network
+			);
+			if !self.skip_pow && work != block.header().bits {
 				trace!(target: "verification", "pow verification error at height: {}", at_height);
-				trace!(target: "verification", "expected work: {}, got {}", work, block.header().nbits);
+				trace!(target: "verification", "expected work: {:?}, got {:?}", work, block.header().bits);
 				return Err(Error::Difficulty);
 			}
 		}
@@ -139,6 +126,7 @@ impl ChainVerifier {
 			}
 		}
 
+		let unretained_store = StoreWithUnretainedOutputs::new(&self.store, block);
 		let mut total_unspent = 0u64;
 		for (tx_index, (_, tx)) in block.transactions().enumerate().skip(1) {
 			let mut total_claimed: u64 = 0;
@@ -153,7 +141,7 @@ impl ChainVerifier {
 					}
 				}
 
-				let previous_output = self.previous_transaction_output(block, &input.previous_output)
+				let previous_output = unretained_store.previous_transaction_output(&input.previous_output)
 					.expect("missing tx, out of order verification or malformed db");
 
 				total_claimed += previous_output.value;
@@ -201,10 +189,11 @@ impl ChainVerifier {
 		// must not be coinbase (sequence = 0 is returned above)
 		if transaction.is_coinbase() { return Err(TransactionError::MisplacedCoinbase(sequence)); }
 
+		let unretained_store = StoreWithUnretainedOutputs::new(&self.store, prevout_provider);
 		for (input_index, input) in transaction.inputs().iter().enumerate() {
 			// signature verification
 			let signer: TransactionInputSigner = transaction.clone().into();
-			let paired_output = match self.previous_transaction_output(prevout_provider, &input.previous_output) {
+			let paired_output = match unretained_store.previous_transaction_output(&input.previous_output) {
 				Some(output) => output,
 				_ => return Err(TransactionError::UnknownReference(input.previous_output.hash.clone()))
 			};
@@ -246,7 +235,7 @@ impl ChainVerifier {
 		header: &chain::BlockHeader
 	) -> Result<(), Error> {
 		// target difficulty threshold
-		if !self.skip_pow && !utils::check_nbits(self.network.max_nbits(), hash, header.nbits) {
+		if !self.skip_pow && !utils::is_valid_proof_of_work(self.network.max_bits(), header.bits, hash) {
 			return Err(Error::Pow);
 		}
 
@@ -374,63 +363,6 @@ impl ChainVerifier {
 			Some(timestamps[timestamps.len() / 2])
 		}
 		else { None }
-	}
-
-	fn work_required_testnet(&self, header: &chain::BlockHeader, height: u32) -> u32 {
-		let mut bits = Vec::new();
-		let mut block_ref: BlockRef = header.previous_header_hash.clone().into();
-
-		let parent_header = self.store.block_header(block_ref.clone()).expect("can be called only during ordered verification");
-		let max_time_gap = parent_header.time + utils::DOUBLE_SPACING_SECONDS;
-		if header.time > max_time_gap {
-			return self.network.max_nbits();
-		}
-
-		// TODO: optimize it, so it does not make 2016!!! redundant queries each time
-		for _ in 0..utils::RETARGETING_INTERVAL {
-			let previous_header = match self.store.block_header(block_ref) {
-				Some(h) => h,
-				None => { break; }
-			};
-			bits.push(previous_header.nbits);
-			block_ref = previous_header.previous_header_hash.into();
-		}
-
-		for (index, bit) in bits.into_iter().enumerate() {
-			if bit != self.network.max_nbits() || utils::is_retarget_height(height - index as u32 - 1) {
-				return bit;
-			}
-		}
-
-		self.network.max_nbits()
-	}
-
-	fn work_required(&self, block: &db::IndexedBlock, height: u32) -> Option<u32> {
-		if height == 0 {
-			return None;
-		}
-
-		let previous_ref = block.header().previous_header_hash.clone().into();
-		let previous_header = self.store.block_header(previous_ref).expect("self.height != 0; qed");
-
-		if utils::is_retarget_height(height) {
-			let retarget_ref = (height - utils::RETARGETING_INTERVAL).into();
-			let retarget_header = self.store.block_header(retarget_ref).expect("self.height != 0 && self.height % RETARGETING_INTERVAL == 0; qed");
-			// timestamp of block(height - RETARGETING_INTERVAL)
-			let retarget_timestamp = retarget_header.time;
-			// timestamp of parent block
-			let last_timestamp = previous_header.time;
-			// nbits of last block
-			let last_nbits = previous_header.nbits;
-
-			return Some(utils::work_required_retarget(self.network.max_nbits(), retarget_timestamp, last_timestamp, last_nbits));
-		}
-
-		if let Magic::Testnet = self.network {
-			return Some(self.work_required_testnet(block.header(), height));
-		}
-
-		Some(previous_header.nbits)
 	}
 }
 

@@ -50,25 +50,25 @@ pub struct MemoryPool {
 #[derive(Debug)]
 pub struct Entry {
 	/// Transaction
-	transaction: Transaction,
+	pub transaction: Transaction,
 	/// In-pool ancestors hashes for this transaction
-	ancestors: HashSet<H256>,
+	pub ancestors: HashSet<H256>,
 	/// Transaction hash (stored for effeciency)
-	hash: H256,
+	pub hash: H256,
 	/// Transaction size (stored for effeciency)
-	size: usize,
+	pub size: usize,
 	/// Throughout index of this transaction in memory pool (non persistent)
-	storage_index: u64,
+	pub storage_index: u64,
 	/// Transaction fee (stored for efficiency)
-	miner_fee: i64,
+	pub miner_fee: i64,
 	/// Virtual transaction fee (a way to prioritize/penalize transaction)
-	miner_virtual_fee: i64,
+	pub miner_virtual_fee: i64,
 	/// size + Sum(size) for all in-pool descendants
-	package_size: usize,
+	pub package_size: usize,
 	/// miner_fee + Sum(miner_fee) for all in-pool descendants
-	package_miner_fee: i64,
+	pub package_miner_fee: i64,
 	/// miner_virtual_fee + Sum(miner_virtual_fee) for all in-pool descendants
-	package_miner_virtual_fee: i64,
+	pub package_miner_virtual_fee: i64,
 }
 
 /// Multi-index transactions storage
@@ -624,7 +624,7 @@ impl MemoryPool {
 	/// Ancestors are always returned before descendant transactions.
 	/// Use this function with care, only if really needed (heavy memory usage)
 	pub fn read_n_with_strategy(&mut self, n: usize, strategy: OrderingStrategy) -> Vec<H256> {
-		self.iter(strategy).take(n).collect()
+		self.iter(strategy).map(|entry| entry.hash.clone()).take(n).collect()
 	}
 
 	/// Removes the 'top' transaction from the `MemoryPool` using selected strategy.
@@ -772,7 +772,7 @@ impl<'a> MemoryPoolIterator<'a> {
 }
 
 impl<'a> Iterator for MemoryPoolIterator<'a> {
-	type Item = H256;
+	type Item = &'a Entry;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let top_hash = match self.strategy {
@@ -781,13 +781,12 @@ impl<'a> Iterator for MemoryPoolIterator<'a> {
 			OrderingStrategy::ByPackageScore => self.references.ordered.by_package_score.iter().map(|entry| entry.hash.clone()).nth(0),
 		};
 
-		if let Some(ref top_hash) = top_hash {
-			let entry = self.memory_pool.storage.by_hash.get(top_hash).expect("missing hash is a sign of MemoryPool internal inconsistancy");
+		top_hash.map(|top_hash| {
+			let entry = self.memory_pool.storage.by_hash.get(&top_hash).expect("missing hash is a sign of MemoryPool internal inconsistancy");
 			self.removed.insert(top_hash.clone());
 			self.references.remove(Some(&self.removed), &self.memory_pool.storage.by_hash, entry);
-		}
-
-		top_hash
+			entry
+		})
 	}
 }
 

@@ -4,9 +4,13 @@ version = "0.1.0"
 authors = ["Ethcore <admin@ethcore.io>"]
 
 [dependencies]
+byteorder = "0.5"
 heapsize = "0.3"
+bitcrypto = { path = "../crypto" }
 chain = { path = "../chain" }
 db = { path = "../db" }
+network = { path = "../network" }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
+verification = { path = "../verification" }
 test-data = { path = "../test-data" }
