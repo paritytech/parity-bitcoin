@@ -1,6 +1,3 @@
-// TODO: remove after implementing getblocktmplate RPC
-#![warn(dead_code)]
-
 use std::collections::HashMap;
 use super::hash::H256;
 use super::raw_transaction::RawTransaction;
