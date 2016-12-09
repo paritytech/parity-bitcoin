@@ -30,14 +30,14 @@ impl TransactionData {
 	}
 }
 
-pub struct ExpandedBlock {
-	block: IndexedBlock,
+pub struct ExpandedBlock<'a> {
+	block: &'a IndexedBlock,
 	// guaranteed to be the same length as block.transactions()
 	refs: Vec<TransactionData>,
 }
 
-impl ExpandedBlock {
-	pub fn new(block: IndexedBlock, store: &Store) -> Self {
+impl<'a> ExpandedBlock<'a> {
+	pub fn new(block: &'a IndexedBlock, store: &Store) -> ExpandedBlock<'a> {
 		let mut result = ExpandedBlock {
 			block: block,
 			refs: Vec::new(),
@@ -48,6 +48,14 @@ impl ExpandedBlock {
 		}
 
 		result
+	}
+
+	pub fn hash(&self) -> &H256 {
+		self.block.hash()
+	}
+
+	pub fn transactions(&self) -> ExpandedTransactions {
+		ExpandedTransactions { block: self, position: 0 }
 	}
 }
 
@@ -95,7 +103,7 @@ impl<'a> ExpandedTransaction<'a> {
 }
 
 pub struct ExpandedTransactions<'a> {
-	block: &'a ExpandedBlock,
+	block: &'a ExpandedBlock<'a>,
 	position: usize,
 }
 
@@ -147,7 +155,8 @@ mod tests {
 				.build()
 			.build();
 
-		let expanded_block = ExpandedBlock::new(next_block.into(), &store);
+		let indexed_block = next_block.into();
+		let expanded_block = ExpandedBlock::new(&indexed_block, &store);
 
 		assert_eq!(1, expanded_block.refs.len());
 	}

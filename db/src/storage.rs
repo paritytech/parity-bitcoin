@@ -6,7 +6,7 @@ use kvdb::{Database, DatabaseConfig};
 use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
-use super::{BlockRef, BestBlock, BlockLocation, IndexedBlock, IndexedTransactions};
+use super::{BlockRef, BestBlock, BlockLocation, IndexedBlock, IndexedTransactions, ExpandedBlock, ExpandedTransactions};
 use serialization::{serialize, deserialize};
 use chain;
 use parking_lot::RwLock;
@@ -398,6 +398,14 @@ impl Storage {
 			best_number -= 1;
 			result.push(next);
 		}
+	}
+
+	pub fn expand_block<'a>(&self, block: &'a IndexedBlock) -> ExpandedBlock<'a> {
+		ExpandedBlock::new(block, self)
+	}
+
+	fn insert_expanded_block(&self, block: &ExpandedBlock) -> Result<BlockInsertedChain, Error> {
+		Ok(BlockInsertedChain::Main)
 	}
 }
 

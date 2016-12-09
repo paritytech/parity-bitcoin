@@ -73,6 +73,7 @@ pub use transaction_meta_provider::TransactionMetaProvider;
 pub use block_stapler::{BlockStapler, BlockInsertedChain};
 pub use block_provider::{BlockProvider, BlockHeaderProvider, AsBlockHeaderProvider};
 pub use indexed_block::{IndexedBlock, IndexedTransactions};
+pub use expanded_block::{ExpandedBlock, ExpandedTransactions};
 
 #[cfg(feature="dev")]
 pub use test_storage::TestStorage;
