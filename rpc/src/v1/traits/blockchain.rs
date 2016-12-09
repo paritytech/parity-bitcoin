@@ -18,7 +18,7 @@ build_rpc_trait! {
 		fn block_hash(&self, u32) -> Result<H256, Error>;
 		/// Get proof-of-work difficulty as a multiple of the minimum difficulty
 		#[rpc(name = "getdifficulty")]
-		fn difficulty(&self) -> Result<u32, Error>;
+		fn difficulty(&self) -> Result<f64, Error>;
 		/// Get information on given block.
 		#[rpc(name = "getblock")]
 		fn block(&self, H256, Option<bool>) -> Result<GetBlockResponse, Error>;

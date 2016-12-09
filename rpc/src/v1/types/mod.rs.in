@@ -6,6 +6,7 @@ mod get_transaction_response;
 mod get_tx_out_response;
 mod get_tx_out_set_info_response;
 mod hash;
+mod raw_block;
 mod raw_transaction;
 
 pub use self::block_template::{BlockTemplate, BlockTemplateTransaction};
@@ -16,4 +17,5 @@ pub use self::get_transaction_response::GetTransactionResponse;
 pub use self::get_tx_out_response::GetTxOutResponse;
 pub use self::get_tx_out_set_info_response::GetTxOutSetInfoResponse;
 pub use self::hash::H256;
+pub use self::raw_block::RawBlock;
 pub use self::raw_transaction::RawTransaction;
