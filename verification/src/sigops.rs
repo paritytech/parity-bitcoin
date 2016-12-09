@@ -3,12 +3,12 @@ use db::{PreviousTransactionOutputProvider, SharedStore};
 use script::Script;
 
 pub struct StoreWithUnretainedOutputs<'a, T> where T: 'a {
-	store: SharedStore,
+	store: &'a SharedStore,
 	outputs: &'a T,
 }
 
 impl<'a, T> StoreWithUnretainedOutputs<'a, T> where T: PreviousTransactionOutputProvider {
-	pub fn new(store: SharedStore, outputs: &'a T) -> Self {
+	pub fn new(store: &'a SharedStore, outputs: &'a T) -> Self {
 		StoreWithUnretainedOutputs {
 			store: store,
 			outputs: outputs,

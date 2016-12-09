@@ -77,7 +77,7 @@ impl ChainVerifier {
 	fn block_sigops(&self, block: &db::IndexedBlock) -> usize {
 		// strict pay-to-script-hash signature operations count toward block
 		// signature operations limit is enforced with BIP16
-		let store = StoreWithUnretainedOutputs::new(self.store.clone(), block);
+		let store = StoreWithUnretainedOutputs::new(&self.store, block);
 		let bip16_active = self.verify_p2sh(block.header().time);
 		block.transactions().map(|(_, tx)| transaction_sigops(tx, &store, bip16_active)).sum()
 	}
@@ -126,7 +126,7 @@ impl ChainVerifier {
 			}
 		}
 
-		let unretained_store = StoreWithUnretainedOutputs::new(self.store.clone(), block);
+		let unretained_store = StoreWithUnretainedOutputs::new(&self.store, block);
 		let mut total_unspent = 0u64;
 		for (tx_index, (_, tx)) in block.transactions().enumerate().skip(1) {
 			let mut total_claimed: u64 = 0;
@@ -189,7 +189,7 @@ impl ChainVerifier {
 		// must not be coinbase (sequence = 0 is returned above)
 		if transaction.is_coinbase() { return Err(TransactionError::MisplacedCoinbase(sequence)); }
 
-		let unretained_store = StoreWithUnretainedOutputs::new(self.store.clone(), prevout_provider);
+		let unretained_store = StoreWithUnretainedOutputs::new(&self.store, prevout_provider);
 		for (input_index, input) in transaction.inputs().iter().enumerate() {
 			// signature verification
 			let signer: TransactionInputSigner = transaction.clone().into();

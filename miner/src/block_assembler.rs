@@ -2,7 +2,7 @@ use primitives::hash::H256;
 use db::{SharedStore, IndexedTransaction};
 use network::Magic;
 use memory_pool::{MemoryPool, OrderingStrategy};
-use verification::{work_required, block_reward_satoshi};
+use verification::{work_required, block_reward_satoshi, transaction_sigops, StoreWithUnretainedOutputs};
 
 const BLOCK_VERSION: u32 = 0x20000000;
 const MAX_BLOCK_SIZE: u32 = 1_000_000;
@@ -145,9 +145,9 @@ impl BlockAssembler {
 
 		let mut transactions = Vec::new();
 		// add priority transactions
-		BlockAssembler::fill_transactions(mempool, &mut block_size, &mut sigops, &mut coinbase_value, &mut transactions, OrderingStrategy::ByTransactionScore);
+		BlockAssembler::fill_transactions(store, mempool, &mut block_size, &mut sigops, &mut coinbase_value, &mut transactions, OrderingStrategy::ByTransactionScore);
 		// add package transactions
-		BlockAssembler::fill_transactions(mempool, &mut block_size, &mut sigops, &mut coinbase_value, &mut transactions, OrderingStrategy::ByPackageScore);
+		BlockAssembler::fill_transactions(store, mempool, &mut block_size, &mut sigops, &mut coinbase_value, &mut transactions, OrderingStrategy::ByPackageScore);
 
 		BlockTemplate {
 			version: version,
@@ -163,6 +163,7 @@ impl BlockAssembler {
 	}
 
 	fn fill_transactions(
+		store: &SharedStore,
 		mempool: &MemoryPool,
 		block_size: &mut SizePolicy,
 		sigops: &mut SizePolicy,
@@ -175,12 +176,16 @@ impl BlockAssembler {
 				break;
 			}
 
-			// TODO: calucalte sigops
 			let transaction_size = entry.size as u32;
-			let transaction_sigops = 0;
+			let sigops_count = {
+				let txs: &[_] = &*transactions;
+				let unretained_store = StoreWithUnretainedOutputs::new(store, &txs);
+				let bip16_active = true;
+				transaction_sigops(&entry.transaction, &unretained_store, bip16_active) as u32
+			};
 
 			let size_step = block_size.decide(transaction_size);
-			let sigops_step = sigops.decide(transaction_sigops);
+			let sigops_step = sigops.decide(sigops_count);
 
 			let transaction = IndexedTransaction {
 				transaction: entry.transaction.clone(),
