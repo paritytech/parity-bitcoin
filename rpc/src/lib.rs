@@ -15,7 +15,9 @@ extern crate primitives;
 extern crate p2p;
 extern crate network;
 extern crate db;
+#[cfg(test)]
 extern crate test_data;
+extern crate miner;
 
 pub mod v1;
 pub mod rpc_server;

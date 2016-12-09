@@ -77,6 +77,7 @@ pub fn create_local_sync_node(handle: &Handle, network: Magic, db: db::SharedSto
 	use synchronization_verifier::AsyncVerifier;
 
 	let sync_client_config = SynchronizationConfig {
+		network: network,
 		// during regtests, peer is providing us with bad blocks => we shouldn't close connection because of this
 		close_connection_on_bad_block: network != Magic::Regtest,
 		// TODO: remove me

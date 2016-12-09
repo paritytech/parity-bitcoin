@@ -1,6 +1,3 @@
-// TODO: remove after implementing getblocktmplate RPC
-#![warn(dead_code)]
-
 use std::collections::HashSet;
 
 /// Block template request mode
