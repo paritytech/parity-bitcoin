@@ -21,7 +21,7 @@ pub enum BlockTemplateRequestMode {
 /// https://github.com/bitcoin/bips/blob/master/bip-0023.mediawiki
 /// https://github.com/bitcoin/bips/blob/master/bip-0009.mediawiki#getblocktemplate_changes
 /// https://github.com/bitcoin/bips/blob/master/bip-0145.mediawiki
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct BlockTemplateRequest {
 	/// Request mode
 	pub mode: Option<BlockTemplateRequestMode>,
@@ -50,11 +50,7 @@ mod tests {
 
 	#[test]
 	fn block_template_request_serialize() {
-		assert_eq!(serde_json::to_string(&BlockTemplateRequest {
-			mode: None,
-			capabilities: None,
-			rules: None,
-		}).unwrap(), r#"{"mode":null,"capabilities":null,"rules":null}"#);
+		assert_eq!(serde_json::to_string(&BlockTemplateRequest::default()).unwrap(), r#"{"mode":null,"capabilities":null,"rules":null}"#);
 		assert_eq!(serde_json::to_string(&BlockTemplateRequest {
 			mode: Some(BlockTemplateRequestMode::Template),
 			capabilities: Some(vec!["a".to_owned()].into_iter().collect()),
