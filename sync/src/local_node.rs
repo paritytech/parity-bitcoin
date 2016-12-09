@@ -1,14 +1,15 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, Condvar};
 use db;
+use chain::Transaction;
 use p2p::OutboundSyncConnectionRef;
 use message::common::{InventoryType, InventoryVector};
 use message::types;
 use synchronization_client::{Client, SynchronizationClient, BlockAnnouncementType};
 use synchronization_executor::{Task as SynchronizationTask, TaskExecutor as SynchronizationTaskExecutor, LocalSynchronizationTaskExecutor};
 use synchronization_server::{Server, SynchronizationServer};
-use synchronization_verifier::AsyncVerifier;
+use synchronization_verifier::{AsyncVerifier, TransactionVerificationSink};
 use primitives::hash::H256;
 
 // TODO: check messages before processing (filterload' filter is max 36000, nHashFunc is <= 50, etc)
@@ -33,6 +34,17 @@ pub struct LocalNode<T: SynchronizationTaskExecutor + PeersConnections,
 pub trait PeersConnections {
 	fn add_peer_connection(&mut self, peer_index: usize, outbound_connection: OutboundSyncConnectionRef);
 	fn remove_peer_connection(&mut self, peer_index: usize);
+}
+
+/// Transaction accept verification sink
+struct TransactionAcceptSink {
+	data: Arc<TransactionAcceptSinkData>,
+}
+
+#[derive(Default)]
+struct TransactionAcceptSinkData {
+	result: Mutex<Option<Result<H256, String>>>,
+	waiter: Condvar,
 }
 
 impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersConnections,
@@ -238,6 +250,18 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		self.client.lock().on_peer_blocks_notfound(peer_index, blocks_inventory);
 	}
 
+	pub fn accept_transaction(&self, transaction: Transaction) -> Result<H256, String> {
+		let sink_data = Arc::new(TransactionAcceptSinkData::default());
+		let sink = TransactionAcceptSink::new(sink_data.clone()).boxed();
+		{
+			let mut client = self.client.lock();
+			if let Err(err) = client.accept_transaction(transaction, sink) {
+				return Err(err.into());
+			}
+		}
+		sink_data.wait()
+	}
+
 	fn transactions_inventory(&self, inventory: &[InventoryVector]) -> Vec<H256> {
 		inventory.iter()
 			.filter(|item| item.inv_type == InventoryType::MessageTx)
@@ -253,6 +277,42 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 	}
 }
 
+impl TransactionAcceptSink {
+	pub fn new(data: Arc<TransactionAcceptSinkData>) -> Self {
+		TransactionAcceptSink {
+			data: data,
+		}
+	}
+
+	pub fn boxed(self) -> Box<Self> {
+		Box::new(self)
+	}
+}
+
+impl TransactionAcceptSinkData {
+	pub fn wait(&self) -> Result<H256, String> {
+		let mut lock = self.result.lock();
+		if lock.is_some() {
+			return lock.take().unwrap();
+		}
+
+		self.waiter.wait(&mut lock);
+		return lock.take().unwrap();
+	}
+}
+
+impl TransactionVerificationSink for TransactionAcceptSink {
+	fn on_transaction_verification_success(&self, tx: Transaction) {
+		*self.data.result.lock() = Some(Ok(tx.hash()));
+		self.data.waiter.notify_all();
+	}
+
+	fn on_transaction_verification_error(&self, err: &str, _hash: &H256) {
+		*self.data.result.lock() = Some(Err(err.to_owned()));
+		self.data.waiter.notify_all();
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
@@ -260,12 +320,13 @@ mod tests {
 	use connection_filter::tests::{default_filterload, make_filteradd};
 	use synchronization_executor::Task;
 	use synchronization_executor::tests::DummyTaskExecutor;
-	use synchronization_client::{Config, SynchronizationClient, SynchronizationClientCore, FilteredInventory};
+	use synchronization_client::{Config, SynchronizationClient, SynchronizationClientCore, CoreVerificationSink, FilteredInventory};
 	use synchronization_chain::Chain;
 	use p2p::{event_loop, OutboundSyncConnection, OutboundSyncConnectionRef};
 	use message::types;
 	use message::common::{InventoryVector, InventoryType, BlockTransactionsRequest};
 	use network::Magic;
+	use chain::Transaction;
 	use db;
 	use super::LocalNode;
 	use test_data;
@@ -309,7 +370,7 @@ mod tests {
 		fn close(&self) {}
 	}
 
-	fn create_local_node() -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
+	fn create_local_node(verifier: Option<DummyVerifier>) -> (Core, Handle, Arc<Mutex<DummyTaskExecutor>>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
 		let event_loop = event_loop();
 		let handle = event_loop.handle();
 		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
@@ -318,8 +379,11 @@ mod tests {
 		let config = Config { threads_num: 1, close_connection_on_bad_block: true };
 		let chain_verifier = Arc::new(ChainVerifier::new(chain.read().storage(), Magic::Mainnet));
 		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone(), chain_verifier);
-		let mut verifier = DummyVerifier::default();
-		verifier.set_sink(client_core.clone());
+		let mut verifier = match verifier {
+			Some(verifier) => verifier,
+			None => DummyVerifier::default(),
+		};
+		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
 		let client = SynchronizationClient::new(client_core, verifier);
 		let local_node = LocalNode::new(server.clone(), client, executor.clone());
 		(event_loop, handle, executor, server, local_node)
@@ -327,7 +391,7 @@ mod tests {
 
 	#[test]
 	fn local_node_request_inventory_on_sync_start() {
-		let (_, _, executor, _, local_node) = create_local_node();
+		let (_, _, executor, _, local_node) = create_local_node(None);
 		let peer_index = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
 		// start sync session
 		local_node.start_sync_session(peer_index, 0);
@@ -338,7 +402,7 @@ mod tests {
 
 	#[test]
 	fn local_node_serves_block() {
-		let (_, _, _, server, local_node) = create_local_node();
+		let (_, _, _, server, local_node) = create_local_node(None);
 		let peer_index = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
 		// peer requests genesis block
 		let genesis_block_hash = test_data::genesis().hash();
@@ -358,7 +422,7 @@ mod tests {
 
 	#[test]
 	fn local_node_serves_merkleblock() {
-		let (_, _, _, server, local_node) = create_local_node();
+		let (_, _, _, server, local_node) = create_local_node(None);
 
 		let genesis = test_data::genesis();
 		let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
@@ -458,7 +522,7 @@ mod tests {
 
 	#[test]
 	fn local_node_serves_compactblock() {
-		let (_, _, _, server, local_node) = create_local_node();
+		let (_, _, _, server, local_node) = create_local_node(None);
 
 		let genesis = test_data::genesis();
 		let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
@@ -490,7 +554,7 @@ mod tests {
 
 	#[test]
 	fn local_node_serves_get_block_txn_when_recently_sent_compact_block() {
-		let (_, _, _, server, local_node) = create_local_node();
+		let (_, _, _, server, local_node) = create_local_node(None);
 
 		let genesis = test_data::genesis();
 		let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
@@ -526,7 +590,7 @@ mod tests {
 
 	#[test]
 	fn local_node_not_serves_get_block_txn_when_compact_block_was_not_sent() {
-		let (_, _, _, server, local_node) = create_local_node();
+		let (_, _, _, server, local_node) = create_local_node(None);
 
 		let genesis = test_data::genesis();
 		let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
@@ -549,5 +613,50 @@ mod tests {
 
 		let tasks = server.take_tasks();
 		assert_eq!(tasks, vec![]);
+	}
+
+	#[test]
+	fn local_node_accepts_local_transaction() {
+		let (_, _, executor, _, local_node) = create_local_node(None);
+
+		// transaction will be relayed to this peer
+		let peer_index1 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		{ executor.lock().take_tasks(); }
+
+		let genesis = test_data::genesis();
+		let transaction: Transaction = test_data::TransactionBuilder::with_output(1).add_input(&genesis.transactions[0], 0).into();
+		let transaction_hash = transaction.hash();
+
+		let result = local_node.accept_transaction(transaction);
+		assert_eq!(result, Ok(transaction_hash));
+
+		assert_eq!(executor.lock().take_tasks(), vec![Task::SendInventory(peer_index1,
+			vec![InventoryVector {
+					inv_type: InventoryType::MessageTx,
+					hash: "0791efccd035c5fe501023ff888106eba5eff533965de4a6e06400f623bcac34".into(),
+				}]
+			)]
+		);
+	}
+
+	#[test]
+	fn local_node_discards_local_transaction() {
+		let genesis = test_data::genesis();
+		let transaction: Transaction = test_data::TransactionBuilder::with_output(1).add_input(&genesis.transactions[0], 0).into();
+		let transaction_hash = transaction.hash();
+
+		// simulate transaction verification fail
+		let mut verifier = DummyVerifier::default();
+		verifier.error_when_verifying(transaction_hash.clone(), "simulated");
+
+		let (_, _, executor, _, local_node) = create_local_node(Some(verifier));
+
+		let _peer_index1 = local_node.create_sync_session(0, DummyOutboundSyncConnection::new());
+		{ executor.lock().take_tasks(); }
+
+		let result = local_node.accept_transaction(transaction);
+		assert_eq!(result, Err("simulated".to_owned()));
+
+		assert_eq!(executor.lock().take_tasks(), vec![]);
 	}
 }

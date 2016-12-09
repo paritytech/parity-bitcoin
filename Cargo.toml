@@ -23,6 +23,7 @@ sync = { path = "sync" }
 import = { path = "import" }
 bencher = { path = "bencher" }
 logs = { path = "logs" }
+rpc = { path = "rpc" }
 
 [[bin]]
 path = "pbtc/main.rs"

@@ -25,6 +25,7 @@ cargo clippy -p miner
 cargo clippy -p network
 cargo clippy -p p2p
 cargo clippy -p primitives
+cargo clippy -p rpc
 cargo clippy -p script
 cargo clippy -p serialization
 cargo clippy -p sync

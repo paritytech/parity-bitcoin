@@ -43,6 +43,34 @@ args:
         value_name: NET
         help: Only connect to nodes in network <NET> (ipv4 or ipv6)
         takes_value: true
+    - no-jsonrpc:
+        long: no-jsonrpc
+        help: Disable the JSON-RPC API server
+    - jsonrpc-port:
+        long: jsonrpc-port
+        help: The port portion of the JSONRPC API server
+        takes_value: true
+        value_name: PORT
+    - jsonrpc-interface:
+        long: jsonrpc-interface
+        help: The hostname portion of the JSONRPC API server
+        takes_value: true
+        value_name: INTERFACE
+    - jsonrpc-cors:
+        long: jsonrpc-cors
+        help: Specify CORS header for JSON-RPC API responses
+        takes_value: true
+        value_name: URL
+    - jsonrpc-apis:
+        long: jsonrpc-apis
+        help: Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API name.
+        takes_value: true
+        value_name: APIS
+    - jsonrpc-hosts:
+        long: jsonrpc-hosts
+        help: List of allowed Host header values
+        takes_value: true
+        value_name: HOSTS
 subcommands:
     - import:
         about: Import blocks from bitcoin core database

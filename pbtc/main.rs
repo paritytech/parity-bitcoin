@@ -17,11 +17,14 @@ extern crate network;
 extern crate p2p;
 extern crate sync;
 extern crate import;
+extern crate rpc as ethcore_rpc;
 
 mod commands;
 mod config;
 mod seednodes;
 mod util;
+mod rpc;
+mod rpc_apis;
 
 use app_dirs::AppInfo;
 
