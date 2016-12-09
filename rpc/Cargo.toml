@@ -23,6 +23,7 @@ p2p = { path = "../p2p" }
 network = { path = "../network" }
 db = { path = "../db" }
 test-data = { path = "../test-data" }
+miner = { path = "../miner" }
 
 [build-dependencies]
 serde_codegen = { version = "0.8.0", optional = true }
