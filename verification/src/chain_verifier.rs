@@ -317,7 +317,7 @@ impl ChainVerifier {
 			let mut last = 0;
 			for num_task in 0..TRANSACTIONS_VERIFY_THREADS {
 				let from = last;
-				last = ::std::cmp::max(1, block.transaction_count() / TRANSACTIONS_VERIFY_THREADS);
+				last = from + ::std::cmp::max(1, block.transaction_count() / TRANSACTIONS_VERIFY_THREADS);
 				if num_task == TRANSACTIONS_VERIFY_THREADS - 1 { last = block.transaction_count(); };
 				transaction_tasks.push(Task::new(block, location.height(), from, last));
 			}
