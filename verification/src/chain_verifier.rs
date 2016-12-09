@@ -14,8 +14,8 @@ const COINBASE_MATURITY: u32 = 100; // 2 hours
 const MAX_BLOCK_SIGOPS: usize = 20000;
 const MAX_BLOCK_SIZE: usize = 1000000;
 
-const TRANSACTIONS_VERIFY_THREADS: usize = 4;
-const TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD: usize = 16;
+const TRANSACTIONS_VERIFY_THREADS: usize = 8;
+const TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD: usize = 32;
 
 pub struct ChainVerifier {
 	store: db::SharedStore,
