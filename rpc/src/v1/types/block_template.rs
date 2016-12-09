@@ -1,9 +1,8 @@
-// TODO: remove after implementing getblocktmplate RPC
-#![warn(dead_code)]
-
 use std::collections::HashMap;
 use super::hash::H256;
 use super::raw_transaction::RawTransaction;
+use db;
+use miner;
 
 /// Block template as described in:
 /// https://github.com/bitcoin/bips/blob/master/bip-0022.mediawiki
@@ -43,13 +42,13 @@ pub struct BlockTemplate {
 	/// A range of valid nonces (constant 00000000ffffffff)
 	pub noncerange: Option<String>,
 	/// Limit of sigops in blocks
-	pub sigoplimit: Option<i64>,
+	pub sigoplimit: Option<u32>,
 	/// Limit of block size
 	pub sizelimit: Option<u32>,
 	/// Limit of block weight
 	pub weightlimit: Option<u32>,
 	/// Current timestamp in seconds since epoch (Jan 1 1970 GMT)
-	pub curtime: i64,
+	pub curtime: u32,
 	/// Compressed target of next block
 	pub bits: u32,
 	/// The height of the next block
@@ -79,6 +78,35 @@ pub struct BlockTemplateTransaction {
 	/// If provided and true, this transaction must be in the final block
 	pub required: bool,
 }
+
+impl From<miner::BlockTemplate> for BlockTemplate {
+	fn from(block: miner::BlockTemplate) -> Self {
+		BlockTemplate {
+			version: block.version,
+			previousblockhash: block.previous_header_hash.reversed().into(),
+			curtime: block.time,
+			bits: block.nbits,
+			height: block.height,
+			transactions: block.transactions.into_iter().map(Into::into).collect(),
+			coinbasevalue: Some(block.coinbase_value),
+			sizelimit: Some(block.size_limit),
+			sigoplimit: Some(block.sigop_limit),
+			..Default::default()
+		}
+	}
+}
+
+impl From<db::IndexedTransaction> for BlockTemplateTransaction {
+	fn from(transaction: db::IndexedTransaction) -> Self {
+		use ser::serialize;
+		let serialize = serialize(&transaction.transaction);
+		BlockTemplateTransaction {
+			data: RawTransaction::new(Vec::from((*serialize).clone())),
+			..Default::default()
+		}
+	}
+}
+
 
 #[cfg(test)]
 mod tests {

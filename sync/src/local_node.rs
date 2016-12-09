@@ -11,6 +11,7 @@ use synchronization_executor::{Task as SynchronizationTask, TaskExecutor as Sync
 use synchronization_server::{Server, SynchronizationServer};
 use synchronization_verifier::{AsyncVerifier, TransactionVerificationSink};
 use primitives::hash::H256;
+use miner::BlockTemplate;
 
 // TODO: check messages before processing (filterload' filter is max 36000, nHashFunc is <= 50, etc)
 
@@ -262,6 +263,11 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 		sink_data.wait()
 	}
 
+	pub fn get_block_template(&self) -> BlockTemplate {
+		let client = self.client.lock();
+		client.get_block_template()
+	}
+
 	fn transactions_inventory(&self, inventory: &[InventoryVector]) -> Vec<H256> {
 		inventory.iter()
 			.filter(|item| item.inv_type == InventoryType::MessageTx)
@@ -376,7 +382,7 @@ mod tests {
 		let chain = Arc::new(RwLock::new(Chain::new(Arc::new(db::TestStorage::with_genesis_block()))));
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
-		let config = Config { threads_num: 1, close_connection_on_bad_block: true };
+		let config = Config { network: Magic::Mainnet, threads_num: 1, close_connection_on_bad_block: true };
 		let chain_verifier = Arc::new(ChainVerifier::new(chain.read().storage(), Magic::Mainnet));
 		let client_core = SynchronizationClientCore::new(config, &handle, executor.clone(), chain.clone(), chain_verifier);
 		let mut verifier = match verifier {
