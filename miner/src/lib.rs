@@ -15,7 +15,7 @@ mod cpu_miner;
 mod fee;
 mod memory_pool;
 
-pub use block_assembler::BlockAssembler;
+pub use block_assembler::{BlockAssembler, BlockTemplate};
 pub use cpu_miner::find_solution;
 pub use memory_pool::{MemoryPool, Information as MemoryPoolInformation, OrderingStrategy as MemoryPoolOrderingStrategy};
 pub use fee::{transaction_fee, transaction_fee_rate};

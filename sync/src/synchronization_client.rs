@@ -32,6 +32,8 @@ use miner::transaction_fee_rate;
 use verification::ChainVerifier;
 use time;
 use std::time::Duration;
+use miner::{BlockAssembler, BlockTemplate};
+use network::Magic;
 
 #[cfg_attr(feature="cargo-clippy", allow(doc_markdown))]
 ///! TODO: update with headers-first corrections
@@ -215,6 +217,7 @@ pub trait Client : Send + 'static {
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: EmptyBoxFuture);
 	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<(), String>;
+	fn get_block_template(&self) -> BlockTemplate;
 }
 
 /// Synchronization client trait
@@ -238,6 +241,7 @@ pub trait ClientCore {
 	fn on_peer_disconnected(&mut self, peer_index: usize);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: EmptyBoxFuture);
 	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<(H256, Transaction)>, String>;
+	fn get_block_template(&self) -> BlockTemplate;
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>, final_blocks_requests: Option<Vec<H256>>);
 	fn try_switch_to_saturated_state(&mut self) -> bool;
 	fn on_block_verification_success(&mut self, block: IndexedBlock) -> Option<Vec<VerificationTask>>;
@@ -250,6 +254,8 @@ pub trait ClientCore {
 /// Synchronization client configuration options.
 #[derive(Debug)]
 pub struct Config {
+	/// Network
+	pub network: Magic,
 	/// If true, connection to peer who has provided us with bad block is closed
 	pub close_connection_on_bad_block: bool,
 	/// Number of threads to allocate in synchronization CpuPool.
@@ -513,6 +519,10 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 			self.verifier.verify_transaction(next_block_height, tx);
 		}
 		Ok(())
+	}
+
+	fn get_block_template(&self) -> BlockTemplate {
+		self.core.lock().get_block_template()
 	}
 }
 
@@ -836,6 +846,14 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 				Ok(transactions)
 			},
 		}
+	}
+
+	fn get_block_template(&self) -> BlockTemplate {
+		let block_assembler = BlockAssembler::default();
+		let chain = self.chain.read();
+		let store = chain.storage();
+		let memory_pool = chain.memory_pool();
+		block_assembler.create_new_block(&store, memory_pool, time::get_time().sec as u32, self.config.network)
 	}
 
 	/// Schedule new synchronization tasks, if any.

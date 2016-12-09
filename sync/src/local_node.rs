@@ -11,6 +11,7 @@ use synchronization_executor::{Task as SynchronizationTask, TaskExecutor as Sync
 use synchronization_server::{Server, SynchronizationServer};
 use synchronization_verifier::{AsyncVerifier, TransactionVerificationSink};
 use primitives::hash::H256;
+use miner::BlockTemplate;
 
 // TODO: check messages before processing (filterload' filter is max 36000, nHashFunc is <= 50, etc)
 
@@ -260,6 +261,11 @@ impl<T, U, V> LocalNode<T, U, V> where T: SynchronizationTaskExecutor + PeersCon
 			}
 		}
 		sink_data.wait()
+	}
+
+	pub fn get_block_template(&self) -> BlockTemplate {
+		let client = self.client.lock();
+		client.get_block_template()
 	}
 
 	fn transactions_inventory(&self, inventory: &[InventoryVector]) -> Vec<H256> {
