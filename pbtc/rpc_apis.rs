@@ -7,6 +7,8 @@ use ethcore_rpc::Extendable;
 pub enum Api {
 	/// Raw
 	Raw,
+	/// Miner
+	Miner,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -26,6 +28,7 @@ impl FromStr for Api {
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		match s {
 			"raw" => Ok(Api::Raw),
+			"miner" => Ok(Api::Miner),
 			api => Err(format!("Unknown api: {}", api)),
 		}
 	}
@@ -45,6 +48,7 @@ pub fn setup_rpc<T: Extendable>(server: T, apis: ApiSet, deps: Dependencies) -> 
 	for api in apis.list_apis() {
 		match api {
 			Api::Raw => server.add_delegate(RawClient::new(RawClientCore::new(deps.local_sync_node.clone())).to_delegate()),
+			Api::Miner => server.add_delegate(MinerClient::new(MinerClientCore::new()).to_delegate()),
 		}
 	}
 	server
