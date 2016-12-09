@@ -7,7 +7,7 @@ The Parity Bitcoin client
 
 ![Graph][graph]
 
-[graph]: https://github.com/ethcore/parity-bitcoin/blob/master/tools/graph.png
+[graph]: https://github.com/ethcore/parity-bitcoin/blob/master/tools/graph.svg
 [travis-image]: https://travis-ci.com/ethcore/parity-bitcoin.svg?token=DMFvZu71iaTbUYx9UypX&branch=master
 [travis-url]: https://travis-ci.com/ethcore/parity-bitcoin
 [doc-url]: https://ethcore.github.io/parity-bitcoin/pbtc/index.html

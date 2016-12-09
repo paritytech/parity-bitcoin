@@ -1,4 +1,5 @@
 digraph dependencies {
+	ratio=1.0;
 	N0[label="pbtc",shape=box];
 	N1[label="app_dirs",shape=box];
 	N2[label="bencher",shape=box];
