@@ -79,7 +79,10 @@ impl ChainVerifier {
 		// signature operations limit is enforced with BIP16
 		let store = StoreWithUnretainedOutputs::new(&self.store, block);
 		let bip16_active = self.verify_p2sh(block.header.raw.time);
-		block.transactions.iter().map(|tx| transaction_sigops(&tx.raw, &store, bip16_active)).sum()
+		block.transactions.iter().map(|tx| {
+			transaction_sigops(&tx.raw, &store, bip16_active)
+				.expect("missing tx, out of order verification or malformed db")
+		}).sum()
 	}
 
 	fn ordered_verify(&self, block: &db::IndexedBlock, at_height: u32) -> Result<(), Error> {

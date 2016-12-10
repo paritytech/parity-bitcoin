@@ -2,7 +2,7 @@ use primitives::hash::H256;
 use chain::{OutPoint, TransactionOutput};
 use db::{SharedStore, IndexedTransaction, PreviousTransactionOutputProvider};
 use network::Magic;
-use memory_pool::{MemoryPool, MemoryPoolIterator, OrderingStrategy, Entry};
+use memory_pool::{MemoryPool, OrderingStrategy, Entry};
 use verification::{
 	work_required, block_reward_satoshi, transaction_sigops,
 	MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS
@@ -133,11 +133,11 @@ impl Default for BlockAssembler {
 }
 
 /// Iterator iterating over mempool transactions and yielding only those which fit the block
-struct FittingTransactionsIterator<'a> {
+struct FittingTransactionsIterator<'a, T> {
 	/// Shared store is used to query previous transaction outputs from database
 	store: &'a SharedStore,
 	/// Memory pool transactions iterator
-	mempool_iter: MemoryPoolIterator<'a>,
+	iter: T,
 	/// Size policy decides if transactions size fits the block
 	block_size: SizePolicy,
 	/// Sigops policy decides if transactions sigops fits the block
@@ -148,11 +148,11 @@ struct FittingTransactionsIterator<'a> {
 	finished: bool,
 }
 
-impl<'a> FittingTransactionsIterator<'a> {
-	fn new(store: &'a SharedStore, mempool: &'a MemoryPool, strategy: OrderingStrategy, max_block_size: u32, max_block_sigops: u32) -> Self {
+impl<'a, T> FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entry> {
+	fn new(store: &'a SharedStore, iter: T, max_block_size: u32, max_block_sigops: u32) -> Self {
 		FittingTransactionsIterator {
 			store: store,
-			mempool_iter: mempool.iter(strategy),
+			iter: iter,
 			// reserve some space for header and transations len field
 			block_size: SizePolicy::new(BLOCK_HEADER_SIZE + 4, max_block_size, 1_000, 50),
 			sigops: SizePolicy::new(0, max_block_sigops, 8, 50),
@@ -162,7 +162,7 @@ impl<'a> FittingTransactionsIterator<'a> {
 	}
 }
 
-impl<'a> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a> {
+impl<'a, T> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a, T> {
 	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
 		self.store.transaction(&prevout.hash)
 			.as_ref()
@@ -176,12 +176,12 @@ impl<'a> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a> {
 	}
 }
 
-impl<'a> Iterator for FittingTransactionsIterator<'a> {
+impl<'a, T> Iterator for FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entry> {
 	type Item = &'a Entry;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		while !self.finished {
-			let entry = match self.mempool_iter.next() {
+			let entry = match self.iter.next() {
 				Some(entry) => entry,
 				None => {
 					self.finished = true;
@@ -191,7 +191,15 @@ impl<'a> Iterator for FittingTransactionsIterator<'a> {
 
 			let bip16_active = true;
 			let transaction_size = entry.size as u32;
-			let sigops_count = transaction_sigops(&entry.transaction, self, bip16_active) as u32;
+			// we may have ignored previous transaction, cause it wasn't fitting the block
+			// if we did that, than transaction_sigops returns None, and we also need
+			// to ommit current transaction
+			let sigops_count = match transaction_sigops(&entry.transaction, self, bip16_active) {
+				Some(count) => count as u32,
+				None => {
+					continue;
+				},
+			};
 
 			let size_step = self.block_size.decide(transaction_size);
 			let sigops_step = self.sigops.decide(sigops_count);
@@ -230,8 +238,8 @@ impl BlockAssembler {
 		let mut coinbase_value = block_reward_satoshi(height);
 		let mut transactions = Vec::new();
 
-		let strategy = OrderingStrategy::ByTransactionScore;
-		let tx_iter = FittingTransactionsIterator::new(store, mempool, strategy, self.max_block_size, self.max_block_sigops);
+		let mempool_iter = mempool.iter(OrderingStrategy::ByTransactionScore);
+		let tx_iter = FittingTransactionsIterator::new(store, mempool_iter, self.max_block_size, self.max_block_sigops);
 		for entry in tx_iter {
 			// miner_fee is i64, but we can safely cast it to u64
 			// memory pool should restrict miner fee to be positive
