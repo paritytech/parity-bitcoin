@@ -331,7 +331,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "jsonrpc-core"
 version = "4.0.0"
-source = "git+https://github.com/ethcore/jsonrpc.git#1500da1b9613a0a17fc0109d825f3ccc60199a53"
+source = "git+https://github.com/ethcore/jsonrpc.git#19a225edce9069ebc0da784059b34e0e6c9b4834"
 dependencies = [
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -343,12 +343,21 @@ dependencies = [
 [[package]]
 name = "jsonrpc-http-server"
 version = "6.1.1"
-source = "git+https://github.com/ethcore/jsonrpc.git#1500da1b9613a0a17fc0109d825f3ccc60199a53"
+source = "git+https://github.com/ethcore/jsonrpc.git#19a225edce9069ebc0da784059b34e0e6c9b4834"
 dependencies = [
  "hyper 0.10.0-a.0 (git+https://github.com/ethcore/hyper)",
  "jsonrpc-core 4.0.0 (git+https://github.com/ethcore/jsonrpc.git)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "unicase 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "jsonrpc-macros"
+version = "0.1.0"
+source = "git+https://github.com/ethcore/jsonrpc.git#19a225edce9069ebc0da784059b34e0e6c9b4834"
+dependencies = [
+ "jsonrpc-core 4.0.0 (git+https://github.com/ethcore/jsonrpc.git)",
+ "serde 0.8.19 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -804,6 +813,7 @@ dependencies = [
  "db 0.1.0",
  "jsonrpc-core 4.0.0 (git+https://github.com/ethcore/jsonrpc.git)",
  "jsonrpc-http-server 6.1.1 (git+https://github.com/ethcore/jsonrpc.git)",
+ "jsonrpc-macros 0.1.0 (git+https://github.com/ethcore/jsonrpc.git)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "miner 0.1.0",
  "network 0.1.0",
@@ -1250,6 +1260,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum itoa 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "ae3088ea4baeceb0284ee9eea42f591226e6beaecf65373e41b38d95a1b8e7a1"
 "checksum jsonrpc-core 4.0.0 (git+https://github.com/ethcore/jsonrpc.git)" = "<none>"
 "checksum jsonrpc-http-server 6.1.1 (git+https://github.com/ethcore/jsonrpc.git)" = "<none>"
+"checksum jsonrpc-macros 0.1.0 (git+https://github.com/ethcore/jsonrpc.git)" = "<none>"
 "checksum kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7507624b29483431c0ba2d82aece8ca6cdba9382bff4ddd0f7490560c056098d"
 "checksum language-tags 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "a91d884b6667cd606bb5a69aa0c99ba811a115fc68915e7056ec08a46e93199a"
 "checksum lazy_static 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "6abe0ee2e758cd6bc8a2cd56726359007748fbf4128da998b65d0b70f881e19b"

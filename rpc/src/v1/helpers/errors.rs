@@ -5,21 +5,8 @@ mod codes {
 	pub const EXECUTION_ERROR: i64 = -32015;
 }
 
-
-macro_rules! rpc_unimplemented {
-	() => (Err(::v1::helpers::errors::unimplemented(None)))
-}
-
 use std::fmt;
 use jsonrpc_core::{Error, ErrorCode, Value};
-
-pub fn unimplemented(details: Option<String>) -> Error {
-	Error {
-		code: ErrorCode::InternalError,
-		message: "This request is not implemented yet. Please create an issue on Github repo.".into(),
-		data: details.map(Value::String),
-	}
-}
 
 pub fn invalid_params<T: fmt::Debug>(param: &str, details: T) -> Error {
 	Error {
@@ -36,3 +23,4 @@ pub fn execution<T: fmt::Debug>(data: T) -> Error {
 		data: Some(Value::String(format!("{:?}", data))),
 	}
 }
+
