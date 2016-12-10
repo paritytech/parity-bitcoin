@@ -331,10 +331,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "jsonrpc-core"
 version = "4.0.0"
-source = "git+https://github.com/ethcore/jsonrpc.git#19a225edce9069ebc0da784059b34e0e6c9b4834"
+source = "git+https://github.com/ethcore/jsonrpc.git#140257f1a726e9190bdaafeb4625b2a5400de4da"
 dependencies = [
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "parking_lot 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 0.8.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_codegen 0.8.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 0.8.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -343,7 +343,7 @@ dependencies = [
 [[package]]
 name = "jsonrpc-http-server"
 version = "6.1.1"
-source = "git+https://github.com/ethcore/jsonrpc.git#19a225edce9069ebc0da784059b34e0e6c9b4834"
+source = "git+https://github.com/ethcore/jsonrpc.git#140257f1a726e9190bdaafeb4625b2a5400de4da"
 dependencies = [
  "hyper 0.10.0-a.0 (git+https://github.com/ethcore/hyper)",
  "jsonrpc-core 4.0.0 (git+https://github.com/ethcore/jsonrpc.git)",
@@ -354,7 +354,7 @@ dependencies = [
 [[package]]
 name = "jsonrpc-macros"
 version = "0.1.0"
-source = "git+https://github.com/ethcore/jsonrpc.git#19a225edce9069ebc0da784059b34e0e6c9b4834"
+source = "git+https://github.com/ethcore/jsonrpc.git#140257f1a726e9190bdaafeb4625b2a5400de4da"
 dependencies = [
  "jsonrpc-core 4.0.0 (git+https://github.com/ethcore/jsonrpc.git)",
  "serde 0.8.19 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -639,17 +639,6 @@ dependencies = [
  "serialization 0.1.0",
  "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-core 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "parking_lot"
-version = "0.2.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "libc 0.2.18 (registry+https://github.com/rust-lang/crates.io-index)",
- "smallvec 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1286,7 +1275,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum odds 0.2.25 (registry+https://github.com/rust-lang/crates.io-index)" = "c3df9b730298cea3a1c3faa90b7e2f9df3a9c400d0936d6015e6165734eefcba"
 "checksum ole32-sys 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "5d2c49021782e5233cd243168edfa8037574afed4eba4bbaf538b3d8d1789d8c"
 "checksum owning_ref 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "8d91377085359426407a287ab16884a0111ba473aa6844ff01d4ec20ce3d75e7"
-"checksum parking_lot 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)" = "968f685642555d2f7e202c48b8b11de80569e9bfea817f7f12d7c61aac62d4e6"
 "checksum parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)" = "e1435e7a2a00dfebededd6c6bdbd54008001e94b4a2aadd6aef0dc4c56317621"
 "checksum parking_lot_core 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "fb1b97670a2ffadce7c397fb80a3d687c4f3060140b885621ef1653d0e5d5068"
 "checksum quasi 0.20.1 (registry+https://github.com/rust-lang/crates.io-index)" = "94a532453b931a4483a5b2e40f0fe04aee35b6bc2c0eeec876f1bd2358a134d3"
