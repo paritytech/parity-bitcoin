@@ -6,6 +6,8 @@ extern crate rustc_serialize;
 extern crate serde;
 extern crate serde_json;
 extern crate jsonrpc_core;
+#[macro_use]
+extern crate jsonrpc_macros;
 extern crate jsonrpc_http_server;
 extern crate tokio_core;
 extern crate sync;
