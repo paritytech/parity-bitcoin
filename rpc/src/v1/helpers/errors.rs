@@ -41,7 +41,15 @@ pub fn execution<T: fmt::Debug>(data: T) -> Error {
 pub fn block_not_found<T: fmt::Debug>(data: T) -> Error {
 	Error {
 		code: ErrorCode::ServerError(codes::BLOCK_NOT_FOUND),
-		message: "Block not found".into(),
+		message: "Block with given hash is not found".into(),
+		data: Some(Value::String(format!("{:?}", data))),
+	}
+}
+
+pub fn block_at_height_not_found<T: fmt::Debug>(data: T) -> Error {
+	Error {
+		code: ErrorCode::ServerError(codes::BLOCK_NOT_FOUND),
+		message: "Block at given height is not found".into(),
 		data: Some(Value::String(format!("{:?}", data))),
 	}
 }

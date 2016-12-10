@@ -1,12 +1,11 @@
 use v1::traits::BlockChain;
-use v1::types::{GetBlockResponse, VerboseBlock};
+use v1::types::{GetBlockResponse, VerboseBlock, RawBlock};
 use v1::types::GetTransactionResponse;
 use v1::types::GetTxOutResponse;
 use v1::types::GetTxOutSetInfoResponse;
-use v1::types::RawBlock;
 use v1::types::H256;
 use v1::types::U256;
-use v1::helpers::errors::block_not_found;
+use v1::helpers::errors::{block_not_found, block_at_height_not_found};
 use jsonrpc_core::Error;
 use db;
 use verification;
@@ -18,8 +17,11 @@ pub struct BlockChainClient<T: BlockChainClientCoreApi> {
 }
 
 pub trait BlockChainClientCoreApi: Send + Sync + 'static {
-	fn get_raw_block(&self, hash: GlobalH256) -> Option<RawBlock>;
-	fn get_verbose_block(&self, hash: GlobalH256) -> Option<VerboseBlock>;
+	fn best_block_hash(&self) -> GlobalH256;
+	fn block_hash(&self, height: u32) -> Option<GlobalH256>;
+	fn difficulty(&self) -> f64;
+	fn raw_block(&self, hash: GlobalH256) -> Option<RawBlock>;
+	fn verbose_block(&self, hash: GlobalH256) -> Option<VerboseBlock>;
 }
 
 pub struct BlockChainClientCore {
@@ -28,6 +30,8 @@ pub struct BlockChainClientCore {
 
 impl BlockChainClientCore {
 	pub fn new(storage: db::SharedStore) -> Self {
+		assert!(storage.best_block().is_some());
+		
 		BlockChainClientCore {
 			storage: storage,
 		}
@@ -35,14 +39,26 @@ impl BlockChainClientCore {
 }
 
 impl BlockChainClientCoreApi for BlockChainClientCore {
-	fn get_raw_block(&self, hash: GlobalH256) -> Option<RawBlock> {
+	fn best_block_hash(&self) -> GlobalH256 {
+		self.storage.best_block().expect("storage with genesis block required").hash
+	}
+
+	fn block_hash(&self, height: u32) -> Option<GlobalH256> {
+		self.storage.block_hash(height)
+	}
+
+	fn difficulty(&self) -> f64 {
+		unimplemented!()
+	}
+
+	fn raw_block(&self, hash: GlobalH256) -> Option<RawBlock> {
 		self.storage.block(hash.into())
 			.map(|block| {
 				serialize(&block).into()
 			})
 	}
 
-	fn get_verbose_block(&self, hash: GlobalH256) -> Option<VerboseBlock> {
+	fn verbose_block(&self, hash: GlobalH256) -> Option<VerboseBlock> {
 		self.storage.block(hash.into())
 			.map(|block| {
 				let block: db::IndexedBlock = block.into();
@@ -87,24 +103,26 @@ impl<T> BlockChainClient<T> where T: BlockChainClientCoreApi {
 
 impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 	fn best_block_hash(&self) -> Result<H256, Error> {
-		rpc_unimplemented!()
+		Ok(self.core.best_block_hash().into())
 	}
 
-	fn block_hash(&self, _height: u32) -> Result<H256, Error> {
-		rpc_unimplemented!()
+	fn block_hash(&self, height: u32) -> Result<H256, Error> {
+		self.core.block_hash(height)
+			.map(H256::from)
+			.ok_or(block_at_height_not_found(height))
 	}
 
 	fn difficulty(&self) -> Result<f64, Error> {
-		rpc_unimplemented!()
+		Ok(self.core.difficulty())
 	}
 
 	fn block(&self, hash: H256, verbose: Option<bool>) -> Result<GetBlockResponse, Error> {
 		let global_hash: GlobalH256 = hash.clone().into();
 		if verbose.unwrap_or_default() {
-			self.core.get_verbose_block(global_hash.reversed())
+			self.core.verbose_block(global_hash.reversed())
 				.map(|block| GetBlockResponse::Verbose(block))
 		} else {
-			self.core.get_raw_block(global_hash.reversed())
+			self.core.raw_block(global_hash.reversed())
 				.map(|block| GetBlockResponse::Raw(block))
 		}
 		.ok_or(block_not_found(hash))
@@ -125,4 +143,102 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 
 #[cfg(test)]
 pub mod tests {
+	use primitives::hash::H256 as GlobalH256;
+	use v1::types::{VerboseBlock, RawBlock};
+	use test_data;
+	use super::*;
+
+	#[derive(Default)]
+	struct SuccessBlockChainClientCore;
+	#[derive(Default)]
+	struct ErrorBlockChainClientCore;
+
+	impl BlockChainClientCoreApi for SuccessBlockChainClientCore {
+		fn best_block_hash(&self) -> GlobalH256 {
+			test_data::genesis().hash()
+		}
+
+		fn block_hash(&self, _height: u32) -> Option<GlobalH256> {
+			Some(test_data::genesis().hash())
+		}
+
+		fn difficulty(&self) -> f64 {
+			1f64
+		}
+
+		fn raw_block(&self, _hash: GlobalH256) -> Option<RawBlock> {
+			Some(RawBlock::from(vec![0]))
+		}
+
+		fn verbose_block(&self, _hash: GlobalH256) -> Option<VerboseBlock> {
+			Some(VerboseBlock::default())
+		}
+	}
+
+	impl BlockChainClientCoreApi for ErrorBlockChainClientCore {
+		fn best_block_hash(&self) -> GlobalH256 {
+			test_data::genesis().hash()
+		}
+
+		fn block_hash(&self, _height: u32) -> Option<GlobalH256> {
+			None
+		}
+
+		fn difficulty(&self) -> f64 {
+			1f64
+		}
+
+		fn raw_block(&self, _hash: GlobalH256) -> Option<RawBlock> {
+			None
+		}
+
+		fn verbose_block(&self, _hash: GlobalH256) -> Option<VerboseBlock> {
+			None
+		}
+	}
+
+	#[test]
+	fn best_block_hash_success() {
+		// TODO
+	}
+
+	#[test]
+	fn block_hash_success() {
+		// TODO
+	}
+
+	#[test]
+	fn block_hash_error() {
+		// TODO
+	}
+
+	#[test]
+	fn difficulty_success() {
+		// TODO
+	}
+
+	#[test]
+	fn verbose_block_contents() {
+		// TODO
+	}
+
+	#[test]
+	fn raw_block_success() {
+		// TODO
+	}
+
+	#[test]
+	fn raw_block_error() {
+		// TODO
+	}
+
+	#[test]
+	fn verbose_block_success() {
+		// TODO
+	}
+
+	#[test]
+	fn verbose_block_error() {
+		// TODO
+	}
 }
