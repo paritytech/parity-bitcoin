@@ -307,7 +307,7 @@ impl Storage {
 		self.read_meta_u32(KEY_BEST_BLOCK_NUMBER)
 	}
 
-	fn _best_hash(&self) -> Option<H256> {
+	fn best_hash(&self) -> Option<H256> {
 		self.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val))
 	}
 
@@ -409,6 +409,14 @@ impl Storage {
 			best_number -= 1;
 			result.push(next);
 		}
+
+	}
+
+	pub fn difficulty(&self) -> f64 {
+		self.best_hash()
+			.and_then(|h| self.block_header_by_hash(&h))
+			.map(|header| header.bits.to_f64())
+			.unwrap_or(1.0f64)
 	}
 }
 
@@ -722,6 +730,7 @@ mod tests {
 	use chain::Block;
 	use super::super::{BlockRef, BlockLocation};
 	use test_data;
+	use primitives::Compact;
 
 	#[test]
 	fn open_store() {
@@ -1280,6 +1289,27 @@ mod tests {
 		let inserted_chain = store.insert_block(&test_data::block_h1()).unwrap();
 
 		assert_eq!(inserted_chain, BlockInsertedChain::Main, "h1 should become main chain");
+	}
+
+	#[test]
+	fn difficulty() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis)
+			.expect("Genesis should be inserted with no issues");
+
+		assert_eq!(1f64, store.difficulty(), "There should be minimum 1 difficulty for just the genesis block");
+
+		let block = test_data::block_builder()
+			.header().parent(genesis.hash()).bits(Compact::new(0x1b0404cb)).build()
+			.transaction().coinbase().build()
+			.build();
+		store.insert_block(&block)
+			.expect("Nest block with just nbits should be inserted with no issues");
+
+		assert_eq!(16307.420938523994f64, store.difficulty(), "There should be minimum updated difficulty for new best block");
 	}
 
 	#[test]
