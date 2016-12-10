@@ -3,7 +3,6 @@ use primitives::bytes::Bytes;
 use chain;
 
 pub trait TransactionProvider {
-
 	/// returns true if store contains given transaction
 	fn contains_transaction(&self, hash: &H256) -> bool {
 		self.transaction(hash).is_some()
