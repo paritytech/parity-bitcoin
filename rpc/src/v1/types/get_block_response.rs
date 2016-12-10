@@ -69,6 +69,7 @@ impl Serialize for GetBlockResponse {
 mod tests {
 	use super::super::bytes::Bytes;
 	use super::super::hash::H256;
+	use super::super::uint::U256;
 	use serde_json;
 	use super::*;
 

@@ -156,6 +156,7 @@ pub mod tests {
 	use primitives::bytes::Bytes as GlobalBytes;
 	use primitives::hash::H256 as GlobalH256;
 	use v1::types::{VerboseBlock, RawBlock};
+	use v1::traits::BlockChain;
 	use test_data;
 	use super::*;
 
