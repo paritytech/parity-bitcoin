@@ -16,7 +16,7 @@ use transaction_meta::TransactionMeta;
 use error::{Error, ConsistencyError, MetaError};
 use update_context::UpdateContext;
 use block_provider::{BlockProvider, BlockHeaderProvider};
-use transaction_provider::TransactionProvider;
+use transaction_provider::{TransactionProvider, PreviousTransactionOutputProvider};
 use transaction_meta_provider::TransactionMetaProvider;
 use block_stapler::{BlockStapler, BlockInsertedChain, Reorganization};
 
@@ -61,10 +61,12 @@ pub trait AsSubstore: BlockProvider + BlockStapler + TransactionProvider + Trans
 
 	fn as_transaction_provider(&self) -> &TransactionProvider;
 
+	fn as_previous_transaction_output_provider(&self) -> &PreviousTransactionOutputProvider;
+
 	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider;
 }
 
-impl<T> AsSubstore for T where T: BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider {
+impl<T> AsSubstore for T where T: BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider + PreviousTransactionOutputProvider {
 	fn as_block_provider(&self) -> &BlockProvider {
 		&*self
 	}
@@ -78,6 +80,10 @@ impl<T> AsSubstore for T where T: BlockProvider + BlockStapler + TransactionProv
 	}
 
 	fn as_transaction_provider(&self) -> &TransactionProvider {
+		&*self
+	}
+
+	fn as_previous_transaction_output_provider(&self) -> &PreviousTransactionOutputProvider {
 		&*self
 	}
 
@@ -672,7 +678,6 @@ impl BlockStapler for Storage {
 }
 
 impl TransactionProvider for Storage {
-
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
 		self.get(COL_TRANSACTIONS, &**hash)
 	}
@@ -680,53 +685,47 @@ impl TransactionProvider for Storage {
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
 		let mut cache = self.transaction_cache.write();
 
-		let (tx, is_cached) = {
-			let cached_transaction = cache.get_mut(hash);
-			match cached_transaction {
-				None => {
-					(
-						self.transaction_bytes(hash).map(|tx_bytes| {
-							let tx: chain::Transaction = deserialize(tx_bytes.as_ref())
-								.expect("Failed to deserialize transaction: db corrupted?");
-							tx
-						}),
-						false
-					)
-				},
-				Some(tx) => (Some(tx.clone()), true)
-			}
-		};
+		if let Some(cached_transaction) = cache.get_mut(hash) {
+			return Some(cached_transaction.clone());
+		}
 
-		match tx {
-			Some(ref tx) => { if !is_cached { cache.insert(hash.clone(), tx.clone()); } }
-			None => {}
-		};
+		let tx: Option<chain::Transaction> = self.transaction_bytes(hash).map(|tx_bytes| {
+			deserialize(tx_bytes.as_ref()).expect("Failed to deserialize transaction: db corrupted?")
+		});
+
+		if let Some(ref tx) = tx {
+			cache.insert(hash.clone(), tx.clone());
+		}
 
 		tx
 	}
 }
 
-impl TransactionMetaProvider for Storage {
+impl PreviousTransactionOutputProvider for Storage {
+	fn previous_transaction_output(&self, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput> {
+		self.transaction(&prevout.hash)
+			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
+	}
 
+	fn is_spent(&self, _prevout: &chain::OutPoint) -> bool {
+		unimplemented!();
+	}
+}
+
+impl TransactionMetaProvider for Storage {
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
 		let mut cache = self.meta_cache.write();
 
-		let (meta, is_cached) = {
-			let cached_meta = cache.get_mut(hash);
-			match cached_meta {
-				None => {
-					(self.get(COL_TRANSACTIONS_META, &**hash).map(|val|
-						TransactionMeta::from_bytes(&val).expect("Invalid transaction metadata: db corrupted?")
-					), false)
-				},
-				Some(meta) => (Some(meta.clone()), true)
-			}
-		};
+		if let Some(cached_meta) = cache.get_mut(hash) {
+			return Some(cached_meta.clone());
+		}
 
-		match meta {
-			Some(ref meta) => { if !is_cached { cache.insert(hash.clone(), meta.clone()); } }
-			None => {}
-		};
+		let meta = self.get(COL_TRANSACTIONS_META, &**hash)
+			.map(|val| TransactionMeta::from_bytes(&val).expect("Invalid transaction metadata: db corrupted?"));
+
+		if let Some(ref meta) = meta {
+			cache.insert(hash.clone(), meta.clone());
+		}
 
 		meta
 	}

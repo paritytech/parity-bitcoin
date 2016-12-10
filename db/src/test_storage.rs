@@ -2,7 +2,7 @@
 
 use super::{
 	BlockRef, Store, Error, BestBlock, BlockLocation, BlockInsertedChain, BlockProvider,
-	BlockStapler, TransactionMetaProvider, TransactionProvider,
+	BlockStapler, TransactionMetaProvider, TransactionProvider, PreviousTransactionOutputProvider,
 	IndexedBlock, BlockHeaderProvider,
 };
 use chain::{self, Block};
@@ -173,7 +173,6 @@ impl BlockStapler for TestStorage {
 }
 
 impl TransactionProvider for TestStorage {
-
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
 		self.transaction(hash).map(|tx| serialization::serialize(&tx))
 	}
@@ -183,6 +182,17 @@ impl TransactionProvider for TestStorage {
 		data.blocks.iter().flat_map(|(_, b)| b.transactions())
 			.find(|ref tx| tx.hash() == *hash)
 			.cloned()
+	}
+}
+
+impl PreviousTransactionOutputProvider for TestStorage {
+	fn previous_transaction_output(&self, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput> {
+		self.transaction(&prevout.hash)
+			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
+	}
+
+	fn is_spent(&self, _prevout: &chain::OutPoint) -> bool {
+		unimplemented!();
 	}
 }
 
