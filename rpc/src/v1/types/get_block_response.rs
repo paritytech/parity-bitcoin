@@ -75,7 +75,7 @@ mod tests {
 	#[test]
 	fn verbose_block_serialize() {
 		let block = VerboseBlock::default();
-		assert_eq!(serde_json::to_string(&block).unwrap(), r#"{"hash":"0000000000000000000000000000000000000000000000000000000000000000","confirmations":0,"size":0,"strippedsize":0,"weight":0,"height":null,"version":0,"versionHex":"","merkleroot":"0000000000000000000000000000000000000000000000000000000000000000","tx":[],"time":0,"mediantime":null,"nonce":0,"bits":0,"difficulty":0.0,"chainwork":"0","previousblockhash":null,"nextblockhash":null}"#);
+		assert_eq!(serde_json::to_string(&block).unwrap(), r#"{"hash":"0000000000000000000000000000000000000000000000000000000000000000","confirmations":0,"size":0,"strippedsize":0,"weight":0,"height":null,"version":0,"versionHex":"","merkleroot":"0000000000000000000000000000000000000000000000000000000000000000","tx":[],"time":0,"mediantime":null,"nonce":0,"bits":0,"difficulty":0.0,"chainwork":"","previousblockhash":null,"nextblockhash":null}"#);
 
 		let block = VerboseBlock {
 			hash: H256::from(1),
@@ -142,6 +142,6 @@ mod tests {
 	fn get_block_response_verbose_serialize() {
 		let block = VerboseBlock::default();
 		let verbose_response = GetBlockResponse::Verbose(block);
-		assert_eq!(serde_json::to_string(&verbose_response).unwrap(), r#"{"hash":"0000000000000000000000000000000000000000000000000000000000000000","confirmations":0,"size":0,"strippedsize":0,"weight":0,"height":null,"version":0,"versionHex":"","merkleroot":"0000000000000000000000000000000000000000000000000000000000000000","tx":[],"time":0,"mediantime":null,"nonce":0,"bits":0,"difficulty":0.0,"chainwork":"0","previousblockhash":null,"nextblockhash":null}"#);
+		assert_eq!(serde_json::to_string(&verbose_response).unwrap(), r#"{"hash":"0000000000000000000000000000000000000000000000000000000000000000","confirmations":0,"size":0,"strippedsize":0,"weight":0,"height":null,"version":0,"versionHex":"","merkleroot":"0000000000000000000000000000000000000000000000000000000000000000","tx":[],"time":0,"mediantime":null,"nonce":0,"bits":0,"difficulty":0.0,"chainwork":"","previousblockhash":null,"nextblockhash":null}"#);
 	}
 }

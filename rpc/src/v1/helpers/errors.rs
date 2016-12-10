@@ -3,6 +3,7 @@
 mod codes {
 	// NOTE [ToDr] Codes from [-32099, -32000]
 	pub const EXECUTION_ERROR: i64 = -32015;
+	pub const BLOCK_NOT_FOUND: i64 = -32099;
 }
 
 
@@ -33,6 +34,14 @@ pub fn execution<T: fmt::Debug>(data: T) -> Error {
 	Error {
 		code: ErrorCode::ServerError(codes::EXECUTION_ERROR),
 		message: "Execution error.".into(),
+		data: Some(Value::String(format!("{:?}", data))),
+	}
+}
+
+pub fn block_not_found<T: fmt::Debug>(data: T) -> Error {
+	Error {
+		code: ErrorCode::ServerError(codes::BLOCK_NOT_FOUND),
+		message: "Block not found".into(),
 		data: Some(Value::String(format!("{:?}", data))),
 	}
 }

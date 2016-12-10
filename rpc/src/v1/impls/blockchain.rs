@@ -6,6 +6,7 @@ use v1::types::GetTxOutSetInfoResponse;
 use v1::types::RawBlock;
 use v1::types::H256;
 use v1::types::U256;
+use v1::helpers::errors::block_not_found;
 use jsonrpc_core::Error;
 use db;
 use verification;
@@ -13,7 +14,7 @@ use ser::serialize;
 use primitives::hash::H256 as GlobalH256;
 
 pub struct BlockChainClient<T: BlockChainClientCoreApi> {
-	_core: T,
+	core: T,
 }
 
 pub trait BlockChainClientCoreApi: Send + Sync + 'static {
@@ -79,7 +80,7 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 impl<T> BlockChainClient<T> where T: BlockChainClientCoreApi {
 	pub fn new(core: T) -> Self {
 		BlockChainClient {
-			_core: core,
+			core: core,
 		}
 	}
 }
@@ -97,8 +98,16 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 		rpc_unimplemented!()
 	}
 
-	fn block(&self, _hash: H256, _verbose: Option<bool>) -> Result<GetBlockResponse, Error> {
-		rpc_unimplemented!()
+	fn block(&self, hash: H256, verbose: Option<bool>) -> Result<GetBlockResponse, Error> {
+		let global_hash: GlobalH256 = hash.clone().into();
+		if verbose.unwrap_or_default() {
+			self.core.get_verbose_block(global_hash.reversed())
+				.map(|block| GetBlockResponse::Verbose(block))
+		} else {
+			self.core.get_raw_block(global_hash.reversed())
+				.map(|block| GetBlockResponse::Raw(block))
+		}
+		.ok_or(block_not_found(hash))
 	}
 
 	fn transaction(&self, _hash: H256, _watch_only: Option<bool>) -> Result<GetTransactionResponse, Error> {
