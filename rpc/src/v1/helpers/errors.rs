@@ -9,6 +9,18 @@ mod codes {
 use std::fmt;
 use jsonrpc_core::{Error, ErrorCode, Value};
 
+macro_rules! rpc_unimplemented {		
+	() => (Err(::v1::helpers::errors::unimplemented(None)))		
+}
+
+pub fn unimplemented(details: Option<String>) -> Error {		
+	Error {		
+		code: ErrorCode::InternalError,		
+		message: "This request is not implemented yet. Please create an issue on Github repo.".into(),		
+		data: details.map(Value::String),		
+	}		
+}
+
 pub fn invalid_params<T: fmt::Debug>(param: &str, details: T) -> Error {
 	Error {
 		code: ErrorCode::InvalidParams,

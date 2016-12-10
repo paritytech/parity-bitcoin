@@ -800,6 +800,7 @@ version = "0.1.0"
 dependencies = [
  "chain 0.1.0",
  "db 0.1.0",
+ "ethcore-devtools 1.3.0",
  "jsonrpc-core 4.0.0 (git+https://github.com/ethcore/jsonrpc.git)",
  "jsonrpc-http-server 6.1.1 (git+https://github.com/ethcore/jsonrpc.git)",
  "jsonrpc-macros 0.1.0 (git+https://github.com/ethcore/jsonrpc.git)",

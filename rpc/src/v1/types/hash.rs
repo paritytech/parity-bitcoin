@@ -12,6 +12,14 @@ macro_rules! impl_hash {
 		#[derive(Eq)]
 		pub struct $name([u8; $size]);
 
+		impl $name {
+			pub fn reversed(&self) -> Self {
+				let mut result = self.clone();
+				result.0.reverse();
+				result
+			}
+		}
+
 		impl Default for $name {
 			fn default() -> Self {
 				$name([0; $size])
