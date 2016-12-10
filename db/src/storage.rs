@@ -15,7 +15,7 @@ use lru_cache::LruCache;
 use transaction_meta::TransactionMeta;
 use error::{Error, ConsistencyError, MetaError};
 use update_context::UpdateContext;
-use block_provider::{BlockProvider, BlockHeaderProvider, AsBlockHeaderProvider};
+use block_provider::{BlockProvider, BlockHeaderProvider};
 use transaction_provider::TransactionProvider;
 use transaction_meta_provider::TransactionMetaProvider;
 use block_stapler::{BlockStapler, BlockInsertedChain, Reorganization};
@@ -43,12 +43,47 @@ const MAX_FORK_ROUTE_PRESET: usize = 2048;
 const TRANSACTION_CACHE_SIZE: usize = 524288;
 
 /// Blockchain storage interface
-pub trait Store : BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider + AsBlockHeaderProvider {
+pub trait Store: AsSubstore {
 	/// get best block
 	fn best_block(&self) -> Option<BestBlock>;
 
 	/// get best header
 	fn best_header(&self) -> Option<chain::BlockHeader>;
+}
+
+/// Allows casting Arc<Store> to reference to any substore type
+pub trait AsSubstore: BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider {
+	fn as_block_provider(&self) -> &BlockProvider;
+
+	fn as_block_header_provider(&self) -> &BlockHeaderProvider;
+
+	fn as_block_stapler(&self) -> &BlockStapler;
+
+	fn as_transaction_provider(&self) -> &TransactionProvider;
+
+	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider;
+}
+
+impl<T> AsSubstore for T where T: BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider {
+	fn as_block_provider(&self) -> &BlockProvider {
+		&*self
+	}
+
+	fn as_block_header_provider(&self) -> &BlockHeaderProvider {
+		&*self
+	}
+
+	fn as_block_stapler(&self) -> &BlockStapler {
+		&*self
+	}
+
+	fn as_transaction_provider(&self) -> &TransactionProvider {
+		&*self
+	}
+
+	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider {
+		&*self
+	}
 }
 
 /// Blockchain storage with rocksdb database
@@ -429,12 +464,6 @@ impl BlockHeaderProvider for Storage {
 		self.block_header_bytes(block_ref).map(
 			|bytes| deserialize::<_, chain::BlockHeader>(bytes.as_ref())
 				.expect("Error deserializing header, possible db corruption"))
-	}
-}
-
-impl AsBlockHeaderProvider for Storage {
-	fn as_block_header_provider(&self) -> &BlockHeaderProvider {
-		&*self
 	}
 }
 
