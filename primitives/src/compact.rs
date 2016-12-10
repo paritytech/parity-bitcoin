@@ -76,6 +76,14 @@ impl Compact {
 		assert!(size < 256);
 		Compact(compact | (size << 24) as u32)
 	}
+
+	pub fn to_f64(&self) -> f64 {
+    	let max_body = f64::from(0x00ffff).ln();
+    	let scaland = f64::from(256).ln();
+    	let ln1 = f64::from(self.0 & 0x00ffffff).ln();
+    	let s1 = scaland * f64::from(0x1d - ((self.0 & 0xff000000) >> 24));
+		(max_body - ln1 + s1).exp()
+	}
 }
 
 #[cfg(test)]
@@ -113,6 +121,11 @@ mod tests {
 		let compact = Compact::new(0x05009234);
 		let compact2 = Compact::from_u256(compact.to_u256().unwrap());
 		assert_eq!(compact, compact2);
+	}
 
+	#[test]
+	fn difficulty() {
+		let nbits = Compact::new(0x1b0404cb);
+		assert_eq!(nbits.to_f64(), 16307.420938523994f64);
 	}
 }
