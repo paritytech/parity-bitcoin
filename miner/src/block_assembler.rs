@@ -1,10 +1,11 @@
 use primitives::hash::H256;
-use db::{SharedStore, IndexedTransaction};
+use chain::{OutPoint, TransactionOutput};
+use db::{SharedStore, IndexedTransaction, PreviousTransactionOutputProvider};
 use network::Magic;
-use memory_pool::{MemoryPool, OrderingStrategy};
+use memory_pool::{MemoryPool, MemoryPoolIterator, OrderingStrategy, Entry};
 use verification::{
 	work_required, block_reward_satoshi, transaction_sigops,
-	StoreWithUnretainedOutputs, MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS
+	MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS
 };
 
 const BLOCK_VERSION: u32 = 0x20000000;
@@ -131,6 +132,91 @@ impl Default for BlockAssembler {
 	}
 }
 
+/// Iterator iterating over mempool transactions and yielding only those which fit the block
+struct FittingTransactionsIterator<'a> {
+	/// Shared store is used to query previous transaction outputs from database
+	store: &'a SharedStore,
+	/// Memory pool transactions iterator
+	mempool_iter: MemoryPoolIterator<'a>,
+	/// Size policy decides if transactions size fits the block
+	block_size: SizePolicy,
+	/// Sigops policy decides if transactions sigops fits the block
+	sigops: SizePolicy,
+	/// Previous entries are needed to get previous transaction outputs
+	previous_entries: Vec<&'a Entry>,
+	/// True if block is already full
+	finished: bool,
+}
+
+impl<'a> FittingTransactionsIterator<'a> {
+	fn new(store: &'a SharedStore, mempool: &'a MemoryPool, strategy: OrderingStrategy, max_block_size: u32, max_block_sigops: u32) -> Self {
+		FittingTransactionsIterator {
+			store: store,
+			mempool_iter: mempool.iter(strategy),
+			// reserve some space for header and transations len field
+			block_size: SizePolicy::new(BLOCK_HEADER_SIZE + 4, max_block_size, 1_000, 50),
+			sigops: SizePolicy::new(0, max_block_sigops, 8, 50),
+			previous_entries: Vec::new(),
+			finished: false,
+		}
+	}
+}
+
+impl<'a> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a> {
+	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
+		self.store.transaction(&prevout.hash)
+			.as_ref()
+			.or_else(|| self.previous_entries.iter().find(|e| e.hash == prevout.hash).map(|e| &e.transaction))
+			.and_then(|tx| tx.outputs.iter().nth(prevout.index as usize))
+			.cloned()
+	}
+
+	fn is_spent(&self, _prevout: &OutPoint) -> bool {
+		unimplemented!();
+	}
+}
+
+impl<'a> Iterator for FittingTransactionsIterator<'a> {
+	type Item = &'a Entry;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		while !self.finished {
+			let entry = match self.mempool_iter.next() {
+				Some(entry) => entry,
+				None => {
+					self.finished = true;
+					return None;
+				}
+			};
+
+			let bip16_active = true;
+			let transaction_size = entry.size as u32;
+			let sigops_count = transaction_sigops(&entry.transaction, self, bip16_active) as u32;
+
+			let size_step = self.block_size.decide(transaction_size);
+			let sigops_step = self.sigops.decide(sigops_count);
+
+			match size_step.and(sigops_step) {
+				NextStep::Append => {
+					self.previous_entries.push(entry);
+					return Some(entry);
+				},
+				NextStep::FinishAndAppend => {
+					self.finished = true;
+					self.previous_entries.push(entry);
+					return Some(entry);
+				},
+				NextStep::Ignore => (),
+				NextStep::FinishAndIgnore => {
+					self.finished = true;
+				},
+			}
+		}
+
+		None
+	}
+}
+
 impl BlockAssembler {
 	pub fn create_new_block(&self, store: &SharedStore, mempool: &MemoryPool, time: u32, network: Magic) -> BlockTemplate {
 		// get best block
@@ -141,13 +227,18 @@ impl BlockAssembler {
 		let nbits = work_required(previous_header_hash.clone(), time, height, store.as_block_header_provider(), network);
 		let version = BLOCK_VERSION;
 
-		let mut block_size = SizePolicy::new(BLOCK_HEADER_SIZE, self.max_block_size, 1_000, 50);
-		let mut sigops = SizePolicy::new(0, self.max_block_sigops, 8, 50);
 		let mut coinbase_value = block_reward_satoshi(height);
-
 		let mut transactions = Vec::new();
-		// add priority transactions
-		BlockAssembler::fill_transactions(store, mempool, &mut block_size, &mut sigops, &mut coinbase_value, &mut transactions, OrderingStrategy::ByTransactionScore);
+
+		let strategy = OrderingStrategy::ByTransactionScore;
+		let tx_iter = FittingTransactionsIterator::new(store, mempool, strategy, self.max_block_size, self.max_block_sigops);
+		for entry in tx_iter {
+			// miner_fee is i64, but we can safely cast it to u64
+			// memory pool should restrict miner fee to be positive
+			coinbase_value += entry.miner_fee as u64;
+			let tx = IndexedTransaction::new(entry.hash.clone(), entry.transaction.clone());
+			transactions.push(tx);
+		}
 
 		BlockTemplate {
 			version: version,
@@ -159,48 +250,6 @@ impl BlockAssembler {
 			coinbase_value: coinbase_value,
 			size_limit: self.max_block_size,
 			sigop_limit: self.max_block_sigops,
-		}
-	}
-
-	fn fill_transactions(
-		store: &SharedStore,
-		mempool: &MemoryPool,
-		block_size: &mut SizePolicy,
-		sigops: &mut SizePolicy,
-		coinbase_value: &mut u64,
-		transactions: &mut Vec<IndexedTransaction>,
-		strategy: OrderingStrategy
-	) {
-		for entry in mempool.iter(strategy) {
-			let transaction_size = entry.size as u32;
-			let sigops_count = {
-				let txs: &[_] = &*transactions;
-				let unretained_store = StoreWithUnretainedOutputs::new(store, &txs);
-				let bip16_active = true;
-				transaction_sigops(&entry.transaction, &unretained_store, bip16_active) as u32
-			};
-
-			let size_step = block_size.decide(transaction_size);
-			let sigops_step = sigops.decide(sigops_count);
-
-			match size_step.and(sigops_step) {
-				NextStep::Append => {
-					let tx = IndexedTransaction::new(entry.hash.clone(), entry.transaction.clone());
-					// miner_fee is i64, but we can safely cast it to u64
-					// memory pool should restrict miner fee to be positive
-					*coinbase_value += entry.miner_fee as u64;
-					transactions.push(tx);
-				},
-				NextStep::FinishAndAppend => {
-					let tx = IndexedTransaction::new(entry.hash.clone(), entry.transaction.clone());
-					transactions.push(tx);
-					break;
-				},
-				NextStep::Ignore => (),
-				NextStep::FinishAndIgnore => {
-					break;
-				},
-			}
 		}
 	}
 }
