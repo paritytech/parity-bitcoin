@@ -1,6 +1,5 @@
 use v1::traits::BlockChain;
 use v1::types::{GetBlockResponse, VerboseBlock, RawBlock};
-use v1::types::GetTransactionResponse;
 use v1::types::GetTxOutResponse;
 use v1::types::GetTxOutSetInfoResponse;
 use v1::types::H256;
@@ -137,11 +136,6 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 				.map(|block| GetBlockResponse::Raw(block))
 		}
 		.ok_or(block_not_found(hash))
-	}
-
-	fn transaction(&self, _hash: H256, _watch_only: Trailing<bool>) -> Result<GetTransactionResponse, Error> {
-		// TODO: we do not have wallet yet => we can not support
-		rpc_unimplemented!()
 	}
 
 	fn transaction_out(&self, _transaction_hash: H256, _out_index: u32, _include_mempool: Trailing<bool>) -> Result<GetTxOutResponse, Error> {

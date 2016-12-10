@@ -3,7 +3,6 @@ use jsonrpc_core::Error;
 
 use v1::types::H256;
 use v1::types::GetBlockResponse;
-use v1::types::GetTransactionResponse;
 use v1::types::GetTxOutResponse;
 use v1::types::GetTxOutSetInfoResponse;
 
@@ -23,9 +22,6 @@ build_rpc_trait! {
 		/// Get information on given block.
 		#[rpc(name = "getblock")]
 		fn block(&self, H256, Trailing<bool>) -> Result<GetBlockResponse, Error>;
-		/// Get information on given transaction.
-		#[rpc(name = "gettransaction")]
-		fn transaction(&self, H256, Trailing<bool>) -> Result<GetTransactionResponse, Error>;
 		/// Get details about an unspent transaction output.
 		#[rpc(name = "gettxout")]
 		fn transaction_out(&self, H256, u32, Trailing<bool>) -> Result<GetTxOutResponse, Error>;
