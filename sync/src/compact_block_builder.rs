@@ -15,27 +15,27 @@ pub fn build_compact_block(block: IndexedBlock, prefilled_transactions_indexes: 
 	let nonce: u64 = thread_rng().gen();
 
 	let prefilled_transactions_len = prefilled_transactions_indexes.len();
-	let mut short_ids: Vec<ShortTransactionID> = Vec::with_capacity(block.transaction_count() - prefilled_transactions_len);
+	let mut short_ids: Vec<ShortTransactionID> = Vec::with_capacity(block.transactions.len() - prefilled_transactions_len);
 	let mut prefilled_transactions: Vec<PrefilledTransaction> = Vec::with_capacity(prefilled_transactions_len);
 	let mut prefilled_transactions_size: usize = 0;
 
-	let (key0, key1) = short_transaction_id_keys(nonce, block.header());
-	for (transaction_index, (transaction_hash, transaction)) in block.transactions().enumerate() {
-		let transaction_size = transaction.serialized_size();
+	let (key0, key1) = short_transaction_id_keys(nonce, &block.header.raw);
+	for (transaction_index, transaction) in block.transactions.into_iter().enumerate() {
+		let transaction_size = transaction.raw.serialized_size();
 		if prefilled_transactions_size + transaction_size < MAX_COMPACT_BLOCK_PREFILLED_SIZE
 			&& prefilled_transactions_indexes.contains(&transaction_index) {
 			prefilled_transactions_size += transaction_size;
 			prefilled_transactions.push(PrefilledTransaction {
 				index: transaction_index,
-				transaction: transaction.clone(),
+				transaction: transaction.raw,
 			})
 		} else {
-			short_ids.push(short_transaction_id(key0, key1, transaction_hash));
+			short_ids.push(short_transaction_id(key0, key1, &transaction.hash));
 		}
 	}
 
 	BlockHeaderAndIDs {
-		header: block.header().clone(),
+		header: block.header.raw,
 		nonce: nonce,
 		short_ids: short_ids,
 		prefilled_transactions: prefilled_transactions,

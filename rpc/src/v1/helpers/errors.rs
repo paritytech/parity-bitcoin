@@ -6,21 +6,8 @@ mod codes {
 	pub const BLOCK_NOT_FOUND: i64 = -32099;
 }
 
-
-macro_rules! rpc_unimplemented {
-	() => (Err(::v1::helpers::errors::unimplemented(None)))
-}
-
 use std::fmt;
 use jsonrpc_core::{Error, ErrorCode, Value};
-
-pub fn unimplemented(details: Option<String>) -> Error {
-	Error {
-		code: ErrorCode::InternalError,
-		message: "This request is not implemented yet. Please create an issue on Github repo.".into(),
-		data: details.map(Value::String),
-	}
-}
 
 pub fn invalid_params<T: fmt::Debug>(param: &str, details: T) -> Error {
 	Error {

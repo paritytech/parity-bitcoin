@@ -14,8 +14,8 @@ const COINBASE_MATURITY: u32 = 100; // 2 hours
 pub const MAX_BLOCK_SIZE: usize = 1_000_000;
 pub const MAX_BLOCK_SIGOPS: usize = 20_000;
 
-const TRANSACTIONS_VERIFY_THREADS: usize = 4;
-const TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD: usize = 16;
+const TRANSACTIONS_VERIFY_THREADS: usize = 8;
+const TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD: usize = 32;
 
 #[derive(PartialEq, Debug)]
 /// Block verification chain
@@ -78,8 +78,8 @@ impl ChainVerifier {
 		// strict pay-to-script-hash signature operations count toward block
 		// signature operations limit is enforced with BIP16
 		let store = StoreWithUnretainedOutputs::new(&self.store, block);
-		let bip16_active = self.verify_p2sh(block.header().time);
-		block.transactions().map(|(_, tx)| transaction_sigops(tx, &store, bip16_active)).sum()
+		let bip16_active = self.verify_p2sh(block.header.raw.time);
+		block.transactions.iter().map(|tx| transaction_sigops(&tx.raw, &store, bip16_active)).sum()
 	}
 
 	fn ordered_verify(&self, block: &db::IndexedBlock, at_height: u32) -> Result<(), Error> {
@@ -98,28 +98,24 @@ impl ChainVerifier {
 		//if let Some(work) = self.work_required(block, at_height) {
 		if at_height != 0 && !self.skip_pow {
 			let work = utils::work_required(
-				block.header().previous_header_hash.clone(),
-				block.header().time,
+				block.header.raw.previous_header_hash.clone(),
+				block.header.raw.time,
 				at_height,
 				self.store.as_block_header_provider(),
 				self.network
 			);
-			if !self.skip_pow && work != block.header().bits {
+			if !self.skip_pow && work != block.header.raw.bits {
 				trace!(target: "verification", "pow verification error at height: {}", at_height);
-				trace!(target: "verification", "expected work: {:?}, got {:?}", work, block.header().bits);
+				trace!(target: "verification", "expected work: {:?}, got {:?}", work, block.header.raw.bits);
 				return Err(Error::Difficulty);
 			}
 		}
 
-		let coinbase_spends = block.transactions()
-			.nth(0)
-			.expect("block emptyness should be checked at this point")
-			.1
-			.total_spends();
+		let coinbase_spends = block.transactions[0].raw.total_spends();
 
 		// bip30
-		for (tx_index, (tx_hash, _)) in block.transactions().enumerate() {
-			if let Some(meta) = self.store.transaction_meta(tx_hash) {
+		for (tx_index, tx) in block.transactions.iter().enumerate() {
+			if let Some(meta) = self.store.transaction_meta(&tx.hash) {
 				if !meta.is_fully_spent() && !self.consensus_params.is_bip30_exception(&block_hash, at_height) {
 					return Err(Error::Transaction(tx_index, TransactionError::UnspentTransactionWithTheSameHash));
 				}
@@ -128,9 +124,9 @@ impl ChainVerifier {
 
 		let unretained_store = StoreWithUnretainedOutputs::new(&self.store, block);
 		let mut total_unspent = 0u64;
-		for (tx_index, (_, tx)) in block.transactions().enumerate().skip(1) {
+		for (tx_index, tx) in block.transactions.iter().enumerate().skip(1) {
 			let mut total_claimed: u64 = 0;
-			for input in &tx.inputs {
+			for input in &tx.raw.inputs {
 				// Coinbase maturity check
 				if let Some(previous_meta) = self.store.transaction_meta(&input.previous_output.hash) {
 					// check if it exists only
@@ -147,7 +143,7 @@ impl ChainVerifier {
 				total_claimed += previous_output.value;
 			}
 
-			let total_spends = tx.total_spends();
+			let total_spends = tx.raw.total_spends();
 
 			if total_claimed < total_spends {
 				return Err(Error::Transaction(tx_index, TransactionError::Overspend));
@@ -265,12 +261,12 @@ impl ChainVerifier {
 		let hash = block.hash();
 
 		// There should be at least 1 transaction
-		if block.transaction_count() == 0 {
+		if block.transactions.is_empty() {
 			return Err(Error::Empty);
 		}
 
 		// block header checks
-		try!(self.verify_block_header(self.store.as_block_header_provider(), &hash, block.header()));
+		try!(self.verify_block_header(self.store.as_block_header_provider(), &hash, &block.header.raw));
 
 		// todo: serialized_size function is at least suboptimal
 		let size = block.size();
@@ -279,11 +275,11 @@ impl ChainVerifier {
 		}
 
 		// verify merkle root
-		if block.merkle_root() != block.header().merkle_root_hash {
+		if block.merkle_root() != block.header.raw.merkle_root_hash {
 			return Err(Error::MerkleRoot);
 		}
 
-		let first_tx = block.transactions().nth(0).expect("transaction count is checked above to be greater than 0").1;
+		let first_tx = &block.transactions[0].raw;
 		// check first transaction is a coinbase transaction
 		if !first_tx.is_coinbase() {
 			return Err(Error::Coinbase)
@@ -295,19 +291,19 @@ impl ChainVerifier {
 			return Err(Error::CoinbaseSignatureLength(coinbase_script_len));
 		}
 
-		let location = match self.store.accepted_location(block.header()) {
+		let location = match self.store.accepted_location(&block.header.raw) {
 			Some(location) => location,
 			None => return Ok(Chain::Orphan),
 		};
 
-		if block.transaction_count() > TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD {
+		if block.transactions.len() > TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD {
 			// todo: might use on-stack vector (smallvec/elastic array)
 			let mut transaction_tasks: Vec<Task> = Vec::with_capacity(TRANSACTIONS_VERIFY_THREADS);
 			let mut last = 0;
 			for num_task in 0..TRANSACTIONS_VERIFY_THREADS {
 				let from = last;
-				last = ::std::cmp::max(1, block.transaction_count() / TRANSACTIONS_VERIFY_THREADS);
-				if num_task == TRANSACTIONS_VERIFY_THREADS - 1 { last = block.transaction_count(); };
+				last = from + ::std::cmp::max(1, block.transactions.len() / TRANSACTIONS_VERIFY_THREADS);
+				if num_task == TRANSACTIONS_VERIFY_THREADS - 1 { last = block.transactions.len(); };
 				transaction_tasks.push(Task::new(block, location.height(), from, last));
 			}
 
@@ -325,8 +321,8 @@ impl ChainVerifier {
 			}
 		}
 		else {
-			for (index, (_, tx)) in block.transactions().enumerate() {
-				if let Err(tx_err) = self.verify_transaction(block, location.height(), block.header().time, tx, index) {
+			for (index, tx) in block.transactions.iter().enumerate() {
+				if let Err(tx_err) = self.verify_transaction(block, location.height(), block.header.raw.time, &tx.raw, index) {
 					return Err(Error::Transaction(index, tx_err));
 				}
 			}
@@ -372,7 +368,7 @@ impl Verify for ChainVerifier {
 		trace!(
 			target: "verification", "Block {} (transactions: {}) verification finished. Result {:?}",
 			block.hash().to_reversed_str(),
-			block.transaction_count(),
+			block.transactions.len(),
 			result,
 		);
 		result

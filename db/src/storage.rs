@@ -6,18 +6,22 @@ use kvdb::{Database, DatabaseConfig};
 use byteorder::{LittleEndian, ByteOrder};
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
-use super::{BlockRef, BestBlock, BlockLocation, IndexedBlock, IndexedTransactions};
+use super::{BlockRef, BestBlock, BlockLocation, IndexedBlock};
 use serialization::{serialize, deserialize};
 use chain;
 use parking_lot::RwLock;
-use transaction_meta::TransactionMeta;
+use lru_cache::LruCache;
 
+use transaction_meta::TransactionMeta;
 use error::{Error, ConsistencyError, MetaError};
 use update_context::UpdateContext;
 use block_provider::{BlockProvider, BlockHeaderProvider, AsBlockHeaderProvider};
 use transaction_provider::TransactionProvider;
 use transaction_meta_provider::TransactionMetaProvider;
 use block_stapler::{BlockStapler, BlockInsertedChain, Reorganization};
+
+use indexed_header::IndexedBlockHeader;
+use indexed_transaction::IndexedTransaction;
 
 pub const COL_COUNT: u32 = 10;
 pub const COL_META: u32 = 0;
@@ -36,6 +40,7 @@ const DB_VERSION: u32 = 1;
 
 // TODO: check how bitcoin core deals with long forks
 const MAX_FORK_ROUTE_PRESET: usize = 2048;
+const TRANSACTION_CACHE_SIZE: usize = 524288;
 
 /// Blockchain storage interface
 pub trait Store : BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider + AsBlockHeaderProvider {
@@ -50,6 +55,8 @@ pub trait Store : BlockProvider + BlockStapler + TransactionProvider + Transacti
 pub struct Storage {
 	database: Database,
 	best_block: RwLock<Option<BestBlock>>,
+	transaction_cache: RwLock<LruCache<H256, chain::Transaction>>,
+	meta_cache: RwLock<LruCache<H256, TransactionMeta>>,
 }
 
 const KEY_VERSION: &'static[u8] = b"version";
@@ -83,6 +90,8 @@ impl Storage {
 		let storage = Storage {
 			database: db,
 			best_block: RwLock::default(),
+			transaction_cache: RwLock::new(LruCache::new(TRANSACTION_CACHE_SIZE)),
+			meta_cache: RwLock::new(LruCache::new(TRANSACTION_CACHE_SIZE)),
 		};
 
 		match storage.read_meta_u32(KEY_VERSION) {
@@ -166,32 +175,34 @@ impl Storage {
 	fn block_by_hash(&self, h: &H256) -> Option<IndexedBlock> {
 		self.block_header_by_hash(h).map(|header| {
 			let tx_hashes = self.block_transaction_hashes_by_hash(h);
-			let txs = tx_hashes.iter()
-				.map(|tx_hash| self.transaction(tx_hash).expect("Missing transaction, possible db corruption"))
+			let txs = tx_hashes.into_iter()
+				.map(|tx_hash| {
+					let tx = self.transaction(&tx_hash).expect("Missing transaction, possible db corruption");
+					IndexedTransaction::new(tx_hash, tx)
+				})
 				.collect::<Vec<_>>();
-			let tx_index = tx_hashes.into_iter().zip(txs.into_iter()).collect();
-			IndexedBlock::new(header, tx_index)
+			IndexedBlock::new(IndexedBlockHeader::new(h.clone(), header), txs)
 		})
 	}
 
 	/// update transactions metadata in the specified database transaction
-	fn update_transactions_meta(&self, context: &mut UpdateContext, number: u32, accepted_txs: &mut IndexedTransactions)
+	fn update_transactions_meta(&self, context: &mut UpdateContext, number: u32, accepted_txs: &[IndexedTransaction])
 		-> Result<(), Error>
 	{
-		if let Some((accepted_hash, accepted_tx)) = accepted_txs.next() {
+		if let Some(tx) = accepted_txs.first() {
 			context.meta.insert(
-				accepted_hash.clone(),
-				TransactionMeta::new_coinbase(number, accepted_tx.outputs.len())
+				tx.hash.clone(),
+				TransactionMeta::new_coinbase(number, tx.raw.outputs.len())
 			);
 		}
 
-		for (accepted_hash, accepted_tx) in accepted_txs {
+		for tx in accepted_txs.iter().skip(1) {
 			context.meta.insert(
-				accepted_hash.clone(),
-				TransactionMeta::new(number, accepted_tx.outputs.len())
+				tx.hash.clone(),
+				TransactionMeta::new(number, tx.raw.outputs.len())
 			);
 
-			for input in &accepted_tx.inputs {
+			for input in &tx.raw.inputs {
 				use std::collections::hash_map::Entry;
 
 				match context.meta.entry(input.previous_output.hash.clone()) {
@@ -239,8 +250,9 @@ impl Storage {
 			let tx = self.transaction(tx_hash)
 				.expect("Transaction in the saved block should exist as a separate entity indefinitely");
 
-			// remove meta
+			// remove meta & meta cache
 			context.db_transaction.delete(Some(COL_TRANSACTIONS_META), &**tx_hash);
+			self.meta_cache.write().remove(&tx_hash);
 
 			// coinbase transaction does not have inputs
 			if tx_hash_num == 0 {
@@ -295,7 +307,7 @@ impl Storage {
 		self.read_meta_u32(KEY_BEST_BLOCK_NUMBER)
 	}
 
-	fn _best_hash(&self) -> Option<H256> {
+	fn best_hash(&self) -> Option<H256> {
 		self.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val))
 	}
 
@@ -303,7 +315,7 @@ impl Storage {
 		trace!(target: "db", "Canonizing block {}", hash.to_reversed_str());
 
 		let block = try!(self.block_by_hash(hash).ok_or(Error::unknown_hash(hash)));
-		try!(self.update_transactions_meta(context, at_height, &mut block.transactions()));
+		try!(self.update_transactions_meta(context, at_height, &block.transactions));
 
 		// only canonical blocks are allowed to wield a number
 		context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(at_height), &**hash);
@@ -397,6 +409,14 @@ impl Storage {
 			best_number -= 1;
 			result.push(next);
 		}
+
+	}
+
+	pub fn difficulty(&self) -> f64 {
+		self.best_hash()
+			.and_then(|h| self.block_header_by_hash(&h))
+			.map(|header| header.bits.to_f64())
+			.unwrap_or(1.0f64)
 	}
 }
 
@@ -470,7 +490,7 @@ impl BlockStapler for Storage {
 		let block_hash = block.hash();
 
 		let mut new_best_hash = match best_block.as_ref().map(|bb| &bb.hash) {
-			Some(best_hash) if &block.header().previous_header_hash != best_hash => best_hash.clone(),
+			Some(best_hash) if &block.header.raw.previous_header_hash != best_hash => best_hash.clone(),
 			_ => block_hash.clone(),
 		};
 
@@ -482,14 +502,14 @@ impl BlockStapler for Storage {
 			None => 0,
 		};
 
-		let tx_space = block.transaction_count() * 32;
+		let tx_space = block.transactions.len() * 32;
 		let mut tx_refs = Vec::with_capacity(tx_space);
-		for (tx_hash, tx) in block.transactions() {
-			tx_refs.extend(&**tx_hash);
+		for tx in &block.transactions {
+			tx_refs.extend(&*tx.hash);
 			context.db_transaction.put(
 				Some(COL_TRANSACTIONS),
-				&**tx_hash,
-				&serialize(tx),
+				&*tx.hash,
+				&serialize(&tx.raw),
 			);
 		}
 		context.db_transaction.put(Some(COL_BLOCK_TRANSACTIONS), &**block_hash, &tx_refs);
@@ -497,12 +517,12 @@ impl BlockStapler for Storage {
 		context.db_transaction.put(
 			Some(COL_BLOCK_HEADERS),
 			&**block_hash,
-			&serialize(block.header())
+			&serialize(&block.header.raw)
 		);
 
 		// the block is continuing the main chain
 		let result = if best_block.as_ref().map(|b| b.number) != Some(new_best_number) {
-			try!(self.update_transactions_meta(&mut context, new_best_number, &mut block.transactions()));
+			try!(self.update_transactions_meta(&mut context, new_best_number, &block.transactions));
 			context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 
 			// updating main chain height reference
@@ -516,14 +536,14 @@ impl BlockStapler for Storage {
 		// but can cause reorganization here
 		// this can canonize the block parent if block parent + this block is longer than the main chain
 		else {
-			match self.maybe_reorganize(&mut context, &block.header().previous_header_hash) {
+			match self.maybe_reorganize(&mut context, &block.header.raw.previous_header_hash) {
 				Ok(Some(mut reorg)) => {
 					// if so, we have new best main chain block
 					new_best_number = reorg.height + 1;
 					new_best_hash = block_hash.clone();
 
 					// and we canonize it also by provisioning transactions
-					try!(self.update_transactions_meta(&mut context, new_best_number, &mut block.transactions()));
+					try!(self.update_transactions_meta(&mut context, new_best_number, &block.transactions));
 					context.db_transaction.write_u32(Some(COL_META), KEY_BEST_BLOCK_NUMBER, new_best_number);
 					context.db_transaction.put(Some(COL_BLOCK_HASHES), &u32_key(new_best_number), &*new_best_hash);
 					context.db_transaction.write_u32(Some(COL_BLOCK_NUMBERS), &*new_best_hash, new_best_number);
@@ -585,7 +605,11 @@ impl BlockStapler for Storage {
 		// we always update best hash even if it is not changed
 		context.db_transaction.put(Some(COL_META), KEY_BEST_BLOCK_HASH, &*new_best_hash);
 
-		// write accumulated transactions meta
+		// write accumulated transactions meta and update cache
+		{
+			let mut cache = self.meta_cache.write();
+			for (hash, meta) in context.meta.iter() { cache.insert(hash.clone(), meta.clone()); }
+		}
 		try!(context.apply(&self.database));
 
 		trace!(target: "db", "Best block now ({}, {})", &new_best_hash.to_reversed_str(), &new_best_number);
@@ -625,18 +649,57 @@ impl TransactionProvider for Storage {
 	}
 
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
-		self.transaction_bytes(hash).map(|tx_bytes| {
-			deserialize(tx_bytes.as_ref()).expect("Failed to deserialize transaction: db corrupted?")
-		})
+		let mut cache = self.transaction_cache.write();
+
+		let (tx, is_cached) = {
+			let cached_transaction = cache.get_mut(hash);
+			match cached_transaction {
+				None => {
+					(
+						self.transaction_bytes(hash).map(|tx_bytes| {
+							let tx: chain::Transaction = deserialize(tx_bytes.as_ref())
+								.expect("Failed to deserialize transaction: db corrupted?");
+							tx
+						}),
+						false
+					)
+				},
+				Some(tx) => (Some(tx.clone()), true)
+			}
+		};
+
+		match tx {
+			Some(ref tx) => { if !is_cached { cache.insert(hash.clone(), tx.clone()); } }
+			None => {}
+		};
+
+		tx
 	}
 }
 
 impl TransactionMetaProvider for Storage {
 
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
-		self.get(COL_TRANSACTIONS_META, &**hash).map(|val|
-			TransactionMeta::from_bytes(&val).expect("Invalid transaction metadata: db corrupted?")
-		)
+		let mut cache = self.meta_cache.write();
+
+		let (meta, is_cached) = {
+			let cached_meta = cache.get_mut(hash);
+			match cached_meta {
+				None => {
+					(self.get(COL_TRANSACTIONS_META, &**hash).map(|val|
+						TransactionMeta::from_bytes(&val).expect("Invalid transaction metadata: db corrupted?")
+					), false)
+				},
+				Some(meta) => (Some(meta.clone()), true)
+			}
+		};
+
+		match meta {
+			Some(ref meta) => { if !is_cached { cache.insert(hash.clone(), meta.clone()); } }
+			None => {}
+		};
+
+		meta
 	}
 }
 
@@ -667,6 +730,7 @@ mod tests {
 	use chain::Block;
 	use super::super::{BlockRef, BlockLocation};
 	use test_data;
+	use primitives::Compact;
 
 	#[test]
 	fn open_store() {
@@ -1195,6 +1259,7 @@ mod tests {
 		store.decanonize_block(&mut update_context, &block_hash)
 			.expect("Decanonizing block #1 which was just inserted should not fail");
 		update_context.apply(&store.database).unwrap();
+		store.meta_cache.write().clear();
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase)
 			.expect("Transaction meta for the genesis coinbase transaction should exist");
@@ -1224,6 +1289,27 @@ mod tests {
 		let inserted_chain = store.insert_block(&test_data::block_h1()).unwrap();
 
 		assert_eq!(inserted_chain, BlockInsertedChain::Main, "h1 should become main chain");
+	}
+
+	#[test]
+	fn difficulty() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis)
+			.expect("Genesis should be inserted with no issues");
+
+		assert_eq!(1f64, store.difficulty(), "There should be minimum 1 difficulty for just the genesis block");
+
+		let block = test_data::block_builder()
+			.header().parent(genesis.hash()).bits(Compact::new(0x1b0404cb)).build()
+			.transaction().coinbase().build()
+			.build();
+		store.insert_block(&block)
+			.expect("Nest block with just nbits should be inserted with no issues");
+
+		assert_eq!(16307.420938523994f64, store.difficulty(), "There should be minimum updated difficulty for new best block");
 	}
 
 	#[test]

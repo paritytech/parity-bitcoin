@@ -1,6 +1,5 @@
 use jsonrpc_core::Error;
 
-use v1::helpers::auto_args::Wrap;
 use v1::types::RawTransaction;
 use v1::types::H256;
 

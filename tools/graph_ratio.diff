@@ -1,0 +1,11 @@
+diff --git tools/graph.dot tools/graph.dot
+index f842267..1a831d2 100644
+--- tools/graph.dot
++++ tools/graph.dot
+@@ -1,4 +1,6 @@
+ digraph dependencies {
++	ratio=1.0;
++	size="5,5";
+ 	N0[label="pbtc",shape=box];
+ 	N1[label="app_dirs",shape=box];
+ 	N2[label="bencher",shape=box];

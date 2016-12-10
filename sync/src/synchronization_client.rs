@@ -593,9 +593,9 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 						None => notfound.push(item),
 						Some(block) => {
 							let indexed_block: IndexedBlock = block.into();
-							let prefilled_transactions_indexes = indexed_block.transactions().enumerate()
+							let prefilled_transactions_indexes = indexed_block.transactions.iter().enumerate()
 								// we do not filter by fee rate here, because it only reasonable for non-mined transactions
-								.filter(|&(_, (h, t))| filter.filter_transaction(h, t, None))
+								.filter(|&(_, tx)| filter.filter_transaction(&tx.hash, &tx.raw, None))
 								.map(|(idx, _)| idx)
 								.collect();
 							let compact_block = types::CompactBlock {
@@ -1314,9 +1314,9 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 
 							let block_header_and_ids: Vec<_> = indexed_blocks.into_iter()
 								.filter_map(|b| if self.peers.filter(peer_index).filter_block(&b.hash()) {
-									let prefilled_transactions_indexes = b.transactions().enumerate()
+									let prefilled_transactions_indexes = b.transactions.iter().enumerate()
 										// we do not filter by fee rate here, because it only reasonable for non-mined transactions
-										.filter(|&(_, (h, t))| self.peers.filter_mut(peer_index).filter_transaction(h, t, None))
+										.filter(|&(_, tx)| self.peers.filter_mut(peer_index).filter_transaction(&tx.hash, &tx.raw, None))
 										.map(|(idx, _)| idx)
 										.collect();
 									Some(build_compact_block(b, prefilled_transactions_indexes))
@@ -1484,7 +1484,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				}
 
 				// check parent block state
-				let parent_block_state = chain.block_state(&block.header().previous_header_hash);
+				let parent_block_state = chain.block_state(&block.header.raw.previous_header_hash);
 				match parent_block_state {
 					BlockState::Unknown | BlockState::DeadEnd => {
 						if parent_block_state == BlockState::DeadEnd {
@@ -1528,7 +1528,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 						let blocks_hashes_to_forget: Vec<_> = blocks_to_verify.iter().map(|t| t.0.clone()).collect();
 						chain.forget_blocks_leave_header(&blocks_hashes_to_forget);
 						// remember that we are verifying these blocks
-						let blocks_headers_to_verify: Vec<_> = blocks_to_verify.iter().map(|&(ref h, ref b)| (h.clone(), b.header().clone())).collect();
+						let blocks_headers_to_verify: Vec<_> = blocks_to_verify.iter().map(|&(ref h, ref b)| (h.clone(), b.header.raw.clone())).collect();
 						chain.verify_blocks(blocks_headers_to_verify);
 						// remember that we are verifying block from this peer
 						for verifying_block_hash in blocks_to_verify.iter().map(|&(ref h, _)| h.clone()) {

@@ -183,20 +183,17 @@ impl BlockAssembler {
 			let size_step = block_size.decide(transaction_size);
 			let sigops_step = sigops.decide(sigops_count);
 
-			let transaction = IndexedTransaction {
-				transaction: entry.transaction.clone(),
-				hash: entry.hash.clone(),
-			};
-
 			match size_step.and(sigops_step) {
 				NextStep::Append => {
+					let tx = IndexedTransaction::new(entry.hash.clone(), entry.transaction.clone());
 					// miner_fee is i64, but we can safely cast it to u64
 					// memory pool should restrict miner fee to be positive
 					*coinbase_value += entry.miner_fee as u64;
-					transactions.push(transaction);
+					transactions.push(tx);
 				},
 				NextStep::FinishAndAppend => {
-					transactions.push(transaction);
+					let tx = IndexedTransaction::new(entry.hash.clone(), entry.transaction.clone());
+					transactions.push(tx);
 					break;
 				},
 				NextStep::Ignore => (),

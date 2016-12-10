@@ -3,18 +3,26 @@ use primitives::hash::H256;
 use chain::{Transaction, OutPoint, TransactionOutput};
 use PreviousTransactionOutputProvider;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IndexedTransaction {
-	pub transaction: Transaction,
 	pub hash: H256,
+	pub raw: Transaction,
 }
 
 impl From<Transaction> for IndexedTransaction {
-	fn from(t: Transaction) -> Self {
-		let hash = t.hash();
+	fn from(tx: Transaction) -> Self {
 		IndexedTransaction {
-			transaction: t,
+			hash: tx.hash(),
+			raw: tx,
+		}
+	}
+}
+
+impl IndexedTransaction {
+	pub fn new(hash: H256, transaction: Transaction) -> Self {
+		IndexedTransaction {
 			hash: hash,
+			raw: transaction,
 		}
 	}
 }
@@ -29,7 +37,8 @@ impl<'a> PreviousTransactionOutputProvider for &'a [IndexedTransaction] {
 	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
 		self.iter()
 			.find(|tx| tx.hash == prevout.hash)
-			.map(|tx| tx.transaction.outputs[prevout.index as usize].clone())
+			.and_then(|tx| tx.raw.outputs.get(prevout.index as usize))
+			.cloned()
 	}
 
 	fn is_spent(&self, _prevout: &OutPoint) -> bool {
