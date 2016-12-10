@@ -15,7 +15,7 @@ use lru_cache::LruCache;
 use transaction_meta::TransactionMeta;
 use error::{Error, ConsistencyError, MetaError};
 use update_context::UpdateContext;
-use block_provider::{BlockProvider, BlockHeaderProvider, AsBlockHeaderProvider};
+use block_provider::{BlockProvider, BlockHeaderProvider};
 use transaction_provider::TransactionProvider;
 use transaction_meta_provider::TransactionMetaProvider;
 use block_stapler::{BlockStapler, BlockInsertedChain, Reorganization};
@@ -43,12 +43,47 @@ const MAX_FORK_ROUTE_PRESET: usize = 2048;
 const TRANSACTION_CACHE_SIZE: usize = 524288;
 
 /// Blockchain storage interface
-pub trait Store : BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider + AsBlockHeaderProvider {
+pub trait Store: AsSubstore {
 	/// get best block
 	fn best_block(&self) -> Option<BestBlock>;
 
 	/// get best header
 	fn best_header(&self) -> Option<chain::BlockHeader>;
+}
+
+/// Allows casting Arc<Store> to reference to any substore type
+pub trait AsSubstore: BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider {
+	fn as_block_provider(&self) -> &BlockProvider;
+
+	fn as_block_header_provider(&self) -> &BlockHeaderProvider;
+
+	fn as_block_stapler(&self) -> &BlockStapler;
+
+	fn as_transaction_provider(&self) -> &TransactionProvider;
+
+	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider;
+}
+
+impl<T> AsSubstore for T where T: BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider {
+	fn as_block_provider(&self) -> &BlockProvider {
+		&*self
+	}
+
+	fn as_block_header_provider(&self) -> &BlockHeaderProvider {
+		&*self
+	}
+
+	fn as_block_stapler(&self) -> &BlockStapler {
+		&*self
+	}
+
+	fn as_transaction_provider(&self) -> &TransactionProvider {
+		&*self
+	}
+
+	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider {
+		&*self
+	}
 }
 
 /// Blockchain storage with rocksdb database
@@ -307,7 +342,7 @@ impl Storage {
 		self.read_meta_u32(KEY_BEST_BLOCK_NUMBER)
 	}
 
-	fn _best_hash(&self) -> Option<H256> {
+	fn best_hash(&self) -> Option<H256> {
 		self.get(COL_META, KEY_BEST_BLOCK_HASH).map(|val| H256::from(&**val))
 	}
 
@@ -409,6 +444,14 @@ impl Storage {
 			best_number -= 1;
 			result.push(next);
 		}
+
+	}
+
+	pub fn difficulty(&self) -> f64 {
+		self.best_hash()
+			.and_then(|h| self.block_header_by_hash(&h))
+			.map(|header| header.bits.to_f64())
+			.unwrap_or(1.0f64)
 	}
 }
 
@@ -421,12 +464,6 @@ impl BlockHeaderProvider for Storage {
 		self.block_header_bytes(block_ref).map(
 			|bytes| deserialize::<_, chain::BlockHeader>(bytes.as_ref())
 				.expect("Error deserializing header, possible db corruption"))
-	}
-}
-
-impl AsBlockHeaderProvider for Storage {
-	fn as_block_header_provider(&self) -> &BlockHeaderProvider {
-		&*self
 	}
 }
 
@@ -722,6 +759,7 @@ mod tests {
 	use chain::Block;
 	use super::super::{BlockRef, BlockLocation};
 	use test_data;
+	use primitives::Compact;
 
 	#[test]
 	fn open_store() {
@@ -1280,6 +1318,27 @@ mod tests {
 		let inserted_chain = store.insert_block(&test_data::block_h1()).unwrap();
 
 		assert_eq!(inserted_chain, BlockInsertedChain::Main, "h1 should become main chain");
+	}
+
+	#[test]
+	fn difficulty() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis)
+			.expect("Genesis should be inserted with no issues");
+
+		assert_eq!(1f64, store.difficulty(), "There should be minimum 1 difficulty for just the genesis block");
+
+		let block = test_data::block_builder()
+			.header().parent(genesis.hash()).bits(Compact::new(0x1b0404cb)).build()
+			.transaction().coinbase().build()
+			.build();
+		store.insert_block(&block)
+			.expect("Nest block with just nbits should be inserted with no issues");
+
+		assert_eq!(16307.420938523994f64, store.difficulty(), "There should be minimum updated difficulty for new best block");
 	}
 
 	#[test]
