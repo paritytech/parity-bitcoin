@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use scoped_pool::Pool;
 use hash::H256;
-use db::{self, BlockLocation, PreviousTransactionOutputProvider, BlockHeaderProvider};
+use db::{self, BlockLocation, PreviousTransactionOutputProvider, BlockHeaderProvider, TransactionOutputObserver};
 use network::{Magic, ConsensusParams};
 use error::{Error, TransactionError};
 use sigops::{StoreWithUnretainedOutputs, transaction_sigops};
@@ -171,7 +171,7 @@ impl ChainVerifier {
 		time: u32,
 		transaction: &chain::Transaction,
 		sequence: usize
-	) -> Result<(), TransactionError> where T: PreviousTransactionOutputProvider {
+	) -> Result<(), TransactionError> where T: PreviousTransactionOutputProvider + TransactionOutputObserver {
 
 		use script::{
 			TransactionInputSigner,
@@ -197,7 +197,14 @@ impl ChainVerifier {
 				_ => return Err(TransactionError::UnknownReference(input.previous_output.hash.clone()))
 			};
 
-			if prevout_provider.is_spent(&input.previous_output) {
+			// unwrap_or(false) is actually not right!
+			// but can be here because of two reasons
+			// - this function is not responsible for checking if previous transactions
+			// in currently processed block / mempool already spent this output
+			// - if we process transactions from mempool we shouldn't care if transactions before it
+			// spent this output, cause they may not make their way into the block due to their size
+			// or sigops limit
+			if prevout_provider.is_spent(&input.previous_output).unwrap_or(false) {
 				return Err(TransactionError::UsingSpentOutput(input.previous_output.hash.clone(), input.previous_output.index))
 			}
 
@@ -504,12 +511,12 @@ mod tests {
 			.build();
 
 		storage.insert_block(&genesis).expect("Genesis should be inserted with no errors");
-		let genesis_coinbase = genesis.transactions()[1].hash();
+		let first_tx_hash = genesis.transactions()[1].hash();
 
 		let block = test_data::block_builder()
 			.transaction().coinbase().build()
 			.transaction()
-				.input().hash(genesis_coinbase).build()
+				.input().hash(first_tx_hash).build()
 				.output().value(30).build()
 				.output().value(20).build()
 				.build()

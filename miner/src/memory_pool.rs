@@ -669,6 +669,11 @@ impl MemoryPool {
 		self.storage.get_transactions_ids()
 	}
 
+	/// Returns true if output was spent
+	pub fn is_spent(&self, prevout: &OutPoint) -> bool {
+		self.storage.is_output_spent(prevout)
+	}
+
 	fn make_entry(&mut self, t: Transaction) -> Entry {
 		let hash = t.hash();
 		let ancestors = self.get_ancestors(&t);
@@ -741,10 +746,6 @@ impl PreviousTransactionOutputProvider for MemoryPool {
 			.and_then(|tx| tx.outputs.get(prevout.index as usize))
 			.cloned()
 	}
-
-	fn is_spent(&self, prevout: &OutPoint) -> bool {
-		self.storage.is_output_spent(prevout)
-	}
 }
 
 impl HeapSizeOf for MemoryPool {
@@ -792,7 +793,6 @@ impl<'a> Iterator for MemoryPoolIterator<'a> {
 
 #[cfg(test)]
 mod tests {
-	use db::PreviousTransactionOutputProvider;
 	use chain::{Transaction, OutPoint};
 	use heapsize::HeapSizeOf;
 	use super::{MemoryPool, OrderingStrategy};

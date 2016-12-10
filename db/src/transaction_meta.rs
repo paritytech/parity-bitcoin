@@ -69,8 +69,8 @@ impl TransactionMeta {
 		self.block_height
 	}
 
-	pub fn is_spent(&self, idx: usize) -> bool {
-		self.bits.get(idx + 1).expect("Index should be verified by the caller")
+	pub fn is_spent(&self, idx: usize) -> Option<bool> {
+		self.bits.get(idx + 1) //.expect("Index should be verified by the caller")
 	}
 
 	pub fn is_fully_spent(&self) -> bool {

@@ -170,10 +170,6 @@ impl<'a, T> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a
 			.and_then(|tx| tx.outputs.iter().nth(prevout.index as usize))
 			.cloned()
 	}
-
-	fn is_spent(&self, _prevout: &OutPoint) -> bool {
-		unimplemented!();
-	}
 }
 
 impl<'a, T> Iterator for FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entry> {

@@ -249,7 +249,10 @@ impl Storage {
 				match context.meta.entry(input.previous_output.hash.clone()) {
 					Entry::Occupied(mut entry) => {
 						let meta = entry.get_mut();
-						if meta.is_spent(input.previous_output.index as usize) {
+						let is_spent = meta.is_spent(input.previous_output.index as usize)
+							.ok_or(Error::unknown_spending(&input.previous_output.hash))?;
+
+						if is_spent {
 							return Err(Error::double_spend(&input.previous_output.hash));
 						}
 						meta.denote_used(input.previous_output.index as usize);
@@ -257,8 +260,10 @@ impl Storage {
 					Entry::Vacant(entry) => {
 						let mut meta = self.transaction_meta(&input.previous_output.hash)
 							.ok_or(Error::unknown_spending(&input.previous_output.hash))?;
+						let is_spent = meta.is_spent(input.previous_output.index as usize)
+							.ok_or(Error::unknown_spending(&input.previous_output.hash))?;
 
-						if meta.is_spent(input.previous_output.index as usize) {
+						if is_spent {
 							return Err(Error::double_spend(&input.previous_output.hash));
 						}
 
@@ -706,10 +711,6 @@ impl PreviousTransactionOutputProvider for Storage {
 		self.transaction(&prevout.hash)
 			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
 	}
-
-	fn is_spent(&self, _prevout: &chain::OutPoint) -> bool {
-		unimplemented!();
-	}
 }
 
 impl TransactionMetaProvider for Storage {
@@ -861,7 +862,7 @@ mod tests {
 		let genesis_coinbase = genesis.transactions()[0].hash();
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase).unwrap();
-		assert!(!genesis_meta.is_spent(0));
+		assert!(!genesis_meta.is_spent(0).unwrap());
 
 		let forged_block = test_data::block_builder()
 			.header().parent(genesis.hash()).build()
@@ -875,7 +876,7 @@ mod tests {
 		store.insert_block(&forged_block).unwrap();
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase).unwrap();
-		assert!(genesis_meta.is_spent(0));
+		assert!(genesis_meta.is_spent(0).unwrap());
 
 		assert_eq!(store.best_block().expect("genesis block inserted").number, 1);
 	}
@@ -905,8 +906,8 @@ mod tests {
 		store.insert_block(&block).unwrap();
 
 		let meta = store.transaction_meta(&block.transactions()[1].hash()).unwrap();
-		assert!(meta.is_spent(0), "Transaction #1 first output in the new block should be recorded as spent");
-		assert!(!meta.is_spent(1), "Transaction #1 second output in the new block should be recorded as unspent");
+		assert!(meta.is_spent(0).unwrap(), "Transaction #1 first output in the new block should be recorded as spent");
+		assert!(!meta.is_spent(1).unwrap(), "Transaction #1 second output in the new block should be recorded as unspent");
 	}
 
 	#[test]
@@ -950,12 +951,12 @@ mod tests {
 		store.insert_block(&block2).unwrap();
 
 		let meta = store.transaction_meta(&tx_big).unwrap();
-		assert!(meta.is_spent(0), "Transaction #1 output #0 in the new block should be recorded as spent");
-		assert!(meta.is_spent(2), "Transaction #1 output #2 in the new block should be recorded as spent");
-		assert!(meta.is_spent(5), "Transaction #1 output #5 in the new block should be recorded as spent");
+		assert!(meta.is_spent(0).unwrap(), "Transaction #1 output #0 in the new block should be recorded as spent");
+		assert!(meta.is_spent(2).unwrap(), "Transaction #1 output #2 in the new block should be recorded as spent");
+		assert!(meta.is_spent(5).unwrap(), "Transaction #1 output #5 in the new block should be recorded as spent");
 
-		assert!(!meta.is_spent(1), "Transaction #1 output #1 in the new block should be recorded as unspent");
-		assert!(!meta.is_spent(3), "Transaction #1 second #3 in the new block should be recorded as unspent");
+		assert!(!meta.is_spent(1).unwrap(), "Transaction #1 output #1 in the new block should be recorded as unspent");
+		assert!(!meta.is_spent(3).unwrap(), "Transaction #1 second #3 in the new block should be recorded as unspent");
 	}
 
 	#[test]
@@ -1158,15 +1159,15 @@ mod tests {
 		// outputs 0, 1, 2 should be spent in the side chain branch
 		// we reorganized to the side chain branch
 		// so, outputs 0, 1, 2 should  be spent
-		assert!(meta.is_spent(0));
-		assert!(meta.is_spent(1));
-		assert!(meta.is_spent(2));
+		assert!(meta.is_spent(0).unwrap());
+		assert!(meta.is_spent(1).unwrap());
+		assert!(meta.is_spent(2).unwrap());
 
 		// outputs 3, 4 should not be spent in the side chain branch
 		// we reorganized to the side chain branch
 		// so, outputs 3, 4 should not be spent
-		assert!(!meta.is_spent(3));
-		assert!(!meta.is_spent(4));
+		assert!(!meta.is_spent(3).unwrap());
+		assert!(!meta.is_spent(4).unwrap());
 
 		// Reorganizing back to main chain with 2 blocks in a row
 
@@ -1194,15 +1195,15 @@ mod tests {
 		// outputs 1, 3, 4 should be spent in the main branch
 		// we reorganized to the main branch again after reorganized to side branch
 		// so, outputs 1, 3, 4 should be spent
-		assert!(meta.is_spent(1));
-		assert!(meta.is_spent(3));
-		assert!(meta.is_spent(4));
+		assert!(meta.is_spent(1).unwrap());
+		assert!(meta.is_spent(3).unwrap());
+		assert!(meta.is_spent(4).unwrap());
 
 		// outputs 0, 2 should not be spent in the main branch
 		// we reorganized to the main branch again after reorganized to side branch
 		// so, outputs 0, 2 should not be spent
-		assert!(!meta.is_spent(0));
-		assert!(!meta.is_spent(2));
+		assert!(!meta.is_spent(0).unwrap());
+		assert!(!meta.is_spent(2).unwrap());
 	}
 
 	// test simulates when main chain and side chain are competing all along, each adding
@@ -1281,7 +1282,7 @@ mod tests {
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase)
 			.expect("Transaction meta for the genesis coinbase transaction should exist");
-		assert!(genesis_meta.is_spent(0), "Genesis coinbase should be recorded as spent because block#1 transaction spends it");
+		assert!(genesis_meta.is_spent(0).unwrap(), "Genesis coinbase should be recorded as spent because block#1 transaction spends it");
 
 		let mut update_context = UpdateContext::new(&store.database, &block_hash);
 		store.decanonize_block(&mut update_context, &block_hash)
@@ -1291,7 +1292,7 @@ mod tests {
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase)
 			.expect("Transaction meta for the genesis coinbase transaction should exist");
-		assert!(!genesis_meta.is_spent(0), "Genesis coinbase should be recorded as unspent because we retracted block #1");
+		assert!(!genesis_meta.is_spent(0).unwrap(), "Genesis coinbase should be recorded as unspent because we retracted block #1");
 
 		assert_eq!(store.block_number(&block_hash), None);
 	}
