@@ -28,6 +28,7 @@ db = { path = "../db" }
 test-data = { path = "../test-data" }
 miner = { path = "../miner" }
 verification = { path = "../verification" }
+script = { path = "../script" }
 
 [build-dependencies]
 serde_codegen = { version = "0.8.0", optional = true }

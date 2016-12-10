@@ -6,15 +6,13 @@ use v1::types::GetTxOutSetInfoResponse;
 use v1::types::H256;
 use v1::types::U256;
 use v1::helpers::errors::{block_not_found, block_at_height_not_found};
+use jsonrpc_macros::Trailing;
 use jsonrpc_core::Error;
 use db;
 use verification;
 use ser::serialize;
 use primitives::hash::H256 as GlobalH256;
 
-// TODO
-// use jsonrpc_macros::Trailing;
-type Trailing<T> = Option<T>;
 
 pub struct BlockChainClient<T: BlockChainClientCoreApi> {
 	core: T,
@@ -122,7 +120,7 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 
 	fn block(&self, hash: H256, verbose: Trailing<bool>) -> Result<GetBlockResponse, Error> {
 		let global_hash: GlobalH256 = hash.clone().into();
-		if verbose.unwrap_or_default() {
+		if verbose.0 {
 			let verbose_block = self.core.verbose_block(global_hash.reversed());
 			if let Some(mut verbose_block) = verbose_block {
 				verbose_block.previousblockhash = verbose_block.previousblockhash.map(|h| h.reversed());
@@ -142,6 +140,7 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 	}
 
 	fn transaction(&self, _hash: H256, _watch_only: Trailing<bool>) -> Result<GetTransactionResponse, Error> {
+		// TODO: we do not have wallet yet => we can not support
 		rpc_unimplemented!()
 	}
 

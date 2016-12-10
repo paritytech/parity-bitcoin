@@ -1,3 +1,4 @@
+use jsonrpc_macros::Trailing;
 use jsonrpc_core::Error;
 
 use v1::types::H256;
@@ -6,9 +7,6 @@ use v1::types::GetTransactionResponse;
 use v1::types::GetTxOutResponse;
 use v1::types::GetTxOutSetInfoResponse;
 
-// TODO
-// use jsonrpc_macros::Trailing;
-type Trailing<T> = Option<T>;
 
 build_rpc_trait! {
 	/// Parity-bitcoin blockchain data interface.

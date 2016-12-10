@@ -8,6 +8,7 @@ mod get_tx_out_set_info_response;
 mod hash;
 mod raw_block;
 mod raw_transaction;
+mod script;
 mod uint;
 
 pub use self::block_template::{BlockTemplate, BlockTemplateTransaction};
@@ -20,4 +21,5 @@ pub use self::get_tx_out_set_info_response::GetTxOutSetInfoResponse;
 pub use self::hash::H256;
 pub use self::raw_block::RawBlock;
 pub use self::raw_transaction::RawTransaction;
+pub use self::script::ScriptType;
 pub use self::uint::U256;
