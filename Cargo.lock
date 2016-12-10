@@ -804,6 +804,7 @@ dependencies = [
  "sync 0.1.0",
  "test-data 0.1.0",
  "tokio-core 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "verification 0.1.0",
 ]
 
 [[package]]

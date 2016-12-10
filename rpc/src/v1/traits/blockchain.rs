@@ -33,3 +33,37 @@ build_rpc_trait! {
 		fn transaction_out_set_info(&self) -> Result<GetTxOutSetInfoResponse, Error>;
 	}
 }
+/*
+use db::IndexedBlock;
+use primitives::hash::H256;
+use primitives::uint::U256;
+
+/// Verbose block information
+#[derive(Debug)]
+pub struct VerboseBlock {
+	/// Block
+	pub block: IndexedBlock,
+	/// Number of confirmations. -1 if block is on the side chain
+	pub confirmations: i64,
+	/// Block size
+	pub size: u32,
+	/// Block size, excluding witness data
+	pub stripped_size: u32,
+	/// Block weight
+	pub weight: u32,
+	/// Block height. We only provide this for main chain blocks
+	pub height: Option<u32>,
+	/// Median block time in seconds since epoch (Jan 1 1970 GMT)
+	/// We only provide this when there are > 2 parent blocks
+	pub median_time: Option<u32>,
+	/// Block difficulty
+	pub difficulty: f64,
+	/// Expected number of hashes required to produce the chain up to this block
+	pub chain_work: Option<U256>,
+	/// Hash of previous block
+	pub previous_block_hash: Option<H256>,
+	/// Hash of next block
+	pub next_block_hash: Option<H256>,
+}
+
+*/

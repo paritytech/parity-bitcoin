@@ -18,6 +18,7 @@ extern crate db;
 #[cfg(test)]
 extern crate test_data;
 extern crate miner;
+extern crate verification;
 
 pub mod v1;
 pub mod rpc_server;
