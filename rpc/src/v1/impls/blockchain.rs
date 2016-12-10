@@ -1,13 +1,17 @@
 use v1::traits::BlockChain;
 use v1::types::{GetBlockResponse, VerboseBlock, RawBlock};
-use v1::types::GetTxOutResponse;
+use v1::types::{GetTxOutResponse, TxOutScriptPubKey};
 use v1::types::GetTxOutSetInfoResponse;
 use v1::types::H256;
 use v1::types::U256;
-use v1::helpers::errors::{block_not_found, block_at_height_not_found};
+use v1::types::ScriptType;
+use v1::helpers::errors::{block_not_found, block_at_height_not_found, transaction_not_found,
+	transaction_output_not_found, transaction_of_side_branch};
 use jsonrpc_macros::Trailing;
 use jsonrpc_core::Error;
 use db;
+use script::Script;
+use chain::OutPoint;
 use verification;
 use ser::serialize;
 use primitives::hash::H256 as GlobalH256;
@@ -23,6 +27,7 @@ pub trait BlockChainClientCoreApi: Send + Sync + 'static {
 	fn difficulty(&self) -> f64;
 	fn raw_block(&self, hash: GlobalH256) -> Option<RawBlock>;
 	fn verbose_block(&self, hash: GlobalH256) -> Option<VerboseBlock>;
+	fn verbose_transaction_out(&self, prev_out: OutPoint) -> Result<GetTxOutResponse, Error>;
 }
 
 pub struct BlockChainClientCore {
@@ -92,6 +97,55 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 				}
 			})
 	}
+
+	fn verbose_transaction_out(&self, prev_out: OutPoint) -> Result<GetTxOutResponse, Error> {
+		let transaction = match self.storage.transaction(&prev_out.hash) {
+			Some(transaction) => transaction,
+			// no transaction => no response
+			None => return Err(transaction_not_found(prev_out.hash)),
+		};
+
+		if prev_out.index >= transaction.outputs.len() as u32 {
+			return Err(transaction_output_not_found(prev_out));
+		}
+
+		let meta = match self.storage.transaction_meta(&prev_out.hash) {
+			Some(meta) => meta,
+			// not in the main branch => no response
+			None => return Err(transaction_of_side_branch(prev_out.hash)),
+		};
+
+		let block_header = match self.storage.block_header(meta.height().into()) {
+			Some(block_header) => block_header,
+			// this is possible during reorgs
+			None => return Err(transaction_not_found(prev_out.hash)),
+		};
+
+		let best_block = self.storage.best_block().expect("storage with genesis block is required");
+		if best_block.number < meta.height() {
+			// this is possible during reorgs
+			return Err(transaction_not_found(prev_out.hash));
+		}
+
+		let ref script_bytes = transaction.outputs[prev_out.index as usize].script_pubkey;
+		let script: Script = script_bytes.clone().into();
+		let script_asm = format!("{}", script);
+
+		Ok(GetTxOutResponse {
+			bestblock: block_header.hash().into(),
+			confirmations: best_block.number - meta.height() + 1,
+			value: 0.00000001f64 * (transaction.outputs[prev_out.index as usize].value as f64),
+			script_pub_key: TxOutScriptPubKey {
+				asm: script_asm,
+				hex: script_bytes.clone().into(),
+				req_sigs: 0, // TODO
+				script_type: ScriptType::NonStandard, // TODO
+				addresses: vec![],
+			},
+			version: transaction.version,
+			coinbase: transaction.is_coinbase(),
+		})
+	}
 }
 
 impl<T> BlockChainClient<T> where T: BlockChainClientCoreApi {
@@ -138,8 +192,12 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 		.ok_or(block_not_found(hash))
 	}
 
-	fn transaction_out(&self, _transaction_hash: H256, _out_index: u32, _include_mempool: Trailing<bool>) -> Result<GetTxOutResponse, Error> {
-		rpc_unimplemented!()
+	fn transaction_out(&self, transaction_hash: H256, out_index: u32, _include_mempool: Trailing<bool>) -> Result<GetTxOutResponse, Error> {
+		self.core.verbose_transaction_out(OutPoint { hash: transaction_hash.into(), index: out_index })
+			.map(|mut response| {
+				response.bestblock = response.bestblock.reversed();
+				response
+			})
 	}
 
 	fn transaction_out_set_info(&self) -> Result<GetTxOutSetInfoResponse, Error> {
@@ -157,6 +215,7 @@ pub mod tests {
 	use primitives::hash::H256 as GlobalH256;
 	use v1::types::{VerboseBlock, RawBlock};
 	use v1::traits::BlockChain;
+	use v1::helpers::errors::block_not_found;
 	use test_data;
 	use super::*;
 
@@ -208,6 +267,10 @@ pub mod tests {
 				nextblockhash: None,
 			})
 		}
+
+		fn verbose_transaction_out(&self, _prev_out: OutPoint) -> Result<GetTxOutResponse, Error> {
+			Ok(GetTxOutResponse::default()) // TODO: non-default
+		}
 	}
 
 	impl BlockChainClientCoreApi for ErrorBlockChainClientCore {
@@ -229,6 +292,10 @@ pub mod tests {
 
 		fn verbose_block(&self, _hash: GlobalH256) -> Option<VerboseBlock> {
 			None
+		}
+
+		fn verbose_transaction_out(&self, prev_out: OutPoint) -> Result<GetTxOutResponse, Error> {
+			Err(block_not_found(prev_out.hash))
 		}
 	}
 
