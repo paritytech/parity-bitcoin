@@ -16,7 +16,7 @@ use transaction_meta::TransactionMeta;
 use error::{Error, ConsistencyError, MetaError};
 use update_context::UpdateContext;
 use block_provider::{BlockProvider, BlockHeaderProvider};
-use transaction_provider::TransactionProvider;
+use transaction_provider::{TransactionProvider, PreviousTransactionOutputProvider};
 use transaction_meta_provider::TransactionMetaProvider;
 use block_stapler::{BlockStapler, BlockInsertedChain, Reorganization};
 
@@ -61,10 +61,12 @@ pub trait AsSubstore: BlockProvider + BlockStapler + TransactionProvider + Trans
 
 	fn as_transaction_provider(&self) -> &TransactionProvider;
 
+	fn as_previous_transaction_output_provider(&self) -> &PreviousTransactionOutputProvider;
+
 	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider;
 }
 
-impl<T> AsSubstore for T where T: BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider {
+impl<T> AsSubstore for T where T: BlockProvider + BlockStapler + TransactionProvider + TransactionMetaProvider + PreviousTransactionOutputProvider {
 	fn as_block_provider(&self) -> &BlockProvider {
 		&*self
 	}
@@ -78,6 +80,10 @@ impl<T> AsSubstore for T where T: BlockProvider + BlockStapler + TransactionProv
 	}
 
 	fn as_transaction_provider(&self) -> &TransactionProvider {
+		&*self
+	}
+
+	fn as_previous_transaction_output_provider(&self) -> &PreviousTransactionOutputProvider {
 		&*self
 	}
 
@@ -243,7 +249,10 @@ impl Storage {
 				match context.meta.entry(input.previous_output.hash.clone()) {
 					Entry::Occupied(mut entry) => {
 						let meta = entry.get_mut();
-						if meta.is_spent(input.previous_output.index as usize) {
+						let is_spent = meta.is_spent(input.previous_output.index as usize)
+							.ok_or(Error::unknown_spending(&input.previous_output.hash))?;
+
+						if is_spent {
 							return Err(Error::double_spend(&input.previous_output.hash));
 						}
 						meta.denote_used(input.previous_output.index as usize);
@@ -251,8 +260,10 @@ impl Storage {
 					Entry::Vacant(entry) => {
 						let mut meta = self.transaction_meta(&input.previous_output.hash)
 							.ok_or(Error::unknown_spending(&input.previous_output.hash))?;
+						let is_spent = meta.is_spent(input.previous_output.index as usize)
+							.ok_or(Error::unknown_spending(&input.previous_output.hash))?;
 
-						if meta.is_spent(input.previous_output.index as usize) {
+						if is_spent {
 							return Err(Error::double_spend(&input.previous_output.hash));
 						}
 
@@ -672,7 +683,6 @@ impl BlockStapler for Storage {
 }
 
 impl TransactionProvider for Storage {
-
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
 		self.get(COL_TRANSACTIONS, &**hash)
 	}
@@ -680,53 +690,43 @@ impl TransactionProvider for Storage {
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction> {
 		let mut cache = self.transaction_cache.write();
 
-		let (tx, is_cached) = {
-			let cached_transaction = cache.get_mut(hash);
-			match cached_transaction {
-				None => {
-					(
-						self.transaction_bytes(hash).map(|tx_bytes| {
-							let tx: chain::Transaction = deserialize(tx_bytes.as_ref())
-								.expect("Failed to deserialize transaction: db corrupted?");
-							tx
-						}),
-						false
-					)
-				},
-				Some(tx) => (Some(tx.clone()), true)
-			}
-		};
+		if let Some(cached_transaction) = cache.get_mut(hash) {
+			return Some(cached_transaction.clone());
+		}
 
-		match tx {
-			Some(ref tx) => { if !is_cached { cache.insert(hash.clone(), tx.clone()); } }
-			None => {}
-		};
+		let tx: Option<chain::Transaction> = self.transaction_bytes(hash).map(|tx_bytes| {
+			deserialize(tx_bytes.as_ref()).expect("Failed to deserialize transaction: db corrupted?")
+		});
+
+		if let Some(ref tx) = tx {
+			cache.insert(hash.clone(), tx.clone());
+		}
 
 		tx
 	}
 }
 
-impl TransactionMetaProvider for Storage {
+impl PreviousTransactionOutputProvider for Storage {
+	fn previous_transaction_output(&self, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput> {
+		self.transaction(&prevout.hash)
+			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
+	}
+}
 
+impl TransactionMetaProvider for Storage {
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
 		let mut cache = self.meta_cache.write();
 
-		let (meta, is_cached) = {
-			let cached_meta = cache.get_mut(hash);
-			match cached_meta {
-				None => {
-					(self.get(COL_TRANSACTIONS_META, &**hash).map(|val|
-						TransactionMeta::from_bytes(&val).expect("Invalid transaction metadata: db corrupted?")
-					), false)
-				},
-				Some(meta) => (Some(meta.clone()), true)
-			}
-		};
+		if let Some(cached_meta) = cache.get_mut(hash) {
+			return Some(cached_meta.clone());
+		}
 
-		match meta {
-			Some(ref meta) => { if !is_cached { cache.insert(hash.clone(), meta.clone()); } }
-			None => {}
-		};
+		let meta = self.get(COL_TRANSACTIONS_META, &**hash)
+			.map(|val| TransactionMeta::from_bytes(&val).expect("Invalid transaction metadata: db corrupted?"));
+
+		if let Some(ref meta) = meta {
+			cache.insert(hash.clone(), meta.clone());
+		}
 
 		meta
 	}
@@ -862,7 +862,7 @@ mod tests {
 		let genesis_coinbase = genesis.transactions()[0].hash();
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase).unwrap();
-		assert!(!genesis_meta.is_spent(0));
+		assert!(!genesis_meta.is_spent(0).unwrap());
 
 		let forged_block = test_data::block_builder()
 			.header().parent(genesis.hash()).build()
@@ -876,7 +876,7 @@ mod tests {
 		store.insert_block(&forged_block).unwrap();
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase).unwrap();
-		assert!(genesis_meta.is_spent(0));
+		assert!(genesis_meta.is_spent(0).unwrap());
 
 		assert_eq!(store.best_block().expect("genesis block inserted").number, 1);
 	}
@@ -906,8 +906,8 @@ mod tests {
 		store.insert_block(&block).unwrap();
 
 		let meta = store.transaction_meta(&block.transactions()[1].hash()).unwrap();
-		assert!(meta.is_spent(0), "Transaction #1 first output in the new block should be recorded as spent");
-		assert!(!meta.is_spent(1), "Transaction #1 second output in the new block should be recorded as unspent");
+		assert!(meta.is_spent(0).unwrap(), "Transaction #1 first output in the new block should be recorded as spent");
+		assert!(!meta.is_spent(1).unwrap(), "Transaction #1 second output in the new block should be recorded as unspent");
 	}
 
 	#[test]
@@ -951,12 +951,12 @@ mod tests {
 		store.insert_block(&block2).unwrap();
 
 		let meta = store.transaction_meta(&tx_big).unwrap();
-		assert!(meta.is_spent(0), "Transaction #1 output #0 in the new block should be recorded as spent");
-		assert!(meta.is_spent(2), "Transaction #1 output #2 in the new block should be recorded as spent");
-		assert!(meta.is_spent(5), "Transaction #1 output #5 in the new block should be recorded as spent");
+		assert!(meta.is_spent(0).unwrap(), "Transaction #1 output #0 in the new block should be recorded as spent");
+		assert!(meta.is_spent(2).unwrap(), "Transaction #1 output #2 in the new block should be recorded as spent");
+		assert!(meta.is_spent(5).unwrap(), "Transaction #1 output #5 in the new block should be recorded as spent");
 
-		assert!(!meta.is_spent(1), "Transaction #1 output #1 in the new block should be recorded as unspent");
-		assert!(!meta.is_spent(3), "Transaction #1 second #3 in the new block should be recorded as unspent");
+		assert!(!meta.is_spent(1).unwrap(), "Transaction #1 output #1 in the new block should be recorded as unspent");
+		assert!(!meta.is_spent(3).unwrap(), "Transaction #1 second #3 in the new block should be recorded as unspent");
 	}
 
 	#[test]
@@ -1159,15 +1159,15 @@ mod tests {
 		// outputs 0, 1, 2 should be spent in the side chain branch
 		// we reorganized to the side chain branch
 		// so, outputs 0, 1, 2 should  be spent
-		assert!(meta.is_spent(0));
-		assert!(meta.is_spent(1));
-		assert!(meta.is_spent(2));
+		assert!(meta.is_spent(0).unwrap());
+		assert!(meta.is_spent(1).unwrap());
+		assert!(meta.is_spent(2).unwrap());
 
 		// outputs 3, 4 should not be spent in the side chain branch
 		// we reorganized to the side chain branch
 		// so, outputs 3, 4 should not be spent
-		assert!(!meta.is_spent(3));
-		assert!(!meta.is_spent(4));
+		assert!(!meta.is_spent(3).unwrap());
+		assert!(!meta.is_spent(4).unwrap());
 
 		// Reorganizing back to main chain with 2 blocks in a row
 
@@ -1195,15 +1195,15 @@ mod tests {
 		// outputs 1, 3, 4 should be spent in the main branch
 		// we reorganized to the main branch again after reorganized to side branch
 		// so, outputs 1, 3, 4 should be spent
-		assert!(meta.is_spent(1));
-		assert!(meta.is_spent(3));
-		assert!(meta.is_spent(4));
+		assert!(meta.is_spent(1).unwrap());
+		assert!(meta.is_spent(3).unwrap());
+		assert!(meta.is_spent(4).unwrap());
 
 		// outputs 0, 2 should not be spent in the main branch
 		// we reorganized to the main branch again after reorganized to side branch
 		// so, outputs 0, 2 should not be spent
-		assert!(!meta.is_spent(0));
-		assert!(!meta.is_spent(2));
+		assert!(!meta.is_spent(0).unwrap());
+		assert!(!meta.is_spent(2).unwrap());
 	}
 
 	// test simulates when main chain and side chain are competing all along, each adding
@@ -1282,7 +1282,7 @@ mod tests {
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase)
 			.expect("Transaction meta for the genesis coinbase transaction should exist");
-		assert!(genesis_meta.is_spent(0), "Genesis coinbase should be recorded as spent because block#1 transaction spends it");
+		assert!(genesis_meta.is_spent(0).unwrap(), "Genesis coinbase should be recorded as spent because block#1 transaction spends it");
 
 		let mut update_context = UpdateContext::new(&store.database, &block_hash);
 		store.decanonize_block(&mut update_context, &block_hash)
@@ -1292,7 +1292,7 @@ mod tests {
 
 		let genesis_meta = store.transaction_meta(&genesis_coinbase)
 			.expect("Transaction meta for the genesis coinbase transaction should exist");
-		assert!(!genesis_meta.is_spent(0), "Genesis coinbase should be recorded as unspent because we retracted block #1");
+		assert!(!genesis_meta.is_spent(0).unwrap(), "Genesis coinbase should be recorded as unspent because we retracted block #1");
 
 		assert_eq!(store.block_number(&block_hash), None);
 	}

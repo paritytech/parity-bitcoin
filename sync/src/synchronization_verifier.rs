@@ -7,7 +7,7 @@ use network::Magic;
 use primitives::hash::H256;
 use synchronization_chain::ChainRef;
 use verification::{ChainVerifier, Verify as VerificationVerify, Chain};
-use db::{SharedStore, IndexedBlock, PreviousTransactionOutputProvider};
+use db::{SharedStore, IndexedBlock, PreviousTransactionOutputProvider, TransactionOutputObserver};
 use time::get_time;
 
 /// Block verification events sink
@@ -153,7 +153,7 @@ impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
 }
 
 /// Execute single verification task
-fn execute_verification_task<T: VerificationSink, U: PreviousTransactionOutputProvider>(sink: &Arc<T>, tx_output_provider: &U, verifier: &ChainVerifier, task: VerificationTask) {
+fn execute_verification_task<T: VerificationSink, U: PreviousTransactionOutputProvider + TransactionOutputObserver>(sink: &Arc<T>, tx_output_provider: &U, verifier: &ChainVerifier, task: VerificationTask) {
 	let mut tasks_queue: VecDeque<VerificationTask> = VecDeque::new();
 	tasks_queue.push_back(task);
 
@@ -200,9 +200,14 @@ impl PreviousTransactionOutputProvider for ChainMemoryPoolTransactionOutputProvi
 	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
 		self.chain.read().memory_pool().previous_transaction_output(prevout)
 	}
+}
 
-	fn is_spent(&self, prevout: &OutPoint) -> bool {
-		self.chain.read().storage().transaction_meta(&prevout.hash).and_then(|tm| Some(tm.is_spent(prevout.index as usize))).unwrap_or(false)
+impl TransactionOutputObserver for ChainMemoryPoolTransactionOutputProvider {
+	fn is_spent(&self, prevout: &OutPoint) -> Option<bool> {
+		self.chain.read()
+			.storage()
+			.transaction_meta(&prevout.hash)
+			.and_then(|tm| tm.is_spent(prevout.index as usize))
 	}
 }
 
@@ -210,9 +215,11 @@ impl PreviousTransactionOutputProvider for EmptyTransactionOutputProvider {
 	fn previous_transaction_output(&self, _prevout: &OutPoint) -> Option<TransactionOutput> {
 		None
 	}
+}
 
-	fn is_spent(&self, _prevout: &OutPoint) -> bool {
-		false
+impl TransactionOutputObserver for EmptyTransactionOutputProvider {
+	fn is_spent(&self, _prevout: &OutPoint) -> Option<bool> {
+		None
 	}
 }
 
