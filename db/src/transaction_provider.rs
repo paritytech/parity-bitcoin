@@ -14,12 +14,6 @@ pub trait TransactionProvider {
 
 	/// resolves serialized transaction info by transaction hash
 	fn transaction(&self, hash: &H256) -> Option<chain::Transaction>;
-
-}
-
-pub trait AsTransactionProvider {
-	/// returns `TransactionProvider`
-	fn as_transaction_provider(&self) -> &TransactionProvider;
 }
 
 /// During transaction the only part of old transaction that we need is `TransactionOutput`.

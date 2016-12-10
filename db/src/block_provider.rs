@@ -33,8 +33,3 @@ pub trait BlockProvider: BlockHeaderProvider {
 	/// returns all transactions in the block by block reference (number/hash)
 	fn block_transactions(&self, block_ref: BlockRef) -> Vec<chain::Transaction>;
 }
-
-pub trait AsBlockHeaderProvider {
-	/// returns `BlockHeaderProvider`
-	fn as_block_header_provider(&self) -> &BlockHeaderProvider;
-}

@@ -2,8 +2,8 @@
 
 use super::{
 	BlockRef, Store, Error, BestBlock, BlockLocation, BlockInsertedChain, BlockProvider,
-	BlockStapler, TransactionMetaProvider, TransactionProvider, AsTransactionProvider,
-	IndexedBlock, BlockHeaderProvider, AsBlockHeaderProvider,
+	BlockStapler, TransactionMetaProvider, TransactionProvider,
+	IndexedBlock, BlockHeaderProvider,
 };
 use chain::{self, Block};
 use primitives::hash::H256;
@@ -81,12 +81,6 @@ impl BlockHeaderProvider for TestStorage {
 		self.resolve_hash(block_ref)
 			.and_then(|ref h| data.blocks.get(h))
 			.map(|ref block| block.header().clone())
-	}
-}
-
-impl AsBlockHeaderProvider for TestStorage {
-	fn as_block_header_provider(&self) -> &BlockHeaderProvider {
-		&*self
 	}
 }
 
@@ -189,12 +183,6 @@ impl TransactionProvider for TestStorage {
 		data.blocks.iter().flat_map(|(_, b)| b.transactions())
 			.find(|ref tx| tx.hash() == *hash)
 			.cloned()
-	}
-}
-
-impl AsTransactionProvider for TestStorage {
-	fn as_transaction_provider(&self) -> &TransactionProvider {
-		&*self
 	}
 }
 
