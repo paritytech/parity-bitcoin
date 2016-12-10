@@ -190,10 +190,6 @@ impl PreviousTransactionOutputProvider for TestStorage {
 		self.transaction(&prevout.hash)
 			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
 	}
-
-	fn is_spent(&self, _prevout: &chain::OutPoint) -> bool {
-		unimplemented!();
-	}
 }
 
 impl TransactionMetaProvider for TestStorage {

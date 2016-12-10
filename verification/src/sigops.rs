@@ -22,10 +22,6 @@ impl<'a, T> PreviousTransactionOutputProvider for StoreWithUnretainedOutputs<'a,
 			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
 			.or_else(|| self.outputs.previous_transaction_output(prevout))
 	}
-
-	fn is_spent(&self, _prevout: &OutPoint) -> bool {
-		unimplemented!();
-	}
 }
 
 pub fn transaction_sigops(

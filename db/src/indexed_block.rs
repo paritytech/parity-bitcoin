@@ -16,10 +16,6 @@ impl PreviousTransactionOutputProvider for IndexedBlock {
 		let txs: &[_] = &self.transactions;
 		txs.previous_transaction_output(prevout)
 	}
-
-	fn is_spent(&self, _prevout: &OutPoint) -> bool {
-		false
-	}
 }
 
 impl From<Block> for IndexedBlock {
