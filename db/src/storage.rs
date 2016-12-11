@@ -464,6 +464,7 @@ impl Storage {
 			.map(|header| header.bits.to_f64())
 			.unwrap_or(1.0f64)
 	}
+
 }
 
 impl BlockHeaderProvider for Storage {
@@ -679,6 +680,10 @@ impl BlockStapler for Storage {
 				_ => None,
 			}
 		}
+	}
+
+	fn flush(&self) {
+		self.database.flush().expect("Failed to flush database. Out of disk space?");
 	}
 }
 

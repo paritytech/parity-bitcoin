@@ -170,6 +170,9 @@ impl BlockStapler for TestStorage {
 			_ => None
 		}
 	}
+
+	fn flush(&self) {
+	}
 }
 
 impl TransactionProvider for TestStorage {
