@@ -39,6 +39,18 @@ pub enum Error {
 #[derive(Debug, PartialEq)]
 /// Possible transactions verification errors
 pub enum TransactionError {
+	/// Transaction has no inputs or no outputs
+	Empty,
+	/// Transaction is not coinbase transaction but has null inputs
+	NullNonCoinbase,
+	/// Coinbase signature is not in the range 2-100
+	CoinbaseSignatureLength(usize),
+	/// Transaction size exceeds block size limit
+	MaxSize,
+	/// Transaction has more sigops than it's allowed
+	MaxSigops,
+	/// Transaction is a part of memory pool, but is a coinbase
+	MemoryPoolCoinbase,
 	/// Not found corresponding output for transaction input
 	Input(usize),
 	/// Referenced coinbase output for the transaction input is not mature enough

@@ -238,6 +238,14 @@ impl Transaction {
 		&self.outputs
 	}
 
+	pub fn is_empty(&self) -> bool {
+		self.inputs.is_empty() || self.outputs.is_empty()
+	}
+
+	pub fn is_null(&self) -> bool {
+		self.inputs.iter().any(|input| input.previous_output.is_null())
+	}
+
 	pub fn is_coinbase(&self) -> bool {
 		self.inputs.len() == 1 && self.inputs[0].previous_output.is_null()
 	}

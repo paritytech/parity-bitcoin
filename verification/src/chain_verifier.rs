@@ -8,11 +8,7 @@ use network::{Magic, ConsensusParams};
 use error::{Error, TransactionError};
 use sigops::{StoreWithUnretainedOutputs, transaction_sigops};
 use {Verify, chain, utils};
-
-const BLOCK_MAX_FUTURE: i64 = 2 * 60 * 60; // 2 hours
-const COINBASE_MATURITY: u32 = 100; // 2 hours
-pub const MAX_BLOCK_SIZE: usize = 1_000_000;
-pub const MAX_BLOCK_SIGOPS: usize = 20_000;
+use constants::{BLOCK_MAX_FUTURE, COINBASE_MATURITY, MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 
 const TRANSACTIONS_VERIFY_THREADS: usize = 8;
 const TRANSACTIONS_VERIFY_PARALLEL_THRESHOLD: usize = 32;

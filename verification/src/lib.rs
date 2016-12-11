@@ -1,4 +1,38 @@
-//! Bitcoin blocks verification
+//! Bitcoin consensus verification
+//!
+//! --> A. on_new_block:
+//!
+//! A.1 VerifyHeader
+//! A.2 VerifyBlock,
+//! A.3 VerifyTransaction for each tx
+//!
+//! A.4.a if it is block from canon chain
+//! A.4.a.1 AcceptHeader
+//! A.4.a.2 AcceptBlock
+//! A.4.a.3 AcceptTransaction for each tx
+//!
+//! A.4.b if it is block from side chain becoming canon
+//! decanonize old canon chain blocks
+//! canonize new canon chain blocks (without currently processed block)
+//! A.4.b.1 AcceptHeader for each header
+//! A.4.b.2 AcceptBlock for each block
+//! A.4.b.3 AcceptTransaction for each tx in each block
+//! A.4.b.4 AcceptHeader
+//! A.4.b.5 AcceptBlock
+//! A.4.b.6 AcceptTransaction for each tx
+//! if any step failed, revert chain back to old canon
+//!
+//! A.4.c if it is block from side chain do nothing
+//!
+//! --> B. on_memory_pool_transaction
+//!
+//! B.1 VerifyMemoryPoolTransaction
+//! B.2 AcceptMemoryPoolTransaction
+//!
+//! --> C. on_block_header
+//!
+//! C.1 VerifyHeader
+//! C.2 AcceptHeader (?)
 
 extern crate byteorder;
 extern crate parking_lot;
@@ -25,15 +59,28 @@ mod sigops;
 mod task;
 mod utils;
 
+pub mod constants;
+mod accept_block;
+mod accept_chain;
+mod accept_header;
+mod accept_transaction;
 mod verify_block;
-mod verify_ordered_block;
+mod verify_chain;
+mod verify_header;
+mod verify_transaction;
 
 pub use primitives::{uint, hash, compact};
 
+pub use accept_block::{BlockAcceptor, CanonBlock};
+pub use accept_chain::ChainAcceptor;
+pub use accept_header::{HeaderAcceptor, CanonHeader};
+pub use accept_transaction::{TransactionAcceptor, CanonTransaction};
 pub use verify_block::BlockVerifier;
-pub use verify_ordered_block::{OrderedBlockVerifier, OrderedBlock};
+pub use verify_chain::ChainVerifier as XXXChainVerifier;
+pub use verify_header::HeaderVerifier;
+pub use verify_transaction::{TransactionVerifier, MemoryPoolTransactionVerifier};
 
-pub use chain_verifier::{Chain, ChainVerifier, VerificationResult, MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
+pub use chain_verifier::{Chain, ChainVerifier, VerificationResult};
 pub use error::{Error, TransactionError};
 pub use sigops::{transaction_sigops, StoreWithUnretainedOutputs};
 pub use utils::{work_required, is_valid_proof_of_work, is_valid_proof_of_work_hash, block_reward_satoshi};

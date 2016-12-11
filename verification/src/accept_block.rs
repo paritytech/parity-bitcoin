@@ -3,27 +3,27 @@ use network::{Magic, ConsensusParams};
 use db::{SharedStore, IndexedBlock, PreviousTransactionOutputProvider, BlockHeaderProvider};
 use sigops::{StoreWithUnretainedOutputs, transaction_sigops};
 use utils::{work_required, block_reward_satoshi};
+use accept_header::CanonHeader;
+use accept_transaction::CanonTransaction;
+use constants::MAX_BLOCK_SIGOPS;
 use error::Error;
-
-// imports to rethink
-use chain_verifier::MAX_BLOCK_SIGOPS;
 
 const EXPECT_ORDERED: &'static str = "Block ancestors expected to be found in database";
 
 /// Flexible verification of ordered block
-pub struct OrderedBlockVerifier<'a> {
+pub struct BlockAcceptor<'a> {
 	pub finality: BlockFinality<'a>,
 	pub sigops: BlockSigops<'a>,
 	pub work: BlockWork<'a>,
 	pub coinbase_claim: BlockCoinbaseClaim<'a>,
 }
 
-impl<'a> OrderedBlockVerifier<'a> {
-	pub fn new(store: &'a SharedStore, network: Magic, block: OrderedBlock<'a>, height: u32) -> Self {
+impl<'a> BlockAcceptor<'a> {
+	pub fn new(store: &'a SharedStore, network: Magic, block: CanonBlock<'a>, height: u32) -> Self {
 		let params = network.consensus_params();
-		OrderedBlockVerifier {
+		BlockAcceptor {
 			finality: BlockFinality::new(block, height),
-			sigops: BlockSigops::new(block, store.as_previous_transaction_output_provider(), params),
+			sigops: BlockSigops::new(block, store.as_previous_transaction_output_provider(), params, MAX_BLOCK_SIGOPS),
 			work: BlockWork::new(block, store.as_block_header_provider(), height, network),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store.as_previous_transaction_output_provider(), height),
 		}
@@ -40,19 +40,27 @@ impl<'a> OrderedBlockVerifier<'a> {
 
 /// Blocks whose parents are known to be in the chain
 #[derive(Clone, Copy)]
-pub struct OrderedBlock<'a> {
+pub struct CanonBlock<'a> {
 	block: &'a IndexedBlock,
 }
 
-impl<'a> OrderedBlock<'a> {
+impl<'a> CanonBlock<'a> {
 	pub fn new(block: &'a IndexedBlock) -> Self {
-		OrderedBlock {
+		CanonBlock {
 			block: block,
 		}
 	}
+
+	pub fn header<'b>(&'b self) -> CanonHeader<'a> where 'a: 'b {
+		CanonHeader::new(&self.block.header)
+	}
+
+	pub fn transactions<'b>(&'b self) -> Vec<CanonTransaction<'a>> where 'a: 'b {
+		self.block.transactions.iter().map(CanonTransaction::new).collect()
+	}
 }
 
-impl<'a> ops::Deref for OrderedBlock<'a> {
+impl<'a> ops::Deref for CanonBlock<'a> {
 	type Target = IndexedBlock;
 
 	fn deref(&self) -> &Self::Target {
@@ -60,18 +68,18 @@ impl<'a> ops::Deref for OrderedBlock<'a> {
 	}
 }
 
-trait OrderedBlockRule {
+trait BlockRule {
 	/// If verification fails returns an error
 	fn check(&self) -> Result<(), Error>;
 }
 
 pub struct BlockFinality<'a> {
-	block: OrderedBlock<'a>,
+	block: CanonBlock<'a>,
 	height: u32,
 }
 
 impl<'a> BlockFinality<'a> {
-	fn new(block: OrderedBlock<'a>, height: u32) -> Self {
+	fn new(block: CanonBlock<'a>, height: u32) -> Self {
 		BlockFinality {
 			block: block,
 			height: height,
@@ -79,7 +87,7 @@ impl<'a> BlockFinality<'a> {
 	}
 }
 
-impl<'a> OrderedBlockRule for BlockFinality<'a> {
+impl<'a> BlockRule for BlockFinality<'a> {
 	fn check(&self) -> Result<(), Error> {
 		if self.block.is_final(self.height) {
 			Ok(())
@@ -90,22 +98,24 @@ impl<'a> OrderedBlockRule for BlockFinality<'a> {
 }
 
 pub struct BlockSigops<'a> {
-	block: OrderedBlock<'a>,
+	block: CanonBlock<'a>,
 	store: &'a PreviousTransactionOutputProvider,
 	consensus_params: ConsensusParams,
+	max_sigops: usize,
 }
 
 impl<'a> BlockSigops<'a> {
-	fn new(block: OrderedBlock<'a>, store: &'a PreviousTransactionOutputProvider, consensus_params: ConsensusParams) -> Self {
+	fn new(block: CanonBlock<'a>, store: &'a PreviousTransactionOutputProvider, consensus_params: ConsensusParams, max_sigops: usize) -> Self {
 		BlockSigops {
 			block: block,
 			store: store,
 			consensus_params: consensus_params,
+			max_sigops: max_sigops,
 		}
 	}
 }
 
-impl<'a> OrderedBlockRule for BlockSigops<'a> {
+impl<'a> BlockRule for BlockSigops<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let store = StoreWithUnretainedOutputs::new(self.store, &*self.block);
 		let bip16_active = self.block.header.raw.time >= self.consensus_params.bip16_time;
@@ -113,7 +123,7 @@ impl<'a> OrderedBlockRule for BlockSigops<'a> {
 			.map(|tx| transaction_sigops(&tx.raw, &store, bip16_active).expect(EXPECT_ORDERED))
 			.sum::<usize>();
 
-		if sigops > MAX_BLOCK_SIGOPS {
+		if sigops > self.max_sigops {
 			Err(Error::MaximumSigops)
 		} else {
 			Ok(())
@@ -122,14 +132,14 @@ impl<'a> OrderedBlockRule for BlockSigops<'a> {
 }
 
 pub struct BlockWork<'a> {
-	block: OrderedBlock<'a>,
+	block: CanonBlock<'a>,
 	store: &'a BlockHeaderProvider,
 	height: u32,
 	network: Magic,
 }
 
 impl<'a> BlockWork<'a> {
-	fn new(block: OrderedBlock<'a>, store: &'a BlockHeaderProvider, height: u32, network: Magic) -> Self {
+	fn new(block: CanonBlock<'a>, store: &'a BlockHeaderProvider, height: u32, network: Magic) -> Self {
 		BlockWork {
 			block: block,
 			store: store,
@@ -139,7 +149,7 @@ impl<'a> BlockWork<'a> {
 	}
 }
 
-impl<'a> OrderedBlockRule for BlockWork<'a> {
+impl<'a> BlockRule for BlockWork<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let previous_header_hash = self.block.header.raw.previous_header_hash.clone();
 		let time = self.block.header.raw.time;
@@ -153,13 +163,13 @@ impl<'a> OrderedBlockRule for BlockWork<'a> {
 }
 
 pub struct BlockCoinbaseClaim<'a> {
-	block: OrderedBlock<'a>,
+	block: CanonBlock<'a>,
 	store: &'a PreviousTransactionOutputProvider,
 	height: u32,
 }
 
 impl<'a> BlockCoinbaseClaim<'a> {
-	fn new(block: OrderedBlock<'a>, store: &'a PreviousTransactionOutputProvider, height: u32) -> Self {
+	fn new(block: CanonBlock<'a>, store: &'a PreviousTransactionOutputProvider, height: u32) -> Self {
 		BlockCoinbaseClaim {
 			block: block,
 			store: store,
@@ -168,7 +178,7 @@ impl<'a> BlockCoinbaseClaim<'a> {
 	}
 }
 
-impl<'a> OrderedBlockRule for BlockCoinbaseClaim<'a> {
+impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let store = StoreWithUnretainedOutputs::new(self.store, &*self.block);
 		let total_outputs = self.block.transactions.iter()

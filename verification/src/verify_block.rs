@@ -2,9 +2,7 @@ use std::collections::HashSet;
 use db::IndexedBlock;
 use sigops::transaction_sigops_raw;
 use error::{Error, TransactionError};
-
-// imports to rethink
-use chain_verifier::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
+use constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 
 pub struct BlockVerifier<'a> {
 	pub empty: BlockEmpty<'a>,
@@ -21,10 +19,10 @@ impl<'a> BlockVerifier<'a> {
 		BlockVerifier {
 			empty: BlockEmpty::new(block),
 			coinbase: BlockCoinbase::new(block),
-			serialized_size: BlockSerializedSize::new(block),
+			serialized_size: BlockSerializedSize::new(block, MAX_BLOCK_SIZE),
 			extra_coinbases: BlockExtraCoinbases::new(block),
 			transactions_uniqueness: BlockTransactionsUniqueness::new(block),
-			sigops: BlockSigops::new(block),
+			sigops: BlockSigops::new(block, MAX_BLOCK_SIGOPS),
 			merkle_root: BlockMerkleRoot::new(block),
 		}
 	}
@@ -69,12 +67,14 @@ impl<'a> BlockRule for BlockEmpty<'a> {
 
 pub struct BlockSerializedSize<'a> {
 	block: &'a IndexedBlock,
+	max_size: usize,
 }
 
 impl<'a> BlockSerializedSize<'a> {
-	fn new(block: &'a IndexedBlock) -> Self {
+	fn new(block: &'a IndexedBlock, max_size: usize) -> Self {
 		BlockSerializedSize {
 			block: block,
+			max_size: max_size,
 		}
 	}
 }
@@ -82,7 +82,7 @@ impl<'a> BlockSerializedSize<'a> {
 impl<'a> BlockRule for BlockSerializedSize<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let size = self.block.size();
-		if size > MAX_BLOCK_SIZE {
+		if size > self.max_size {
 			Err(Error::Size(size))
 		} else {
 			Ok(())
@@ -162,12 +162,14 @@ impl<'a> BlockRule for BlockTransactionsUniqueness<'a> {
 
 pub struct BlockSigops<'a> {
 	block: &'a IndexedBlock,
+	max_sigops: usize,
 }
 
 impl<'a> BlockSigops<'a> {
-	fn new(block: &'a IndexedBlock) -> Self {
+	fn new(block: &'a IndexedBlock, max_sigops: usize) -> Self {
 		BlockSigops {
 			block: block,
+			max_sigops: max_sigops,
 		}
 	}
 }
@@ -179,7 +181,7 @@ impl<'a> BlockRule for BlockSigops<'a> {
 			.map(|tx| transaction_sigops_raw(&tx.raw, None).expect("bip16 is disabled"))
 			.sum::<usize>();
 
-		if sigops > MAX_BLOCK_SIGOPS {
+		if sigops > self.max_sigops {
 			Err(Error::MaximumSigops)
 		} else {
 			Ok(())
@@ -208,3 +210,4 @@ impl<'a> BlockRule for BlockMerkleRoot<'a> {
 		}
 	}
 }
+
