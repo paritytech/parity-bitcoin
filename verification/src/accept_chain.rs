@@ -17,7 +17,7 @@ impl<'a> ChainAcceptor<'a> {
 	pub fn new(store: &'a SharedStore, network: Magic, block: CanonBlock<'a>, height: u32) -> Self {
 		ChainAcceptor {
 			block: BlockAcceptor::new(store, network, block, height),
-			header: HeaderAcceptor::new(block.header()),
+			header: HeaderAcceptor::new(store, network, block.header(), height),
 			transactions: block.transactions().into_iter().map(TransactionAcceptor::new).collect(),
 		}
 	}

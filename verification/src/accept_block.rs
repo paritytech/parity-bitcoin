@@ -1,18 +1,17 @@
 use network::{Magic, ConsensusParams};
-use db::{SharedStore, PreviousTransactionOutputProvider, BlockHeaderProvider};
+use db::{SharedStore, PreviousTransactionOutputProvider};
 use sigops::{StoreWithUnretainedOutputs, transaction_sigops};
-use utils::{work_required, block_reward_satoshi};
+use utils::block_reward_satoshi;
 use canon::CanonBlock;
 use constants::MAX_BLOCK_SIGOPS;
 use error::Error;
 
-const EXPECT_ORDERED: &'static str = "Block ancestors expected to be found in database";
+const EXPECT_CANON: &'static str = "Block ancestors expected to be found in canon chain";
 
 /// Flexible verification of ordered block
 pub struct BlockAcceptor<'a> {
 	pub finality: BlockFinality<'a>,
 	pub sigops: BlockSigops<'a>,
-	pub work: BlockWork<'a>,
 	pub coinbase_claim: BlockCoinbaseClaim<'a>,
 }
 
@@ -22,7 +21,6 @@ impl<'a> BlockAcceptor<'a> {
 		BlockAcceptor {
 			finality: BlockFinality::new(block, height),
 			sigops: BlockSigops::new(block, store.as_previous_transaction_output_provider(), params, MAX_BLOCK_SIGOPS),
-			work: BlockWork::new(block, store.as_block_header_provider(), height, network),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store.as_previous_transaction_output_provider(), height),
 		}
 	}
@@ -30,7 +28,6 @@ impl<'a> BlockAcceptor<'a> {
 	pub fn check(&self) -> Result<(), Error> {
 		try!(self.finality.check());
 		try!(self.sigops.check());
-		try!(self.work.check());
 		try!(self.coinbase_claim.check());
 		Ok(())
 	}
@@ -88,44 +85,13 @@ impl<'a> BlockRule for BlockSigops<'a> {
 		let store = StoreWithUnretainedOutputs::new(self.store, &*self.block);
 		let bip16_active = self.block.header.raw.time >= self.consensus_params.bip16_time;
 		let sigops = self.block.transactions.iter()
-			.map(|tx| transaction_sigops(&tx.raw, &store, bip16_active).expect(EXPECT_ORDERED))
+			.map(|tx| transaction_sigops(&tx.raw, &store, bip16_active).expect(EXPECT_CANON))
 			.sum::<usize>();
 
 		if sigops > self.max_sigops {
 			Err(Error::MaximumSigops)
 		} else {
 			Ok(())
-		}
-	}
-}
-
-pub struct BlockWork<'a> {
-	block: CanonBlock<'a>,
-	store: &'a BlockHeaderProvider,
-	height: u32,
-	network: Magic,
-}
-
-impl<'a> BlockWork<'a> {
-	fn new(block: CanonBlock<'a>, store: &'a BlockHeaderProvider, height: u32, network: Magic) -> Self {
-		BlockWork {
-			block: block,
-			store: store,
-			height: height,
-			network: network,
-		}
-	}
-}
-
-impl<'a> BlockRule for BlockWork<'a> {
-	fn check(&self) -> Result<(), Error> {
-		let previous_header_hash = self.block.header.raw.previous_header_hash.clone();
-		let time = self.block.header.raw.time;
-		let work = work_required(previous_header_hash, time, self.height, self.store, self.network);
-		if work == self.block.header.raw.bits {
-			Ok(())
-		} else {
-			Err(Error::Difficulty)
 		}
 	}
 }
@@ -152,7 +118,7 @@ impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 		let total_outputs = self.block.transactions.iter()
 			.skip(1)
 			.flat_map(|tx| tx.raw.inputs.iter())
-			.map(|input| store.previous_transaction_output(&input.previous_output).expect(EXPECT_ORDERED))
+			.map(|input| store.previous_transaction_output(&input.previous_output).expect(EXPECT_CANON))
 			.map(|output| output.value)
 			.sum::<u64>();
 

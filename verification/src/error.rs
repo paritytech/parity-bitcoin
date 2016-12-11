@@ -34,6 +34,8 @@ pub enum Error {
 	Size(usize),
 	/// Block transactions are not final.
 	NonFinalBlock,
+	/// Old version block.
+	OldVersionBlock,
 }
 
 #[derive(Debug, PartialEq)]
