@@ -2,8 +2,9 @@ use primitives::hash::H256;
 use db::{TransactionMetaProvider, PreviousTransactionOutputProvider};
 use network::{Magic, ConsensusParams};
 use duplex_store::{DuplexTransactionOutputProvider};
+use sigops::transaction_sigops;
 use canon::CanonTransaction;
-use constants::COINBASE_MATURITY;
+use constants::{COINBASE_MATURITY, MAX_BLOCK_SIGOPS};
 use error::TransactionError;
 
 pub struct TransactionAcceptor<'a> {
@@ -15,13 +16,10 @@ pub struct TransactionAcceptor<'a> {
 
 impl<'a> TransactionAcceptor<'a> {
 	pub fn new(
-		// transactions meta
 		// in case of block validation, it's only current block,
-		// TODO: in case of memory pool it should be db and memory pool
 		meta_store: &'a TransactionMetaProvider,
 		// previous transaction outputs
 		// in case of block validation, that's database and currently processed block
-		// in case of memory pool it should be db and memory pool
 		prevout_store: DuplexTransactionOutputProvider<'a>,
 		network: Magic,
 		transaction: CanonTransaction<'a>,
@@ -29,7 +27,7 @@ impl<'a> TransactionAcceptor<'a> {
 		height: u32
 	) -> Self {
 		TransactionAcceptor {
-			bip30: TransactionBip30::new(transaction, meta_store, network.consensus_params(), block_hash, height),
+			bip30: TransactionBip30::new_for_sync(transaction, meta_store, network.consensus_params(), block_hash, height),
 			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, prevout_store),
@@ -46,6 +44,46 @@ impl<'a> TransactionAcceptor<'a> {
 	}
 }
 
+pub struct MemoryPoolTransactionAcceptor<'a> {
+	pub bip30: TransactionBip30<'a>,
+	pub missing_inputs: TransactionMissingInputs<'a>,
+	pub maturity: TransactionMaturity<'a>,
+	pub overspent: TransactionOverspent<'a>,
+	pub sigops: TransactionSigops<'a>,
+}
+
+impl<'a> MemoryPoolTransactionAcceptor<'a> {
+	pub fn new(
+		// TODO: in case of memory pool it should be db and memory pool
+		meta_store: &'a TransactionMetaProvider,
+		// in case of memory pool it should be db and memory pool
+		prevout_store: DuplexTransactionOutputProvider<'a>,
+		network: Magic,
+		transaction: CanonTransaction<'a>,
+		height: u32,
+		time: u32,
+	) -> Self {
+		let params = network.consensus_params();
+		MemoryPoolTransactionAcceptor {
+			bip30: TransactionBip30::new_for_mempool(transaction, meta_store),
+			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store),
+			maturity: TransactionMaturity::new(transaction, meta_store, height),
+			overspent: TransactionOverspent::new(transaction, prevout_store),
+			sigops: TransactionSigops::new(transaction, prevout_store, params, MAX_BLOCK_SIGOPS, time),
+		}
+	}
+
+	pub fn check(&self) -> Result<(), TransactionError> {
+		try!(self.bip30.check());
+		try!(self.missing_inputs.check());
+		// TODO: double spends
+		try!(self.maturity.check());
+		try!(self.overspent.check());
+		try!(self.sigops.check());
+		Ok(())
+	}
+}
+
 pub trait TransactionRule {
 	fn check(&self) -> Result<(), TransactionError>;
 }
@@ -53,19 +91,31 @@ pub trait TransactionRule {
 pub struct TransactionBip30<'a> {
 	transaction: CanonTransaction<'a>,
 	store: &'a TransactionMetaProvider,
-	consensus_params: ConsensusParams,
-	block_hash: &'a H256,
-	height: u32,
+	exception: bool,
 }
 
 impl<'a> TransactionBip30<'a> {
-	fn new(transaction: CanonTransaction<'a>, store: &'a TransactionMetaProvider, consensus_params: ConsensusParams, block_hash: &'a H256, height: u32) -> Self {
+	fn new_for_sync(
+		transaction: CanonTransaction<'a>,
+		store: &'a TransactionMetaProvider,
+		consensus_params: ConsensusParams,
+		block_hash: &'a H256,
+		height: u32
+	) -> Self {
+		let exception = consensus_params.is_bip30_exception(block_hash, height);
+
 		TransactionBip30 {
 			transaction: transaction,
 			store: store,
-			consensus_params: consensus_params,
-			block_hash: block_hash,
-			height: height,
+			exception: exception,
+		}
+	}
+
+	fn new_for_mempool(transaction: CanonTransaction<'a>, store: &'a TransactionMetaProvider) -> Self {
+		TransactionBip30 {
+			transaction: transaction,
+			store: store,
+			exception: false,
 		}
 	}
 }
@@ -82,7 +132,7 @@ impl<'a> TransactionRule for TransactionBip30<'a> {
 		// may have fully spent the output, and we, by checking only storage, have no knowladge
 		// of it
 		match self.store.transaction_meta(&self.transaction.hash) {
-			Some(ref meta) if !meta.is_fully_spent() && !self.consensus_params.is_bip30_exception(self.block_hash, self.height) => {
+			Some(ref meta) if !meta.is_fully_spent() && !self.exception => {
 				Err(TransactionError::UnspentTransactionWithTheSameHash)
 			},
 			_ => Ok(())
@@ -181,6 +231,40 @@ impl<'a> TransactionRule for TransactionOverspent<'a> {
 
 		if spends > available {
 			Err(TransactionError::Overspend)
+		} else {
+			Ok(())
+		}
+	}
+}
+
+pub struct TransactionSigops<'a> {
+	transaction: CanonTransaction<'a>,
+	store: DuplexTransactionOutputProvider<'a>,
+	consensus_params: ConsensusParams,
+	max_sigops: usize,
+	time: u32,
+}
+
+impl<'a> TransactionSigops<'a> {
+	fn new(transaction: CanonTransaction<'a>, store: DuplexTransactionOutputProvider<'a>, consensus_params: ConsensusParams, max_sigops: usize, time: u32) -> Self {
+		TransactionSigops {
+			transaction: transaction,
+			store: store,
+			consensus_params: consensus_params,
+			max_sigops: max_sigops,
+			time: time,
+		}
+	}
+}
+
+impl<'a> TransactionRule for TransactionSigops<'a> {
+	fn check(&self) -> Result<(), TransactionError> {
+		let bip16_active = self.time >= self.consensus_params.bip16_time;
+		let error = transaction_sigops(&self.transaction.raw, &self.store, bip16_active)
+			.map(|sigops| sigops > self.max_sigops)
+			.unwrap_or(true);
+		if error {
+			Err(TransactionError::MaxSigops)
 		} else {
 			Ok(())
 		}

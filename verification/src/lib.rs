@@ -86,7 +86,7 @@ pub use canon::{CanonBlock, CanonHeader, CanonTransaction};
 pub use accept_block::BlockAcceptor;
 pub use accept_chain::ChainAcceptor;
 pub use accept_header::HeaderAcceptor;
-pub use accept_transaction::TransactionAcceptor;
+pub use accept_transaction::{TransactionAcceptor, MemoryPoolTransactionAcceptor};
 
 pub use verify_block::BlockVerifier;
 pub use verify_chain::ChainVerifier as XXXChainVerifier;
