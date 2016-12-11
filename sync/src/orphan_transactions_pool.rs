@@ -46,6 +46,11 @@ impl OrphanTransactionsPool {
 		&self.by_hash
 	}
 
+	/// Check if pool contains this transaction
+	pub fn contains(&mut self, hash: &H256) -> bool {
+		self.by_hash.contains_key(hash)
+	}
+
 	/// Insert orphan transaction
 	pub fn insert(&mut self, hash: H256, transaction: Transaction, unknown_parents: HashSet<H256>) {
 		assert!(!self.by_hash.contains_key(&hash));
