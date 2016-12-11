@@ -210,12 +210,15 @@ pub mod tests {
 	use std::sync::Arc;
 	use devtools::RandomTempPath;
 	use jsonrpc_core::{IoHandler, GenericIoHandler};
+	use jsonrpc_core::Error;
 	use db::{self, BlockStapler};
 	use primitives::bytes::Bytes as GlobalBytes;
 	use primitives::hash::H256 as GlobalH256;
 	use v1::types::{VerboseBlock, RawBlock};
 	use v1::traits::BlockChain;
+	use v1::types::GetTxOutResponse;
 	use v1::helpers::errors::block_not_found;
+	use chain::OutPoint;
 	use test_data;
 	use super::*;
 
