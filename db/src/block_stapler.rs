@@ -49,4 +49,8 @@ pub trait BlockStapler {
 
 	/// insert pre-processed block in the storage
 	fn insert_indexed_block(&self, block: &IndexedBlock) -> Result<BlockInsertedChain, Error>;
+
+	/// flushes the underlined store (if applicable)
+	fn flush(&self);
+
 }
