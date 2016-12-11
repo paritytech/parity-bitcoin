@@ -766,6 +766,14 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 	fn on_peer_transaction(&mut self, peer_index: usize, transaction: Transaction) -> Option<VecDeque<(H256, Transaction)>> {
 		let transaction_hash = transaction.hash();
 
+		// check if this transaction is already known
+		if self.orphaned_transactions_pool.contains(&transaction_hash) || {
+			let chain = self.chain.read();
+			chain.transaction_state(&transaction_hash) != TransactionState::Unknown
+		} {
+			return None;
+		}
+
 		// remember that peer has this transaction
 		self.peers.on_transaction_received(peer_index, &transaction_hash);
 
@@ -2913,5 +2921,18 @@ pub mod tests {
 
 		// check that only one block (b2) is requested
 		assert_eq!(sync.information().chain.requested, 1);
+	}
+
+	#[test]
+	fn when_got_same_orphan_transaction_twice() {
+		let (_, _, _, _, _, sync) = create_sync(None, None);
+		let mut sync = sync.lock();
+
+		sync.on_peer_transaction(1, test_data::TransactionBuilder::with_default_input(0).into());
+		assert_eq!(sync.information().chain.transactions.transactions_count, 0);
+		assert_eq!(sync.information().orphaned_transactions, 1);
+
+		// should not panic
+		sync.on_peer_transaction(1, test_data::TransactionBuilder::with_default_input(0).into());
 	}
 }
