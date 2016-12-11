@@ -1,6 +1,7 @@
 use primitives::hash::H256;
 use db::{TransactionMetaProvider, PreviousTransactionOutputProvider};
 use network::{Magic, ConsensusParams};
+use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner};
 use duplex_store::{DuplexTransactionOutputProvider};
 use sigops::transaction_sigops;
 use canon::CanonTransaction;
@@ -12,6 +13,7 @@ pub struct TransactionAcceptor<'a> {
 	pub missing_inputs: TransactionMissingInputs<'a>,
 	pub maturity: TransactionMaturity<'a>,
 	pub overspent: TransactionOverspent<'a>,
+	pub eval: TransactionEval<'a>,
 }
 
 impl<'a> TransactionAcceptor<'a> {
@@ -24,13 +26,16 @@ impl<'a> TransactionAcceptor<'a> {
 		network: Magic,
 		transaction: CanonTransaction<'a>,
 		block_hash: &'a H256,
-		height: u32
+		height: u32,
+		time: u32,
 	) -> Self {
+		let params = network.consensus_params();
 		TransactionAcceptor {
-			bip30: TransactionBip30::new_for_sync(transaction, meta_store, network.consensus_params(), block_hash, height),
+			bip30: TransactionBip30::new_for_sync(transaction, meta_store, params.clone(), block_hash, height),
 			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, prevout_store),
+			eval: TransactionEval::new(transaction, prevout_store, params, height, time),
 		}
 	}
 
@@ -40,6 +45,7 @@ impl<'a> TransactionAcceptor<'a> {
 		// TODO: double spends
 		try!(self.maturity.check());
 		try!(self.overspent.check());
+		try!(self.eval.check());
 		Ok(())
 	}
 }
@@ -268,5 +274,65 @@ impl<'a> TransactionRule for TransactionSigops<'a> {
 		} else {
 			Ok(())
 		}
+	}
+}
+
+pub struct TransactionEval<'a> {
+	transaction: CanonTransaction<'a>,
+	store: DuplexTransactionOutputProvider<'a>,
+	verify_p2sh: bool,
+	verify_clocktime: bool,
+}
+
+impl<'a> TransactionEval<'a> {
+	fn new(
+		transaction: CanonTransaction<'a>,
+		store: DuplexTransactionOutputProvider<'a>,
+		params: ConsensusParams,
+		height: u32,
+		time: u32,
+	) -> Self {
+		let verify_p2sh = time >= params.bip16_time;
+		let verify_clocktime = height >= params.bip65_height;
+
+		TransactionEval {
+			transaction: transaction,
+			store: store,
+			verify_p2sh: verify_p2sh,
+			verify_clocktime: verify_clocktime,
+		}
+	}
+}
+
+impl<'a> TransactionRule for TransactionEval<'a> {
+	fn check(&self) -> Result<(), TransactionError> {
+		if self.transaction.raw.is_coinbase() {
+			return Ok(());
+		}
+
+		let signer: TransactionInputSigner = self.transaction.raw.clone().into();
+
+		let mut checker = TransactionSignatureChecker {
+			signer: signer,
+			input_index: 0,
+		};
+
+		for (index, input) in self.transaction.raw.inputs.iter().enumerate() {
+			let output = self.store.previous_transaction_output(&input.previous_output)
+				.ok_or_else(|| TransactionError::UnknownReference(input.previous_output.hash.clone()))?;
+
+			checker.input_index = index;
+
+			let input: Script = input.script_sig.clone().into();
+			let output: Script = output.script_pubkey.into();
+
+			let flags = VerificationFlags::default()
+				.verify_p2sh(self.verify_p2sh)
+				.verify_clocktimeverify(self.verify_clocktime);
+
+			try!(verify_script(&input, &output, &flags, &checker).map_err(|_| TransactionError::Signature(index)));
+		}
+
+		Ok(())
 	}
 }
