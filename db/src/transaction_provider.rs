@@ -18,6 +18,6 @@ pub trait TransactionProvider {
 /// During transaction the only part of old transaction that we need is `TransactionOutput`.
 /// Structures like `IndexedBlock` or `MemoryPool` already have it in memory, so it would be
 /// a shame to clone the whole transaction just to get single output.
-pub trait PreviousTransactionOutputProvider {
+pub trait PreviousTransactionOutputProvider: Send + Sync {
 	fn previous_transaction_output(&self, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput>;
 }

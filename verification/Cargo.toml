@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["Nikolay Volf <nikvolf@gmail.com>"]
 
 [dependencies]
-byteorder = "0.5"
 parking_lot = "0.3"
 time = "0.1"
 log = "0.3"

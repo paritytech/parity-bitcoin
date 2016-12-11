@@ -1,13 +1,11 @@
 use std::cmp;
 use std::collections::BTreeSet;
 use network::Magic;
-use db::{SharedStore, BlockHeaderProvider};
-use canon::CanonHeader;
+use db::BlockHeaderProvider;
+use canon::{CanonHeader, EXPECT_CANON};
 use constants::MIN_BLOCK_VERSION;
 use error::Error;
 use utils::work_required;
-
-const EXPECT_CANON: &'static str = "Block ancestors expected to be found in canon chain";
 
 pub struct HeaderAcceptor<'a> {
 	pub version: HeaderVersion<'a>,
@@ -16,12 +14,12 @@ pub struct HeaderAcceptor<'a> {
 }
 
 impl<'a> HeaderAcceptor<'a> {
-	pub fn new(store: &'a SharedStore, network: Magic, header: CanonHeader<'a>, height: u32) -> Self {
+	pub fn new(store: &'a BlockHeaderProvider, network: Magic, header: CanonHeader<'a>, height: u32) -> Self {
 		HeaderAcceptor {
 			// TODO: check last 1000 blocks instead of hardcoding the value
 			version: HeaderVersion::new(header, MIN_BLOCK_VERSION),
-			work: HeaderWork::new(header, store.as_block_header_provider(), height, network),
-			median_timestamp: HeaderMedianTimestamp::new(header, store.as_block_header_provider(), height, network),
+			work: HeaderWork::new(header, store, height, network),
+			median_timestamp: HeaderMedianTimestamp::new(header, store, height, network),
 		}
 	}
 

@@ -6,7 +6,7 @@ pub trait TransactionOutputObserver {
 	fn is_spent(&self, prevout: &OutPoint) -> Option<bool>;
 }
 
-pub trait TransactionMetaProvider {
+pub trait TransactionMetaProvider: Send + Sync {
 	/// get transaction metadata
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta>;
 }

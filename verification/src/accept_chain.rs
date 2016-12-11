@@ -6,6 +6,7 @@ use canon::CanonBlock;
 use accept_block::BlockAcceptor;
 use accept_header::HeaderAcceptor;
 use accept_transaction::TransactionAcceptor;
+use duplex_store::DuplexTransactionOutputProvider;
 
 pub struct ChainAcceptor<'a> {
 	pub block: BlockAcceptor<'a>,
@@ -15,10 +16,14 @@ pub struct ChainAcceptor<'a> {
 
 impl<'a> ChainAcceptor<'a> {
 	pub fn new(store: &'a SharedStore, network: Magic, block: CanonBlock<'a>, height: u32) -> Self {
+		let prevouts = DuplexTransactionOutputProvider::new(store.as_previous_transaction_output_provider(), block.raw());
 		ChainAcceptor {
-			block: BlockAcceptor::new(store, network, block, height),
-			header: HeaderAcceptor::new(store, network, block.header(), height),
-			transactions: block.transactions().into_iter().map(TransactionAcceptor::new).collect(),
+			block: BlockAcceptor::new(store.as_previous_transaction_output_provider(), network, block, height),
+			header: HeaderAcceptor::new(store.as_block_header_provider(), network, block.header(), height),
+			transactions: block.transactions()
+				.into_iter()
+				.map(|tx| TransactionAcceptor::new(store.as_transaction_meta_provider(), prevouts, network, tx, block.hash(), height))
+				.collect(),
 		}
 	}
 

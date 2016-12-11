@@ -1,5 +1,8 @@
 use std::ops;
+use primitives::hash::H256;
 use db::{IndexedBlock, IndexedTransaction, IndexedBlockHeader};
+
+pub const EXPECT_CANON: &'static str = "Block ancestors expected to be found in canon chain";
 
 /// Blocks whose parents are known to be in the chain
 #[derive(Clone, Copy)]
@@ -12,6 +15,14 @@ impl<'a> CanonBlock<'a> {
 		CanonBlock {
 			block: block,
 		}
+	}
+
+	pub fn hash<'b>(&'b self) -> &'a H256 where 'a: 'b {
+		&self.block.header.hash
+	}
+
+	pub fn raw<'b>(&'b self) -> &'a IndexedBlock where 'a: 'b {
+		self.block
 	}
 
 	pub fn header<'b>(&'b self) -> CanonHeader<'a> where 'a: 'b {

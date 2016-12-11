@@ -33,8 +33,15 @@
 //!
 //! C.1 VerifyHeader
 //! C.2 AcceptHeader (?)
+//!
+//! --> D. after successfull chain_reorganization
+//!
+//! D.1 AcceptMemoryPoolTransaction on each tx in memory pool
+//!
+//! --> E. D might be super inefficient when memory pool is large
+//! so instead we might want to call AcceptMemoryPoolTransaction on each tx
+//! that is inserted into assembled block
 
-extern crate byteorder;
 extern crate parking_lot;
 extern crate time;
 #[macro_use]
@@ -61,6 +68,7 @@ mod task;
 mod utils;
 
 pub mod constants;
+mod duplex_store;
 mod canon;
 mod accept_block;
 mod accept_chain;
