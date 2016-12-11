@@ -1,10 +1,8 @@
-use std::ops;
 use network::{Magic, ConsensusParams};
-use db::{SharedStore, IndexedBlock, PreviousTransactionOutputProvider, BlockHeaderProvider};
+use db::{SharedStore, PreviousTransactionOutputProvider, BlockHeaderProvider};
 use sigops::{StoreWithUnretainedOutputs, transaction_sigops};
 use utils::{work_required, block_reward_satoshi};
-use accept_header::CanonHeader;
-use accept_transaction::CanonTransaction;
+use canon::CanonBlock;
 use constants::MAX_BLOCK_SIGOPS;
 use error::Error;
 
@@ -35,36 +33,6 @@ impl<'a> BlockAcceptor<'a> {
 		try!(self.work.check());
 		try!(self.coinbase_claim.check());
 		Ok(())
-	}
-}
-
-/// Blocks whose parents are known to be in the chain
-#[derive(Clone, Copy)]
-pub struct CanonBlock<'a> {
-	block: &'a IndexedBlock,
-}
-
-impl<'a> CanonBlock<'a> {
-	pub fn new(block: &'a IndexedBlock) -> Self {
-		CanonBlock {
-			block: block,
-		}
-	}
-
-	pub fn header<'b>(&'b self) -> CanonHeader<'a> where 'a: 'b {
-		CanonHeader::new(&self.block.header)
-	}
-
-	pub fn transactions<'b>(&'b self) -> Vec<CanonTransaction<'a>> where 'a: 'b {
-		self.block.transactions.iter().map(CanonTransaction::new).collect()
-	}
-}
-
-impl<'a> ops::Deref for CanonBlock<'a> {
-	type Target = IndexedBlock;
-
-	fn deref(&self) -> &Self::Target {
-		self.block
 	}
 }
 

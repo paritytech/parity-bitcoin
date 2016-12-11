@@ -1,4 +1,4 @@
-use scoped_pool::Pool;
+use rayon::prelude::{IntoParallelRefIterator, IndexedParallelIterator, ParallelIterator};
 use db::IndexedBlock;
 use network::Magic;
 use error::Error;
@@ -24,14 +24,10 @@ impl<'a> ChainVerifier<'a> {
 	pub fn check(&self) -> Result<(), Error> {
 		try!(self.block.check());
 		try!(self.header.check());
-		self.transactions.iter()
+		self.transactions.par_iter()
 			.enumerate()
-			.map(|(index, tx)| tx.check().map_err(|err| Error::Transaction(index, err)))
-			.collect::<Result<Vec<_>, _>>()?;
+			.fold(|| Ok(()), |result, (index, tx)| result.and_then(|_| tx.check().map_err(|err| Error::Transaction(index, err))))
+			.reduce(|| Ok(()), |acc, check| acc.and(check))?;
 		Ok(())
-	}
-
-	pub fn parallel_check(&self, _pool: &Pool) -> Result<(), Error> {
-		unimplemented!();
 	}
 }

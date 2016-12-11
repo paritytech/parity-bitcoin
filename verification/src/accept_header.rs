@@ -1,4 +1,4 @@
-use db::IndexedBlockHeader;
+use canon::CanonHeader;
 use error::Error;
 
 pub struct HeaderAcceptor<'a> {
@@ -14,18 +14,5 @@ impl<'a> HeaderAcceptor<'a> {
 
 	pub fn check(&self) -> Result<(), Error> {
 		Ok(())
-	}
-}
-
-#[derive(Clone, Copy)]
-pub struct CanonHeader<'a> {
-	header: &'a IndexedBlockHeader,
-}
-
-impl<'a> CanonHeader<'a> {
-	pub fn new(header: &'a IndexedBlockHeader) -> Self {
-		CanonHeader {
-			header: header,
-		}
 	}
 }

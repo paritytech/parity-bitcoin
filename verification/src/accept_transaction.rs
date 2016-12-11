@@ -1,4 +1,4 @@
-use db::IndexedTransaction;
+use canon::CanonTransaction;
 use error::TransactionError;
 
 pub struct TransactionAcceptor<'a> {
@@ -17,15 +17,3 @@ impl<'a> TransactionAcceptor<'a> {
 	}
 }
 
-#[derive(Clone, Copy)]
-pub struct CanonTransaction<'a> {
-	transaction: &'a IndexedTransaction,
-}
-
-impl<'a> CanonTransaction<'a> {
-	pub fn new(transaction: &'a IndexedTransaction) -> Self {
-		CanonTransaction {
-			transaction: transaction,
-		}
-	}
-}

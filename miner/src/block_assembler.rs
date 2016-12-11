@@ -135,7 +135,7 @@ impl Default for BlockAssembler {
 /// Iterator iterating over mempool transactions and yielding only those which fit the block
 struct FittingTransactionsIterator<'a, T> {
 	/// Shared store is used to query previous transaction outputs from database
-	store: &'a SharedStore,
+	store: &'a PreviousTransactionOutputProvider,
 	/// Memory pool transactions iterator
 	iter: T,
 	/// Size policy decides if transactions size fits the block
@@ -149,7 +149,7 @@ struct FittingTransactionsIterator<'a, T> {
 }
 
 impl<'a, T> FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entry> {
-	fn new(store: &'a SharedStore, iter: T, max_block_size: u32, max_block_sigops: u32) -> Self {
+	fn new(store: &'a PreviousTransactionOutputProvider, iter: T, max_block_size: u32, max_block_sigops: u32) -> Self {
 		FittingTransactionsIterator {
 			store: store,
 			iter: iter,
@@ -164,11 +164,13 @@ impl<'a, T> FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entr
 
 impl<'a, T> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a, T> {
 	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		self.store.transaction(&prevout.hash)
-			.as_ref()
-			.or_else(|| self.previous_entries.iter().find(|e| e.hash == prevout.hash).map(|e| &e.transaction))
-			.and_then(|tx| tx.outputs.iter().nth(prevout.index as usize))
-			.cloned()
+		self.store.previous_transaction_output(prevout)
+			.or_else(|| {
+				self.previous_entries.iter()
+					.find(|e| e.hash == prevout.hash)
+					.and_then(|e| e.transaction.outputs.iter().nth(prevout.index as usize))
+					.cloned()
+			})
 	}
 }
 
@@ -235,7 +237,7 @@ impl BlockAssembler {
 		let mut transactions = Vec::new();
 
 		let mempool_iter = mempool.iter(OrderingStrategy::ByTransactionScore);
-		let tx_iter = FittingTransactionsIterator::new(store, mempool_iter, self.max_block_size, self.max_block_sigops);
+		let tx_iter = FittingTransactionsIterator::new(store.as_previous_transaction_output_provider(), mempool_iter, self.max_block_size, self.max_block_sigops);
 		for entry in tx_iter {
 			// miner_fee is i64, but we can safely cast it to u64
 			// memory pool should restrict miner fee to be positive
@@ -260,7 +262,10 @@ impl BlockAssembler {
 
 #[cfg(test)]
 mod tests {
-	use super::{SizePolicy, NextStep};
+	use db::IndexedTransaction;
+	use verification::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
+	use memory_pool::Entry;
+	use super::{SizePolicy, NextStep, FittingTransactionsIterator};
 
 	#[test]
 	fn test_size_policy() {
@@ -291,5 +296,19 @@ mod tests {
 		assert_eq!(NextStep::FinishAndAppend.and(NextStep::FinishAndIgnore), NextStep::FinishAndIgnore);
 		assert_eq!(NextStep::FinishAndAppend.and(NextStep::Ignore), NextStep::FinishAndIgnore);
 		assert_eq!(NextStep::FinishAndAppend.and(NextStep::Append), NextStep::FinishAndAppend);
+	}
+
+	#[test]
+	fn test_fitting_transactions_iterator_no_transactions() {
+		let store: Vec<IndexedTransaction> = Vec::new();
+		let entries: Vec<Entry> = Vec::new();
+		let store_ref: &[_] = &store;
+
+		let iter = FittingTransactionsIterator::new(&store_ref, entries.iter(), MAX_BLOCK_SIZE as u32, MAX_BLOCK_SIGOPS as u32);
+		assert!(iter.collect::<Vec<_>>().is_empty());
+	}
+
+	#[test]
+	fn test_fitting_transactions_iterator_max_block_size_reached() {
 	}
 }

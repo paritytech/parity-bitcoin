@@ -40,6 +40,7 @@ extern crate time;
 #[macro_use]
 extern crate log;
 extern crate scoped_pool;
+extern crate rayon;
 
 extern crate db;
 extern crate chain;
@@ -60,6 +61,7 @@ mod task;
 mod utils;
 
 pub mod constants;
+mod canon;
 mod accept_block;
 mod accept_chain;
 mod accept_header;
@@ -71,10 +73,13 @@ mod verify_transaction;
 
 pub use primitives::{uint, hash, compact};
 
-pub use accept_block::{BlockAcceptor, CanonBlock};
+pub use canon::{CanonBlock, CanonHeader, CanonTransaction};
+
+pub use accept_block::BlockAcceptor;
 pub use accept_chain::ChainAcceptor;
-pub use accept_header::{HeaderAcceptor, CanonHeader};
-pub use accept_transaction::{TransactionAcceptor, CanonTransaction};
+pub use accept_header::HeaderAcceptor;
+pub use accept_transaction::TransactionAcceptor;
+
 pub use verify_block::BlockVerifier;
 pub use verify_chain::ChainVerifier as XXXChainVerifier;
 pub use verify_header::HeaderVerifier;
