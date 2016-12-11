@@ -63,7 +63,9 @@ pub fn retarget_timespan(retarget_timestamp: u32, last_timestamp: u32) -> u32 {
 
 /// Returns work required for given header
 pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, network: Magic) -> Compact {
-	assert!(height != 0, "cannot calculate required work for genesis block");
+	if height == 0 {
+		return network.max_bits();
+	}
 
 	let parent_header = store.block_header(parent_hash.clone().into()).expect("self.height != 0; qed");
 

@@ -25,7 +25,13 @@ mod sigops;
 mod task;
 mod utils;
 
+mod verify_block;
+mod verify_ordered_block;
+
 pub use primitives::{uint, hash, compact};
+
+pub use verify_block::BlockVerifier;
+pub use verify_ordered_block::{OrderedBlockVerifier, OrderedBlock};
 
 pub use chain_verifier::{Chain, ChainVerifier, VerificationResult, MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 pub use error::{Error, TransactionError};

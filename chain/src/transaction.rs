@@ -261,9 +261,7 @@ impl Transaction {
 	}
 
 	pub fn total_spends(&self) -> u64 {
-		self.outputs
-			.iter()
-			.fold(0u64, |acc, out| acc + out.value)
+		self.outputs.iter().map(|output| output.value).sum()
 	}
 }
 

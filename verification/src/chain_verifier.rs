@@ -77,7 +77,7 @@ impl ChainVerifier {
 	fn block_sigops(&self, block: &db::IndexedBlock) -> usize {
 		// strict pay-to-script-hash signature operations count toward block
 		// signature operations limit is enforced with BIP16
-		let store = StoreWithUnretainedOutputs::new(&self.store, block);
+		let store = StoreWithUnretainedOutputs::new(self.store.as_previous_transaction_output_provider(), block);
 		let bip16_active = self.verify_p2sh(block.header.raw.time);
 		block.transactions.iter().map(|tx| {
 			transaction_sigops(&tx.raw, &store, bip16_active)
@@ -125,7 +125,7 @@ impl ChainVerifier {
 			}
 		}
 
-		let unretained_store = StoreWithUnretainedOutputs::new(&self.store, block);
+		let unretained_store = StoreWithUnretainedOutputs::new(self.store.as_previous_transaction_output_provider(), block);
 		let mut total_unspent = 0u64;
 		for (tx_index, tx) in block.transactions.iter().enumerate().skip(1) {
 			let mut total_claimed: u64 = 0;
@@ -157,7 +157,7 @@ impl ChainVerifier {
 		}
 
 		let expected_max = utils::block_reward_satoshi(at_height) + total_unspent;
-		if coinbase_spends > expected_max{
+		if coinbase_spends > expected_max {
 			return Err(Error::CoinbaseOverspend { expected_max: expected_max, actual: coinbase_spends });
 		}
 
@@ -186,9 +186,9 @@ impl ChainVerifier {
 		}
 
 		// must not be coinbase (sequence = 0 is returned above)
-		if transaction.is_coinbase() { return Err(TransactionError::MisplacedCoinbase(sequence)); }
+		if transaction.is_coinbase() { return Err(TransactionError::MisplacedCoinbase); }
 
-		let unretained_store = StoreWithUnretainedOutputs::new(&self.store, prevout_provider);
+		let unretained_store = StoreWithUnretainedOutputs::new(self.store.as_previous_transaction_output_provider(), prevout_provider);
 		for (input_index, input) in transaction.inputs().iter().enumerate() {
 			// signature verification
 			let signer: TransactionInputSigner = transaction.clone().into();

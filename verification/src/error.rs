@@ -5,6 +5,8 @@ use primitives::hash::H256;
 pub enum Error {
 	/// has an equal duplicate in the chain
 	Duplicate,
+	/// Contains duplicated transactions
+	DuplicatedTransactions,
 	/// No transactions in block
 	Empty,
 	/// Invalid proof-of-work (Block hash does not satisfy nBits)
@@ -54,7 +56,7 @@ pub enum TransactionError {
 	/// Too many signature operations once p2sh operations included
 	SigopsP2SH(usize),
 	/// Coinbase transaction is found at position that is not 0
-	MisplacedCoinbase(usize),
+	MisplacedCoinbase,
 	/// Not fully spent transaction with the same hash already exists, bip30.
 	UnspentTransactionWithTheSameHash,
 	/// Using output that is surely spent
