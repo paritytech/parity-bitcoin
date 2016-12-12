@@ -25,6 +25,19 @@ impl Builder {
 		self.push_data(&num.to_bytes())
 	}
 
+	pub fn push_bytes(mut self, bytes: &[u8]) -> Self {
+		let len = bytes.len();
+		if len < 1 || len > 75 {
+			panic!(format!("Canot push {} bytes", len));
+		}
+
+		let opcode: Opcode = Opcode::from_u8(((Opcode::OP_PUSHBYTES_1 as usize) + len - 1) as u8)
+			.expect("value is within [OP_PUSHBYTES_1; OP_PUSHBYTES_75] interval; qed");
+		self.data.push(opcode as u8);
+		self.data.extend_from_slice(bytes);
+		self
+	}
+
 	pub fn push_data(mut self, data: &[u8]) -> Self {
 		let len = data.len();
 		if len < Opcode::OP_PUSHDATA1 as usize {
