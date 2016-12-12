@@ -40,7 +40,7 @@ debug = true
 debug = true
 
 [[bin]]
-path = "pbtc/main.rs"
+path = "aaapbtc/main.rs"
 name = "pbtc"
 
 [workspace]
