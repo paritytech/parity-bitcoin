@@ -221,9 +221,10 @@ pub mod tests {
 	use primitives::hash::H256 as GlobalH256;
 	use v1::types::{VerboseBlock, RawBlock};
 	use v1::traits::BlockChain;
-	use v1::types::GetTxOutResponse;
+	use v1::types::{GetTxOutResponse, TxOutScriptPubKey};
 	use v1::helpers::errors::block_not_found;
 	use v1::types::Bytes;
+	use v1::types::H256;
 	use v1::types::ScriptType;
 	use chain::OutPoint;
 	use test_data;
