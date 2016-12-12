@@ -20,7 +20,7 @@ pub enum ApiSet {
 
 impl Default for ApiSet {
 	fn default() -> Self {
-		ApiSet::List(vec![Api::Raw].into_iter().collect())
+		ApiSet::List(vec![Api::Raw, Api::Network].into_iter().collect())
 	}
 }
 
