@@ -16,6 +16,7 @@ pub struct ChainAcceptor<'a> {
 
 impl<'a> ChainAcceptor<'a> {
 	pub fn new(store: &'a SharedStore, network: Magic, block: CanonBlock<'a>, height: u32) -> Self {
+		trace!(target: "verification", "Block verification {}", block.hash().to_reversed_str());
 		let prevouts = DuplexTransactionOutputProvider::new(store.as_previous_transaction_output_provider(), block.raw());
 		ChainAcceptor {
 			block: BlockAcceptor::new(store.as_previous_transaction_output_provider(), network, block, height),

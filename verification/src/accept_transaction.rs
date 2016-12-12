@@ -32,6 +32,7 @@ impl<'a> TransactionAcceptor<'a> {
 		height: u32,
 		time: u32,
 	) -> Self {
+		trace!(target: "verification", "Tx verification {}", transaction.hash.to_reversed_str());
 		let params = network.consensus_params();
 		TransactionAcceptor {
 			bip30: TransactionBip30::new_for_sync(transaction, meta_store, params.clone(), block_hash, height),
@@ -91,6 +92,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		height: u32,
 		time: u32,
 	) -> Self {
+		trace!(target: "verification", "Mempool-Tx verification {}", transaction.hash.to_reversed_str());
 		let params = network.consensus_params();
 		MemoryPoolTransactionAcceptor {
 			bip30: TransactionBip30::new_for_mempool(transaction, meta_store),
@@ -378,17 +380,14 @@ impl<'a> TransactionDoubleSpend<'a> {
 
 impl<'a> TransactionRule for TransactionDoubleSpend<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
-		let double_spent_input = self.transaction.raw.inputs.iter()
-			.find(|input| self.store.is_spent(&input.previous_output).unwrap_or(false));
-
-		match double_spent_input {
-			Some(input) => {
-				Err(TransactionError::UsingSpentOutput(
+		for input in &self.transaction.raw.inputs {
+			if self.store.is_spent(&input.previous_output).unwrap_or(false) {
+				return Err(TransactionError::UsingSpentOutput(
 					input.previous_output.hash.clone(),
 					input.previous_output.index
 				))
-			},
-			None => Ok(())
+			}
 		}
+		Ok(())
 	}
 }

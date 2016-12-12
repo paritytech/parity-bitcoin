@@ -13,6 +13,7 @@ pub struct TransactionVerifier<'a> {
 
 impl<'a> TransactionVerifier<'a> {
 	pub fn new(transaction: &'a IndexedTransaction) -> Self {
+		trace!(target: "verification", "Tx pre-verification {}", transaction.hash.to_reversed_str());
 		TransactionVerifier {
 			empty: TransactionEmpty::new(transaction),
 			null_non_coinbase: TransactionNullNonCoinbase::new(transaction),
@@ -38,6 +39,7 @@ pub struct MemoryPoolTransactionVerifier<'a> {
 
 impl<'a> MemoryPoolTransactionVerifier<'a> {
 	pub fn new(transaction: &'a IndexedTransaction) -> Self {
+		trace!(target: "verification", "Mempool-Tx pre-verification {}", transaction.hash.to_reversed_str());
 		MemoryPoolTransactionVerifier {
 			empty: TransactionEmpty::new(transaction),
 			null_non_coinbase: TransactionNullNonCoinbase::new(transaction),
