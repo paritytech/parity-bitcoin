@@ -5,6 +5,7 @@ use std::hash::{Hash, Hasher};
 use serde;
 use rustc_serialize::hex::{ToHex, FromHex};
 use primitives::hash::H256 as GlobalH256;
+use primitives::hash::H160 as GlobalH160;
 
 macro_rules! impl_hash {
 	($name: ident, $other: ident, $size: expr) => {
@@ -127,6 +128,15 @@ macro_rules! impl_hash {
 }
 
 impl_hash!(H256, GlobalH256, 32);
+impl_hash!(H160, GlobalH160, 20);
+
+impl H256 {
+	pub fn reversed(&self) -> Self {
+		let mut result = self.clone();
+		result.0.reverse();
+		result
+	}
+}
 
 #[cfg(test)]
 mod tests {

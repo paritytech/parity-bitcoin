@@ -212,5 +212,9 @@ impl Store for TestStorage {
 			|bb| Some(self.block_header(BlockRef::Hash(bb.hash.clone())).expect("Best block exists but no such header. Race condition?"))
 		)
 	}
+
+	fn difficulty(&self) -> f64 {
+		unimplemented!()
+	}
 }
 

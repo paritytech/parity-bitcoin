@@ -3,10 +3,26 @@
 mod codes {
 	// NOTE [ToDr] Codes from [-32099, -32000]
 	pub const EXECUTION_ERROR: i64 = -32015;
+	pub const TRANSACTION_NOT_FOUND: i64 = -32096;
+	pub const TRANSACTION_OUTPUT_NOT_FOUND: i64 = -32097;
+	pub const TRANSACTION_OF_SIDE_BRANCH: i64 = -32098;
+	pub const BLOCK_NOT_FOUND: i64 = -32099;
 }
 
 use std::fmt;
 use jsonrpc_core::{Error, ErrorCode, Value};
+
+macro_rules! rpc_unimplemented {		
+	() => (Err(::v1::helpers::errors::unimplemented(None)))		
+}
+
+pub fn unimplemented(details: Option<String>) -> Error {		
+	Error {		
+		code: ErrorCode::InternalError,		
+		message: "This request is not implemented yet. Please create an issue on Github repo.".into(),		
+		data: details.map(Value::String),		
+	}		
+}
 
 pub fn invalid_params<T: fmt::Debug>(param: &str, details: T) -> Error {
 	Error {
@@ -24,3 +40,42 @@ pub fn execution<T: fmt::Debug>(data: T) -> Error {
 	}
 }
 
+pub fn block_not_found<T: fmt::Debug>(data: T) -> Error {
+	Error {
+		code: ErrorCode::ServerError(codes::BLOCK_NOT_FOUND),
+		message: "Block with given hash is not found".into(),
+		data: Some(Value::String(format!("{:?}", data))),
+	}
+}
+
+pub fn block_at_height_not_found<T: fmt::Debug>(data: T) -> Error {
+	Error {
+		code: ErrorCode::ServerError(codes::BLOCK_NOT_FOUND),
+		message: "Block at given height is not found".into(),
+		data: Some(Value::String(format!("{:?}", data))),
+	}
+}
+
+pub fn transaction_not_found<T: fmt::Debug>(data: T) -> Error {
+	Error {
+		code: ErrorCode::ServerError(codes::TRANSACTION_NOT_FOUND),
+		message: "Transaction with given hash is not found".into(),
+		data: Some(Value::String(format!("{:?}", data))),
+	}
+}
+
+pub fn transaction_output_not_found<T: fmt::Debug>(data: T) -> Error {
+	Error {
+		code: ErrorCode::ServerError(codes::TRANSACTION_OUTPUT_NOT_FOUND),
+		message: "Transaction output is not found".into(),
+		data: Some(Value::String(format!("{:?}", data))),
+	}
+}
+
+pub fn transaction_of_side_branch<T: fmt::Debug>(data: T) -> Error {
+	Error {
+		code: ErrorCode::ServerError(codes::TRANSACTION_OF_SIDE_BRANCH),
+		message: "Transaction is of side branch".into(),
+		data: Some(Value::String(format!("{:?}", data))),
+	}
+}

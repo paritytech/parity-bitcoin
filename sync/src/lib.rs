@@ -85,7 +85,7 @@ pub fn create_local_sync_node(handle: &Handle, network: Magic, db: db::SharedSto
 	};
 
 	let sync_chain = Arc::new(RwLock::new(SyncChain::new(db.clone())));
-	let chain_verifier = Arc::new(ChainVerifier::new(db, network));
+	let chain_verifier = Arc::new(ChainVerifier::new(db.clone(), network));
 	let sync_executor = SyncExecutor::new(sync_chain.clone());
 	let sync_server = Arc::new(SynchronizationServer::new(sync_chain.clone(), sync_executor.clone()));
 	let sync_client_core = SynchronizationClientCore::new(sync_client_config, handle, sync_executor.clone(), sync_chain.clone(), chain_verifier.clone());
