@@ -331,7 +331,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "jsonrpc-core"
 version = "4.0.0"
-source = "git+https://github.com/ethcore/jsonrpc.git#140257f1a726e9190bdaafeb4625b2a5400de4da"
+source = "git+https://github.com/ethcore/jsonrpc.git#ce49b762bc3e005f0cf549e1d98fc51b47f2aa54"
 dependencies = [
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -343,7 +343,7 @@ dependencies = [
 [[package]]
 name = "jsonrpc-http-server"
 version = "6.1.1"
-source = "git+https://github.com/ethcore/jsonrpc.git#140257f1a726e9190bdaafeb4625b2a5400de4da"
+source = "git+https://github.com/ethcore/jsonrpc.git#ce49b762bc3e005f0cf549e1d98fc51b47f2aa54"
 dependencies = [
  "hyper 0.10.0-a.0 (git+https://github.com/ethcore/hyper)",
  "jsonrpc-core 4.0.0 (git+https://github.com/ethcore/jsonrpc.git)",
@@ -354,7 +354,7 @@ dependencies = [
 [[package]]
 name = "jsonrpc-macros"
 version = "0.1.0"
-source = "git+https://github.com/ethcore/jsonrpc.git#140257f1a726e9190bdaafeb4625b2a5400de4da"
+source = "git+https://github.com/ethcore/jsonrpc.git#ce49b762bc3e005f0cf549e1d98fc51b47f2aa54"
 dependencies = [
  "jsonrpc-core 4.0.0 (git+https://github.com/ethcore/jsonrpc.git)",
  "serde 0.8.19 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -800,6 +800,7 @@ version = "0.1.0"
 dependencies = [
  "chain 0.1.0",
  "db 0.1.0",
+ "ethcore-devtools 1.3.0",
  "jsonrpc-core 4.0.0 (git+https://github.com/ethcore/jsonrpc.git)",
  "jsonrpc-http-server 6.1.1 (git+https://github.com/ethcore/jsonrpc.git)",
  "jsonrpc-macros 0.1.0 (git+https://github.com/ethcore/jsonrpc.git)",
@@ -809,6 +810,7 @@ dependencies = [
  "p2p 0.1.0",
  "primitives 0.1.0",
  "rustc-serialize 0.3.22 (registry+https://github.com/rust-lang/crates.io-index)",
+ "script 0.1.0",
  "serde 0.8.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_codegen 0.8.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 0.8.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -817,6 +819,7 @@ dependencies = [
  "sync 0.1.0",
  "test-data 0.1.0",
  "tokio-core 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "verification 0.1.0",
 ]
 
 [[package]]

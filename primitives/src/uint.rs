@@ -884,7 +884,6 @@ macro_rules! construct_uint {
 		impl fmt::LowerHex for $name {
 			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 				let &$name(ref data) = self;
-				try!(write!(f, "0x"));
 				let mut latch = false;
 				for ch in data.iter().rev() {
 					for x in 0..16 {

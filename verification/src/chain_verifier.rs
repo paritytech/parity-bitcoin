@@ -247,7 +247,7 @@ impl ChainVerifier {
 			return Err(Error::FuturisticTimestamp);
 		}
 
-		if let Some(median_timestamp) = self.median_timestamp(block_header_provider, header) {
+		if let Some(median_timestamp) = ChainVerifier::median_timestamp(block_header_provider, header) {
 			// TODO: make timestamp validation on testnet work...
 			if self.network != Magic::Testnet && median_timestamp >= header.time {
 				trace!(
@@ -349,7 +349,7 @@ impl ChainVerifier {
 		}
 	}
 
-	fn median_timestamp(&self, block_header_provider: &BlockHeaderProvider, header: &chain::BlockHeader) -> Option<u32> {
+	pub fn median_timestamp(block_header_provider: &BlockHeaderProvider, header: &chain::BlockHeader) -> Option<u32> {
 		let mut timestamps = BTreeSet::new();
 		let mut block_ref = header.previous_header_hash.clone().into();
 		// TODO: optimize it, so it does not make 11 redundant queries each time

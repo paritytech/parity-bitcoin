@@ -49,6 +49,9 @@ pub trait Store: AsSubstore {
 
 	/// get best header
 	fn best_header(&self) -> Option<chain::BlockHeader>;
+
+	/// get blockchain difficulty
+	fn difficulty(&self) -> f64;
 }
 
 /// Allows casting Arc<Store> to reference to any substore type
@@ -457,14 +460,6 @@ impl Storage {
 		}
 
 	}
-
-	pub fn difficulty(&self) -> f64 {
-		self.best_hash()
-			.and_then(|h| self.block_header_by_hash(&h))
-			.map(|header| header.bits.to_f64())
-			.unwrap_or(1.0f64)
-	}
-
 }
 
 impl BlockHeaderProvider for Storage {
@@ -746,6 +741,13 @@ impl Store for Storage {
 		self.best_block.read().as_ref().and_then(
 			|bb| Some(self.block_header_by_hash(&bb.hash).expect("Best block exists but no such header. Race condition?")),
 		)
+	}
+
+	fn difficulty(&self) -> f64 {
+		self.best_hash()
+			.and_then(|h| self.block_header_by_hash(&h))
+			.map(|header| header.bits.to_f64())
+			.unwrap_or(1.0f64)
 	}
 }
 

@@ -2,6 +2,7 @@
 use rustc_serialize::hex::{ToHex, FromHex};
 use serde::{Serialize, Serializer, Deserialize, Deserializer, Error};
 use serde::de::Visitor;
+use primitives::bytes::Bytes as GlobalBytes;
 
 /// Wrapper structure around vector of bytes.
 #[derive(Debug, PartialEq, Eq, Default, Hash, Clone)]
@@ -16,6 +17,12 @@ impl Bytes {
 	/// Convert back to vector
 	pub fn to_vec(self) -> Vec<u8> {
 		self.0
+	}
+}
+
+impl From<GlobalBytes> for Bytes {
+	fn from(v: GlobalBytes) -> Self {
+		Bytes(v.take())
 	}
 }
 

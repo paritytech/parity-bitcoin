@@ -12,6 +12,10 @@ impl Bytes {
 	pub fn new_with_len(len: usize) -> Self {
 		Bytes(vec![0; len])
 	}
+
+	pub fn take(self) -> Vec<u8> {
+		self.0
+	}
 }
 
 impl<'a> From<&'a [u8]> for Bytes {
