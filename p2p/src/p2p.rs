@@ -1,5 +1,6 @@
 use std::{io, net, error, time};
 use std::sync::Arc;
+use std::net::SocketAddr;
 use parking_lot::RwLock;
 use futures::{Future, finished, failed, BoxFuture};
 use futures::stream::Stream;
@@ -12,7 +13,7 @@ use ns_dns_tokio::DnsResolver;
 use message::{Payload, MessageResult, Message};
 use message::common::Services;
 use net::{connect, Connections, Channel, Config as NetConfig, accept_connection, ConnectionCounter};
-use util::{NodeTable, Node, Direction};
+use util::{NodeTable, Node, NodeTableError, Direction};
 use session::{SessionFactory, SeednodeSessionFactory, NormalSessionFactory};
 use {Config, PeerId};
 use protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef};
@@ -86,6 +87,18 @@ impl Context {
 	pub fn update_node_table(&self, nodes: Vec<Node>) {
 		trace!("Updating node table with {} entries", nodes.len());
 		self.node_table.write().insert_many(nodes);
+	}
+
+	/// Adds node to table.
+	pub fn add_node(&self, addr: SocketAddr, config: NetConfig) -> Result<(), NodeTableError> {
+		trace!("Adding node {} to node table", &addr);
+		self.node_table.write().add(addr, config.services)
+	}
+
+	/// Removes node from table.
+	pub fn remove_node(&self, addr: SocketAddr) -> Result<(), NodeTableError> {
+		trace!("Removing node {} from node table", &addr);
+		self.node_table.write().remove(&addr)
 	}
 
 	/// Every 10 seconds check if we have reached maximum number of outbound connections.
@@ -425,7 +438,18 @@ impl P2P {
 		Ok(())
 	}
 
+	/// Attempts to connect to the specified node
 	pub fn connect<T>(&self, addr: net::SocketAddr) where T: SessionFactory {
+		Context::connect::<T>(self.context.clone(), addr, self.config.connection.clone());
+	}
+
+	/// Adds node to the persistent node table
+	pub fn add_node<T>(&self, addr: net::SocketAddr) where T: SessionFactory {
+		Context::connect::<T>(self.context.clone(), addr, self.config.connection.clone());
+	}
+
+	/// Removes node from the persistent node table
+	pub fn remove_node<T>(&self, addr: net::SocketAddr) where T: SessionFactory {
 		Context::connect::<T>(self.context.clone(), addr, self.config.connection.clone());
 	}
 

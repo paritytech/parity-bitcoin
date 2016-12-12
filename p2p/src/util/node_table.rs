@@ -161,6 +161,9 @@ impl PartialOrd for Node {
 	}
 }
 
+#[derive(Debug)]
+pub enum NodeTableError { AddressAlreadyAdded, NoAddressInTable }
+
 #[derive(Default, Debug)]
 pub struct NodeTable<T = RealTime> where T: Time {
 	/// Time source.
@@ -216,6 +219,35 @@ impl<T> NodeTable<T> where T: Time {
 				self.by_time.insert(node.clone().into());
 				entry.insert(node);
 			}
+		}
+	}
+
+	pub fn exists(&self, addr: SocketAddr) -> bool {
+		self.by_addr.contains_key(&addr)
+	}
+
+	pub fn add(&mut self, addr: SocketAddr, services: Services) -> Result<(), NodeTableError> {
+		if self.exists(addr.clone()) {
+			Err(NodeTableError::AddressAlreadyAdded)
+		}
+		else {
+			self.insert(addr, services);
+			Ok(())
+		}
+	}
+
+	/// Tries to remove node with the speicified socket address
+	/// from table, if exists.
+	/// Returnes `true` if it has removed anything
+	pub fn remove(&mut self, addr: &SocketAddr) -> Result<(), NodeTableError> {
+		let node = self.by_addr.remove(&addr);
+		match node {
+			Some(val) => {
+				self.by_time.remove(&val.clone().into());
+				self.by_score.remove(&val.into());
+				Ok(())
+			}
+			None => Err(NodeTableError::NoAddressInTable)
 		}
 	}
 
@@ -450,6 +482,43 @@ mod tests {
 		table.insert(s1, Services::default());
 		table.note_failure(&s0);
 		table.note_failure(&s1);
+	}
+
+	#[test]
+	fn add_node() {
+		let mut table = NodeTable::<ZeroTime>::default();
+		let add_result = table.add("127.0.0.1:8001".parse().unwrap(), Services::default());
+
+		assert!(add_result.is_ok())
+	}
+
+	#[test]
+	fn add_duplicate() {
+		let mut table = NodeTable::<ZeroTime>::default();
+		table.add("127.0.0.1:8001".parse().unwrap(), Services::default()).unwrap();
+		let add_result = table.add("127.0.0.1:8001".parse().unwrap(), Services::default());
+
+		assert!(add_result.is_err())
+	}
+
+	#[test]
+	fn remove() {
+		let mut table = NodeTable::<ZeroTime>::default();
+		table.add("127.0.0.1:8001".parse().unwrap(), Services::default()).unwrap();
+		let remove_result = table.remove(&"127.0.0.1:8001".parse().unwrap());
+
+		assert!(remove_result.is_ok());
+		assert_eq!(0, table.by_addr.len());
+		assert_eq!(0, table.by_score.len());
+		assert_eq!(0, table.by_time.len());
+	}
+
+	#[test]
+	fn remove_nonexistant() {
+		let mut table = NodeTable::<ZeroTime>::default();
+		let remove_result = table.remove(&"127.0.0.1:8001".parse().unwrap());
+
+		assert!(remove_result.is_err());
 	}
 
 	#[test]
