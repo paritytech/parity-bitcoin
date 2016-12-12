@@ -34,10 +34,12 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 	};
 
 	let sync_handle = el.handle();
-	let local_sync_node = create_local_sync_node(&sync_handle, cfg.magic, db);
+	let local_sync_node = create_local_sync_node(&sync_handle, cfg.magic, db.clone());
 	let sync_connection_factory = create_sync_connection_factory(local_sync_node.clone());
 
 	let rpc_deps = rpc::Dependencies {
+		network: cfg.magic,
+		storage: db,
 		local_sync_node: local_sync_node,
 	};
 	let _rpc_server = try!(rpc::new_http(cfg.rpc_config, rpc_deps));

@@ -1,11 +1,15 @@
 use std::net::SocketAddr;
 use rpc_apis::{self, ApiSet};
 use ethcore_rpc::{Server, RpcServer, RpcServerError};
+use network::Magic;
 use std::io;
 use sync;
+use db;
 
 pub struct Dependencies {
+	pub network: Magic,
 	pub local_sync_node: sync::LocalNodeRef,
+	pub storage: db::SharedStore,
 }
 
 #[derive(Debug, PartialEq)]

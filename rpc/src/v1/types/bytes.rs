@@ -20,15 +20,9 @@ impl Bytes {
 	}
 }
 
-impl From<GlobalBytes> for Bytes {
-	fn from(v: GlobalBytes) -> Self {
-		Bytes(v.take())
-	}
-}
-
-impl From<Vec<u8>> for Bytes {
-	fn from(bytes: Vec<u8>) -> Bytes {
-		Bytes(bytes)
+impl<T> From<T> for Bytes where GlobalBytes: From<T> {
+	fn from(other: T) -> Self {
+		Bytes(GlobalBytes::from(other).take())
 	}
 }
 

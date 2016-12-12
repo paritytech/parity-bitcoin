@@ -4,18 +4,18 @@ use v1::types::{GetTxOutResponse, TxOutScriptPubKey};
 use v1::types::GetTxOutSetInfoResponse;
 use v1::types::H256;
 use v1::types::U256;
-use v1::types::ScriptType;
+use v1::types::Address;
 use v1::helpers::errors::{block_not_found, block_at_height_not_found, transaction_not_found,
 	transaction_output_not_found, transaction_of_side_branch};
 use jsonrpc_macros::Trailing;
 use jsonrpc_core::Error;
 use db;
-use script::Script;
+use global_script::Script;
 use chain::OutPoint;
 use verification;
 use ser::serialize;
 use primitives::hash::H256 as GlobalH256;
-
+use network::Magic;
 
 pub struct BlockChainClient<T: BlockChainClientCoreApi> {
 	core: T,
@@ -31,14 +31,16 @@ pub trait BlockChainClientCoreApi: Send + Sync + 'static {
 }
 
 pub struct BlockChainClientCore {
+	network: Magic,
 	storage: db::SharedStore,
 }
 
 impl BlockChainClientCore {
-	pub fn new(storage: db::SharedStore) -> Self {
+	pub fn new(network: Magic, storage: db::SharedStore) -> Self {
 		assert!(storage.best_block().is_some());
 		
 		BlockChainClientCore {
+			network: network,
 			storage: storage,
 		}
 	}
@@ -130,6 +132,7 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 		let ref script_bytes = transaction.outputs[prev_out.index as usize].script_pubkey;
 		let script: Script = script_bytes.clone().into();
 		let script_asm = format!("{}", script);
+		let script_addresses = script.extract_destinations().unwrap_or(vec![]);
 
 		Ok(GetTxOutResponse {
 			bestblock: block_header.hash().into(),
@@ -138,9 +141,9 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 			script_pub_key: TxOutScriptPubKey {
 				asm: script_asm,
 				hex: script_bytes.clone().into(),
-				req_sigs: 0, // TODO
-				script_type: ScriptType::NonStandard, // TODO
-				addresses: vec![],
+				req_sigs: script.num_signatures_required() as u32,
+				script_type: script.script_type().into(),
+				addresses: script_addresses.into_iter().map(|a| Address::new(self.network, a)).collect(),
 			},
 			version: transaction.version,
 			coinbase: transaction.is_coinbase(),
@@ -193,7 +196,9 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 	}
 
 	fn transaction_out(&self, transaction_hash: H256, out_index: u32, _include_mempool: Trailing<bool>) -> Result<GetTxOutResponse, Error> {
-		self.core.verbose_transaction_out(OutPoint { hash: transaction_hash.into(), index: out_index })
+		// TODO: include_mempool
+		let transaction_hash: GlobalH256 = transaction_hash.into();
+		self.core.verbose_transaction_out(OutPoint { hash: transaction_hash.reversed(), index: out_index })
 			.map(|mut response| {
 				response.bestblock = response.bestblock.reversed();
 				response
@@ -218,8 +223,11 @@ pub mod tests {
 	use v1::traits::BlockChain;
 	use v1::types::GetTxOutResponse;
 	use v1::helpers::errors::block_not_found;
+	use v1::types::Bytes;
+	use v1::types::ScriptType;
 	use chain::OutPoint;
 	use test_data;
+	use network::Magic;
 	use super::*;
 
 	#[derive(Default)]
@@ -272,7 +280,20 @@ pub mod tests {
 		}
 
 		fn verbose_transaction_out(&self, _prev_out: OutPoint) -> Result<GetTxOutResponse, Error> {
-			Ok(GetTxOutResponse::default()) // TODO: non-default
+			Ok(GetTxOutResponse {
+				bestblock: H256::from(0x56),
+				confirmations: 777,
+				value: 100000.56,
+				script_pub_key: TxOutScriptPubKey {
+					asm: "Hello, world!!!".to_owned(),
+					hex: Bytes::new(vec![1, 2, 3, 4]),
+					req_sigs: 777,
+					script_type: ScriptType::Multisig,
+					addresses: vec!["1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".into(), "1H5m1XzvHsjWX3wwU781ubctznEpNACrNC".into()],
+				},
+				version: 33,
+				coinbase: false,
+			})
 		}
 	}
 
@@ -382,7 +403,7 @@ pub mod tests {
 		storage.insert_block(&test_data::block_h1()).expect("no error");
 		storage.insert_block(&test_data::block_h2()).expect("no error");
 
-		let core = BlockChainClientCore::new(storage);
+		let core = BlockChainClientCore::new(Magic::Mainnet, storage);
 
 		// get info on block #1:
 		// https://blockexplorer.com/block/00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048
@@ -514,5 +535,66 @@ pub mod tests {
 			}"#)).unwrap();
 
 		assert_eq!(&sample, r#"{"jsonrpc":"2.0","error":{"code":-32099,"message":"Block with given hash is not found","data":"000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd"},"id":1}"#);
+	}
+
+	#[test]
+	fn verbose_transaction_out_contents() {
+		let storage = Arc::new(db::TestStorage::with_genesis_block());
+		let core = BlockChainClientCore::new(Magic::Mainnet, storage);
+
+		// get info on tx from genesis block:
+		// https://blockchain.info/ru/tx/4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b
+		let verbose_transaction_out = core.verbose_transaction_out(OutPoint {
+			hash: "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a".into(),
+			index: 0,
+		});
+		assert_eq!(verbose_transaction_out, Ok(GetTxOutResponse {
+				bestblock: "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000".into(),
+				confirmations: 1,
+				value: 50.0,
+				script_pub_key: TxOutScriptPubKey {
+					asm: "OP_PUSHBYTES_65 0x04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f\nOP_CHECKSIG\n".to_owned(),
+					hex: Bytes::from("4104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac"),
+					req_sigs: 1,
+					script_type: ScriptType::PubKey,
+					addresses: vec!["1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".into()]
+				},
+				version: 1,
+				coinbase: true
+			}));
+	}
+
+	#[test]
+	fn transaction_out_success() {
+		let client = BlockChainClient::new(SuccessBlockChainClientCore::default());
+		let handler = IoHandler::new();
+		handler.add_delegate(client.to_delegate());
+
+		let sample = handler.handle_request_sync(&(r#"
+			{
+				"jsonrpc": "2.0",
+				"method": "gettxout",
+				"params": ["4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b", 0],
+				"id": 1
+			}"#)).unwrap();
+
+		assert_eq!(&sample, r#"{"jsonrpc":"2.0","result":{"bestblock":"0000000000000000000000000000000000000000000000000000000000000056","coinbase":false,"confirmations":777,"scriptPubKey":{"addresses":["1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa","1H5m1XzvHsjWX3wwU781ubctznEpNACrNC"],"asm":"Hello, world!!!","hex":"01020304","reqSigs":777,"type":"multisig"},"value":100000.56,"version":33},"id":1}"#);
+	}
+
+	#[test]
+	fn transaction_out_failure() {
+		let client = BlockChainClient::new(ErrorBlockChainClientCore::default());
+		let handler = IoHandler::new();
+		handler.add_delegate(client.to_delegate());
+
+		let sample = handler.handle_request_sync(&(r#"
+			{
+				"jsonrpc": "2.0",
+				"method": "gettxout",
+				"params": ["4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b", 0],
+				"id": 1
+			}"#)).unwrap();
+
+		assert_eq!(&sample, r#"{"jsonrpc":"2.0","error":{"code":-32099,"message":"Block with given hash is not found","data":"3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"},"id":1}"#);
 	}
 }

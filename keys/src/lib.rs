@@ -35,6 +35,7 @@ pub use self::error::Error;
 pub use self::private::Private;
 pub use self::public::Public;
 pub use self::signature::{Signature, CompactSignature};
+pub use self::network::Network;
 
 use hash::{H160, H256};
 

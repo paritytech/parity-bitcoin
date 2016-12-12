@@ -1,5 +1,5 @@
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
-use script::ScriptType as GlobalScriptType;
+use global_script::ScriptType as GlobalScriptType;
 
 #[derive(Debug, PartialEq)]
 pub enum ScriptType {
