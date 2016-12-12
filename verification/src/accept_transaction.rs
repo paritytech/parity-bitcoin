@@ -48,6 +48,20 @@ impl<'a> TransactionAcceptor<'a> {
 		try!(self.eval.check());
 		Ok(())
 	}
+
+	/// backwards test compatibility
+	/// TODO: get rid of this
+	pub fn check_with_eval(&self, eval: bool) -> Result<(), TransactionError> {
+		try!(self.bip30.check());
+		try!(self.missing_inputs.check());
+		// TODO: double spends
+		try!(self.maturity.check());
+		try!(self.overspent.check());
+		if eval {
+			try!(self.eval.check());
+		}
+		Ok(())
+	}
 }
 
 pub struct MemoryPoolTransactionAcceptor<'a> {
@@ -56,6 +70,7 @@ pub struct MemoryPoolTransactionAcceptor<'a> {
 	pub maturity: TransactionMaturity<'a>,
 	pub overspent: TransactionOverspent<'a>,
 	pub sigops: TransactionSigops<'a>,
+	pub eval: TransactionEval<'a>,
 }
 
 impl<'a> MemoryPoolTransactionAcceptor<'a> {
@@ -75,7 +90,8 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, prevout_store),
-			sigops: TransactionSigops::new(transaction, prevout_store, params, MAX_BLOCK_SIGOPS, time),
+			sigops: TransactionSigops::new(transaction, prevout_store, params.clone(), MAX_BLOCK_SIGOPS, time),
+			eval: TransactionEval::new(transaction, prevout_store, params, height, time),
 		}
 	}
 
@@ -86,6 +102,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		try!(self.maturity.check());
 		try!(self.overspent.check());
 		try!(self.sigops.check());
+		try!(self.eval.check());
 		Ok(())
 	}
 }

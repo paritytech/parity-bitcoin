@@ -1,7 +1,7 @@
 use network::{Magic, ConsensusParams};
 use db::PreviousTransactionOutputProvider;
 use sigops::transaction_sigops;
-use utils::block_reward_satoshi;
+use work::block_reward_satoshi;
 use duplex_store::DuplexTransactionOutputProvider;
 use canon::CanonBlock;
 use constants::MAX_BLOCK_SIGOPS;

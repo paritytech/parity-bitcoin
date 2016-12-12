@@ -5,17 +5,10 @@ use primitives::uint::U256;
 use network::Magic;
 use db::{BlockHeaderProvider, BlockRef};
 
-const RETARGETING_FACTOR: u32 = 4;
-const TARGET_SPACING_SECONDS: u32 = 10 * 60;
-const DOUBLE_SPACING_SECONDS: u32 = 2 * TARGET_SPACING_SECONDS;
-const TARGET_TIMESPAN_SECONDS: u32 = 2 * 7 * 24 * 60 * 60;
-
-// The upper and lower bounds for retargeting timespan
-const MIN_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS / RETARGETING_FACTOR;
-const MAX_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS * RETARGETING_FACTOR;
-
-// Target number of blocks, 2 weaks, 2016
-pub const RETARGETING_INTERVAL: u32 = TARGET_TIMESPAN_SECONDS / TARGET_SPACING_SECONDS;
+use constants::{
+	DOUBLE_SPACING_SECONDS,
+	TARGET_TIMESPAN_SECONDS, MIN_TIMESPAN, MAX_TIMESPAN, RETARGETING_INTERVAL
+};
 
 pub fn is_retarget_height(height: u32) -> bool {
 	height % RETARGETING_INTERVAL == 0
@@ -140,10 +133,6 @@ pub fn block_reward_satoshi(block_height: u32) -> u64 {
 	let mut res = 50 * 100 * 1000 * 1000;
 	for _ in 0..block_height / 210000 { res /= 2 }
 	res
-}
-
-pub fn age(protocol_time: u32) -> i64 {
-	::time::get_time().sec - protocol_time as i64
 }
 
 #[cfg(test)]

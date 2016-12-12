@@ -6,7 +6,7 @@ use chain::{Transaction, OutPoint, TransactionOutput};
 use network::Magic;
 use primitives::hash::H256;
 use synchronization_chain::ChainRef;
-use verification::{ChainVerifier, Verify as VerificationVerify, Chain};
+use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify, Chain};
 use db::{SharedStore, IndexedBlock, PreviousTransactionOutputProvider, TransactionOutputObserver};
 use time::get_time;
 

@@ -24,10 +24,23 @@ impl<'a> ChainVerifier<'a> {
 	pub fn check(&self) -> Result<(), Error> {
 		try!(self.block.check());
 		try!(self.header.check());
+		try!(self.check_transactions());
+		Ok(())
+	}
+
+	/// backwards test compatibility
+	/// TODO: get rid of this
+	pub fn check_with_pow(&self, pow: bool) -> Result<(), Error> {
+		try!(self.block.check());
+		try!(self.header.check_with_pow(pow));
+		try!(self.check_transactions());
+		Ok(())
+	}
+
+	fn check_transactions(&self) -> Result<(), Error> {
 		self.transactions.par_iter()
 			.enumerate()
 			.fold(|| Ok(()), |result, (index, tx)| result.and_then(|_| tx.check().map_err(|err| Error::Transaction(index, err))))
-			.reduce(|| Ok(()), |acc, check| acc.and(check))?;
-		Ok(())
+			.reduce(|| Ok(()), |acc, check| acc.and(check))
 	}
 }

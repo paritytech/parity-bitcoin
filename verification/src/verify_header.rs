@@ -1,7 +1,7 @@
 use primitives::compact::Compact;
 use db::IndexedBlockHeader;
 use network::Magic;
-use utils::is_valid_proof_of_work;
+use work::is_valid_proof_of_work;
 use error::Error;
 use constants::BLOCK_MAX_FUTURE;
 
@@ -20,6 +20,17 @@ impl<'a> HeaderVerifier<'a> {
 
 	pub fn check(&self) -> Result<(), Error> {
 		try!(self.proof_of_work.check());
+		try!(self.timestamp.check());
+		Ok(())
+	}
+
+	/// backwards test compatibility
+	/// TODO: get rid of this
+	pub fn check_with_pow(&self, pow: bool) -> Result<(), Error> {
+		if pow {
+			try!(self.proof_of_work.check());
+		}
+		try!(self.timestamp.check());
 		Ok(())
 	}
 }

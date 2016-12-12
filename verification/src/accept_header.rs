@@ -5,7 +5,7 @@ use db::BlockHeaderProvider;
 use canon::{CanonHeader, EXPECT_CANON};
 use constants::MIN_BLOCK_VERSION;
 use error::Error;
-use utils::work_required;
+use work::work_required;
 
 pub struct HeaderAcceptor<'a> {
 	pub version: HeaderVersion<'a>,

@@ -3,10 +3,8 @@ use chain::{OutPoint, TransactionOutput};
 use db::{SharedStore, IndexedTransaction, PreviousTransactionOutputProvider};
 use network::Magic;
 use memory_pool::{MemoryPool, OrderingStrategy, Entry};
-use verification::{
-	work_required, block_reward_satoshi, transaction_sigops,
-	MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS
-};
+use verification::{work_required, block_reward_satoshi, transaction_sigops};
+pub use verification::constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 
 const BLOCK_VERSION: u32 = 0x20000000;
 const BLOCK_HEADER_SIZE: u32 = 4 + 32 + 32 + 4 + 4 + 4;
@@ -162,7 +160,7 @@ impl<'a, T> FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entr
 	}
 }
 
-impl<'a, T> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a, T> {
+impl<'a, T> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a, T> where T: Send + Sync {
 	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
 		self.store.previous_transaction_output(prevout)
 			.or_else(|| {
@@ -174,7 +172,7 @@ impl<'a, T> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a
 	}
 }
 
-impl<'a, T> Iterator for FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entry> {
+impl<'a, T> Iterator for FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entry> + Send + Sync {
 	type Item = &'a Entry;
 
 	fn next(&mut self) -> Option<Self::Item> {
@@ -263,7 +261,7 @@ impl BlockAssembler {
 #[cfg(test)]
 mod tests {
 	use db::IndexedTransaction;
-	use verification::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
+	use verification::constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 	use memory_pool::Entry;
 	use super::{SizePolicy, NextStep, FittingTransactionsIterator};
 

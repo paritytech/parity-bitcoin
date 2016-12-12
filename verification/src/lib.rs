@@ -42,11 +42,9 @@
 //! so instead we might want to call AcceptMemoryPoolTransaction on each tx
 //! that is inserted into assembled block
 
-extern crate parking_lot;
 extern crate time;
 #[macro_use]
 extern crate log;
-extern crate scoped_pool;
 extern crate rayon;
 
 extern crate db;
@@ -61,12 +59,6 @@ extern crate ethcore_devtools as devtools;
 #[cfg(test)]
 extern crate test_data;
 
-mod chain_verifier;
-mod error;
-mod sigops;
-mod task;
-mod utils;
-
 pub mod constants;
 mod duplex_store;
 mod canon;
@@ -79,24 +71,29 @@ mod verify_chain;
 mod verify_header;
 mod verify_transaction;
 
+mod chain_verifier;
+mod error;
+
+mod sigops;
+mod work;
+
 pub use primitives::{uint, hash, compact};
 
 pub use canon::{CanonBlock, CanonHeader, CanonTransaction};
-
 pub use accept_block::BlockAcceptor;
 pub use accept_chain::ChainAcceptor;
 pub use accept_header::HeaderAcceptor;
 pub use accept_transaction::{TransactionAcceptor, MemoryPoolTransactionAcceptor};
 
 pub use verify_block::BlockVerifier;
-pub use verify_chain::ChainVerifier as XXXChainVerifier;
+pub use verify_chain::ChainVerifier as ChainVerifier;
 pub use verify_header::HeaderVerifier;
 pub use verify_transaction::{TransactionVerifier, MemoryPoolTransactionVerifier};
 
-pub use chain_verifier::{Chain, ChainVerifier, VerificationResult};
+pub use chain_verifier::{Chain, BackwardsCompatibleChainVerifier, VerificationResult};
 pub use error::{Error, TransactionError};
-pub use sigops::{transaction_sigops, StoreWithUnretainedOutputs};
-pub use utils::{work_required, is_valid_proof_of_work, is_valid_proof_of_work_hash, block_reward_satoshi};
+pub use sigops::transaction_sigops;
+pub use work::{work_required, is_valid_proof_of_work, is_valid_proof_of_work_hash, block_reward_satoshi};
 
 /// Interface for block verification
 pub trait Verify : Send + Sync {

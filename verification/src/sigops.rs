@@ -1,27 +1,6 @@
-use chain::{Transaction, TransactionOutput, OutPoint};
-use db::{PreviousTransactionOutputProvider};
+use chain::Transaction;
+use db::PreviousTransactionOutputProvider;
 use script::Script;
-
-pub struct StoreWithUnretainedOutputs<'a> {
-	store: &'a PreviousTransactionOutputProvider,
-	outputs: &'a PreviousTransactionOutputProvider,
-}
-
-impl<'a> StoreWithUnretainedOutputs<'a> {
-	pub fn new(store: &'a PreviousTransactionOutputProvider, outputs: &'a PreviousTransactionOutputProvider) -> Self {
-		StoreWithUnretainedOutputs {
-			store: store,
-			outputs: outputs,
-		}
-	}
-}
-
-impl<'a> PreviousTransactionOutputProvider for StoreWithUnretainedOutputs<'a> {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		self.store.previous_transaction_output(prevout)
-			.or_else(|| self.outputs.previous_transaction_output(prevout))
-	}
-}
 
 pub fn transaction_sigops(
 	transaction: &Transaction,
