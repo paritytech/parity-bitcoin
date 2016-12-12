@@ -1,11 +1,10 @@
-use std::cmp;
-use std::collections::BTreeSet;
 use network::Magic;
 use db::BlockHeaderProvider;
-use canon::{CanonHeader, EXPECT_CANON};
+use canon::CanonHeader;
 use constants::MIN_BLOCK_VERSION;
 use error::Error;
 use work::work_required;
+use timestamp::median_timestamp;
 
 pub struct HeaderAcceptor<'a> {
 	pub version: HeaderVersion<'a>,
@@ -19,7 +18,7 @@ impl<'a> HeaderAcceptor<'a> {
 			// TODO: check last 1000 blocks instead of hardcoding the value
 			version: HeaderVersion::new(header, MIN_BLOCK_VERSION),
 			work: HeaderWork::new(header, store, height, network),
-			median_timestamp: HeaderMedianTimestamp::new(header, store, height, network),
+			median_timestamp: HeaderMedianTimestamp::new(header, store, network),
 		}
 	}
 
@@ -93,16 +92,14 @@ impl<'a> HeaderRule for HeaderWork<'a> {
 pub struct HeaderMedianTimestamp<'a> {
 	header: CanonHeader<'a>,
 	store: &'a BlockHeaderProvider,
-	height: u32,
 	network: Magic,
 }
 
 impl<'a> HeaderMedianTimestamp<'a> {
-	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, height: u32, network: Magic) -> Self {
+	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, network: Magic) -> Self {
 		HeaderMedianTimestamp {
 			header: header,
 			store: store,
-			height: height,
 			network: network,
 		}
 	}
@@ -110,24 +107,7 @@ impl<'a> HeaderMedianTimestamp<'a> {
 
 impl<'a> HeaderRule for HeaderMedianTimestamp<'a> {
 	fn check(&self) -> Result<(), Error> {
-		// TODO: timestamp validation on testnet is broken
-		if self.height == 0 || self.network == Magic::Testnet {
-			return Ok(());
-		}
-
-		let ancestors = cmp::min(11, self.height);
-		let mut timestamps = BTreeSet::new();
-		let mut block_ref = self.header.raw.previous_header_hash.clone().into();
-
-		for _ in 0..ancestors {
-			let previous_header = self.store.block_header(block_ref).expect(EXPECT_CANON);
-			timestamps.insert(previous_header.time);
-			block_ref = previous_header.previous_header_hash.into();
-		}
-
-		let timestamps = timestamps.into_iter().collect::<Vec<_>>();
-		let median = timestamps[timestamps.len() / 2];
-
+		let median = median_timestamp(&self.header.raw, self.store, self.network);
 		if self.header.raw.time <= median {
 			Err(Error::Timestamp)
 		} else {

@@ -2,8 +2,6 @@ use std::ops;
 use primitives::hash::H256;
 use db::{IndexedBlock, IndexedTransaction, IndexedBlockHeader};
 
-pub const EXPECT_CANON: &'static str = "Block ancestors expected to be found in canon chain";
-
 /// Blocks whose parents are known to be in the chain
 #[derive(Clone, Copy)]
 pub struct CanonBlock<'a> {

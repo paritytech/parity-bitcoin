@@ -60,22 +60,27 @@ extern crate ethcore_devtools as devtools;
 extern crate test_data;
 
 pub mod constants;
-mod duplex_store;
 mod canon;
-mod accept_block;
-mod accept_chain;
-mod accept_header;
-mod accept_transaction;
+mod duplex_store;
+mod error;
+mod sigops;
+mod timestamp;
+mod work;
+
+// pre-verification
 mod verify_block;
 mod verify_chain;
 mod verify_header;
 mod verify_transaction;
 
-mod chain_verifier;
-mod error;
+// full verification
+mod accept_block;
+mod accept_chain;
+mod accept_header;
+mod accept_transaction;
 
-mod sigops;
-mod work;
+// backwards compatibility
+mod chain_verifier;
 
 pub use primitives::{uint, hash, compact};
 
@@ -93,6 +98,7 @@ pub use verify_transaction::{TransactionVerifier, MemoryPoolTransactionVerifier}
 pub use chain_verifier::{Chain, BackwardsCompatibleChainVerifier, VerificationResult};
 pub use error::{Error, TransactionError};
 pub use sigops::transaction_sigops;
+pub use timestamp::median_timestamp;
 pub use work::{work_required, is_valid_proof_of_work, is_valid_proof_of_work_hash, block_reward_satoshi};
 
 /// Interface for block verification

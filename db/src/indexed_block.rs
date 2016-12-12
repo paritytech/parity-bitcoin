@@ -19,23 +19,29 @@ impl PreviousTransactionOutputProvider for IndexedBlock {
 }
 
 impl TransactionOutputObserver for IndexedBlock {
-	fn is_spent(&self, prevout: &OutPoint) -> Option<bool> {
+	fn is_spent(&self, _prevout: &OutPoint) -> Option<bool> {
+		// the code below is valid, but commented out due it's poor performance
+		// we could optimize it by indexing all outputs once
+		// let tx: IndexedTransaction = { .. }
+		// let indexed_outputs: IndexedOutputs = tx.indexed_outputs();
+		// indexed_outputs.is_spent()
+		None
+
 		// if previous transaction output appears more than once than we can safely
 		// tell that it's spent (double spent)
-		// TODO: optimize it
-		let spends = self.transactions.iter()
-			.flat_map(|tx| &tx.raw.inputs)
-			.filter(|input| &input.previous_output == prevout)
-			.take(2)
-			.count();
 
-		match spends {
-			0 => None,
-			1 => Some(false),
-			2 => Some(true),
-			_ => unreachable!("spends <= 2; self.take(2); qed"),
-		}
-		//self.previous_transaction_output(prevout).map(|_output| false)
+		//let spends = self.transactions.iter()
+			//.flat_map(|tx| &tx.raw.inputs)
+			//.filter(|input| &input.previous_output == prevout)
+			//.take(2)
+			//.count();
+
+		//match spends {
+			//0 => None,
+			//1 => Some(false),
+			//2 => Some(true),
+			//_ => unreachable!("spends <= 2; self.take(2); qed"),
+		//}
 	}
 }
 
