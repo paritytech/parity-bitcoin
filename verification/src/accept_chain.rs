@@ -22,7 +22,16 @@ impl<'a> ChainAcceptor<'a> {
 			header: HeaderAcceptor::new(store.as_block_header_provider(), network, block.header(), height),
 			transactions: block.transactions()
 				.into_iter()
-				.map(|tx| TransactionAcceptor::new(store.as_transaction_meta_provider(), prevouts, network, tx, block.hash(), height, block.header.raw.time))
+				.map(|tx| TransactionAcceptor::new(
+						store.as_transaction_meta_provider(),
+						prevouts,
+						block.raw(),
+						network,
+						tx,
+						block.hash(),
+						height,
+						block.header.raw.time
+				))
 				.collect(),
 		}
 	}

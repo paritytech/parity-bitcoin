@@ -2,7 +2,7 @@ use primitives::hash::H256;
 use chain::OutPoint;
 use transaction_meta::TransactionMeta;
 
-pub trait TransactionOutputObserver {
+pub trait TransactionOutputObserver: Send + Sync {
 	fn is_spent(&self, prevout: &OutPoint) -> Option<bool>;
 }
 

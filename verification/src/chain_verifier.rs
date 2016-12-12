@@ -6,7 +6,7 @@ use network::Magic;
 use error::{Error, TransactionError};
 use {Verify, chain};
 use canon::{CanonBlock, CanonTransaction};
-use duplex_store::DuplexTransactionOutputProvider;
+use duplex_store::{DuplexTransactionOutputProvider, NoopStore};
 use verify_chain::ChainVerifier;
 use verify_header::HeaderVerifier;
 use verify_transaction::MemoryPoolTransactionVerifier;
@@ -95,13 +95,12 @@ impl BackwardsCompatibleChainVerifier {
 		header_verifier.check_with_pow(!self.skip_pow)
 	}
 
-	pub fn verify_transaction<T>(
+	pub fn verify_mempool_transaction<T>(
 		&self,
 		prevout_provider: &T,
 		height: u32,
 		time: u32,
 		transaction: &chain::Transaction,
-		_sequence: usize
 	) -> Result<(), TransactionError> where T: PreviousTransactionOutputProvider + TransactionOutputObserver {
 		let indexed_tx = transaction.clone().into();
 		// let's do preverification first
@@ -110,10 +109,12 @@ impl BackwardsCompatibleChainVerifier {
 
 		let canon_tx = CanonTransaction::new(&indexed_tx);
 		// now let's do full verification
-		let prevouts = DuplexTransactionOutputProvider::new(self.store.as_previous_transaction_output_provider(), prevout_provider);
+		let noop = NoopStore;
+		let prevouts = DuplexTransactionOutputProvider::new(prevout_provider, &noop);
 		let tx_acceptor = MemoryPoolTransactionAcceptor::new(
 			self.store.as_transaction_meta_provider(),
 			prevouts,
+			prevout_provider,
 			self.network,
 			canon_tx,
 			height,

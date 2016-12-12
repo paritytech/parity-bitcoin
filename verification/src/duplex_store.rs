@@ -25,3 +25,11 @@ impl<'a> PreviousTransactionOutputProvider for DuplexTransactionOutputProvider<'
 			.or_else(|| self.second.previous_transaction_output(prevout))
 	}
 }
+
+pub struct NoopStore;
+
+impl PreviousTransactionOutputProvider for NoopStore {
+	fn previous_transaction_output(&self, _prevout: &OutPoint) -> Option<TransactionOutput> {
+		None
+	}
+}

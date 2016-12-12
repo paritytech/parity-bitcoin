@@ -1,5 +1,5 @@
 use primitives::hash::H256;
-use db::{TransactionMetaProvider, PreviousTransactionOutputProvider};
+use db::{TransactionMetaProvider, PreviousTransactionOutputProvider, TransactionOutputObserver};
 use network::{Magic, ConsensusParams};
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner};
 use duplex_store::{DuplexTransactionOutputProvider};
@@ -13,6 +13,7 @@ pub struct TransactionAcceptor<'a> {
 	pub missing_inputs: TransactionMissingInputs<'a>,
 	pub maturity: TransactionMaturity<'a>,
 	pub overspent: TransactionOverspent<'a>,
+	pub double_spent: TransactionDoubleSpend<'a>,
 	pub eval: TransactionEval<'a>,
 }
 
@@ -23,6 +24,8 @@ impl<'a> TransactionAcceptor<'a> {
 		// previous transaction outputs
 		// in case of block validation, that's database and currently processed block
 		prevout_store: DuplexTransactionOutputProvider<'a>,
+		// in case of block validation, that's database and currently processed block
+		spent_store: &'a TransactionOutputObserver,
 		network: Magic,
 		transaction: CanonTransaction<'a>,
 		block_hash: &'a H256,
@@ -35,6 +38,7 @@ impl<'a> TransactionAcceptor<'a> {
 			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, prevout_store),
+			double_spent: TransactionDoubleSpend::new(transaction, spent_store),
 			eval: TransactionEval::new(transaction, prevout_store, params, height, time),
 		}
 	}
@@ -42,9 +46,9 @@ impl<'a> TransactionAcceptor<'a> {
 	pub fn check(&self) -> Result<(), TransactionError> {
 		try!(self.bip30.check());
 		try!(self.missing_inputs.check());
-		// TODO: double spends
 		try!(self.maturity.check());
 		try!(self.overspent.check());
+		try!(self.double_spent.check());
 		try!(self.eval.check());
 		Ok(())
 	}
@@ -54,9 +58,9 @@ impl<'a> TransactionAcceptor<'a> {
 	pub fn check_with_eval(&self, eval: bool) -> Result<(), TransactionError> {
 		try!(self.bip30.check());
 		try!(self.missing_inputs.check());
-		// TODO: double spends
 		try!(self.maturity.check());
 		try!(self.overspent.check());
+		try!(self.double_spent.check());
 		if eval {
 			try!(self.eval.check());
 		}
@@ -70,6 +74,7 @@ pub struct MemoryPoolTransactionAcceptor<'a> {
 	pub maturity: TransactionMaturity<'a>,
 	pub overspent: TransactionOverspent<'a>,
 	pub sigops: TransactionSigops<'a>,
+	pub double_spent: TransactionDoubleSpend<'a>,
 	pub eval: TransactionEval<'a>,
 }
 
@@ -79,6 +84,8 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		meta_store: &'a TransactionMetaProvider,
 		// in case of memory pool it should be db and memory pool
 		prevout_store: DuplexTransactionOutputProvider<'a>,
+		// in case of memory pool it should be db and memory pool
+		spent_store: &'a TransactionOutputObserver,
 		network: Magic,
 		transaction: CanonTransaction<'a>,
 		height: u32,
@@ -91,6 +98,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, prevout_store),
 			sigops: TransactionSigops::new(transaction, prevout_store, params.clone(), MAX_BLOCK_SIGOPS, time),
+			double_spent: TransactionDoubleSpend::new(transaction, spent_store),
 			eval: TransactionEval::new(transaction, prevout_store, params, height, time),
 		}
 	}
@@ -98,10 +106,10 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 	pub fn check(&self) -> Result<(), TransactionError> {
 		try!(self.bip30.check());
 		try!(self.missing_inputs.check());
-		// TODO: double spends
 		try!(self.maturity.check());
 		try!(self.overspent.check());
 		try!(self.sigops.check());
+		try!(self.double_spent.check());
 		try!(self.eval.check());
 		Ok(())
 	}
@@ -351,5 +359,36 @@ impl<'a> TransactionRule for TransactionEval<'a> {
 		}
 
 		Ok(())
+	}
+}
+
+pub struct TransactionDoubleSpend<'a> {
+	transaction: CanonTransaction<'a>,
+	store: &'a TransactionOutputObserver,
+}
+
+impl<'a> TransactionDoubleSpend<'a> {
+	fn new(transaction: CanonTransaction<'a>, store: &'a TransactionOutputObserver) -> Self {
+		TransactionDoubleSpend {
+			transaction: transaction,
+			store: store,
+		}
+	}
+}
+
+impl<'a> TransactionRule for TransactionDoubleSpend<'a> {
+	fn check(&self) -> Result<(), TransactionError> {
+		let double_spent_input = self.transaction.raw.inputs.iter()
+			.find(|input| self.store.is_spent(&input.previous_output).unwrap_or(false));
+
+		match double_spent_input {
+			Some(input) => {
+				Err(TransactionError::UsingSpentOutput(
+					input.previous_output.hash.clone(),
+					input.previous_output.index
+				))
+			},
+			None => Ok(())
+		}
 	}
 }
