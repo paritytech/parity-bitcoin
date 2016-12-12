@@ -35,7 +35,6 @@ panic = 'abort'
 
 [profile.test]
 debug = true
-panic = 'abort'
 
 [profile.doc]
 debug = true
