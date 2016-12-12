@@ -6,7 +6,7 @@ use network::Magic;
 pub fn median_timestamp(header: &BlockHeader, store: &BlockHeaderProvider, network: Magic) -> u32 {
 	// TODO: timestamp validation on testnet is broken
 	if network == Magic::Testnet {
-		return header.time;
+		return 0;
 	}
 
 	let ancestors = 11;
@@ -23,7 +23,7 @@ pub fn median_timestamp(header: &BlockHeader, store: &BlockHeaderProvider, netwo
 	}
 
 	if timestamps.is_empty() {
-		return header.time;
+		return 0;
 	}
 
 	let timestamps = timestamps.into_iter().collect::<Vec<_>>();
