@@ -37,12 +37,8 @@ panic = 'abort'
 debug = true
 panic = 'abort'
 
-[profile.bench]
-panic = 'abort'
-
 [profile.doc]
 debug = true
-panic = 'abort'
 
 [[bin]]
 path = "pbtc/main.rs"
