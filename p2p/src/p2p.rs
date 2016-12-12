@@ -472,10 +472,13 @@ impl P2P {
 		self.event_loop_handle.spawn(pool_work);
 	}
 
-
 	fn listen(&self) -> Result<(), Box<error::Error>> {
 		let server = try!(Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone()));
 		self.event_loop_handle.spawn(server);
 		Ok(())
+	}
+
+	pub fn context(&self) -> &Arc<Context> {
+		&self.context
 	}
 }

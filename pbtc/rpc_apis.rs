@@ -9,6 +9,8 @@ pub enum Api {
 	Raw,
 	/// Miner
 	Miner,
+	/// Network
+	Network,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -29,6 +31,7 @@ impl FromStr for Api {
 		match s {
 			"raw" => Ok(Api::Raw),
 			"miner" => Ok(Api::Miner),
+			"network" => Ok(Api::Network),
 			api => Err(format!("Unknown api: {}", api)),
 		}
 	}
@@ -49,6 +52,7 @@ pub fn setup_rpc<T: Extendable>(server: T, apis: ApiSet, deps: Dependencies) -> 
 		match api {
 			Api::Raw => server.add_delegate(RawClient::new(RawClientCore::new(deps.local_sync_node.clone())).to_delegate()),
 			Api::Miner => server.add_delegate(MinerClient::new(MinerClientCore::new(deps.local_sync_node.clone())).to_delegate()),
+			Api::Network => server.add_delegate(NetworkClient::new(NetworkClientCore::new(deps.p2p_context.clone())).to_delegate()),
 		}
 	}
 	server

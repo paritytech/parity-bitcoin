@@ -1,11 +1,14 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 use rpc_apis::{self, ApiSet};
 use ethcore_rpc::{Server, RpcServer, RpcServerError};
 use std::io;
 use sync;
+use p2p;
 
 pub struct Dependencies {
 	pub local_sync_node: sync::LocalNodeRef,
+	pub p2p_context: Arc<p2p::Context>,
 }
 
 #[derive(Debug, PartialEq)]
