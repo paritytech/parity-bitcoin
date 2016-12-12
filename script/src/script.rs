@@ -340,6 +340,16 @@ impl Script {
 		total
 	}
 
+	pub fn num_signatures_required(&self) -> u8 {
+		if self.is_multisig_script() {
+			return match self.data[0] {
+				x if x == Opcode::OP_0 as u8 => 0,
+				x => x - (Opcode::OP_1 as u8) + 1,
+			};
+		}
+		return 1;
+	}
+
 	pub fn extract_destinations(&self) -> Result<Vec<AddressHash>, keys::Error> {
 		match self.script_type() {
 			ScriptType::NonStandard => {
@@ -696,5 +706,29 @@ OP_ADD
 			.into_script();
 		assert_eq!(script.script_type(), ScriptType::Multisig);
 		assert_eq!(script.extract_destinations(), Ok(vec![address1, address2]));
+	}
+
+	#[test]
+	fn test_num_signatures_required() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_3)
+			.push_bytes(&[0; 33])
+			.push_bytes(&[0; 65])
+			.push_bytes(&[0; 65])
+			.push_bytes(&[0; 65])
+			.push_opcode(Opcode::OP_4)
+			.push_opcode(Opcode::OP_CHECKMULTISIG)
+			.into_script();
+		assert_eq!(script.script_type(), ScriptType::Multisig);
+		assert_eq!(script.num_signatures_required(), 3);
+
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_HASH160)
+			.push_bytes(&[0; 20])
+			.push_opcode(Opcode::OP_EQUAL)
+			.into_script();
+		assert_eq!(script.script_type(), ScriptType::ScriptHash);
+		assert_eq!(script.num_signatures_required(), 1);
+
 	}
 }
