@@ -25,6 +25,25 @@ bencher = { path = "bencher" }
 logs = { path = "logs" }
 rpc = { path = "rpc" }
 
+[profile.dev]
+debug = true
+panic = 'abort'
+
+[profile.release]
+debug = true
+panic = 'abort'
+
+[profile.test]
+debug = true
+panic = 'abort'
+
+[profile.bench]
+panic = 'abort'
+
+[profile.doc]
+debug = true
+panic = 'abort'
+
 [[bin]]
 path = "pbtc/main.rs"
 name = "pbtc"
