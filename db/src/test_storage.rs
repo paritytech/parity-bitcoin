@@ -2,8 +2,8 @@
 
 use super::{
 	BlockRef, Store, Error, BestBlock, BlockLocation, BlockInsertedChain, BlockProvider,
-	BlockStapler, TransactionMetaProvider, TransactionProvider, AsTransactionProvider,
-	IndexedBlock, BlockHeaderProvider, AsBlockHeaderProvider,
+	BlockStapler, TransactionMetaProvider, TransactionProvider, PreviousTransactionOutputProvider,
+	IndexedBlock, BlockHeaderProvider,
 };
 use chain::{self, Block};
 use primitives::hash::H256;
@@ -81,12 +81,6 @@ impl BlockHeaderProvider for TestStorage {
 		self.resolve_hash(block_ref)
 			.and_then(|ref h| data.blocks.get(h))
 			.map(|ref block| block.header().clone())
-	}
-}
-
-impl AsBlockHeaderProvider for TestStorage {
-	fn as_block_header_provider(&self) -> &BlockHeaderProvider {
-		&*self
 	}
 }
 
@@ -176,10 +170,12 @@ impl BlockStapler for TestStorage {
 			_ => None
 		}
 	}
+
+	fn flush(&self) {
+	}
 }
 
 impl TransactionProvider for TestStorage {
-
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
 		self.transaction(hash).map(|tx| serialization::serialize(&tx))
 	}
@@ -192,9 +188,10 @@ impl TransactionProvider for TestStorage {
 	}
 }
 
-impl AsTransactionProvider for TestStorage {
-	fn as_transaction_provider(&self) -> &TransactionProvider {
-		&*self
+impl PreviousTransactionOutputProvider for TestStorage {
+	fn previous_transaction_output(&self, prevout: &chain::OutPoint) -> Option<chain::TransactionOutput> {
+		self.transaction(&prevout.hash)
+			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
 	}
 }
 

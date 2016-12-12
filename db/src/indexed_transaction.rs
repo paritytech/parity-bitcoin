@@ -40,8 +40,4 @@ impl<'a> PreviousTransactionOutputProvider for &'a [IndexedTransaction] {
 			.and_then(|tx| tx.raw.outputs.get(prevout.index as usize))
 			.cloned()
 	}
-
-	fn is_spent(&self, _prevout: &OutPoint) -> bool {
-		unimplemented!();
-	}
 }

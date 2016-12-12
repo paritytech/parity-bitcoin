@@ -195,6 +195,12 @@ impl Chain {
 		&self.memory_pool
 	}
 
+	/// Get mutable memory pool
+	#[cfg(test)]
+	pub fn memory_pool_mut(&mut self) -> &mut MemoryPool {
+		&mut self.memory_pool
+	}
+
 	/// Get number of blocks in given state
 	pub fn length_of_blocks_state(&self, state: BlockState) -> u32 {
 		match state {

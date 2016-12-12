@@ -3,7 +3,7 @@ use chain::{Block, OutPoint, TransactionOutput, merkle_root};
 use serialization::{Serializable, CompactInteger};
 use indexed_header::IndexedBlockHeader;
 use indexed_transaction::IndexedTransaction;
-use PreviousTransactionOutputProvider;
+use {TransactionOutputObserver, PreviousTransactionOutputProvider};
 
 #[derive(Debug, Clone)]
 pub struct IndexedBlock {
@@ -16,9 +16,11 @@ impl PreviousTransactionOutputProvider for IndexedBlock {
 		let txs: &[_] = &self.transactions;
 		txs.previous_transaction_output(prevout)
 	}
+}
 
-	fn is_spent(&self, _prevout: &OutPoint) -> bool {
-		false
+impl TransactionOutputObserver for IndexedBlock {
+	fn is_spent(&self, prevout: &OutPoint) -> Option<bool> {
+		self.previous_transaction_output(prevout).map(|_output| false)
 	}
 }
 

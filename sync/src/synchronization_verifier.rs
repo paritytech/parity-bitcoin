@@ -7,7 +7,7 @@ use network::Magic;
 use primitives::hash::H256;
 use synchronization_chain::ChainRef;
 use verification::{ChainVerifier, Verify as VerificationVerify, Chain};
-use db::{SharedStore, IndexedBlock, PreviousTransactionOutputProvider};
+use db::{SharedStore, IndexedBlock, PreviousTransactionOutputProvider, TransactionOutputObserver};
 use time::get_time;
 
 /// Block verification events sink
@@ -153,7 +153,7 @@ impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
 }
 
 /// Execute single verification task
-fn execute_verification_task<T: VerificationSink, U: PreviousTransactionOutputProvider>(sink: &Arc<T>, tx_output_provider: &U, verifier: &ChainVerifier, task: VerificationTask) {
+fn execute_verification_task<T: VerificationSink, U: PreviousTransactionOutputProvider + TransactionOutputObserver>(sink: &Arc<T>, tx_output_provider: &U, verifier: &ChainVerifier, task: VerificationTask) {
 	let mut tasks_queue: VecDeque<VerificationTask> = VecDeque::new();
 	tasks_queue.push_back(task);
 
@@ -198,11 +198,19 @@ impl ChainMemoryPoolTransactionOutputProvider {
 
 impl PreviousTransactionOutputProvider for ChainMemoryPoolTransactionOutputProvider {
 	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		self.chain.read().memory_pool().previous_transaction_output(prevout)
+		let chain = self.chain.read();
+		chain.memory_pool().previous_transaction_output(prevout)
+			.or_else(|| chain.storage().as_previous_transaction_output_provider().previous_transaction_output(prevout))
 	}
+}
 
-	fn is_spent(&self, prevout: &OutPoint) -> bool {
-		self.chain.read().storage().transaction_meta(&prevout.hash).and_then(|tm| Some(tm.is_spent(prevout.index as usize))).unwrap_or(false)
+impl TransactionOutputObserver for ChainMemoryPoolTransactionOutputProvider {
+	fn is_spent(&self, prevout: &OutPoint) -> Option<bool> {
+		let chain = self.chain.read();
+		if chain.memory_pool().is_spent(prevout) {
+			return Some(true);
+		}
+		chain.storage().transaction_meta(&prevout.hash).and_then(|tm| tm.is_spent(prevout.index as usize))
 	}
 }
 
@@ -210,9 +218,11 @@ impl PreviousTransactionOutputProvider for EmptyTransactionOutputProvider {
 	fn previous_transaction_output(&self, _prevout: &OutPoint) -> Option<TransactionOutput> {
 		None
 	}
+}
 
-	fn is_spent(&self, _prevout: &OutPoint) -> bool {
-		false
+impl TransactionOutputObserver for EmptyTransactionOutputProvider {
+	fn is_spent(&self, _prevout: &OutPoint) -> Option<bool> {
+		None
 	}
 }
 
@@ -220,12 +230,15 @@ impl PreviousTransactionOutputProvider for EmptyTransactionOutputProvider {
 pub mod tests {
 	use std::sync::Arc;
 	use std::collections::HashMap;
+	use parking_lot::RwLock;
 	use chain::Transaction;
+	use synchronization_chain::{Chain, ChainRef};
 	use synchronization_client::CoreVerificationSink;
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use primitives::hash::H256;
-	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink};
-	use db::IndexedBlock;
+	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink, ChainMemoryPoolTransactionOutputProvider};
+	use db::{self, IndexedBlock};
+	use test_data;
 
 	#[derive(Default)]
 	pub struct DummyVerifier {
@@ -266,5 +279,20 @@ pub mod tests {
 				None => panic!("call set_sink"),
 			}
 		}
+	}
+
+	#[test]
+	fn when_transaction_spends_output_twice() {
+		use db::TransactionOutputObserver;
+		let tx1: Transaction = test_data::TransactionBuilder::with_default_input(0).into();
+		let tx2: Transaction = test_data::TransactionBuilder::with_default_input(1).into();
+		let out1 = tx1.inputs[0].previous_output.clone();
+		let out2 = tx2.inputs[0].previous_output.clone();
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
+		chain.memory_pool_mut().insert_verified(tx1);
+		let chain = ChainRef::new(RwLock::new(chain));
+		let provider = ChainMemoryPoolTransactionOutputProvider::with_chain(chain);
+		assert!(provider.is_spent(&out1).unwrap_or_default());
+		assert!(!provider.is_spent(&out2).unwrap_or_default());
 	}
 }

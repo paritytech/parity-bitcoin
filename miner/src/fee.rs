@@ -19,7 +19,7 @@ pub fn transaction_fee_rate(store: &TransactionProvider, transaction: &Transacti
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
-	use db::{TestStorage, AsTransactionProvider};
+	use db::{TestStorage, AsSubstore};
 	use test_data;
 	use super::*;
 

@@ -67,13 +67,13 @@ impl BlockLocation {
 pub type SharedStore = std::sync::Arc<Store + Send + Sync>;
 
 pub use best_block::BestBlock;
-pub use storage::{Storage, Store};
+pub use storage::{Storage, Store, AsSubstore};
 pub use error::{Error, ConsistencyError};
 pub use kvdb::Database;
-pub use transaction_provider::{TransactionProvider, AsTransactionProvider, PreviousTransactionOutputProvider};
-pub use transaction_meta_provider::TransactionMetaProvider;
+pub use transaction_provider::{TransactionProvider, PreviousTransactionOutputProvider};
+pub use transaction_meta_provider::{TransactionMetaProvider, TransactionOutputObserver};
 pub use block_stapler::{BlockStapler, BlockInsertedChain};
-pub use block_provider::{BlockProvider, BlockHeaderProvider, AsBlockHeaderProvider};
+pub use block_provider::{BlockProvider, BlockHeaderProvider};
 pub use indexed_block::IndexedBlock;
 pub use indexed_header::IndexedBlockHeader;
 pub use indexed_transaction::IndexedTransaction;
