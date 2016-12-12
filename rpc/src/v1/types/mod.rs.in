@@ -9,6 +9,7 @@ mod raw_block;
 mod raw_transaction;
 mod script;
 mod uint;
+mod nodes;
 
 pub use self::block_template::{BlockTemplate, BlockTemplateTransaction};
 pub use self::block_template_request::{BlockTemplateRequest, BlockTemplateRequestMode};
@@ -21,3 +22,4 @@ pub use self::raw_block::RawBlock;
 pub use self::raw_transaction::RawTransaction;
 pub use self::script::ScriptType;
 pub use self::uint::U256;
+pub use self::nodes::AddNodeOperation;
