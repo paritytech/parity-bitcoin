@@ -317,6 +317,7 @@ impl ChainVerifier {
 				for task in transaction_tasks.iter_mut() {
 					scope.execute(move || task.progress(self))
 				}
+				self.store.flush();
 			});
 
 

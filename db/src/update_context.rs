@@ -28,7 +28,7 @@ impl UpdateContext {
 			self.db_transaction.put(Some(COL_TRANSACTIONS_META), &*hash, &meta.into_bytes());
 		}
 
-		try!(db.write(self.db_transaction));
+		db.write_buffered(self.db_transaction);
 
 		trace!("Applied transaction for block {:?}", &self.target.to_reversed_str());
 		Ok(())
