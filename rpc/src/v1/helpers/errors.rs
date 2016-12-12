@@ -7,8 +7,8 @@ mod codes {
 	pub const TRANSACTION_OUTPUT_NOT_FOUND: i64 = -32097;
 	pub const TRANSACTION_OF_SIDE_BRANCH: i64 = -32098;
 	pub const BLOCK_NOT_FOUND: i64 = -32099;
-	pub const NODE_ALREADY_ADDED: i64 = -23;
-	pub const NODE_NOT_ADDED: i64 = -24;
+	pub const NODE_ALREADY_ADDED: i64 = -32150;
+	pub const NODE_NOT_ADDED: i64 = -32151;
 }
 
 use std::fmt;
