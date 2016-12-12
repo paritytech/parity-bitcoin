@@ -1,8 +1,9 @@
+use std::sync::Arc;
+use std::net::SocketAddr;
 use v1::traits::Network as NetworkRpc;
 use v1::types::AddNodeOperation;
 use jsonrpc_core::Error;
 use v1::helpers::errors;
-use std::net::SocketAddr;
 use p2p;
 
 pub trait NetworkApi : Send + Sync + 'static {
@@ -42,4 +43,26 @@ impl<T> NetworkClient<T> where T: NetworkApi {
 	}
 }
 
+pub struct NetworkClientCore {
+	p2p: Arc<p2p::Context>,
+}
 
+impl NetworkClientCore {
+	pub fn new(p2p: Arc<p2p::Context>) -> Self {
+		NetworkClientCore { p2p: p2p }
+	}
+}
+
+impl NetworkApi for NetworkClientCore {
+	fn add_node(&self, socket_addr: SocketAddr) -> Result<(), p2p::NodeTableError> {
+		self.p2p.add_node(socket_addr)
+	}
+
+	fn remove_node(&self, socket_addr: SocketAddr) -> Result<(), p2p::NodeTableError> {
+		self.p2p.remove_node(socket_addr)
+	}
+
+	fn connect(&self, socket_addr: SocketAddr) {
+		p2p::Context::connect_normal(self.p2p.clone(), socket_addr);
+	}
+}
