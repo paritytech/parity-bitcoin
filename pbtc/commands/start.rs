@@ -37,12 +37,13 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 	let local_sync_node = create_local_sync_node(&sync_handle, cfg.magic, db);
 	let sync_connection_factory = create_sync_connection_factory(local_sync_node.clone());
 
+	let p2p = try!(p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle()).map_err(|x| x.to_string()));
 	let rpc_deps = rpc::Dependencies {
 		local_sync_node: local_sync_node,
+		p2p_context: p2p.context().clone(),
 	};
 	let _rpc_server = try!(rpc::new_http(cfg.rpc_config, rpc_deps));
 
-	let p2p = try!(p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle()).map_err(|x| x.to_string()));
 	try!(p2p.run().map_err(|_| "Failed to start p2p module"));
 	el.run(p2p::forever()).unwrap();
 	Ok(())
