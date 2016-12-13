@@ -2,26 +2,22 @@ use chain::Transaction;
 use db::PreviousTransactionOutputProvider;
 use script::Script;
 
+/// Counts signature operations in given transaction
+/// bip16_active flag indicates if we should also count signature operations
+/// in previous transactions. If one of the previous transaction outputs is
+/// missing, we simply ignore that fact and just carry on counting
 pub fn transaction_sigops(
 	transaction: &Transaction,
 	store: &PreviousTransactionOutputProvider,
 	bip16_active: bool
-) -> Option<usize> {
-	if bip16_active {
-		transaction_sigops_raw(transaction, Some(store))
-	} else {
-		transaction_sigops_raw(transaction, None)
-	}
-}
-
-pub fn transaction_sigops_raw(transaction: &Transaction, store: Option<&PreviousTransactionOutputProvider>) -> Option<usize> {
+) -> usize {
 	let output_sigops: usize = transaction.outputs.iter().map(|output| {
 		let output_script: Script = output.script_pubkey.clone().into();
 		output_script.sigops_count(false)
 	}).sum();
 
 	if transaction.is_coinbase() {
-		return Some(output_sigops);
+		return output_sigops;
 	}
 
 	let mut input_sigops = 0usize;
@@ -30,15 +26,15 @@ pub fn transaction_sigops_raw(transaction: &Transaction, store: Option<&Previous
 	for input in &transaction.inputs {
 		let input_script: Script = input.script_sig.clone().into();
 		input_sigops += input_script.sigops_count(false);
-		if let Some(store) = store {
+		if bip16_active {
 			let previous_output = match store.previous_transaction_output(&input.previous_output) {
 				Some(output) => output,
-				None => return None,
+				None => continue,
 			};
 			let prevout_script: Script = previous_output.script_pubkey.into();
 			bip16_sigops += input_script.pay_to_script_hash_sigops(&prevout_script);
 		}
 	}
 
-	Some(input_sigops + output_sigops + bip16_sigops)
+	input_sigops + output_sigops + bip16_sigops
 }

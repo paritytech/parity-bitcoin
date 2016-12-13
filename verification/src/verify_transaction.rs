@@ -1,7 +1,8 @@
 use std::ops;
 use serialization::Serializable;
 use db::IndexedTransaction;
-use sigops::transaction_sigops_raw;
+use duplex_store::NoopStore;
+use sigops::transaction_sigops;
 use error::TransactionError;
 use constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS, MIN_COINBASE_SIZE, MAX_COINBASE_SIZE};
 
@@ -195,7 +196,7 @@ impl<'a> TransactionSigops<'a> {
 
 impl<'a> TransactionRule for TransactionSigops<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
-		let sigops = transaction_sigops_raw(&self.transaction.raw, None).expect("bip16 is disabled");
+		let sigops = transaction_sigops(&self.transaction.raw, &NoopStore, false);
 		if sigops > self.max_sigops {
 			Err(TransactionError::MaxSigops)
 		} else {

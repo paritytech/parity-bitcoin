@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use db::IndexedBlock;
-use sigops::transaction_sigops_raw;
+use sigops::transaction_sigops;
+use duplex_store::NoopStore;
 use error::{Error, TransactionError};
 use constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 
@@ -178,7 +179,7 @@ impl<'a> BlockRule for BlockSigops<'a> {
 	fn check(&self) -> Result<(), Error> {
 		// We cannot know if bip16 is enabled at this point so we disable it.
 		let sigops = self.block.transactions.iter()
-			.map(|tx| transaction_sigops_raw(&tx.raw, None).expect("bip16 is disabled"))
+			.map(|tx| transaction_sigops(&tx.raw, &NoopStore, false))
 			.sum::<usize>();
 
 		if sigops > self.max_sigops {

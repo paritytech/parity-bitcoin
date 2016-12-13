@@ -1,5 +1,14 @@
 //! Bitcoin consensus verification
 //!
+//!	Full block verification consists of two phases:
+//!	- pre-verification
+//! - full-verification
+//!
+//! In this library, pre-verification is done by `VerifyXXX` structures
+//! Full-verification is done by `AcceptXXX` structures
+//!
+//! Use cases:
+//!
 //! --> A. on_new_block:
 //!
 //! A.1 VerifyHeader

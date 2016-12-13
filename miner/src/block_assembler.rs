@@ -185,17 +185,9 @@ impl<'a, T> Iterator for FittingTransactionsIterator<'a, T> where T: Iterator<It
 				}
 			};
 
-			let bip16_active = true;
 			let transaction_size = entry.size as u32;
-			// we may have ignored previous transaction, cause it wasn't fitting the block
-			// if we did that, than transaction_sigops returns None, and we also need
-			// to ommit current transaction
-			let sigops_count = match transaction_sigops(&entry.transaction, self, bip16_active) {
-				Some(count) => count as u32,
-				None => {
-					continue;
-				},
-			};
+			let bip16_active = true;
+			let sigops_count = transaction_sigops(&entry.transaction, self, bip16_active) as u32;
 
 			let size_step = self.block_size.decide(transaction_size);
 			let sigops_step = self.sigops.decide(sigops_count);

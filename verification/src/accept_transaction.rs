@@ -294,10 +294,8 @@ impl<'a> TransactionSigops<'a> {
 impl<'a> TransactionRule for TransactionSigops<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		let bip16_active = self.time >= self.consensus_params.bip16_time;
-		let error = transaction_sigops(&self.transaction.raw, &self.store, bip16_active)
-			.map(|sigops| sigops > self.max_sigops)
-			.unwrap_or(true);
-		if error {
+		let sigops = transaction_sigops(&self.transaction.raw, &self.store, bip16_active);
+		if sigops > self.max_sigops {
 			Err(TransactionError::MaxSigops)
 		} else {
 			Ok(())

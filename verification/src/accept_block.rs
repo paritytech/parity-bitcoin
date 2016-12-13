@@ -85,9 +85,6 @@ impl<'a> BlockRule for BlockSigops<'a> {
 		let bip16_active = self.block.header.raw.time >= self.consensus_params.bip16_time;
 		let sigops = self.block.transactions.iter()
 			.map(|tx| transaction_sigops(&tx.raw, &store, bip16_active))
-			.collect::<Option<Vec<usize>>>()
-			.ok_or_else(|| Error::MaximumSigops)?
-			.into_iter()
 			.sum::<usize>();
 
 		if sigops > self.max_sigops {
