@@ -1,5 +1,6 @@
 //! Bitcoin database
 
+extern crate bitcrypto as crypto;
 extern crate elastic_array;
 extern crate rocksdb;
 extern crate parking_lot;
@@ -31,6 +32,7 @@ mod update_context;
 mod indexed_block;
 mod indexed_header;
 mod indexed_transaction;
+mod read_and_hash;
 
 #[derive(Debug, Clone)]
 pub enum BlockRef {
