@@ -36,7 +36,7 @@ impl Connections {
 	}
 
 	/// Returns info on every peer
-	pub fn peers(&self) -> Vec<PeerInfo> {
+	pub fn info(&self) -> Vec<PeerInfo> {
 		self.channels().values().map(|channel| channel.peer_info()).collect()
 	}
 

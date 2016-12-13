@@ -87,9 +87,37 @@ impl NetworkApi for NetworkClientCore {
 	}
 
 	fn node_info(&self, node_addr: IpAddr) -> Result<NodeInfo, p2p::NodeTableError> {
+		let exact_node = try!(
+			self.p2p.nodes()
+				.iter()
+				.find(|n| n.address().ip() == node_addr)
+				.cloned()
+				.ok_or(p2p::NodeTableError::NoAddressInTable)
+		);
+
+		let peers: Vec<p2p::PeerInfo> = self.p2p.connections().info()
+			.into_iter()
+			.filter(|p| p.address == exact_node.address()).collect();
+
+		Ok(
+			NodeInfo {
+				addednode: format!("{}", exact_node.address()),
+				connected: !peers.is_empty(),
+				addresses: peers.into_iter().map(|p| p.into()).collect(),
+			}
+		)
 	}
 
 	fn nodes_info(&self) -> Vec<NodeInfo> {
-		vec![]
+		let peers: Vec<p2p::PeerInfo> = self.p2p.connections().info();
+
+		self.p2p.nodes().iter().map(|n| {
+			let node_peers: Vec<p2p::PeerInfo> = peers.iter().filter(|p| p.address == n.address()).cloned().collect();
+			NodeInfo {
+				addednode: format!("{}", n.address()),
+				connected: !node_peers.is_empty(),
+				addresses: node_peers.into_iter().map(|p| p.into()).collect(),
+			}
+		}).collect()
 	}
 }
