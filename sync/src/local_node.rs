@@ -341,7 +341,7 @@ mod tests {
 	use synchronization_verifier::tests::DummyVerifier;
 	use tokio_core::reactor::{Core, Handle};
 	use primitives::bytes::Bytes;
-	use verification::ChainVerifier;
+	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 
 	struct DummyOutboundSyncConnection;
 

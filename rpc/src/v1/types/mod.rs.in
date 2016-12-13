@@ -10,6 +10,7 @@ mod hash;
 mod script;
 mod transaction;
 mod uint;
+mod nodes;
 
 pub use self::address::Address;
 pub use self::block::RawBlock;
@@ -25,3 +26,4 @@ pub use self::transaction::{RawTransaction, Transaction, TransactionInput, Trans
 	TransactionInputScript, TransactionOutputScript, SignedTransactionInput, GetRawTransactionResponse,
 	SignedTransactionOutput};
 pub use self::uint::U256;
+pub use self::nodes::AddNodeOperation;

@@ -1,11 +1,10 @@
 use primitives::hash::H256;
-use db::{SharedStore, IndexedTransaction};
+use chain::{OutPoint, TransactionOutput};
+use db::{SharedStore, IndexedTransaction, PreviousTransactionOutputProvider};
 use network::Magic;
-use memory_pool::{MemoryPool, OrderingStrategy};
-use verification::{
-	work_required, block_reward_satoshi, transaction_sigops,
-	StoreWithUnretainedOutputs, MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS
-};
+use memory_pool::{MemoryPool, OrderingStrategy, Entry};
+use verification::{work_required, block_reward_satoshi, transaction_sigops};
+pub use verification::constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 
 const BLOCK_VERSION: u32 = 0x20000000;
 const BLOCK_HEADER_SIZE: u32 = 4 + 32 + 32 + 4 + 4 + 4;
@@ -131,6 +130,89 @@ impl Default for BlockAssembler {
 	}
 }
 
+/// Iterator iterating over mempool transactions and yielding only those which fit the block
+struct FittingTransactionsIterator<'a, T> {
+	/// Shared store is used to query previous transaction outputs from database
+	store: &'a PreviousTransactionOutputProvider,
+	/// Memory pool transactions iterator
+	iter: T,
+	/// Size policy decides if transactions size fits the block
+	block_size: SizePolicy,
+	/// Sigops policy decides if transactions sigops fits the block
+	sigops: SizePolicy,
+	/// Previous entries are needed to get previous transaction outputs
+	previous_entries: Vec<&'a Entry>,
+	/// True if block is already full
+	finished: bool,
+}
+
+impl<'a, T> FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entry> {
+	fn new(store: &'a PreviousTransactionOutputProvider, iter: T, max_block_size: u32, max_block_sigops: u32) -> Self {
+		FittingTransactionsIterator {
+			store: store,
+			iter: iter,
+			// reserve some space for header and transations len field
+			block_size: SizePolicy::new(BLOCK_HEADER_SIZE + 4, max_block_size, 1_000, 50),
+			sigops: SizePolicy::new(0, max_block_sigops, 8, 50),
+			previous_entries: Vec::new(),
+			finished: false,
+		}
+	}
+}
+
+impl<'a, T> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a, T> where T: Send + Sync {
+	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
+		self.store.previous_transaction_output(prevout)
+			.or_else(|| {
+				self.previous_entries.iter()
+					.find(|e| e.hash == prevout.hash)
+					.and_then(|e| e.transaction.outputs.iter().nth(prevout.index as usize))
+					.cloned()
+			})
+	}
+}
+
+impl<'a, T> Iterator for FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entry> + Send + Sync {
+	type Item = &'a Entry;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		while !self.finished {
+			let entry = match self.iter.next() {
+				Some(entry) => entry,
+				None => {
+					self.finished = true;
+					return None;
+				}
+			};
+
+			let transaction_size = entry.size as u32;
+			let bip16_active = true;
+			let sigops_count = transaction_sigops(&entry.transaction, self, bip16_active) as u32;
+
+			let size_step = self.block_size.decide(transaction_size);
+			let sigops_step = self.sigops.decide(sigops_count);
+
+			match size_step.and(sigops_step) {
+				NextStep::Append => {
+					self.previous_entries.push(entry);
+					return Some(entry);
+				},
+				NextStep::FinishAndAppend => {
+					self.finished = true;
+					self.previous_entries.push(entry);
+					return Some(entry);
+				},
+				NextStep::Ignore => (),
+				NextStep::FinishAndIgnore => {
+					self.finished = true;
+				},
+			}
+		}
+
+		None
+	}
+}
+
 impl BlockAssembler {
 	pub fn create_new_block(&self, store: &SharedStore, mempool: &MemoryPool, time: u32, network: Magic) -> BlockTemplate {
 		// get best block
@@ -141,13 +223,18 @@ impl BlockAssembler {
 		let nbits = work_required(previous_header_hash.clone(), time, height, store.as_block_header_provider(), network);
 		let version = BLOCK_VERSION;
 
-		let mut block_size = SizePolicy::new(BLOCK_HEADER_SIZE, self.max_block_size, 1_000, 50);
-		let mut sigops = SizePolicy::new(0, self.max_block_sigops, 8, 50);
 		let mut coinbase_value = block_reward_satoshi(height);
-
 		let mut transactions = Vec::new();
-		// add priority transactions
-		BlockAssembler::fill_transactions(store, mempool, &mut block_size, &mut sigops, &mut coinbase_value, &mut transactions, OrderingStrategy::ByTransactionScore);
+
+		let mempool_iter = mempool.iter(OrderingStrategy::ByTransactionScore);
+		let tx_iter = FittingTransactionsIterator::new(store.as_previous_transaction_output_provider(), mempool_iter, self.max_block_size, self.max_block_sigops);
+		for entry in tx_iter {
+			// miner_fee is i64, but we can safely cast it to u64
+			// memory pool should restrict miner fee to be positive
+			coinbase_value += entry.miner_fee as u64;
+			let tx = IndexedTransaction::new(entry.hash.clone(), entry.transaction.clone());
+			transactions.push(tx);
+		}
 
 		BlockTemplate {
 			version: version,
@@ -161,53 +248,14 @@ impl BlockAssembler {
 			sigop_limit: self.max_block_sigops,
 		}
 	}
-
-	fn fill_transactions(
-		store: &SharedStore,
-		mempool: &MemoryPool,
-		block_size: &mut SizePolicy,
-		sigops: &mut SizePolicy,
-		coinbase_value: &mut u64,
-		transactions: &mut Vec<IndexedTransaction>,
-		strategy: OrderingStrategy
-	) {
-		for entry in mempool.iter(strategy) {
-			let transaction_size = entry.size as u32;
-			let sigops_count = {
-				let txs: &[_] = &*transactions;
-				let unretained_store = StoreWithUnretainedOutputs::new(store, &txs);
-				let bip16_active = true;
-				transaction_sigops(&entry.transaction, &unretained_store, bip16_active) as u32
-			};
-
-			let size_step = block_size.decide(transaction_size);
-			let sigops_step = sigops.decide(sigops_count);
-
-			match size_step.and(sigops_step) {
-				NextStep::Append => {
-					let tx = IndexedTransaction::new(entry.hash.clone(), entry.transaction.clone());
-					// miner_fee is i64, but we can safely cast it to u64
-					// memory pool should restrict miner fee to be positive
-					*coinbase_value += entry.miner_fee as u64;
-					transactions.push(tx);
-				},
-				NextStep::FinishAndAppend => {
-					let tx = IndexedTransaction::new(entry.hash.clone(), entry.transaction.clone());
-					transactions.push(tx);
-					break;
-				},
-				NextStep::Ignore => (),
-				NextStep::FinishAndIgnore => {
-					break;
-				},
-			}
-		}
-	}
 }
 
 #[cfg(test)]
 mod tests {
-	use super::{SizePolicy, NextStep};
+	use db::IndexedTransaction;
+	use verification::constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
+	use memory_pool::Entry;
+	use super::{SizePolicy, NextStep, FittingTransactionsIterator};
 
 	#[test]
 	fn test_size_policy() {
@@ -238,5 +286,19 @@ mod tests {
 		assert_eq!(NextStep::FinishAndAppend.and(NextStep::FinishAndIgnore), NextStep::FinishAndIgnore);
 		assert_eq!(NextStep::FinishAndAppend.and(NextStep::Ignore), NextStep::FinishAndIgnore);
 		assert_eq!(NextStep::FinishAndAppend.and(NextStep::Append), NextStep::FinishAndAppend);
+	}
+
+	#[test]
+	fn test_fitting_transactions_iterator_no_transactions() {
+		let store: Vec<IndexedTransaction> = Vec::new();
+		let entries: Vec<Entry> = Vec::new();
+		let store_ref: &[_] = &store;
+
+		let iter = FittingTransactionsIterator::new(&store_ref, entries.iter(), MAX_BLOCK_SIZE as u32, MAX_BLOCK_SIGOPS as u32);
+		assert!(iter.collect::<Vec<_>>().is_empty());
+	}
+
+	#[test]
+	fn test_fitting_transactions_iterator_max_block_size_reached() {
 	}
 }

@@ -1,29 +1,11 @@
-use chain::{Transaction, TransactionOutput, OutPoint};
-use db::{PreviousTransactionOutputProvider, SharedStore};
+use chain::Transaction;
+use db::PreviousTransactionOutputProvider;
 use script::Script;
 
-pub struct StoreWithUnretainedOutputs<'a, T> where T: 'a {
-	store: &'a SharedStore,
-	outputs: &'a T,
-}
-
-impl<'a, T> StoreWithUnretainedOutputs<'a, T> where T: PreviousTransactionOutputProvider {
-	pub fn new(store: &'a SharedStore, outputs: &'a T) -> Self {
-		StoreWithUnretainedOutputs {
-			store: store,
-			outputs: outputs,
-		}
-	}
-}
-
-impl<'a, T> PreviousTransactionOutputProvider for StoreWithUnretainedOutputs<'a, T> where T: PreviousTransactionOutputProvider {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		self.store.transaction(&prevout.hash)
-			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
-			.or_else(|| self.outputs.previous_transaction_output(prevout))
-	}
-}
-
+/// Counts signature operations in given transaction
+/// bip16_active flag indicates if we should also count signature operations
+/// in previous transactions. If one of the previous transaction outputs is
+/// missing, we simply ignore that fact and just carry on counting
 pub fn transaction_sigops(
 	transaction: &Transaction,
 	store: &PreviousTransactionOutputProvider,
@@ -38,17 +20,21 @@ pub fn transaction_sigops(
 		return output_sigops;
 	}
 
-	let input_sigops: usize = transaction.inputs.iter().map(|input| {
-		let input_script: Script = input.script_sig.clone().into();
-		let mut sigops = input_script.sigops_count(false);
-		if bip16_active {
-			let previous_output = store.previous_transaction_output(&input.previous_output)
-				.expect("missing tx, out of order verification or malformed db");
-			let prevout_script: Script = previous_output.script_pubkey.into();
-			sigops += input_script.pay_to_script_hash_sigops(&prevout_script);
-		}
-		sigops
-	}).sum();
+	let mut input_sigops = 0usize;
+	let mut bip16_sigops = 0usize;
 
-	input_sigops + output_sigops
+	for input in &transaction.inputs {
+		let input_script: Script = input.script_sig.clone().into();
+		input_sigops += input_script.sigops_count(false);
+		if bip16_active {
+			let previous_output = match store.previous_transaction_output(&input.previous_output) {
+				Some(output) => output,
+				None => continue,
+			};
+			let prevout_script: Script = previous_output.script_pubkey.into();
+			bip16_sigops += input_script.pay_to_script_hash_sigops(&prevout_script);
+		}
+	}
+
+	input_sigops + output_sigops + bip16_sigops
 }
