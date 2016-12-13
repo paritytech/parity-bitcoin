@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use primitives::hash::H256;
 use chain::{OutPoint, TransactionOutput};
 use db::{SharedStore, IndexedTransaction, PreviousTransactionOutputProvider};
@@ -102,16 +103,16 @@ impl SizePolicy {
 			self.finish_counter += 1;
 		}
 
-		if fits {
-			self.current_size += size;
-		}
-
 		match (fits, finish) {
 			(true, true) => NextStep::FinishAndAppend,
 			(true, false) => NextStep::Append,
 			(false, true) => NextStep::FinishAndIgnore,
 			(false, false) => NextStep::Ignore,
 		}
+	}
+
+	fn apply(&mut self, size: u32) {
+		self.current_size += size;
 	}
 }
 
@@ -136,25 +137,34 @@ struct FittingTransactionsIterator<'a, T> {
 	store: &'a PreviousTransactionOutputProvider,
 	/// Memory pool transactions iterator
 	iter: T,
+	/// New block height
+	block_height: u32,
+	/// New block time
+	block_time: u32,
 	/// Size policy decides if transactions size fits the block
 	block_size: SizePolicy,
 	/// Sigops policy decides if transactions sigops fits the block
 	sigops: SizePolicy,
 	/// Previous entries are needed to get previous transaction outputs
 	previous_entries: Vec<&'a Entry>,
+	/// Hashes of ignored entries
+	ignored: HashSet<H256>,
 	/// True if block is already full
 	finished: bool,
 }
 
 impl<'a, T> FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entry> {
-	fn new(store: &'a PreviousTransactionOutputProvider, iter: T, max_block_size: u32, max_block_sigops: u32) -> Self {
+	fn new(store: &'a PreviousTransactionOutputProvider, iter: T, max_block_size: u32, max_block_sigops: u32, block_height: u32, block_time: u32) -> Self {
 		FittingTransactionsIterator {
 			store: store,
 			iter: iter,
+			block_height: block_height,
+			block_time: block_time,
 			// reserve some space for header and transations len field
 			block_size: SizePolicy::new(BLOCK_HEADER_SIZE + 4, max_block_size, 1_000, 50),
 			sigops: SizePolicy::new(0, max_block_sigops, 8, 50),
 			previous_entries: Vec::new(),
+			ignored: HashSet::new(),
 			finished: false,
 		}
 	}
@@ -192,18 +202,34 @@ impl<'a, T> Iterator for FittingTransactionsIterator<'a, T> where T: Iterator<It
 			let size_step = self.block_size.decide(transaction_size);
 			let sigops_step = self.sigops.decide(sigops_count);
 
+			// both next checks could be checked above, but then it will break finishing
+			// check if transaction is still not finalized in this block
+			if !entry.transaction.is_final_in_block(self.block_height, self.block_time) {
+				continue;
+			}
+			// check if any parent transaction has been ignored
+			if !self.ignored.is_empty() && entry.transaction.inputs.iter().any(|input| self.ignored.contains(&input.previous_output.hash)) {
+				continue;
+			}
+
+
 			match size_step.and(sigops_step) {
 				NextStep::Append => {
+					self.block_size.apply(transaction_size);
+					self.sigops.apply(transaction_size);
 					self.previous_entries.push(entry);
 					return Some(entry);
 				},
 				NextStep::FinishAndAppend => {
 					self.finished = true;
+					self.block_size.apply(transaction_size);
+					self.sigops.apply(transaction_size);
 					self.previous_entries.push(entry);
 					return Some(entry);
 				},
 				NextStep::Ignore => (),
 				NextStep::FinishAndIgnore => {
+					self.ignored.insert(entry.hash.clone());
 					self.finished = true;
 				},
 			}
@@ -227,7 +253,7 @@ impl BlockAssembler {
 		let mut transactions = Vec::new();
 
 		let mempool_iter = mempool.iter(OrderingStrategy::ByTransactionScore);
-		let tx_iter = FittingTransactionsIterator::new(store.as_previous_transaction_output_provider(), mempool_iter, self.max_block_size, self.max_block_sigops);
+		let tx_iter = FittingTransactionsIterator::new(store.as_previous_transaction_output_provider(), mempool_iter, self.max_block_size, self.max_block_sigops, height, time);
 		for entry in tx_iter {
 			// miner_fee is i64, but we can safely cast it to u64
 			// memory pool should restrict miner fee to be positive
@@ -260,18 +286,18 @@ mod tests {
 	#[test]
 	fn test_size_policy() {
 		let mut size_policy = SizePolicy::new(0, 1000, 200, 3);
-		assert_eq!(size_policy.decide(100), NextStep::Append);
-		assert_eq!(size_policy.decide(500), NextStep::Append);
+		assert_eq!(size_policy.decide(100), NextStep::Append); size_policy.apply(100);
+		assert_eq!(size_policy.decide(500), NextStep::Append); size_policy.apply(500);
 		assert_eq!(size_policy.decide(600), NextStep::Ignore);
-		assert_eq!(size_policy.decide(200), NextStep::Append);
+		assert_eq!(size_policy.decide(200), NextStep::Append); size_policy.apply(200);
 		assert_eq!(size_policy.decide(300), NextStep::Ignore);
 		assert_eq!(size_policy.decide(300), NextStep::Ignore);
 		// this transaction will make counter + buffer > max size
-		assert_eq!(size_policy.decide(1), NextStep::Append);
+		assert_eq!(size_policy.decide(1), NextStep::Append); size_policy.apply(1);
 		// so now only 3 more transactions may accepted / ignored
-		assert_eq!(size_policy.decide(1), NextStep::Append);
+		assert_eq!(size_policy.decide(1), NextStep::Append); size_policy.apply(1);
 		assert_eq!(size_policy.decide(1000), NextStep::Ignore);
-		assert_eq!(size_policy.decide(1), NextStep::FinishAndAppend);
+		assert_eq!(size_policy.decide(1), NextStep::FinishAndAppend); size_policy.apply(1);
 		// we should not call decide again after it returned finish...
 		// but we can, let's check if result is ok
 		assert_eq!(size_policy.decide(1000), NextStep::FinishAndIgnore);
@@ -294,11 +320,21 @@ mod tests {
 		let entries: Vec<Entry> = Vec::new();
 		let store_ref: &[_] = &store;
 
-		let iter = FittingTransactionsIterator::new(&store_ref, entries.iter(), MAX_BLOCK_SIZE as u32, MAX_BLOCK_SIGOPS as u32);
+		let iter = FittingTransactionsIterator::new(&store_ref, entries.iter(), MAX_BLOCK_SIZE as u32, MAX_BLOCK_SIGOPS as u32, 0, 0);
 		assert!(iter.collect::<Vec<_>>().is_empty());
 	}
 
 	#[test]
 	fn test_fitting_transactions_iterator_max_block_size_reached() {
+	}
+
+	#[test]
+	fn test_fitting_transactions_iterator_ignored_parent() {
+		// TODO
+	}
+
+	#[test]
+	fn test_fitting_transactions_iterator_locked_transaction() {
+		// TODO
 	}
 }

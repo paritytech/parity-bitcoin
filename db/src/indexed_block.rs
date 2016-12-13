@@ -84,6 +84,6 @@ impl IndexedBlock {
 	}
 
 	pub fn is_final(&self, height: u32) -> bool {
-		self.transactions.iter().all(|tx| tx.raw.is_final(height, self.header.raw.time))
+		self.transactions.iter().all(|tx| tx.raw.is_final_in_block(height, self.header.raw.time))
 	}
 }

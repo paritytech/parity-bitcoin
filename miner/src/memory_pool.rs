@@ -141,9 +141,19 @@ struct ByPackageScoreOrderedEntry {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-struct HashedOutPoint {
-	/// Transasction output point
+pub struct HashedOutPoint {
+	/// Transaction output point
 	out_point: OutPoint,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum DoubleSpendCheckResult {
+	/// No double spend
+	NoDoubleSpend,
+	/// Input {self.1, self.2} of new transaction is already spent in previous final memory-pool transaction {self.0}
+	DoubleSpend(H256, H256, u32),
+	/// Some inputs of new transaction are already spent by locked memory-pool transactions
+	LockedDoubleSpend(HashSet<HashedOutPoint>),
 }
 
 impl From<OutPoint> for HashedOutPoint {
@@ -400,6 +410,41 @@ impl Storage {
 			})
 	}
 
+	pub fn check_double_spend(&self, transaction: &Transaction) -> DoubleSpendCheckResult {
+		let mut locked_spends: HashSet<HashedOutPoint> = HashSet::new();
+		for input in &transaction.inputs {
+			let mut queue: VecDeque<OutPoint> = VecDeque::new();
+			queue.push_back(input.previous_output.clone());
+
+			while let Some(prevout) = queue.pop_front() {
+				// if the same output is already spent with another transaction
+				if let Some(entry_hash) = self.by_previous_output.get(&prevout.clone().into()).cloned() {
+					let entry = self.by_hash.get(&entry_hash).expect("checked that it exists line above; qed");
+					// check if this is final transaction. If so, that's an double-spend error
+					if entry.transaction.is_final() {
+						return DoubleSpendCheckResult::DoubleSpend(entry_hash, prevout.hash, prevout.index);
+					}
+					// this prevout is holded by locked transaction
+					locked_spends.insert(prevout.into());
+					// transaction is not final => new transaction possibly replace it in memory pool
+					// we should also 'virtually exclude' all descendant transactions from emory pool
+					let locked_outputs: Vec<_> = entry.transaction.outputs.iter().enumerate().map(|(idx, _)| OutPoint {
+						hash: entry_hash.clone(),
+						index: idx as u32,
+					}).collect();
+					locked_spends.extend(locked_outputs.iter().cloned().map(Into::into));
+					queue.extend(locked_outputs);
+				}
+			}
+		}
+
+		if locked_spends.is_empty() {
+			DoubleSpendCheckResult::NoDoubleSpend
+		} else {
+			DoubleSpendCheckResult::LockedDoubleSpend(locked_spends)
+		}
+	}
+
 	pub fn remove_by_prevout(&mut self, prevout: &OutPoint) -> Option<Vec<Transaction>> {
 		let mut queue: VecDeque<OutPoint> = VecDeque::new();
 		let mut removed: Vec<Transaction> = Vec::new();
@@ -407,7 +452,7 @@ impl Storage {
 
 		while let Some(prevout) = queue.pop_front() {
 			if let Some(entry_hash) = self.by_previous_output.get(&prevout.clone().into()).cloned() {
-				let entry = self.remove_by_hash(&entry_hash).expect("checket that it exists line above; qed");
+				let entry = self.remove_by_hash(&entry_hash).expect("checked that it exists line above; qed");
 				queue.extend(entry.transaction.outputs.iter().enumerate().map(|(idx, _)| OutPoint {
 					hash: entry_hash.clone(),
 					index: idx as u32,
@@ -604,6 +649,11 @@ impl MemoryPool {
 		self.storage.remove_by_hash(h).map(|entry| entry.transaction)
 	}
 
+	/// Checks double spend result
+	pub fn check_double_spend(&self, transaction: &Transaction) -> DoubleSpendCheckResult {
+		self.storage.check_double_spend(transaction)
+	}
+
 	/// Removes transaction (and all its descendants) which has spent given output
 	pub fn remove_by_prevout(&mut self, prevout: &OutPoint) -> Option<Vec<Transaction>> {
 		self.storage.remove_by_prevout(prevout)
@@ -795,7 +845,7 @@ impl<'a> Iterator for MemoryPoolIterator<'a> {
 mod tests {
 	use chain::{Transaction, OutPoint};
 	use heapsize::HeapSizeOf;
-	use super::{MemoryPool, OrderingStrategy};
+	use super::{MemoryPool, OrderingStrategy, DoubleSpendCheckResult};
 	use test_data::{ChainBuilder, TransactionBuilder};
 
 	fn to_memory_pool(chain: &mut ChainBuilder) -> MemoryPool {
@@ -1221,5 +1271,39 @@ mod tests {
 
 		assert_eq!(pool.remove_by_prevout(&OutPoint { hash: chain.hash(0), index: 0 }), Some(vec![chain.at(1), chain.at(2)]));
 		assert_eq!(pool.information().transactions_count, 2);
+	}
+
+	#[test]
+	fn test_memory_pool_check_double_spend() {
+		let chain = &mut ChainBuilder::new();
+
+		TransactionBuilder::with_output(10).add_output(10).add_output(10).store(chain)	// transaction0
+			.reset().set_input(&chain.at(0), 0).add_output(20).lock().store(chain)		// locked: transaction0 -> transaction1
+			.reset().set_input(&chain.at(0), 0).add_output(30).store(chain)				// good replacement: transaction0 -> transaction2
+			.reset().set_input(&chain.at(0), 1).add_output(40).store(chain)				// not-locked: transaction0 -> transaction3
+			.reset().set_input(&chain.at(0), 1).add_output(50).store(chain)				// bad replacement: transaction0 -> transaction4
+			.reset().set_input(&chain.at(0), 2).add_output(60).store(chain);			// no double spending: transaction0 -> transaction5
+		let mut pool = MemoryPool::new();
+		pool.insert_verified(chain.at(1));
+		pool.insert_verified(chain.at(3));
+		// check locked double spends
+		match pool.check_double_spend(&chain.at(2)) {
+			DoubleSpendCheckResult::LockedDoubleSpend(hs) => assert!(hs.contains(&chain.at(1).inputs[0].previous_output.clone().into())),
+			_ => panic!("unexpected"),
+		}
+		// check unlocked double spends
+		match pool.check_double_spend(&chain.at(4)) {
+			DoubleSpendCheckResult::DoubleSpend(hash1, hash2, index) => {
+				assert_eq!(hash1, chain.at(3).hash());
+				assert_eq!(hash2, chain.at(0).hash());
+				assert_eq!(index, 1);
+			},
+			_ => panic!("unexpected"),
+		}
+		// check no-double spends
+		match pool.check_double_spend(&chain.at(5)) {
+			DoubleSpendCheckResult::NoDoubleSpend => (),
+			_ => panic!("unexpected"),
+		}
 	}
 }

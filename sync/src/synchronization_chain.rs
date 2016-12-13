@@ -677,6 +677,13 @@ impl Chain {
 
 	/// Insert transaction to memory pool
 	pub fn insert_verified_transaction(&mut self, transaction: Transaction) {
+		// we have verified transaction, but possibly this transaction replaces
+		// existing transaction from memory pool
+		// => remove previous transactions before
+		for input in &transaction.inputs {
+			self.memory_pool.remove_by_prevout(&input.previous_output);
+		}
+		// now insert transaction itself
 		self.memory_pool.insert_verified(transaction);
 	}
 
@@ -1268,5 +1275,21 @@ mod tests {
 			headers[3].clone(),
 			headers[4].clone(),
 		]), HeadersIntersection::DeadEnd(0));
+	}
+
+	#[test]
+	fn update_memory_pool_transaction() {
+		use test_data::{ChainBuilder, TransactionBuilder};
+		
+		let data_chain = &mut ChainBuilder::new();
+		TransactionBuilder::with_output(10).add_output(10).add_output(10).store(data_chain)		// transaction0
+			.reset().set_input(&data_chain.at(0), 0).add_output(20).lock().store(data_chain)	// transaction0 -> transaction1
+			.reset().set_input(&data_chain.at(0), 0).add_output(30).store(data_chain);			// transaction0 -> transaction2
+		
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
+		chain.insert_verified_transaction(data_chain.at(1));
+		assert_eq!(chain.information().transactions.transactions_count, 1);
+		chain.insert_verified_transaction(data_chain.at(2));
+		assert_eq!(chain.information().transactions.transactions_count, 1); // tx was replaces
 	}
 }

@@ -634,12 +634,12 @@ mod tests {
 		let transaction_hash = transaction.hash();
 
 		let result = local_node.accept_transaction(transaction);
-		assert_eq!(result, Ok(transaction_hash));
+		assert_eq!(result, Ok(transaction_hash.clone()));
 
 		assert_eq!(executor.lock().take_tasks(), vec![Task::SendInventory(peer_index1,
 			vec![InventoryVector {
 					inv_type: InventoryType::MessageTx,
-					hash: "0791efccd035c5fe501023ff888106eba5eff533965de4a6e06400f623bcac34".into(),
+					hash: transaction_hash,
 				}]
 			)]
 		);
