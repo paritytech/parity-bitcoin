@@ -137,7 +137,7 @@ impl<'a> V31402AsV0<'a> {
 impl<'a> Serializable for V31402AsV0<'a> {
 	fn serialize(&self, stream: &mut Stream) {
 		let vec_ref: Vec<&'a NetAddress> = self.v.addresses.iter().map(|x| &x.address).collect();
-		stream.append_list_ref(&vec_ref);
+		stream.append_list::<NetAddress, &'a NetAddress>(&vec_ref);
 	}
 }
 

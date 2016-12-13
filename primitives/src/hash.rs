@@ -13,6 +13,12 @@ macro_rules! impl_hash {
 			}
 		}
 
+		impl AsRef<$name> for $name {
+			fn as_ref(&self) -> &$name {
+				self
+			}
+		}
+
 		impl Clone for $name {
 			fn clone(&self) -> Self {
 				let mut result = Self::default();
