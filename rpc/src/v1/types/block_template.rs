@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use super::hash::H256;
-use super::raw_transaction::RawTransaction;
 use chain;
+use super::transaction::RawTransaction;
 use miner;
 
 /// Block template as described in:
