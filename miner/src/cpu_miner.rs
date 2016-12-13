@@ -104,8 +104,9 @@ pub fn find_solution<T>(block: BlockTemplate, mut coinbase_transaction: T) -> Op
 		coinbase_transaction.set_extranonce(&extranonce);
 
 		// recalculate merkle root hash
-		let mut merkle_tree = vec![coinbase_transaction.hash()];
-		merkle_tree.extend(block.transactions.iter().map(|tx| tx.hash.clone()));
+		let coinbase_hash = coinbase_transaction.hash();
+		let mut merkle_tree = vec![&coinbase_hash];
+		merkle_tree.extend(block.transactions.iter().map(|tx| &tx.hash));
 		let merkle_root_hash = merkle_root(&merkle_tree);
 
 		// update header with new merkle root hash

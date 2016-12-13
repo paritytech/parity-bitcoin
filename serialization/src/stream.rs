@@ -1,5 +1,6 @@
 //! Stream used for serialization.
 use std::io::{self, Write};
+use std::borrow::Borrow;
 use compact_integer::CompactInteger;
 use bytes::Bytes;
 
@@ -9,9 +10,9 @@ pub fn serialize(t: &Serializable) -> Bytes {
 	stream.out()
 }
 
-pub fn serialized_list_size<T>(t: &[T]) -> usize where T: Serializable {
+pub fn serialized_list_size<T, K>(t: &[K]) -> usize where T: Serializable, K: Borrow<T> {
 	CompactInteger::from(t.len()).serialized_size() +
-		t.iter().map(Serializable::serialized_size).sum::<usize>()
+		t.iter().map(Borrow::borrow).map(Serializable::serialized_size).sum::<usize>()
 }
 
 pub trait Serializable {
@@ -51,18 +52,10 @@ impl Stream {
 	}
 
 	/// Appends a list of serializable structs to the end of the stream.
-	pub fn append_list<T>(&mut self, t: &[T]) -> &mut Self where T: Serializable {
+	pub fn append_list<T, K>(&mut self, t: &[K]) -> &mut Self where T: Serializable, K: Borrow<T> {
 		CompactInteger::from(t.len()).serialize(self);
 		for i in t {
-			i.serialize(self);
-		}
-		self
-	}
-
-	pub fn append_list_ref<T>(&mut self, t: &[&T]) -> &mut Self where T: Serializable {
-		CompactInteger::from(t.len()).serialize(self);
-		for i in t {
-			i.serialize(self);
+			i.borrow().serialize(self);
 		}
 		self
 	}
