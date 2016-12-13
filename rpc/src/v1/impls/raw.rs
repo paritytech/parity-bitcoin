@@ -6,7 +6,8 @@ use jsonrpc_core::Error;
 use jsonrpc_macros::Trailing;
 use chain::Transaction as GlobalTransaction;
 use sync;
-use ser::{Reader, deserialize};
+use ser::{Reader, serialize, deserialize};
+use primitives::bytes::Bytes as GlobalBytes;
 use primitives::hash::H256 as GlobalH256;
 
 pub struct RawClient<T: RawClientCoreApi> {
@@ -52,8 +53,31 @@ impl<T> Raw for RawClient<T> where T: RawClientCoreApi {
 			.map_err(|e| execution(e))
 	}
 
-	fn create_raw_transaction(&self, _inputs: Vec<TransactionInput>, _outputs: TransactionOutputs, _lock_time: Trailing<u32>) -> Result<RawTransaction, Error> {
-		rpc_unimplemented!()
+	fn create_raw_transaction(&self, inputs: Vec<TransactionInput>, outputs: TransactionOutputs, lock_time: Trailing<u32>) -> Result<RawTransaction, Error> {
+		use chain;
+
+		let lock_time = lock_time.unwrap_or(0);
+		let is_locked = lock_time != 0;
+		let inputs: Vec<_> = inputs.into_iter()
+			.map(|input| chain::TransactionInput {
+				previous_output: chain::OutPoint {
+					hash: input.txid,
+					index: input.vout,
+				},
+				script_sig: GlobalBytes::new(),
+				sequence: if is_locked { chain::SEQUENCE_FINAL - 1 } else { chain::SEQUENCE_FINAL },
+			});
+		let outputs: Vec<_> = outputs.into_iter()
+			.map(|output| chain::TransactionOutput {
+				
+			})
+		let transaction = GlobalTransaction {
+			version: 1,
+			inputs: inuputs,
+			outputs: outputs,
+			lock_time: lock_time.unwrap_or(0),
+		};
+		Ok(serialize(transaction))
 	}
 
 	fn decode_raw_transaction(&self, _transaction: RawTransaction) -> Result<Transaction, Error> {
