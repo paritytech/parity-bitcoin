@@ -16,5 +16,9 @@ build_rpc_trait! {
 		/// @curl-example: curl --data-binary '{"jsonrpc": "2.0", "id":"1", "method": "getaddednodeinfo", "params": [true, "192.168.0.201"] }' -H 'content-type: application/json;' http://127.0.0.1:8332/
 		#[rpc(name = "getaddednodeinfo")]
 		fn node_info(&self, bool, Trailing<String>) -> Result<Vec<NodeInfo>, Error>;
+		/// Query node(s) info
+		/// @curl-example: curl --data-binary '{"jsonrpc": "2.0", "id":"1", "method": "getconnectioncount", "params": [] }' -H 'content-type: application/json;' http://127.0.0.1:8332/
+		#[rpc(name = "getconnectioncount")]
+		fn connection_count(&self) -> Result<usize, Error>;
 	}
 }

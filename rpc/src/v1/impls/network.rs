@@ -13,6 +13,7 @@ pub trait NetworkApi : Send + Sync + 'static {
 	fn connect(&self, socket_addr: SocketAddr);
 	fn node_info(&self, node_addr: IpAddr) -> Result<NodeInfo, p2p::NodeTableError>;
 	fn nodes_info(&self) -> Vec<NodeInfo>;
+	fn connection_count(&self) -> usize;
 }
 
 impl<T> NetworkRpc for NetworkClient<T> where T: NetworkApi {
@@ -48,6 +49,10 @@ impl<T> NetworkRpc for NetworkClient<T> where T: NetworkApi {
 				vec![node_info]
 			}
 		)
+	}
+
+	fn connection_count(&self) -> Result<usize, Error> {
+		Ok(self.api.connection_count())
 	}
 }
 
@@ -119,5 +124,9 @@ impl NetworkApi for NetworkClientCore {
 				addresses: node_peers.into_iter().map(|p| p.into()).collect(),
 			}
 		}).collect()
+	}
+
+	fn connection_count(&self) -> usize {
+		self.p2p.connections().count()
 	}
 }
