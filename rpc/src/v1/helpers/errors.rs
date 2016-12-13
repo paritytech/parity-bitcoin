@@ -2,6 +2,7 @@
 
 mod codes {
 	// NOTE [ToDr] Codes from [-32099, -32000]
+	pub const UNKNOWN: i64 = -32000;
 	pub const EXECUTION_ERROR: i64 = -32015;
 	pub const TRANSACTION_NOT_FOUND: i64 = -32096;
 	pub const TRANSACTION_OUTPUT_NOT_FOUND: i64 = -32097;
@@ -94,6 +95,14 @@ pub fn node_not_added() -> Error {
 	Error {
 		code: ErrorCode::ServerError(codes::NODE_NOT_ADDED),
 		message: "Node not added to the node table".into(),
+		data: None,
+	}
+}
+
+pub fn unknown() -> Error {
+	Error {
+		code: ErrorCode::ServerError(codes::UNKNOWN),
+		message: "Unknown error has occurred".into(),
 		data: None,
 	}
 }

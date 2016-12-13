@@ -22,4 +22,4 @@ pub use self::raw_block::RawBlock;
 pub use self::raw_transaction::RawTransaction;
 pub use self::script::ScriptType;
 pub use self::uint::U256;
-pub use self::nodes::AddNodeOperation;
+pub use self::nodes::{AddNodeOperation, NodeInfo};
