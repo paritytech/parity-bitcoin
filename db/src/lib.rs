@@ -72,6 +72,7 @@ pub use error::{Error, ConsistencyError};
 pub use kvdb::Database;
 pub use transaction_provider::{TransactionProvider, PreviousTransactionOutputProvider};
 pub use transaction_meta_provider::{TransactionMetaProvider, TransactionOutputObserver};
+pub use transaction_meta::TransactionMeta;
 pub use block_stapler::{BlockStapler, BlockInsertedChain};
 pub use block_provider::{BlockProvider, BlockHeaderProvider};
 pub use indexed_block::IndexedBlock;

@@ -2,6 +2,7 @@
 
 use std::{fmt, ops};
 use bytes::Bytes;
+use keys::{self, AddressHash, Public};
 use {Opcode, Error};
 
 /// Maximum number of bytes pushable to the stack
@@ -339,6 +340,63 @@ impl Script {
 		total
 	}
 
+	pub fn num_signatures_required(&self) -> u8 {
+		if self.is_multisig_script() {
+			return match self.data[0] {
+				x if x == Opcode::OP_0 as u8 => 0,
+				x => x - (Opcode::OP_1 as u8) + 1,
+			};
+		}
+		return 1;
+	}
+
+	pub fn extract_destinations(&self) -> Result<Vec<AddressHash>, keys::Error> {
+		match self.script_type() {
+			ScriptType::NonStandard => {
+				Ok(vec![])
+			},
+			ScriptType::PubKey => {
+				Public::from_slice(match self.data[0] {
+					x if x == Opcode::OP_PUSHBYTES_33 as u8 => &self.data[1..34],
+					x if x == Opcode::OP_PUSHBYTES_65 as u8 => &self.data[1..66],
+					_ => unreachable!(), // because we are relying on script_type() checks here
+				})
+				.map(|public| vec![public.address_hash()])
+			},
+			ScriptType::PubKeyHash => {
+				Ok(vec![
+					self.data[3..23].into()
+				])
+			},
+			ScriptType::ScriptHash => {
+				Ok(vec![
+					self.data[2..22].into()
+				])
+			},
+			ScriptType::Multisig => {
+				let mut addresses: Vec<AddressHash> = Vec::new();
+				let mut pc = 1;
+				while pc < self.len() - 2 {
+					let instruction = self.get_instruction(pc).expect("this method depends on previous check in script_type()");
+					let data = instruction.data.expect("this method depends on previous check in script_type()");
+					let address = try!(Public::from_slice(data)).address_hash();
+					addresses.push(address);
+					pc += instruction.step;
+				}
+				Ok(addresses)
+			},
+			ScriptType::NullData => {
+				Ok(vec![])
+			},
+			ScriptType::WitnessScript => {
+				Ok(vec![]) // TODO
+			},
+			ScriptType::WitnessKey => {
+				Ok(vec![]) // TODO
+			},
+		}
+	}
+
 	pub fn pay_to_script_hash_sigops(&self, prev_out: &Script) -> usize {
 		if !prev_out.is_pay_to_script_hash() {
 			return 0;
@@ -459,6 +517,7 @@ impl fmt::Display for Script {
 mod tests {
 	use {Builder, Opcode};
 	use super::{Script, ScriptType, MAX_SCRIPT_ELEMENT_SIZE};
+	use keys::{Address, Public};
 
 	#[test]
 	fn test_is_pay_to_script_hash() {
@@ -580,5 +639,96 @@ OP_ADD
 		let s: Script = vec![Opcode::OP_0 as u8].into();
 		let result = s.find_and_delete(&[]);
 		assert_eq!(s, result);
+	}
+
+	#[test]
+	fn test_extract_destinations_pub_key_compressed() {
+		let pubkey_bytes = [0; 33];
+		let address = Public::from_slice(&pubkey_bytes).unwrap().address_hash();
+		let script = Builder::default()
+			.push_bytes(&pubkey_bytes)
+			.push_opcode(Opcode::OP_CHECKSIG)
+			.into_script();
+		assert_eq!(script.script_type(), ScriptType::PubKey);
+		assert_eq!(script.extract_destinations(), Ok(vec![address]));
+	}
+
+	#[test]
+	fn test_extract_destinations_pub_key_normal() {
+		let pubkey_bytes = [0; 65];
+		let address = Public::from_slice(&pubkey_bytes).unwrap().address_hash();
+		let script = Builder::default()
+			.push_bytes(&pubkey_bytes)
+			.push_opcode(Opcode::OP_CHECKSIG)
+			.into_script();
+		assert_eq!(script.script_type(), ScriptType::PubKey);
+		assert_eq!(script.extract_destinations(), Ok(vec![address]));
+	}
+
+	#[test]
+	fn test_extract_destinations_pub_key_hash() {
+		let address = Address::from("13NMTpfNVVJQTNH4spP4UeqBGqLdqDo27S").hash;
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_DUP)
+			.push_opcode(Opcode::OP_HASH160)
+			.push_bytes(&*address)
+			.push_opcode(Opcode::OP_EQUALVERIFY)
+			.push_opcode(Opcode::OP_CHECKSIG)
+			.into_script();
+		assert_eq!(script.script_type(), ScriptType::PubKeyHash);
+		assert_eq!(script.extract_destinations(), Ok(vec![address]));
+	}
+
+	#[test]
+	fn test_extract_destinations_script_hash() {
+		let address = Address::from("13NMTpfNVVJQTNH4spP4UeqBGqLdqDo27S").hash;
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_HASH160)
+			.push_bytes(&*address)
+			.push_opcode(Opcode::OP_EQUAL)
+			.into_script();
+		assert_eq!(script.script_type(), ScriptType::ScriptHash);
+		assert_eq!(script.extract_destinations(), Ok(vec![address]));
+	}
+
+	#[test]
+	fn test_extract_destinations_multisig() {
+		let pubkey1_bytes = [0; 33];
+		let address1 = Public::from_slice(&pubkey1_bytes).unwrap().address_hash();
+		let pubkey2_bytes = [1; 65];
+		let address2 = Public::from_slice(&pubkey2_bytes).unwrap().address_hash();
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_2)
+			.push_bytes(&pubkey1_bytes)
+			.push_bytes(&pubkey2_bytes)
+			.push_opcode(Opcode::OP_2)
+			.push_opcode(Opcode::OP_CHECKMULTISIG)
+			.into_script();
+		assert_eq!(script.script_type(), ScriptType::Multisig);
+		assert_eq!(script.extract_destinations(), Ok(vec![address1, address2]));
+	}
+
+	#[test]
+	fn test_num_signatures_required() {
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_3)
+			.push_bytes(&[0; 33])
+			.push_bytes(&[0; 65])
+			.push_bytes(&[0; 65])
+			.push_bytes(&[0; 65])
+			.push_opcode(Opcode::OP_4)
+			.push_opcode(Opcode::OP_CHECKMULTISIG)
+			.into_script();
+		assert_eq!(script.script_type(), ScriptType::Multisig);
+		assert_eq!(script.num_signatures_required(), 3);
+
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_HASH160)
+			.push_bytes(&[0; 20])
+			.push_opcode(Opcode::OP_EQUAL)
+			.into_script();
+		assert_eq!(script.script_type(), ScriptType::ScriptHash);
+		assert_eq!(script.num_signatures_required(), 1);
+
 	}
 }

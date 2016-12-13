@@ -49,7 +49,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tokio_core::reactor::Handle;
 use network::Magic;
-use verification::ChainVerifier;
+use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 
 /// Sync errors.
 #[derive(Debug)]
