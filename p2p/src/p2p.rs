@@ -386,6 +386,14 @@ impl Context {
 	pub fn create_sync_session(&self, start_height: i32, outbound_connection: OutboundSyncConnectionRef) -> InboundSyncConnectionRef {
 		self.local_sync_node.create_sync_session(start_height, outbound_connection)
 	}
+
+	pub fn connections(&self) -> &Connections {
+		&self.connections
+	}
+
+	pub fn nodes(&self) -> Vec<Node> {
+		self.node_table.read().nodes()
+	}
 }
 
 pub struct P2P {

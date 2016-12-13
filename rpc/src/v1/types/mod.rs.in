@@ -26,4 +26,4 @@ pub use self::transaction::{RawTransaction, Transaction, TransactionInput, Trans
 	TransactionInputScript, TransactionOutputScript, SignedTransactionInput, GetRawTransactionResponse,
 	SignedTransactionOutput, TransactionOutputs};
 pub use self::uint::U256;
-pub use self::nodes::AddNodeOperation;
+pub use self::nodes::{AddNodeOperation, NodeInfo};
