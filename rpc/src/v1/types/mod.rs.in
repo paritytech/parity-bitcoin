@@ -24,6 +24,6 @@ pub use self::hash::{H160, H256};
 pub use self::script::ScriptType;
 pub use self::transaction::{RawTransaction, Transaction, TransactionInput, TransactionOutput,
 	TransactionInputScript, TransactionOutputScript, SignedTransactionInput, GetRawTransactionResponse,
-	SignedTransactionOutput};
+	SignedTransactionOutput, TransactionOutputs};
 pub use self::uint::U256;
 pub use self::nodes::AddNodeOperation;

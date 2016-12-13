@@ -1,5 +1,5 @@
 use v1::traits::Raw;
-use v1::types::{RawTransaction, TransactionInput, TransactionOutput, Transaction, GetRawTransactionResponse};
+use v1::types::{RawTransaction, TransactionInput, TransactionOutputs, Transaction, GetRawTransactionResponse};
 use v1::types::H256;
 use v1::helpers::errors::{execution, invalid_params};
 use jsonrpc_core::Error;
@@ -52,7 +52,7 @@ impl<T> Raw for RawClient<T> where T: RawClientCoreApi {
 			.map_err(|e| execution(e))
 	}
 
-	fn create_raw_transaction(&self, _inputs: Vec<TransactionInput>, _outputs: Vec<TransactionOutput>, _lock_time: Trailing<u32>) -> Result<RawTransaction, Error> {
+	fn create_raw_transaction(&self, _inputs: Vec<TransactionInput>, _outputs: TransactionOutputs, _lock_time: Trailing<u32>) -> Result<RawTransaction, Error> {
 		rpc_unimplemented!()
 	}
 
