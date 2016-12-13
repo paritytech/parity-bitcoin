@@ -6,7 +6,7 @@ use chain::{Transaction, OutPoint, TransactionOutput};
 use network::Magic;
 use primitives::hash::H256;
 use synchronization_chain::ChainRef;
-use verification::{ChainVerifier, Verify as VerificationVerify, Chain};
+use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify, Chain};
 use db::{SharedStore, IndexedBlock, PreviousTransactionOutputProvider, TransactionOutputObserver};
 use time::get_time;
 
@@ -178,7 +178,7 @@ fn execute_verification_task<T: VerificationSink, U: PreviousTransactionOutputPr
 			},
 			VerificationTask::VerifyTransaction(height, transaction) => {
 				let time: u32 = get_time().sec as u32;
-				match verifier.verify_transaction(tx_output_provider, height, time, &transaction, 1) {
+				match verifier.verify_mempool_transaction(tx_output_provider, height, time, &transaction) {
 					Ok(_) => sink.on_transaction_verification_success(transaction),
 					Err(e) => sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash()),
 				}

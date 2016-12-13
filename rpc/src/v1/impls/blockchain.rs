@@ -14,6 +14,7 @@ use global_script::Script;
 use chain::OutPoint;
 use verification;
 use ser::serialize;
+use network::Magic;
 use primitives::hash::H256 as GlobalH256;
 use network::Magic;
 
@@ -38,7 +39,7 @@ pub struct BlockChainClientCore {
 impl BlockChainClientCore {
 	pub fn new(network: Magic, storage: db::SharedStore) -> Self {
 		assert!(storage.best_block().is_some());
-		
+
 		BlockChainClientCore {
 			network: network,
 			storage: storage,
@@ -76,14 +77,20 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 					None => -1,
 				};
 				let block_size = block.size();
-				let median_time = verification::ChainVerifier::median_timestamp(self.storage.as_block_header_provider(), &block.header.raw);
+				// TODO: use real network
+				let median_time = verification::median_timestamp(
+					&block.header.raw,
+					self.storage.as_block_header_provider(),
+					Magic::Mainnet,
+				);
+
 				VerboseBlock {
 					confirmations: confirmations,
 					size: block_size as u32,
 					strippedsize: block_size as u32, // TODO: segwit
 					weight: block_size as u32, // TODO: segwit
 					height: height,
-					mediantime: median_time,
+					mediantime: Some(median_time),
 					difficulty: block.header.raw.bits.to_f64(),
 					chainwork: U256::default(), // TODO: read from storage
 					previousblockhash: Some(block.header.raw.previous_header_hash.clone().into()),
@@ -423,7 +430,7 @@ pub mod tests {
 			merkleroot: "982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e".into(),
 			tx: vec!["982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e".into()],
 			time: 1231469665,
-			mediantime: None,
+			mediantime: Some(1231006505),
 			nonce: 2573394689,
 			bits: 486604799,
 			difficulty: 1.0,
@@ -449,7 +456,7 @@ pub mod tests {
 			merkleroot: "d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9b".into(),
 			tx: vec!["d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9b".into()],
 			time: 1231469744,
-			mediantime: None,
+			mediantime: Some(1231469665),
 			nonce: 1639830024,
 			bits: 486604799,
 			difficulty: 1.0,
