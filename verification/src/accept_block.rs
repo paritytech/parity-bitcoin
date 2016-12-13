@@ -127,8 +127,16 @@ impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 
 		let claim = self.block.transactions[0].raw.total_spends();
 		let (fees, overflow) = available.overflowing_sub(spends);
-		let (reward, overflow2) = fees.overflowing_add(block_reward_satoshi(self.height));
-		if overflow || overflow2 || claim > reward {
+		if overflow {
+			return Err(Error::TransactionFeesOverflow);
+		}
+
+		let (reward, overflow) = fees.overflowing_add(block_reward_satoshi(self.height));
+		if overflow {
+			return Err(Error::TransactionFeeAndRewardOverflow);
+		}
+
+		if claim > reward {
 			Err(Error::CoinbaseOverspend { expected_max: reward, actual: claim })
 		} else {
 			Ok(())
