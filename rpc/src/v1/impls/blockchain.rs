@@ -1,6 +1,6 @@
 use v1::traits::BlockChain;
 use v1::types::{GetBlockResponse, VerboseBlock, RawBlock};
-use v1::types::{GetTxOutResponse, TxOutScriptPubKey};
+use v1::types::{GetTxOutResponse, TransactionOutputScript};
 use v1::types::GetTxOutSetInfoResponse;
 use v1::types::H256;
 use v1::types::U256;
@@ -138,7 +138,7 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 			bestblock: block_header.hash().into(),
 			confirmations: best_block.number - meta.height() + 1,
 			value: 0.00000001f64 * (transaction.outputs[prev_out.index as usize].value as f64),
-			script_pub_key: TxOutScriptPubKey {
+			script: TransactionOutputScript {
 				asm: script_asm,
 				hex: script_bytes.clone().into(),
 				req_sigs: script.num_signatures_required() as u32,
@@ -221,7 +221,7 @@ pub mod tests {
 	use primitives::hash::H256 as GlobalH256;
 	use v1::types::{VerboseBlock, RawBlock};
 	use v1::traits::BlockChain;
-	use v1::types::{GetTxOutResponse, TxOutScriptPubKey};
+	use v1::types::{GetTxOutResponse, TransactionOutputScript};
 	use v1::helpers::errors::block_not_found;
 	use v1::types::Bytes;
 	use v1::types::H256;
@@ -285,7 +285,7 @@ pub mod tests {
 				bestblock: H256::from(0x56),
 				confirmations: 777,
 				value: 100000.56,
-				script_pub_key: TxOutScriptPubKey {
+				script: TransactionOutputScript {
 					asm: "Hello, world!!!".to_owned(),
 					hex: Bytes::new(vec![1, 2, 3, 4]),
 					req_sigs: 777,
@@ -553,7 +553,7 @@ pub mod tests {
 				bestblock: "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000".into(),
 				confirmations: 1,
 				value: 50.0,
-				script_pub_key: TxOutScriptPubKey {
+				script: TransactionOutputScript {
 					asm: "OP_PUSHBYTES_65 0x04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f\nOP_CHECKSIG\n".to_owned(),
 					hex: Bytes::from("4104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac"),
 					req_sigs: 1,

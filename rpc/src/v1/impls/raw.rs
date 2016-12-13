@@ -1,9 +1,10 @@
 use v1::traits::Raw;
-use v1::types::RawTransaction;
+use v1::types::{RawTransaction, TransactionInput, TransactionOutput, Transaction, GetRawTransactionResponse};
 use v1::types::H256;
 use v1::helpers::errors::{execution, invalid_params};
 use jsonrpc_core::Error;
-use chain::Transaction;
+use jsonrpc_macros::Trailing;
+use chain::Transaction as GlobalTransaction;
 use sync;
 use ser::{Reader, deserialize};
 use primitives::hash::H256 as GlobalH256;
@@ -13,7 +14,7 @@ pub struct RawClient<T: RawClientCoreApi> {
 }
 
 pub trait RawClientCoreApi: Send + Sync + 'static {
-	fn accept_transaction(&self, transaction: Transaction) -> Result<GlobalH256, String>;
+	fn accept_transaction(&self, transaction: GlobalTransaction) -> Result<GlobalH256, String>;
 }
 
 pub struct RawClientCore {
@@ -29,10 +30,10 @@ impl RawClientCore {
 }
 
 impl RawClientCoreApi for RawClientCore {
-	fn accept_transaction(&self, transaction: Transaction) -> Result<GlobalH256, String> {
+	fn accept_transaction(&self, transaction: GlobalTransaction) -> Result<GlobalH256, String> {
 		self.local_sync_node.accept_transaction(transaction)
-}
 	}
+}
 
 impl<T> RawClient<T> where T: RawClientCoreApi {
 	pub fn new(core: T) -> Self {
@@ -49,6 +50,18 @@ impl<T> Raw for RawClient<T> where T: RawClientCoreApi {
 		self.core.accept_transaction(transaction)
 			.map(|h| h.reversed().into())
 			.map_err(|e| execution(e))
+	}
+
+	fn create_raw_transaction(&self, _inputs: Vec<TransactionInput>, _outputs: Vec<TransactionOutput>, _lock_time: Trailing<u32>) -> Result<RawTransaction, Error> {
+		rpc_unimplemented!()
+	}
+
+	fn decode_raw_transaction(&self, _transaction: RawTransaction) -> Result<Transaction, Error> {
+		rpc_unimplemented!()
+	}
+
+	fn get_raw_transaction(&self, _hash: H256, _verbose: Trailing<bool>) -> Result<GetRawTransactionResponse, Error> {
+		rpc_unimplemented!()
 	}
 }
 

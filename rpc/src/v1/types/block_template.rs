@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use super::hash::H256;
-use super::raw_transaction::RawTransaction;
+use super::transaction::RawTransaction;
 use db;
 use miner;
 
