@@ -26,6 +26,7 @@ mod tests {
 	use super::super::bytes::Bytes;
 	use super::super::hash::H256;
 	use super::super::script::ScriptType;
+	use super::super::transaction::TransactionOutputScript;
 	use super::*;
 
 	#[test]
