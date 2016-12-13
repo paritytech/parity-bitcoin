@@ -1,4 +1,4 @@
-use serde::{Serialize, Serializer};
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 
 use super::address::Address;
 use super::bytes::Bytes;
@@ -26,6 +26,13 @@ pub struct TransactionOutput {
 	pub address: Address,
 	/// Amount in BTC
 	pub amount: f64,
+}
+
+/// Transaction outputs, which serializes/deserializes as KV-map
+#[derive(Debug, PartialEq)]
+pub struct TransactionOutputs {
+	/// Transaction outputs
+	pub outputs: Vec<TransactionOutput>,
 }
 
 /// Transaction input script
@@ -130,6 +137,53 @@ impl Serialize for GetRawTransactionResponse {
 	}
 }
 
+impl TransactionOutputs {
+	pub fn len(&self) -> usize {
+		self.outputs.len()
+	}
+}
+
+impl Serialize for TransactionOutputs {
+	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: Serializer {
+		let mut state = try!(serializer.serialize_map(Some(self.len())));
+		for output in &self.outputs {
+			try!(serializer.serialize_map_key(&mut state, &output.address));
+			try!(serializer.serialize_map_value(&mut state, &output.amount));
+		}
+		serializer.serialize_map_end(state)
+	}
+}
+
+impl Deserialize for TransactionOutputs {
+	fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error> where D: Deserializer {
+		use serde::de::{Visitor, MapVisitor};
+
+		struct TransactionOutputsVisitor;
+
+		impl Visitor for TransactionOutputsVisitor {
+			type Value = TransactionOutputs;
+
+			fn visit_map<V>(&mut self, mut visitor: V) -> Result<TransactionOutputs, V::Error> where V: MapVisitor {
+				let mut outputs: Vec<TransactionOutput> = Vec::with_capacity(visitor.size_hint().0);
+
+				while let Some((address, amount)) = try!(visitor.visit()) {
+					outputs.push(TransactionOutput {
+						address: address,
+						amount: amount,
+					});
+				}
+
+				try!(visitor.end());
+				Ok(TransactionOutputs {
+					outputs: outputs,
+				})
+			}
+		}
+
+		deserializer.deserialize(TransactionOutputsVisitor)
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use serde_json;
@@ -178,6 +232,42 @@ mod tests {
 		};
 		assert_eq!(
 			serde_json::from_str::<TransactionOutput>(r#"{"address":"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa","amount":123.45}"#).unwrap(),
+			txout);
+	}
+
+	#[test]
+	fn transaction_outputs_serialize() {
+		let txout = TransactionOutputs {
+			outputs: vec![
+				TransactionOutput {
+					address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".into(),
+					amount: 123.45,
+				},
+				TransactionOutput {
+					address: "1H5m1XzvHsjWX3wwU781ubctznEpNACrNC".into(),
+					amount: 67.89,
+				},
+			]
+		};
+		assert_eq!(serde_json::to_string(&txout).unwrap(), r#"{"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa":123.45,"1H5m1XzvHsjWX3wwU781ubctznEpNACrNC":67.89}"#);
+	}
+
+	#[test]
+	fn transaction_outputs_deserialize() {
+		let txout = TransactionOutputs {
+			outputs: vec![
+				TransactionOutput {
+					address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".into(),
+					amount: 123.45,
+				},
+				TransactionOutput {
+					address: "1H5m1XzvHsjWX3wwU781ubctznEpNACrNC".into(),
+					amount: 67.89,
+				},
+			]
+		};
+		assert_eq!(
+			serde_json::from_str::<TransactionOutputs>(r#"{"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa":123.45,"1H5m1XzvHsjWX3wwU781ubctznEpNACrNC":67.89}"#).unwrap(),
 			txout);
 	}
 
