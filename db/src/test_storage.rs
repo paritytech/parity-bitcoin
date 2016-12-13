@@ -3,9 +3,9 @@
 use super::{
 	BlockRef, Store, Error, BestBlock, BlockLocation, BlockInsertedChain, BlockProvider,
 	BlockStapler, TransactionMetaProvider, TransactionProvider, PreviousTransactionOutputProvider,
-	IndexedBlock, BlockHeaderProvider,
+	BlockHeaderProvider,
 };
-use chain::{self, Block};
+use chain::{self, Block, IndexedBlock};
 use primitives::hash::H256;
 use serialization;
 use chain::bytes::Bytes;

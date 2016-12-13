@@ -1,52 +1,19 @@
-use std::io;
-use primitives::hash::H256;
-use chain::{Block, OutPoint, TransactionOutput, merkle_root, Transaction};
-use serialization::{
+use std::{io, cmp};
+use hash::H256;
+use ser::{
 	Serializable, serialized_list_size,
 	Deserializable, Reader, Error as ReaderError
 };
+use block::Block;
+use transaction::Transaction;
+use merkle_root::merkle_root;
 use indexed_header::IndexedBlockHeader;
 use indexed_transaction::IndexedTransaction;
-use {TransactionOutputObserver, PreviousTransactionOutputProvider};
 
 #[derive(Debug, Clone)]
 pub struct IndexedBlock {
 	pub header: IndexedBlockHeader,
 	pub transactions: Vec<IndexedTransaction>,
-}
-
-impl PreviousTransactionOutputProvider for IndexedBlock {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		let txs: &[_] = &self.transactions;
-		txs.previous_transaction_output(prevout)
-	}
-}
-
-impl TransactionOutputObserver for IndexedBlock {
-	fn is_spent(&self, _prevout: &OutPoint) -> Option<bool> {
-		// the code below is valid, but commented out due it's poor performance
-		// we could optimize it by indexing all outputs once
-		// let tx: IndexedTransaction = { .. }
-		// let indexed_outputs: IndexedOutputs = tx.indexed_outputs();
-		// indexed_outputs.is_spent()
-		None
-
-		// if previous transaction output appears more than once than we can safely
-		// tell that it's spent (double spent)
-
-		//let spends = self.transactions.iter()
-			//.flat_map(|tx| &tx.raw.inputs)
-			//.filter(|input| &input.previous_output == prevout)
-			//.take(2)
-			//.count();
-
-		//match spends {
-			//0 => None,
-			//1 => Some(false),
-			//2 => Some(true),
-			//_ => unreachable!("spends <= 2; self.take(2); qed"),
-		//}
-	}
 }
 
 impl From<Block> for IndexedBlock {
@@ -57,6 +24,12 @@ impl From<Block> for IndexedBlock {
 			header: block_header.into(),
 			transactions: transactions.into_iter().map(Into::into).collect(),
 		}
+	}
+}
+
+impl cmp::PartialEq for IndexedBlock {
+	fn eq(&self, other: &Self) -> bool {
+		self.header.hash == other.header.hash
 	}
 }
 

@@ -1,6 +1,6 @@
 use primitives::hash::H256;
-use chain::{OutPoint, TransactionOutput};
-use db::{SharedStore, IndexedTransaction, PreviousTransactionOutputProvider};
+use chain::{OutPoint, TransactionOutput, IndexedTransaction};
+use db::{SharedStore, PreviousTransactionOutputProvider};
 use network::Magic;
 use memory_pool::{MemoryPool, OrderingStrategy, Entry};
 use verification::{work_required, block_reward_satoshi, transaction_sigops};
@@ -252,7 +252,7 @@ impl BlockAssembler {
 
 #[cfg(test)]
 mod tests {
-	use db::IndexedTransaction;
+	use chain::{IndexedTransaction, IndexedTransactionsRef};
 	use verification::constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 	use memory_pool::Entry;
 	use super::{SizePolicy, NextStep, FittingTransactionsIterator};
@@ -291,8 +291,8 @@ mod tests {
 	#[test]
 	fn test_fitting_transactions_iterator_no_transactions() {
 		let store: Vec<IndexedTransaction> = Vec::new();
+		let store_ref = IndexedTransactionsRef::new(&store);
 		let entries: Vec<Entry> = Vec::new();
-		let store_ref: &[_] = &store;
 
 		let iter = FittingTransactionsIterator::new(&store_ref, entries.iter(), MAX_BLOCK_SIZE as u32, MAX_BLOCK_SIGOPS as u32);
 		assert!(iter.collect::<Vec<_>>().is_empty());

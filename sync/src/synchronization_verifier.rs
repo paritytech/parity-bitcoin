@@ -2,12 +2,12 @@ use std::thread;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
-use chain::{Transaction, OutPoint, TransactionOutput};
+use chain::{Transaction, OutPoint, TransactionOutput, IndexedBlock};
 use network::Magic;
 use primitives::hash::H256;
 use synchronization_chain::ChainRef;
 use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify, Chain};
-use db::{SharedStore, IndexedBlock, PreviousTransactionOutputProvider, TransactionOutputObserver};
+use db::{SharedStore, PreviousTransactionOutputProvider, TransactionOutputObserver};
 use time::get_time;
 
 /// Block verification events sink
@@ -231,13 +231,13 @@ pub mod tests {
 	use std::sync::Arc;
 	use std::collections::HashMap;
 	use parking_lot::RwLock;
-	use chain::Transaction;
+	use chain::{Transaction, IndexedBlock};
 	use synchronization_chain::{Chain, ChainRef};
 	use synchronization_client::CoreVerificationSink;
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use primitives::hash::H256;
 	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink, ChainMemoryPoolTransactionOutputProvider};
-	use db::{self, IndexedBlock};
+	use db;
 	use test_data;
 
 	#[derive(Default)]

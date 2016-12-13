@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use db::IndexedBlock;
+use chain::IndexedBlock;
 use sigops::transaction_sigops;
 use duplex_store::NoopStore;
 use error::{Error, TransactionError};

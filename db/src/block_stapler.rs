@@ -1,7 +1,7 @@
 use primitives::hash::H256;
-use super::{BlockLocation, IndexedBlock};
-use chain;
+use chain::{self, IndexedBlock};
 use error::Error;
+use super::BlockLocation;
 
 #[derive(Debug, PartialEq)]
 pub struct Reorganization {
