@@ -53,20 +53,6 @@ impl<'a> TransactionAcceptor<'a> {
 		try!(self.eval.check());
 		Ok(())
 	}
-
-	/// backwards test compatibility
-	/// TODO: get rid of this
-	pub fn check_with_eval(&self, eval: bool) -> Result<(), TransactionError> {
-		try!(self.bip30.check());
-		try!(self.missing_inputs.check());
-		try!(self.maturity.check());
-		try!(self.overspent.check());
-		try!(self.double_spent.check());
-		if eval {
-			try!(self.eval.check());
-		}
-		Ok(())
-	}
 }
 
 pub struct MemoryPoolTransactionAcceptor<'a> {
