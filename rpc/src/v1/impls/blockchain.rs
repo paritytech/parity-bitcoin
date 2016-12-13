@@ -16,7 +16,6 @@ use verification;
 use ser::serialize;
 use network::Magic;
 use primitives::hash::H256 as GlobalH256;
-use network::Magic;
 
 pub struct BlockChainClient<T: BlockChainClientCoreApi> {
 	core: T,
