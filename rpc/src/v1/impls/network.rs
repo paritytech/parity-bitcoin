@@ -87,7 +87,6 @@ impl NetworkApi for NetworkClientCore {
 	}
 
 	fn node_info(&self, node_addr: IpAddr) -> Result<NodeInfo, p2p::NodeTableError> {
-		Err(p2p::NodeTableError::NoAddressInTable)
 	}
 
 	fn nodes_info(&self) -> Vec<NodeInfo> {
