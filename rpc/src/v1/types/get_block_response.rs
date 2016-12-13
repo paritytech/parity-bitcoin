@@ -1,7 +1,7 @@
 use serde::{Serialize, Serializer};
 use super::hash::H256;
 use super::uint::U256;
-use super::raw_block::RawBlock;
+use super::block::RawBlock;
 
 /// Response to getblock RPC request
 #[derive(Debug)]
