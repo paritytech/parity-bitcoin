@@ -109,11 +109,7 @@ impl AsyncVerifier {
 					} else {
 						None
 					};
-					let prevout_provider = match prevout_provider {
-						Some(ref prevout_provider) => Some(prevout_provider),
-						None => None,
-					};
-					execute_verification_task(&sink, prevout_provider, &verifier, task)
+					execute_verification_task(&sink, prevout_provider.as_ref(), &verifier, task)
 				},
 			}
 		}
