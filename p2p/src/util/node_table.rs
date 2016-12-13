@@ -296,6 +296,11 @@ impl<T> NodeTable<T> where T: Time {
 			.collect()
 	}
 
+	/// Returnes all nodes
+	pub fn nodes(&self) -> Vec<Node> {
+		self.by_addr.iter().map(|(_, n)| n).cloned().collect()
+	}
+
 	/// Returns most recently active nodes.
 	///
 	/// The documenation says:

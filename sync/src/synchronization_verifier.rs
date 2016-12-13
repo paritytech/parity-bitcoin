@@ -2,7 +2,7 @@ use std::thread;
 use std::collections::{VecDeque, HashSet};
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
-use chain::{Transaction, OutPoint, TransactionOutput};
+use chain::{Transaction, OutPoint, TransactionOutput, IndexedBlock};
 use network::Magic;
 use miner::{HashedOutPoint, DoubleSpendCheckResult};
 use primitives::hash::H256;

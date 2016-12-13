@@ -112,5 +112,5 @@ pub use work::{work_required, is_valid_proof_of_work, is_valid_proof_of_work_has
 
 /// Interface for block verification
 pub trait Verify : Send + Sync {
-	fn verify(&self, block: &db::IndexedBlock) -> VerificationResult;
+	fn verify(&self, block: &chain::IndexedBlock) -> VerificationResult;
 }

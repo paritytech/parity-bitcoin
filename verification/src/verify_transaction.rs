@@ -1,6 +1,6 @@
 use std::ops;
 use serialization::Serializable;
-use db::IndexedTransaction;
+use chain::IndexedTransaction;
 use duplex_store::NoopStore;
 use sigops::transaction_sigops;
 use error::TransactionError;

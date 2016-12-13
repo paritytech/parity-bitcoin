@@ -2,11 +2,11 @@ extern crate crypto as rcrypto;
 extern crate primitives;
 extern crate siphasher;
 
+pub use rcrypto::digest::Digest;
 use std::hash::Hasher;
 use rcrypto::sha1::Sha1;
 use rcrypto::sha2::Sha256;
 use rcrypto::ripemd160::Ripemd160;
-use rcrypto::digest::Digest;
 use siphasher::sip::SipHasher24;
 use primitives::hash::{H32, H160, H256};
 
@@ -71,6 +71,12 @@ impl Default for DHash256 {
 impl DHash256 {
 	pub fn new() -> Self {
 		DHash256::default()
+	}
+
+	pub fn finish(mut self) -> H256 {
+		let mut result = H256::default();
+		self.result(&mut *result);
+		result
 	}
 }
 

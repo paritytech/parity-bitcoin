@@ -1,7 +1,7 @@
 use std::{cmp, mem};
 use bytes::Bytes;
 use keys::{Signature, Public};
-use chain::SEQUENCE_LOCKTIME_DISABLE_FLAG;
+use chain::constants::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
 use {
 	script, Script, Num, VerificationFlags, Opcode, Error,
