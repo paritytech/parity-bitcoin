@@ -30,9 +30,6 @@ pub fn main(benchmark: &mut Benchmark) {
 	let genesis = test_data::genesis();
 	store.insert_block(&genesis).unwrap();
 
-	let genesis = test_data::genesis();
-	store.insert_block(&genesis).unwrap();
-
 	let mut rolling_hash = genesis.hash();
 	let mut blocks: Vec<IndexedBlock> = Vec::new();
 
