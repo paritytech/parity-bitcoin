@@ -1,5 +1,6 @@
 use std::{io, net, error, time};
 use std::sync::Arc;
+use std::net::SocketAddr;
 use parking_lot::RwLock;
 use futures::{Future, finished, failed, BoxFuture};
 use futures::stream::Stream;
@@ -12,7 +13,7 @@ use ns_dns_tokio::DnsResolver;
 use message::{Payload, MessageResult, Message};
 use message::common::Services;
 use net::{connect, Connections, Channel, Config as NetConfig, accept_connection, ConnectionCounter};
-use util::{NodeTable, Node, Direction};
+use util::{NodeTable, Node, NodeTableError, Direction};
 use session::{SessionFactory, SeednodeSessionFactory, NormalSessionFactory};
 use {Config, PeerId};
 use protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef};
@@ -88,9 +89,21 @@ impl Context {
 		self.node_table.write().insert_many(nodes);
 	}
 
+	/// Adds node to table.
+	pub fn add_node(&self, addr: SocketAddr) -> Result<(), NodeTableError> {
+		trace!("Adding node {} to node table", &addr);
+		self.node_table.write().add(addr, self.config.connection.services)
+	}
+
+	/// Removes node from table.
+	pub fn remove_node(&self, addr: SocketAddr) -> Result<(), NodeTableError> {
+		trace!("Removing node {} from node table", &addr);
+		self.node_table.write().remove(&addr)
+	}
+
 	/// Every 10 seconds check if we have reached maximum number of outbound connections.
 	/// If not, connect to best peers.
-	pub fn autoconnect(context: Arc<Context>, handle: &Handle, config: NetConfig) {
+	pub fn autoconnect(context: Arc<Context>, handle: &Handle) {
 		let c = context.clone();
 		// every 10 seconds connect to new peers (if needed)
 		let interval: BoxedEmptyFuture = Interval::new(time::Duration::new(10, 0), handle).expect("Failed to create interval")
@@ -113,7 +126,7 @@ impl Context {
 
 				trace!("Creating {} more outbound connections", addresses.len());
 				for address in addresses {
-					Context::connect::<NormalSessionFactory>(context.clone(), address, config.clone());
+					Context::connect::<NormalSessionFactory>(context.clone(), address);
 				}
 
 				if let Err(_err) = context.node_table.read().save_to_file(&context.config.node_table_path) {
@@ -174,11 +187,16 @@ impl Context {
 	}
 
 	/// Connect to socket using given context.
-	pub fn connect<T>(context: Arc<Context>, socket: net::SocketAddr, config: NetConfig) where T: SessionFactory {
+	pub fn connect<T>(context: Arc<Context>, socket: net::SocketAddr) where T: SessionFactory {
 		context.connection_counter.note_new_outbound_connection();
 		context.remote.clone().spawn(move |handle| {
-			context.pool.clone().spawn(Context::connect_future::<T>(context, socket, handle, &config))
+			let config = context.config.clone();
+			context.pool.clone().spawn(Context::connect_future::<T>(context, socket, handle, &config.connection))
 		})
+	}
+
+	pub fn connect_normal(context: Arc<Context>, socket: net::SocketAddr) {
+		Self::connect::<NormalSessionFactory>(context, socket)
 	}
 
 	pub fn accept_connection_future(context: Arc<Context>, stream: TcpStream, socket: net::SocketAddr, handle: &Handle, config: NetConfig) -> BoxedEmptyFuture {
@@ -420,25 +438,25 @@ impl P2P {
 			self.connect_to_seednode(&resolver, seed);
 		}
 
-		Context::autoconnect(self.context.clone(), &self.event_loop_handle, self.config.connection.clone());
+		Context::autoconnect(self.context.clone(), &self.event_loop_handle);
 		try!(self.listen());
 		Ok(())
 	}
 
+	/// Attempts to connect to the specified node
 	pub fn connect<T>(&self, addr: net::SocketAddr) where T: SessionFactory {
-		Context::connect::<T>(self.context.clone(), addr, self.config.connection.clone());
+		Context::connect::<T>(self.context.clone(), addr);
 	}
 
 	pub fn connect_to_seednode(&self, resolver: &Resolver, seednode: &str) {
 		let owned_seednode = seednode.to_owned();
 		let context = self.context.clone();
-		let connection_config = self.config.connection.clone();
 		let dns_lookup = resolver.resolve(seednode).then(move |result| {
 			match result {
 				Ok(address) => match address.pick_one() {
 					Some(socket) => {
 						trace!("Dns lookup of seednode {} finished. Connecting to {}", owned_seednode, socket);
-						Context::connect::<SeednodeSessionFactory>(context, socket, connection_config);
+						Context::connect::<SeednodeSessionFactory>(context, socket);
 					},
 					None => {
 						trace!("Dns lookup of seednode {} resolved with no results", owned_seednode);
@@ -454,10 +472,13 @@ impl P2P {
 		self.event_loop_handle.spawn(pool_work);
 	}
 
-
 	fn listen(&self) -> Result<(), Box<error::Error>> {
 		let server = try!(Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone()));
 		self.event_loop_handle.spawn(server);
 		Ok(())
+	}
+
+	pub fn context(&self) -> &Arc<Context> {
+		&self.context
 	}
 }
