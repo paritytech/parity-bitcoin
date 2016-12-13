@@ -29,7 +29,7 @@ use synchronization_verifier::{Verifier, VerificationSink, BlockVerificationSink
 use compact_block_builder::build_compact_block;
 use hash_queue::HashPosition;
 use miner::transaction_fee_rate;
-use verification::ChainVerifier;
+use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 use time;
 use std::time::Duration;
 use miner::{BlockAssembler, BlockTemplate};
@@ -1827,7 +1827,7 @@ pub mod tests {
 	use synchronization_verifier::tests::DummyVerifier;
 	use synchronization_server::ServerTaskIndex;
 	use primitives::hash::H256;
-	use verification::ChainVerifier;
+	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 	use p2p::event_loop;
 	use test_data;
 	use db::{self, BlockHeaderProvider};
