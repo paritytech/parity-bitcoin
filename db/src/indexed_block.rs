@@ -1,6 +1,10 @@
+use std::io;
 use primitives::hash::H256;
 use chain::{Block, OutPoint, TransactionOutput, merkle_root, Transaction};
-use serialization::{Serializable, serialized_list_size};
+use serialization::{
+	Serializable, serialized_list_size,
+	Deserializable, Reader, Error as ReaderError
+};
 use indexed_header::IndexedBlockHeader;
 use indexed_transaction::IndexedTransaction;
 use {TransactionOutputObserver, PreviousTransactionOutputProvider};
@@ -85,5 +89,16 @@ impl IndexedBlock {
 
 	pub fn is_final(&self, height: u32) -> bool {
 		self.transactions.iter().all(|tx| tx.raw.is_final(height, self.header.raw.time))
+	}
+}
+
+impl Deserializable for IndexedBlock {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
+		let block = IndexedBlock {
+			header: try!(reader.read()),
+			transactions: try!(reader.read_list()),
+		};
+
+		Ok(block)
 	}
 }
