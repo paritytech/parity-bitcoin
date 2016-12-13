@@ -25,10 +25,8 @@ pub fn main(benchmark: &mut Benchmark) {
 
 	// test setup
 	let path = RandomTempPath::create_dir();
-	let store = Arc::new(Storage::new(path.as_path()).unwrap());
 
 	let genesis = test_data::genesis();
-	store.insert_block(&genesis).unwrap();
 
 	let mut rolling_hash = genesis.hash();
 	let mut blocks: Vec<IndexedBlock> = Vec::new();
@@ -52,7 +50,12 @@ pub fn main(benchmark: &mut Benchmark) {
 		rolling_hash = next_block.hash();
 		blocks.push(next_block.into());
 	}
-	for block in blocks.iter() { store.insert_indexed_block(block).unwrap(); }
+
+	{
+		let store = Arc::new(Storage::new(path.as_path()).unwrap());
+		store.insert_block(&genesis).unwrap();
+		for block in blocks.iter() { store.insert_indexed_block(block).unwrap(); }
+	}
 
 	let mut verification_blocks: Vec<IndexedBlock> = Vec::new();
 	for b in 0..BLOCKS {
@@ -80,6 +83,9 @@ pub fn main(benchmark: &mut Benchmark) {
 
 		verification_blocks.push(builder.merkled_header().parent(rolling_hash.clone()).build().build().into());
 	}
+
+
+	let store = Arc::new(Storage::new(path.as_path()).unwrap());
 
 	let chain_verifier = ChainVerifier::new(store.clone(), Magic::Mainnet).pow_skip();
 
