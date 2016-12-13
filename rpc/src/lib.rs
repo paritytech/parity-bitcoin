@@ -23,7 +23,8 @@ extern crate miner;
 extern crate verification;
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
-extern crate script;
+extern crate script as global_script;
+extern crate keys;
 
 pub mod v1;
 pub mod rpc_server;

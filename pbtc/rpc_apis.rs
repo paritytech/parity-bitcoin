@@ -5,10 +5,12 @@ use ethcore_rpc::Extendable;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum Api {
-	/// Raw
+	/// Raw methods
 	Raw,
-	/// Miner
+	/// Miner-related methods
 	Miner,
+	/// BlockChain-related methods
+	BlockChain,
 	/// Network
 	Network,
 }
@@ -20,7 +22,7 @@ pub enum ApiSet {
 
 impl Default for ApiSet {
 	fn default() -> Self {
-		ApiSet::List(vec![Api::Raw, Api::Network].into_iter().collect())
+		ApiSet::List(vec![Api::Raw, Api::Miner, Api::BlockChain, Api::Network].into_iter().collect())
 	}
 }
 
@@ -31,6 +33,7 @@ impl FromStr for Api {
 		match s {
 			"raw" => Ok(Api::Raw),
 			"miner" => Ok(Api::Miner),
+			"blockchain" => Ok(Api::BlockChain),
 			"network" => Ok(Api::Network),
 			api => Err(format!("Unknown api: {}", api)),
 		}
@@ -52,6 +55,7 @@ pub fn setup_rpc<T: Extendable>(server: T, apis: ApiSet, deps: Dependencies) -> 
 		match api {
 			Api::Raw => server.add_delegate(RawClient::new(RawClientCore::new(deps.local_sync_node.clone())).to_delegate()),
 			Api::Miner => server.add_delegate(MinerClient::new(MinerClientCore::new(deps.local_sync_node.clone())).to_delegate()),
+			Api::BlockChain => server.add_delegate(BlockChainClient::new(BlockChainClientCore::new(deps.network, deps.storage.clone())).to_delegate()),
 			Api::Network => server.add_delegate(NetworkClient::new(NetworkClientCore::new(deps.p2p_context.clone())).to_delegate()),
 		}
 	}

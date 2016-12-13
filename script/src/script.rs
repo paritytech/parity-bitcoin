@@ -29,6 +29,33 @@ pub enum ScriptType {
 	WitnessKey,
 }
 
+/// Address from Script
+#[derive(PartialEq, Debug)]
+pub struct ScriptAddress {
+	/// The type of the address.
+	pub kind: keys::Type,
+	/// Public key hash.
+	pub hash: AddressHash,
+}
+
+impl ScriptAddress {
+	/// Creates P2PKH-type ScriptAddress
+	pub fn new_p2pkh(hash: AddressHash) -> Self {
+		ScriptAddress {
+			kind: keys::Type::P2PKH,
+			hash: hash,
+		}
+	}
+
+	/// Creates P2SH-type ScriptAddress
+	pub fn new_p2sh(hash: AddressHash) -> Self {
+		ScriptAddress {
+			kind: keys::Type::P2SH,
+			hash: hash,
+		}
+	}
+}
+
 /// Serialized script, used inside transaction inputs and outputs.
 #[derive(PartialEq, Debug)]
 pub struct Script {
@@ -350,7 +377,7 @@ impl Script {
 		return 1;
 	}
 
-	pub fn extract_destinations(&self) -> Result<Vec<AddressHash>, keys::Error> {
+	pub fn extract_destinations(&self) -> Result<Vec<ScriptAddress>, keys::Error> {
 		match self.script_type() {
 			ScriptType::NonStandard => {
 				Ok(vec![])
@@ -361,26 +388,26 @@ impl Script {
 					x if x == Opcode::OP_PUSHBYTES_65 as u8 => &self.data[1..66],
 					_ => unreachable!(), // because we are relying on script_type() checks here
 				})
-				.map(|public| vec![public.address_hash()])
+				.map(|public| vec![ScriptAddress::new_p2pkh(public.address_hash())])
 			},
 			ScriptType::PubKeyHash => {
 				Ok(vec![
-					self.data[3..23].into()
+					ScriptAddress::new_p2pkh(self.data[3..23].into()),
 				])
 			},
 			ScriptType::ScriptHash => {
 				Ok(vec![
-					self.data[2..22].into()
+					ScriptAddress::new_p2sh(self.data[2..22].into()),
 				])
 			},
 			ScriptType::Multisig => {
-				let mut addresses: Vec<AddressHash> = Vec::new();
+				let mut addresses: Vec<ScriptAddress> = Vec::new();
 				let mut pc = 1;
 				while pc < self.len() - 2 {
 					let instruction = self.get_instruction(pc).expect("this method depends on previous check in script_type()");
 					let data = instruction.data.expect("this method depends on previous check in script_type()");
 					let address = try!(Public::from_slice(data)).address_hash();
-					addresses.push(address);
+					addresses.push(ScriptAddress::new_p2pkh(address));
 					pc += instruction.step;
 				}
 				Ok(addresses)
@@ -516,7 +543,7 @@ impl fmt::Display for Script {
 #[cfg(test)]
 mod tests {
 	use {Builder, Opcode};
-	use super::{Script, ScriptType, MAX_SCRIPT_ELEMENT_SIZE};
+	use super::{Script, ScriptType, ScriptAddress, MAX_SCRIPT_ELEMENT_SIZE};
 	use keys::{Address, Public};
 
 	#[test]
@@ -650,7 +677,9 @@ OP_ADD
 			.push_opcode(Opcode::OP_CHECKSIG)
 			.into_script();
 		assert_eq!(script.script_type(), ScriptType::PubKey);
-		assert_eq!(script.extract_destinations(), Ok(vec![address]));
+		assert_eq!(script.extract_destinations(), Ok(vec![
+			ScriptAddress::new_p2pkh(address),
+		]));
 	}
 
 	#[test]
@@ -662,7 +691,9 @@ OP_ADD
 			.push_opcode(Opcode::OP_CHECKSIG)
 			.into_script();
 		assert_eq!(script.script_type(), ScriptType::PubKey);
-		assert_eq!(script.extract_destinations(), Ok(vec![address]));
+		assert_eq!(script.extract_destinations(), Ok(vec![
+			ScriptAddress::new_p2pkh(address),
+		]));
 	}
 
 	#[test]
@@ -676,7 +707,9 @@ OP_ADD
 			.push_opcode(Opcode::OP_CHECKSIG)
 			.into_script();
 		assert_eq!(script.script_type(), ScriptType::PubKeyHash);
-		assert_eq!(script.extract_destinations(), Ok(vec![address]));
+		assert_eq!(script.extract_destinations(), Ok(vec![
+			ScriptAddress::new_p2pkh(address),
+		]));
 	}
 
 	#[test]
@@ -688,7 +721,9 @@ OP_ADD
 			.push_opcode(Opcode::OP_EQUAL)
 			.into_script();
 		assert_eq!(script.script_type(), ScriptType::ScriptHash);
-		assert_eq!(script.extract_destinations(), Ok(vec![address]));
+		assert_eq!(script.extract_destinations(), Ok(vec![
+			ScriptAddress::new_p2sh(address),
+		]));
 	}
 
 	#[test]
@@ -705,7 +740,10 @@ OP_ADD
 			.push_opcode(Opcode::OP_CHECKMULTISIG)
 			.into_script();
 		assert_eq!(script.script_type(), ScriptType::Multisig);
-		assert_eq!(script.extract_destinations(), Ok(vec![address1, address2]));
+		assert_eq!(script.extract_destinations(), Ok(vec![
+			ScriptAddress::new_p2pkh(address1),
+			ScriptAddress::new_p2pkh(address2),
+		]));
 	}
 
 	#[test]
@@ -729,6 +767,5 @@ OP_ADD
 			.into_script();
 		assert_eq!(script.script_type(), ScriptType::ScriptHash);
 		assert_eq!(script.num_signatures_required(), 1);
-
 	}
 }
