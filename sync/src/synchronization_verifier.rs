@@ -8,7 +8,7 @@ use miner::{HashedOutPoint, DoubleSpendCheckResult};
 use primitives::hash::H256;
 use synchronization_chain::ChainRef;
 use verification::{self, BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify, Chain};
-use db::{SharedStore, IndexedBlock, PreviousTransactionOutputProvider, TransactionOutputObserver};
+use db::{SharedStore, PreviousTransactionOutputProvider, TransactionOutputObserver};
 use time::get_time;
 
 /// Block verification events sink
@@ -263,8 +263,9 @@ pub mod tests {
 	use synchronization_client::CoreVerificationSink;
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use primitives::hash::H256;
+	use chain::IndexedBlock;
 	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink};
-	use db::{self, IndexedBlock};
+	use db;
 	use test_data;
 
 	#[derive(Default)]
