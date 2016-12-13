@@ -54,6 +54,6 @@ mod tests {
 
 		assert_eq!(transaction_fee_rate(db.as_transaction_provider(), &tx0), 0);
 		assert_eq!(transaction_fee_rate(db.as_transaction_provider(), &tx1), 0);
-		assert_eq!(transaction_fee_rate(db.as_transaction_provider(), &tx2), 4_950);
+		assert_eq!(transaction_fee_rate(db.as_transaction_provider(), &tx2), 4_901);
 	}
 }

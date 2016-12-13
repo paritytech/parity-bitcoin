@@ -40,23 +40,14 @@ impl<'a> ChainAcceptor<'a> {
 	pub fn check(&self) -> Result<(), Error> {
 		try!(self.block.check());
 		try!(self.header.check());
-		try!(self.check_transactions_with_eval(true));
+		try!(self.check_transactions());
 		Ok(())
 	}
 
-	/// backwards test compatibility
-	/// TODO: get rid of this
-	pub fn check_with_eval(&self, eval: bool) -> Result<(), Error> {
-		try!(self.block.check());
-		try!(self.header.check());
-		try!(self.check_transactions_with_eval(eval));
-		Ok(())
-	}
-
-	fn check_transactions_with_eval(&self, eval: bool) -> Result<(), Error> {
+	fn check_transactions(&self) -> Result<(), Error> {
 		self.transactions.par_iter()
 			.enumerate()
-			.fold(|| Ok(()), |result, (index, tx)| result.and_then(|_| tx.check_with_eval(eval).map_err(|err| Error::Transaction(index, err))))
+			.fold(|| Ok(()), |result, (index, tx)| result.and_then(|_| tx.check().map_err(|err| Error::Transaction(index, err))))
 			.reduce(|| Ok(()), |acc, check| acc.and(check))
 	}
 }
