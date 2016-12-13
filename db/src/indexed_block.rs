@@ -1,6 +1,6 @@
 use primitives::hash::H256;
-use chain::{Block, OutPoint, TransactionOutput, merkle_root};
-use serialization::{Serializable, CompactInteger};
+use chain::{Block, OutPoint, TransactionOutput, merkle_root, Transaction};
+use serialization::{Serializable, serialized_list_size};
 use indexed_header::IndexedBlockHeader;
 use indexed_transaction::IndexedTransaction;
 use {TransactionOutputObserver, PreviousTransactionOutputProvider};
@@ -74,13 +74,13 @@ impl IndexedBlock {
 
 	pub fn size(&self) -> usize {
 		let header_size = self.header.raw.serialized_size();
-		let txs_len_size = CompactInteger::from(self.transactions.len()).serialized_size();
-		let txs_size = self.transactions.iter().map(|tx| tx.raw.serialized_size()).sum::<usize>();
-		header_size + txs_len_size + txs_size
+		let transactions = self.transactions.iter().map(|tx| &tx.raw).collect::<Vec<_>>();
+		let txs_size = serialized_list_size::<Transaction, &Transaction>(&transactions);
+		header_size + txs_size
 	}
 
 	pub fn merkle_root(&self) -> H256 {
-		merkle_root(&self.transactions.iter().map(|tx| tx.hash.clone()).collect::<Vec<_>>())
+		merkle_root(&self.transactions.iter().map(|tx| &tx.hash).collect::<Vec<&H256>>())
 	}
 
 	pub fn is_final(&self, height: u32) -> bool {

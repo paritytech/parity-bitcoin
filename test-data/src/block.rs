@@ -1,12 +1,12 @@
 //! Block builder
 
-use super::genesis;
-use chain;
+use std::cell::Cell;
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use primitives::compact::Compact;
+use chain;
 use invoke::{Invoke, Identity};
-use std::cell::Cell;
+use super::genesis;
 
 thread_local! {
 	pub static TIMESTAMP_COUNTER: Cell<u32> = Cell::new(0);
@@ -377,14 +377,16 @@ impl<F> TransactionInputBuilder<F> where F: Invoke<chain::TransactionInput> {
 pub struct TransactionOutputBuilder<F=Identity> {
 	callback: F,
 	value: u64,
-	signature: Bytes,
+	script_pubkey: Bytes,
 }
 
 impl<F> TransactionOutputBuilder<F> where F: Invoke<chain::TransactionOutput> {
 	fn with_callback(callback: F) -> Self {
 		TransactionOutputBuilder {
 			callback: callback,
-			signature: Bytes::new_with_len(0),
+			// 0x51 is OP_1 opcode
+			// so the evaluation is always true
+			script_pubkey: vec![0x51].into(),
 			value: 0,
 		}
 	}
@@ -394,20 +396,20 @@ impl<F> TransactionOutputBuilder<F> where F: Invoke<chain::TransactionOutput> {
 		self
 	}
 
-	pub fn signature(mut self, sig: &'static str) -> Self {
-		self.signature = sig.into();
+	pub fn script_pubkey(mut self, script_pubkey: &'static str) -> Self {
+		self.script_pubkey = script_pubkey.into();
 		self
 	}
 
-	pub fn signature_bytes(mut self, sig: Bytes) -> Self {
-		self.signature = sig;
+	pub fn script_pubkey_bytes(mut self, script_pubkey: Bytes) -> Self {
+		self.script_pubkey = script_pubkey;
 		self
 	}
 
 	pub fn build(self) -> F::Result {
 		self.callback.invoke(
 			chain::TransactionOutput {
-				script_pubkey: self.signature,
+				script_pubkey: self.script_pubkey,
 				value: self.value,
 			}
 		)

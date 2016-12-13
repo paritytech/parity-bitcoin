@@ -30,7 +30,6 @@ pub type VerificationResult = Result<Chain, Error>;
 pub struct BackwardsCompatibleChainVerifier {
 	store: db::SharedStore,
 	skip_pow: bool,
-	skip_sig: bool,
 	network: Magic,
 }
 
@@ -39,7 +38,6 @@ impl BackwardsCompatibleChainVerifier {
 		BackwardsCompatibleChainVerifier {
 			store: store,
 			skip_pow: false,
-			skip_sig: false,
 			network: network,
 		}
 	}
@@ -47,12 +45,6 @@ impl BackwardsCompatibleChainVerifier {
 	#[cfg(test)]
 	pub fn pow_skip(mut self) -> Self {
 		self.skip_pow = true;
-		self
-	}
-
-	#[cfg(test)]
-	pub fn signatures_skip(mut self) -> Self {
-		self.skip_sig = true;
 		self
 	}
 
@@ -73,7 +65,7 @@ impl BackwardsCompatibleChainVerifier {
 		// now do full verification
 		let canon_block = CanonBlock::new(block);
 		let chain_acceptor = ChainAcceptor::new(&self.store, self.network, canon_block, location.height());
-		try!(chain_acceptor.check_with_eval(!self.skip_sig));
+		try!(chain_acceptor.check());
 
 		match location {
 			BlockLocation::Main(_) => Ok(Chain::Main),
@@ -206,7 +198,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
 
 		let expected = Err(Error::Transaction(
 			1,
@@ -247,7 +239,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
 
 		let expected = Ok(Chain::Main);
 		assert_eq!(expected, verifier.verify(&block.into()));
@@ -289,7 +281,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
 
 		let expected = Ok(Chain::Main);
 		assert_eq!(expected, verifier.verify(&block.into()));
@@ -333,7 +325,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
 
 		let expected = Err(Error::Transaction(2, TransactionError::Overspend));
 		assert_eq!(expected, verifier.verify(&block.into()));
@@ -377,7 +369,7 @@ mod tests {
 			.merkled_header().parent(best_hash).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
 
 		let expected = Ok(Chain::Main);
 
@@ -430,7 +422,7 @@ mod tests {
 			.build()
 			.into();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
 
 		let expected = Err(Error::MaximumSigops);
 		assert_eq!(expected, verifier.verify(&block.into()));
@@ -457,7 +449,7 @@ mod tests {
 			.build()
 			.into();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip().signatures_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
 
 		let expected = Err(Error::CoinbaseOverspend {
 			expected_max: 5000000000,

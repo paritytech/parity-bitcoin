@@ -2,21 +2,21 @@ use crypto::dhash256;
 use hash::{H256, H512};
 
 #[inline]
-fn concat(a: &H256, b: &H256) -> H512 {
+fn concat<T>(a: T, b: T) -> H512 where T: AsRef<H256> {
 	let mut result = H512::default();
-	result[0..32].copy_from_slice(&**a);
-	result[32..64].copy_from_slice(&**b);
+	result[0..32].copy_from_slice(&**a.as_ref());
+	result[32..64].copy_from_slice(&**b.as_ref());
 	result
 }
 
 /// Calculates the root of the merkle tree
 /// https://en.bitcoin.it/wiki/Protocol_documentation#Merkle_Trees
-pub fn merkle_root(hashes: &[H256]) -> H256 {
+pub fn merkle_root<T>(hashes: &[T]) -> H256 where T: AsRef<H256> {
 	if hashes.len() == 1 {
-		return hashes[0].clone();
+		return hashes[0].as_ref().clone();
 	}
 
-	let mut row = vec![];
+	let mut row = Vec::with_capacity(hashes.len() / 2);
 	let mut i = 0;
 	while i + 1 < hashes.len() {
 		row.push(merkle_node_hash(&hashes[i], &hashes[i + 1]));
@@ -33,7 +33,7 @@ pub fn merkle_root(hashes: &[H256]) -> H256 {
 }
 
 /// Calculate merkle tree node hash
-pub fn merkle_node_hash(left: &H256, right: &H256) -> H256 {
+pub fn merkle_node_hash<T>(left: T, right: T) -> H256 where T: AsRef<H256> {
 	dhash256(&*concat(left, right))
 }
 
@@ -50,7 +50,9 @@ mod tests {
 		let tx2 = H256::from_reversed_str("5a4ebf66822b0b2d56bd9dc64ece0bc38ee7844a23ff1d7320a88c5fdb2ad3e2");
 		let expected = H256::from_reversed_str("8fb300e3fdb6f30a4c67233b997f99fdd518b968b9a3fd65857bfe78b2600719");
 
-		let result = merkle_root(&[tx1, tx2]);
+		let result = merkle_root(&[&tx1, &tx2]);
+		let result2 = merkle_root(&[tx1, tx2]);
 		assert_eq!(result, expected);
+		assert_eq!(result2, expected);
 	}
 }
