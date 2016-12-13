@@ -1,9 +1,8 @@
-use std::{cmp, io};
-use primitives::hash::H256;
-use chain::{Transaction, OutPoint, TransactionOutput};
-use serialization::{Deserializable, Reader, Error as ReaderError};
+use std::{cmp, io, borrow};
+use hash::H256;
+use ser::{Deserializable, Reader, Error as ReaderError};
+use transaction::Transaction;
 use read_and_hash::ReadAndHash;
-use PreviousTransactionOutputProvider;
 
 #[derive(Debug, Clone)]
 pub struct IndexedTransaction {
@@ -48,11 +47,14 @@ impl Deserializable for IndexedTransaction {
 	}
 }
 
-impl<'a> PreviousTransactionOutputProvider for &'a [IndexedTransaction] {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		self.iter()
-			.find(|tx| tx.hash == prevout.hash)
-			.and_then(|tx| tx.raw.outputs.get(prevout.index as usize))
-			.cloned()
+pub struct IndexedTransactionsRef<'a, T> where T: 'a {
+	pub transactions: &'a [T],
+}
+
+impl<'a, T> IndexedTransactionsRef<'a, T> where T: borrow::Borrow<IndexedTransaction> {
+	pub fn new(transactions: &'a [T]) -> Self {
+		IndexedTransactionsRef {
+			transactions: transactions,
+		}
 	}
 }

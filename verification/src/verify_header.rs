@@ -1,5 +1,5 @@
 use primitives::compact::Compact;
-use db::IndexedBlockHeader;
+use chain::IndexedBlockHeader;
 use network::Magic;
 use work::is_valid_proof_of_work;
 use error::Error;

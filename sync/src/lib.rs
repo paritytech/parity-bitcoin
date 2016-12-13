@@ -63,8 +63,8 @@ pub enum Error {
 }
 
 /// Create blocks writer.
-pub fn create_sync_blocks_writer(db: db::SharedStore, network: Magic) -> blocks_writer::BlocksWriter {
-	blocks_writer::BlocksWriter::new(db, network)
+pub fn create_sync_blocks_writer(db: db::SharedStore, network: Magic, verification: bool) -> blocks_writer::BlocksWriter {
+	blocks_writer::BlocksWriter::new(db, network, verification)
 }
 
 /// Creates local sync node for given `db`
