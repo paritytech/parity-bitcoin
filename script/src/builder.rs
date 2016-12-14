@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use {Opcode, Script, Num};
+use keys::AddressHash;
 
 #[derive(Default)]
 pub struct Builder {
@@ -7,6 +8,24 @@ pub struct Builder {
 }
 
 impl Builder {
+	pub fn build_p2pkh(address: &AddressHash) -> Script {
+		Builder::default()
+			.push_opcode(Opcode::OP_DUP)
+			.push_opcode(Opcode::OP_HASH160)
+			.push_bytes(&**address)
+			.push_opcode(Opcode::OP_EQUALVERIFY)
+			.push_opcode(Opcode::OP_CHECKSIG)
+			.into_script()
+	}
+
+	pub fn build_p2sh(address: &AddressHash) -> Script {
+		Builder::default()
+			.push_opcode(Opcode::OP_HASH160)
+			.push_bytes(&**address)
+			.push_opcode(Opcode::OP_EQUAL)
+			.into_script()
+	}
+
 	pub fn push_opcode(mut self, opcode: Opcode) -> Self {
 		self.data.push(opcode as u8);
 		self
@@ -60,6 +79,12 @@ impl Builder {
 		}
 
 		self.data.extend_from_slice(data);
+		self
+	}
+
+	pub fn return_bytes(mut self, bytes: &[u8]) -> Self {
+		self.data.push(Opcode::OP_RETURN as u8);
+		self.data.extend_from_slice(bytes);
 		self
 	}
 

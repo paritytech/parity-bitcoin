@@ -20,3 +20,6 @@ pub const SEQUENCE_LOCKTIME_MASK: u32 = 0x0000ffff;
 /// Threshold for `nLockTime`: below this value it is interpreted as block number,
 /// otherwise as UNIX timestamp.
 pub const LOCKTIME_THRESHOLD: u32 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
+
+/// Number of Satoshis in single coin
+pub const SATOSHIS_IN_COIN: u64 = 100_000_000;

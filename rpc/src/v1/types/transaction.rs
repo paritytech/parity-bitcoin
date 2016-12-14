@@ -19,13 +19,29 @@ pub struct TransactionInput {
 	pub sequence: Option<u32>,
 }
 
-/// Transaction output
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TransactionOutput {
+/// Transaction output of form "address": amount
+#[derive(Debug, PartialEq)]
+pub struct TransactionOutputWithAddress {
 	/// Receiver' address
 	pub address: Address,
 	/// Amount in BTC
 	pub amount: f64,
+}
+
+/// Trasaction output of form "data": serialized(output script data)
+#[derive(Debug, PartialEq)]
+pub struct TransactionOutputWithScriptData {
+	/// Serialized script data
+	pub script_data: Bytes,
+}
+
+/// Transaction output
+#[derive(Debug, PartialEq)]
+pub enum TransactionOutput {
+	/// Of form address: amount
+	Address(TransactionOutputWithAddress),
+	/// Of form data: script_data_bytes
+	ScriptData(TransactionOutputWithScriptData),
 }
 
 /// Transaction outputs, which serializes/deserializes as KV-map
@@ -147,8 +163,16 @@ impl Serialize for TransactionOutputs {
 	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: Serializer {
 		let mut state = try!(serializer.serialize_map(Some(self.len())));
 		for output in &self.outputs {
-			try!(serializer.serialize_map_key(&mut state, &output.address));
-			try!(serializer.serialize_map_value(&mut state, &output.amount));
+			match output {
+				&TransactionOutput::Address(ref address_output) => {
+					try!(serializer.serialize_map_key(&mut state, &address_output.address));
+					try!(serializer.serialize_map_value(&mut state, &address_output.amount));
+				},
+				&TransactionOutput::ScriptData(ref script_output) => {
+					try!(serializer.serialize_map_key(&mut state, "data"));
+					try!(serializer.serialize_map_value(&mut state, &script_output.script_data));
+				},
+			}
 		}
 		serializer.serialize_map_end(state)
 	}
@@ -166,11 +190,20 @@ impl Deserialize for TransactionOutputs {
 			fn visit_map<V>(&mut self, mut visitor: V) -> Result<TransactionOutputs, V::Error> where V: MapVisitor {
 				let mut outputs: Vec<TransactionOutput> = Vec::with_capacity(visitor.size_hint().0);
 
-				while let Some((address, amount)) = try!(visitor.visit()) {
-					outputs.push(TransactionOutput {
-						address: address,
-						amount: amount,
-					});
+				while let Some(key) = try!(visitor.visit_key::<String>()) {
+					if &key == "data" {
+						let value: Bytes = try!(visitor.visit_value());
+						outputs.push(TransactionOutput::ScriptData(TransactionOutputWithScriptData {
+							script_data: value,
+						}));
+					} else {
+						let address = try!(Address::deserialize_from_string(&key));
+						let amount: f64 = try!(visitor.visit_value());
+						outputs.push(TransactionOutput::Address(TransactionOutputWithAddress {
+							address: address,
+							amount: amount,
+						}));
+					}
 				}
 
 				try!(visitor.end());
@@ -216,58 +249,50 @@ mod tests {
 	}
 
 	#[test]
-	fn transaction_output_serialize() {
-		let txout = TransactionOutput {
-			address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".into(),
-			amount: 123.45,
-		};
-		assert_eq!(serde_json::to_string(&txout).unwrap(), r#"{"address":"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa","amount":123.45}"#);
-	}
-
-	#[test]
-	fn transaction_output_deserialize() {
-		let txout = TransactionOutput {
-			address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".into(),
-			amount: 123.45,
-		};
-		assert_eq!(
-			serde_json::from_str::<TransactionOutput>(r#"{"address":"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa","amount":123.45}"#).unwrap(),
-			txout);
-	}
-
-	#[test]
 	fn transaction_outputs_serialize() {
 		let txout = TransactionOutputs {
 			outputs: vec![
-				TransactionOutput {
+				TransactionOutput::Address(TransactionOutputWithAddress {
 					address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".into(),
 					amount: 123.45,
-				},
-				TransactionOutput {
+				}),
+				TransactionOutput::Address(TransactionOutputWithAddress {
 					address: "1H5m1XzvHsjWX3wwU781ubctznEpNACrNC".into(),
 					amount: 67.89,
-				},
+				}),
+				TransactionOutput::ScriptData(TransactionOutputWithScriptData {
+					script_data: Bytes::new(vec![1, 2, 3, 4]),
+				}),
+				TransactionOutput::ScriptData(TransactionOutputWithScriptData {
+					script_data: Bytes::new(vec![5, 6, 7, 8]),
+				}),
 			]
 		};
-		assert_eq!(serde_json::to_string(&txout).unwrap(), r#"{"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa":123.45,"1H5m1XzvHsjWX3wwU781ubctznEpNACrNC":67.89}"#);
+		assert_eq!(serde_json::to_string(&txout).unwrap(), r#"{"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa":123.45,"1H5m1XzvHsjWX3wwU781ubctznEpNACrNC":67.89,"data":"01020304","data":"05060708"}"#);
 	}
 
 	#[test]
 	fn transaction_outputs_deserialize() {
 		let txout = TransactionOutputs {
 			outputs: vec![
-				TransactionOutput {
+				TransactionOutput::Address(TransactionOutputWithAddress {
 					address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".into(),
 					amount: 123.45,
-				},
-				TransactionOutput {
+				}),
+				TransactionOutput::Address(TransactionOutputWithAddress {
 					address: "1H5m1XzvHsjWX3wwU781ubctznEpNACrNC".into(),
 					amount: 67.89,
-				},
+				}),
+				TransactionOutput::ScriptData(TransactionOutputWithScriptData {
+					script_data: Bytes::new(vec![1, 2, 3, 4]),
+				}),
+				TransactionOutput::ScriptData(TransactionOutputWithScriptData {
+					script_data: Bytes::new(vec![5, 6, 7, 8]),
+				}),
 			]
 		};
 		assert_eq!(
-			serde_json::from_str::<TransactionOutputs>(r#"{"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa":123.45,"1H5m1XzvHsjWX3wwU781ubctznEpNACrNC":67.89}"#).unwrap(),
+			serde_json::from_str::<TransactionOutputs>(r#"{"1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa":123.45,"1H5m1XzvHsjWX3wwU781ubctznEpNACrNC":67.89,"data":"01020304","data":"05060708"}"#).unwrap(),
 			txout);
 	}
 
