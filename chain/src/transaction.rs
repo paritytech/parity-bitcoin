@@ -258,7 +258,14 @@ impl Transaction {
 	}
 
 	pub fn total_spends(&self) -> u64 {
-		self.outputs.iter().map(|output| output.value).sum()
+		let mut result = 0u64;
+		for output in self.outputs.iter() {
+			if u64::max_value() - result < output.value {
+				return u64::max_value();
+			}
+			result += output.value;
+		}
+		result
 	}
 }
 

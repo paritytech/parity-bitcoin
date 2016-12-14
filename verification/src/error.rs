@@ -40,6 +40,8 @@ pub enum Error {
 	TransactionFeeAndRewardOverflow,
 	/// Sum of the transaction fees in block exceeds u64::max
 	TransactionFeesOverflow,
+	/// Sum of all referenced outputs in block transactions resulted in the overflow
+	ReferencedInputsSumOverflow,
 }
 
 #[derive(Debug, PartialEq)]

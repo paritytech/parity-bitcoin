@@ -5,7 +5,7 @@ use work::block_reward_satoshi;
 use duplex_store::DuplexTransactionOutputProvider;
 use canon::CanonBlock;
 use constants::MAX_BLOCK_SIGOPS;
-use error::Error;
+use error::{Error, TransactionError};
 
 /// Flexible verification of ordered block
 pub struct BlockAcceptor<'a> {
@@ -114,22 +114,40 @@ impl<'a> BlockCoinbaseClaim<'a> {
 impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
-		let available = self.block.transactions.iter()
-			.skip(1)
-			.flat_map(|tx| tx.raw.inputs.iter())
-			.map(|input| store.previous_transaction_output(&input.previous_output).map(|o| o.value).unwrap_or(0))
-			.sum::<u64>();
 
-		let spends = self.block.transactions.iter()
-			.skip(1)
-			.map(|tx| tx.raw.total_spends())
-			.sum::<u64>();
+		let mut fees: u64 = 0;
+
+		for (tx_idx, tx) in self.block.transactions.iter().skip(1).enumerate() {
+			// (1) Total sum of all referenced outputs
+			let mut incoming: u64 = 0;
+			for input in tx.raw.inputs.iter() {
+				let (sum, overflow) = incoming.overflowing_add(
+					store.previous_transaction_output(&input.previous_output).map(|o| o.value).unwrap_or(0));
+				if overflow {
+					return Err(Error::ReferencedInputsSumOverflow);
+				}
+				incoming = sum;
+			}
+
+			// (2) Total sum of all outputs
+			let spends = tx.raw.total_spends();
+
+			// Difference between (1) and (2)
+			let (difference, overflow) = incoming.overflowing_sub(spends);
+			if overflow {
+				return Err(Error::Transaction(tx_idx + 1, TransactionError::Overspend))
+			}
+
+			// Adding to total fees (with possible overflow)
+			let (sum, overflow) = fees.overflowing_add(difference);
+			if overflow {
+				return Err(Error::TransactionFeesOverflow)
+			}
+
+			fees = sum;
+		}
 
 		let claim = self.block.transactions[0].raw.total_spends();
-		let (fees, overflow) = available.overflowing_sub(spends);
-		if overflow {
-			return Err(Error::TransactionFeesOverflow);
-		}
 
 		let (reward, overflow) = fees.overflowing_add(block_reward_satoshi(self.height));
 		if overflow {
