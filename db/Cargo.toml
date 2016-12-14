@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Nikolay Volf <nikvolf@gmail.com>"]
 
 [dependencies]
-elastic-array = "0.5"
+elastic-array = { git = "https://github.com/ethcore/elastic-array" }
 rocksdb = { git = "https://github.com/ethcore/rust-rocksdb" }
 ethcore-devtools = { path = "../devtools" }
 primitives = { path = "../primitives" }
