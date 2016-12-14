@@ -87,7 +87,7 @@ Running integration tests is automated, as regtests repo is one of the submodule
 git submodule update --init
 ```
 
-Now we can run it
+Now we can run them
 
 ```
 ./tools/regtests.sh
@@ -109,7 +109,7 @@ java -jar pull-tests-f56eec3.jar
 
 ## Going online
 
-By default parity connects bitcoind seednodes. Full list is [here](./pbtc/seednodes.rs)
+By default parity connects to bitcoind seednodes. Full list is [here](./pbtc/seednodes.rs)
 
 To start syncing the mainnet, just start the client
 
