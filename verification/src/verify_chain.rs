@@ -1,5 +1,5 @@
 use rayon::prelude::{IntoParallelRefIterator, IndexedParallelIterator, ParallelIterator};
-use db::IndexedBlock;
+use chain::IndexedBlock;
 use network::Magic;
 use error::Error;
 use verify_block::BlockVerifier;

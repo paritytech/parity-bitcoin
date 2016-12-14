@@ -1,10 +1,10 @@
 //! Bitcoin chain verifier
 
 use hash::H256;
-use db::{self, IndexedBlockHeader, BlockLocation, PreviousTransactionOutputProvider, BlockHeaderProvider, TransactionOutputObserver};
+use chain::{IndexedBlock, IndexedBlockHeader, BlockHeader, Transaction};
+use db::{BlockLocation, SharedStore, PreviousTransactionOutputProvider, BlockHeaderProvider, TransactionOutputObserver};
 use network::Magic;
 use error::{Error, TransactionError};
-use {Verify, chain};
 use canon::{CanonBlock, CanonTransaction};
 use duplex_store::{DuplexTransactionOutputProvider, NoopStore};
 use verify_chain::ChainVerifier;
@@ -12,6 +12,7 @@ use verify_header::HeaderVerifier;
 use verify_transaction::MemoryPoolTransactionVerifier;
 use accept_chain::ChainAcceptor;
 use accept_transaction::MemoryPoolTransactionAcceptor;
+use Verify;
 
 #[derive(PartialEq, Debug)]
 /// Block verification chain
@@ -28,13 +29,13 @@ pub enum Chain {
 pub type VerificationResult = Result<Chain, Error>;
 
 pub struct BackwardsCompatibleChainVerifier {
-	store: db::SharedStore,
+	store: SharedStore,
 	skip_pow: bool,
 	network: Magic,
 }
 
 impl BackwardsCompatibleChainVerifier {
-	pub fn new(store: db::SharedStore, network: Magic) -> Self {
+	pub fn new(store: SharedStore, network: Magic) -> Self {
 		BackwardsCompatibleChainVerifier {
 			store: store,
 			skip_pow: false,
@@ -48,7 +49,7 @@ impl BackwardsCompatibleChainVerifier {
 		self
 	}
 
-	fn verify_block(&self, block: &db::IndexedBlock) -> VerificationResult {
+	fn verify_block(&self, block: &IndexedBlock) -> VerificationResult {
 		let current_time = ::time::get_time().sec as u32;
 		// first run pre-verification
 		let chain_verifier = ChainVerifier::new(block, self.network, current_time);
@@ -77,7 +78,7 @@ impl BackwardsCompatibleChainVerifier {
 		&self,
 		_block_header_provider: &BlockHeaderProvider,
 		hash: &H256,
-		header: &chain::BlockHeader
+		header: &BlockHeader
 	) -> Result<(), Error> {
 		// let's do only preverifcation
 		// TODO: full verification
@@ -92,7 +93,7 @@ impl BackwardsCompatibleChainVerifier {
 		prevout_provider: &T,
 		height: u32,
 		time: u32,
-		transaction: &chain::Transaction,
+		transaction: &Transaction,
 	) -> Result<(), TransactionError> where T: PreviousTransactionOutputProvider + TransactionOutputObserver {
 		let indexed_tx = transaction.clone().into();
 		// let's do preverification first
@@ -117,7 +118,7 @@ impl BackwardsCompatibleChainVerifier {
 }
 
 impl Verify for BackwardsCompatibleChainVerifier {
-	fn verify(&self, block: &db::IndexedBlock) -> VerificationResult {
+	fn verify(&self, block: &IndexedBlock) -> VerificationResult {
 		let result = self.verify_block(block);
 		trace!(
 			target: "verification", "Block {} (transactions: {}) verification finished. Result {:?}",
@@ -132,7 +133,8 @@ impl Verify for BackwardsCompatibleChainVerifier {
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
-	use db::{TestStorage, Storage, Store, BlockStapler, IndexedBlock};
+	use chain::IndexedBlock;
+	use db::{TestStorage, Storage, Store, BlockStapler};
 	use network::Magic;
 	use devtools::RandomTempPath;
 	use {script, test_data};

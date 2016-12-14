@@ -97,7 +97,7 @@ impl TransactionBuilder {
 				index: output_index,
 			},
 			script_sig: Bytes::new_with_len(0),
-			sequence: 0,
+			sequence: 0xffffffff,
 		});
 		self
 	}
@@ -113,8 +113,14 @@ impl TransactionBuilder {
 				index: output_index,
 			},
 			script_sig: Bytes::new_with_len(0),
-			sequence: 0,
+			sequence: 0xffffffff,
 		}];
+		self
+	}
+
+	pub fn lock(mut self) -> Self {
+		self.transaction.inputs[0].sequence = 0;
+		self.transaction.lock_time = 500000;
 		self
 	}
 

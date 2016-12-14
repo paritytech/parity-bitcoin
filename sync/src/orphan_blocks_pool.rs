@@ -3,7 +3,7 @@ use std::collections::hash_map::Entry;
 use linked_hash_map::LinkedHashMap;
 use time;
 use primitives::hash::H256;
-use db::IndexedBlock;
+use chain::IndexedBlock;
 
 #[derive(Debug)]
 /// Storage for blocks, for which we have no parent yet.

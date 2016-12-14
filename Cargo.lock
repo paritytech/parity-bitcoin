@@ -173,7 +173,6 @@ name = "db"
 version = "0.1.0"
 dependencies = [
  "bit-vec 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "bitcrypto 0.1.0",
  "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "chain 0.1.0",
  "elastic-array 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",

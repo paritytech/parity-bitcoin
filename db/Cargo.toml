@@ -8,7 +8,6 @@ elastic-array = "0.5"
 rocksdb = { git = "https://github.com/ethcore/rust-rocksdb" }
 ethcore-devtools = { path = "../devtools" }
 primitives = { path = "../primitives" }
-bitcrypto = { path = "../crypto" }
 byteorder = "0.5"
 chain = { path = "../chain"  }
 serialization = { path = "../serialization" }

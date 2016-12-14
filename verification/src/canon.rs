@@ -1,6 +1,6 @@
 use std::ops;
 use primitives::hash::H256;
-use db::{IndexedBlock, IndexedTransaction, IndexedBlockHeader};
+use chain::{IndexedBlock, IndexedTransaction, IndexedBlockHeader};
 
 /// Blocks whose parents are known to be in the chain
 #[derive(Clone, Copy)]

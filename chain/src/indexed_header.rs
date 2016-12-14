@@ -1,7 +1,7 @@
-use std::io;
-use primitives::hash::H256;
-use chain::BlockHeader;
-use serialization::{Deserializable, Reader, Error as ReaderError};
+use std::{io, cmp};
+use hash::H256;
+use ser::{Deserializable, Reader, Error as ReaderError};
+use block_header::BlockHeader;
 use read_and_hash::ReadAndHash;
 
 #[derive(Debug, Clone)]
@@ -25,6 +25,12 @@ impl IndexedBlockHeader {
 			hash: hash,
 			raw: header,
 		}
+	}
+}
+
+impl cmp::PartialEq for IndexedBlockHeader {
+	fn eq(&self, other: &Self) -> bool {
+		self.hash == other.hash
 	}
 }
 

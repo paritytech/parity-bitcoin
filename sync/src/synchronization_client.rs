@@ -7,8 +7,8 @@ use futures::{BoxFuture, Future, finished};
 use futures::stream::Stream;
 use tokio_core::reactor::{Handle, Interval};
 use futures_cpupool::CpuPool;
-use db::{self, IndexedBlock, BlockHeaderProvider, BlockRef};
-use chain::{BlockHeader, Transaction};
+use db::{self, BlockHeaderProvider, BlockRef};
+use chain::{BlockHeader, Transaction, IndexedBlock};
 use message::types;
 use message::common::{InventoryVector, InventoryType};
 use primitives::hash::H256;
@@ -1312,7 +1312,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 							}
 						},
 						BlockAnnouncementType::SendCompactBlock => {
-							let indexed_blocks: Vec<db::IndexedBlock> = {
+							let indexed_blocks: Vec<IndexedBlock> = {
 								let chain = self.chain.read();
 								new_blocks_hashes.iter()
 									.filter_map(|h| chain.storage().block(db::BlockRef::Hash(h.clone())))
@@ -2934,5 +2934,10 @@ pub mod tests {
 
 		// should not panic
 		sync.on_peer_transaction(1, test_data::TransactionBuilder::with_default_input(0).into());
+	}
+
+	#[test]
+	fn when_transaction_replaces_locked_transaction() {
+		// TODO
 	}
 }
