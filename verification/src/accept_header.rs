@@ -84,7 +84,7 @@ impl<'a> HeaderRule for HeaderWork<'a> {
 		if work == self.header.raw.bits {
 			Ok(())
 		} else {
-			Err(Error::Difficulty)
+			Err(Error::Difficulty { expected: work, actual: self.header.raw.bits })
 		}
 	}
 }
