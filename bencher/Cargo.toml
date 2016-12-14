@@ -8,11 +8,13 @@ description = "Parity bitcoin client."
 [dependencies]
 db = { path = "../db" }
 verification = { path = "../verification" }
+network = { path = "../network" }
 chain = { path = "../chain" }
 primitives = { path = "../primitives" }
 ethcore-devtools = { path = "../devtools" }
 test-data = { path = "../test-data" }
 time = "*"
+byteorder = "0.5"
 
 [[bin]]
 path = "src/main.rs"
