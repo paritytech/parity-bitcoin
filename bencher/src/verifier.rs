@@ -59,10 +59,12 @@ pub fn main(benchmark: &mut Benchmark) {
 
 	let mut verification_blocks: Vec<IndexedBlock> = Vec::new();
 	for b in 0..BLOCKS {
+		let mut coinbase_nonce = [0u8;8];
+		LittleEndian::write_u64(&mut coinbase_nonce[..], (b + BLOCKS_INITIAL) as u64);
 		let mut builder = test_data::block_builder()
 			.transaction()
-				.coinbase()
-				.output().value((b*b+(BLOCKS-b)) as u64).build()
+				.input().coinbase().signature_bytes(coinbase_nonce.to_vec().into()).build()
+				.output().value(5000000000).build()
 				.build();
 
 		for t in 0..TRANSACTIONS {
@@ -73,12 +75,12 @@ pub fn main(benchmark: &mut Benchmark) {
 
 				tx_builder = tx_builder
 					.input()
-					.hash(parent_hash)
-					.index(0)
-					.build()
+						.hash(parent_hash)
+						.index(0)
+						.build()
 			}
 
-			builder = tx_builder.output().value(5000).build().build()
+			builder = tx_builder.output().value(5000000000000).build().build()
 		}
 
 		verification_blocks.push(builder.merkled_header().parent(rolling_hash.clone()).build().build().into());
