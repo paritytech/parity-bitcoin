@@ -229,7 +229,17 @@ impl Transaction {
 		self.inputs.len() == 1 && self.inputs[0].previous_output.is_null()
 	}
 
-	pub fn is_final(&self, block_height: u32, block_time: u32) -> bool {
+	pub fn is_final(&self) -> bool {
+		// if lock_time is 0, transaction is final
+		if self.lock_time == 0 {
+			return true;
+		}
+		// setting all sequence numbers to 0xffffffff disables the time lock, so if you want to use locktime,
+		// at least one input must have a sequence number below the maximum.
+		self.inputs.iter().all(TransactionInput::is_final)
+	}
+
+	pub fn is_final_in_block(&self, block_height: u32, block_time: u32) -> bool {
 		if self.lock_time == 0 {
 			return true;
 		}
