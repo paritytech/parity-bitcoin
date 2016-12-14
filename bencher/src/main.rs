@@ -6,6 +6,7 @@ extern crate time;
 extern crate verification;
 extern crate network;
 extern crate byteorder;
+extern crate primitives;
 
 mod database;
 mod verifier;

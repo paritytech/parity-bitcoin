@@ -1,10 +1,12 @@
 use std::sync::Arc;
 use devtools::RandomTempPath;
-use db::{Storage, BlockStapler, IndexedBlock};
+use db::{Storage, BlockStapler, Store};
+use chain::IndexedBlock;
 use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify};
 use network::Magic;
 use test_data;
 use byteorder::{LittleEndian, ByteOrder};
+use primitives::Compact;
 
 use super::Benchmark;
 
@@ -80,14 +82,21 @@ pub fn main(benchmark: &mut Benchmark) {
 						.build()
 			}
 
-			builder = tx_builder.output().value(5000000000000).build().build()
+			builder = tx_builder.output().value(0).build().build()
 		}
 
-		verification_blocks.push(builder.merkled_header().parent(rolling_hash.clone()).build().build().into());
+		verification_blocks.push(
+			builder
+				.merkled_header()
+					.parent(rolling_hash.clone())
+					.build()
+				.build()
+			.into());
 	}
 
 
 	let store = Arc::new(Storage::new(path.as_path()).unwrap());
+	assert_eq!(store.best_block().unwrap().hash, rolling_hash);
 
 	let chain_verifier = ChainVerifier::new(store.clone(), Magic::Mainnet).pow_skip();
 
