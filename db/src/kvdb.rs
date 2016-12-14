@@ -165,33 +165,6 @@ pub fn rotational_from_df_output(df_out: Vec<u8>) -> Option<PathBuf> {
 }
 
 impl CompactionProfile {
-	/// Attempt to determine the best profile automatically, only Linux for now.
-	#[cfg(target_os = "linux")]
-	pub fn auto(db_path: &Path) -> CompactionProfile {
-		let hdd_check_file = db_path
-			.to_str()
-			.and_then(|path_str| Command::new("df").arg(path_str).output().ok())
-			.and_then(|df_res| match df_res.status.success() {
-				true => Some(df_res.stdout),
-				false => None,
-			})
-			.and_then(rotational_from_df_output);
-		// Read out the file and match compaction profile.
-		if let Some(hdd_check) = hdd_check_file {
-			if let Ok(mut file) = File::open(hdd_check.as_path()) {
-				let mut buffer = [0; 1];
-				if file.read_exact(&mut buffer).is_ok() {
-					// 0 means not rotational.
-					if buffer == [48] { return Self::ssd(); }
-					// 1 means rotational.
-					if buffer == [49] { return Self::hdd(); }
-				}
-			}
-		}
-		// Fallback if drive type was not determined.
-		Self::default()
-	}
-
 	/// Just default for other platforms.
 	#[cfg(not(target_os = "linux"))]
 	pub fn auto(_db_path: &::std::path::Path) -> CompactionProfile {
