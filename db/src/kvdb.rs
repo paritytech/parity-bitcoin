@@ -165,11 +165,6 @@ pub fn rotational_from_df_output(df_out: Vec<u8>) -> Option<PathBuf> {
 }
 
 impl CompactionProfile {
-	/// Just default for other platforms.
-	#[cfg(not(target_os = "linux"))]
-	pub fn auto(_db_path: &::std::path::Path) -> CompactionProfile {
-		Self::default()
-	}
 
 	/// Default profile suitable for SSD storage
 	pub fn ssd() -> CompactionProfile {
