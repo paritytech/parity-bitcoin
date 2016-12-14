@@ -1,3 +1,4 @@
+use std::ops;
 use std::str::FromStr;
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
 use global_script::ScriptAddress;
@@ -22,6 +23,12 @@ impl Address {
 			kind: address.kind,
 		})
 	}
+
+	pub fn deserialize_from_string<E>(value: &str) -> Result<Address, E> where E: ::serde::de::Error {
+		GlobalAddress::from_str(value)
+			.map_err(|err| E::invalid_value(&format!("error {} parsing address {}", err, value)))
+			.map(|address| Address(address))
+	}
 }
 
 impl Serialize for Address {
@@ -40,9 +47,7 @@ impl Deserialize for Address {
 			type Value = Address;
 
 			fn visit_str<E>(&mut self, value: &str) -> Result<Address, E> where E: ::serde::de::Error {
-				GlobalAddress::from_str(value)
-					.map_err(|err| E::invalid_value(&format!("error {} parsing address {}", err, value)))
-					.map(|address| Address(address))
+				Address::deserialize_from_string(value)
 			}
 		}
 
@@ -53,6 +58,14 @@ impl Deserialize for Address {
 impl<T> From<T> for Address where GlobalAddress: From<T> {
 	fn from(o: T) -> Self {
 		Address(GlobalAddress::from(o))
+	}
+}
+
+impl ops::Deref for Address {
+	type Target = GlobalAddress;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0
 	}
 }
 
