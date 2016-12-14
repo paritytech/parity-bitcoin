@@ -140,10 +140,12 @@ impl<T> Raw for RawClient<T> where T: RawClientCoreApi {
 
 #[cfg(test)]
 pub mod tests {
+	use jsonrpc_macros::Trailing;
 	use jsonrpc_core::{IoHandler, GenericIoHandler};
 	use chain::Transaction;
 	use primitives::hash::H256 as GlobalH256;
 	use v1::traits::Raw;
+	use v1::types::{TransactionInput, TransactionOutputs};
 	use super::*;
 
 	#[derive(Default)]
