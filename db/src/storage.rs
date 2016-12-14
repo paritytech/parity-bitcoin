@@ -4,14 +4,13 @@ use std::fs;
 use std::path::Path;
 use kvdb::{Database, DatabaseConfig};
 use byteorder::{LittleEndian, ByteOrder};
-use primitives::hash::H256;
-use primitives::bytes::Bytes;
-use super::{BlockRef, BestBlock, BlockLocation, IndexedBlock};
-use serialization::{serialize, deserialize};
-use chain;
 use parking_lot::RwLock;
 use lru_cache::LruCache;
 
+use primitives::hash::H256;
+use primitives::bytes::Bytes;
+use chain::{self, IndexedBlock, IndexedBlockHeader, IndexedTransaction};
+use serialization::{serialize, deserialize};
 use transaction_meta::TransactionMeta;
 use error::{Error, ConsistencyError, MetaError};
 use update_context::UpdateContext;
@@ -19,9 +18,7 @@ use block_provider::{BlockProvider, BlockHeaderProvider};
 use transaction_provider::{TransactionProvider, PreviousTransactionOutputProvider};
 use transaction_meta_provider::TransactionMetaProvider;
 use block_stapler::{BlockStapler, BlockInsertedChain, Reorganization};
-
-use indexed_header::IndexedBlockHeader;
-use indexed_transaction::IndexedTransaction;
+use super::{BlockRef, BestBlock, BlockLocation};
 
 pub const COL_COUNT: u32 = 10;
 pub const COL_META: u32 = 0;

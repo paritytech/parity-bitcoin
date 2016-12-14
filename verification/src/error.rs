@@ -36,6 +36,10 @@ pub enum Error {
 	NonFinalBlock,
 	/// Old version block.
 	OldVersionBlock,
+	/// Sum of the transaction fees in block + coinbase reward exceeds u64::max
+	TransactionFeeAndRewardOverflow,
+	/// Sum of the transaction fees in block exceeds u64::max
+	TransactionFeesOverflow,
 }
 
 #[derive(Debug, PartialEq)]

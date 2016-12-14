@@ -68,7 +68,7 @@ impl Block {
 	}
 
 	pub fn is_final(&self, height: u32) -> bool {
-		self.transactions.iter().all(|t| t.is_final(height, self.block_header.time))
+		self.transactions.iter().all(|t| t.is_final_in_block(height, self.block_header.time))
 	}
 }
 

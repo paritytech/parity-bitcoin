@@ -1,8 +1,9 @@
 use std::sync::Arc;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, IpAddr};
 use v1::traits::Network as NetworkRpc;
-use v1::types::AddNodeOperation;
+use v1::types::{AddNodeOperation, NodeInfo};
 use jsonrpc_core::Error;
+use jsonrpc_macros::Trailing;
 use v1::helpers::errors;
 use p2p;
 
@@ -10,6 +11,9 @@ pub trait NetworkApi : Send + Sync + 'static {
 	fn add_node(&self, socket_addr: SocketAddr) -> Result<(), p2p::NodeTableError>;
 	fn remove_node(&self, socket_addr: SocketAddr) -> Result<(), p2p::NodeTableError>;
 	fn connect(&self, socket_addr: SocketAddr);
+	fn node_info(&self, node_addr: IpAddr) -> Result<NodeInfo, p2p::NodeTableError>;
+	fn nodes_info(&self) -> Vec<NodeInfo>;
+	fn connection_count(&self) -> usize;
 }
 
 impl<T> NetworkRpc for NetworkClient<T> where T: NetworkApi {
@@ -28,6 +32,27 @@ impl<T> NetworkRpc for NetworkClient<T> where T: NetworkApi {
 				Ok(())
 			}
 		}
+	}
+
+	fn node_info(&self, _dns: bool, node_addr: Trailing<String>) -> Result<Vec<NodeInfo>, Error> {
+		Ok(
+			if node_addr.0.is_empty() {
+				self.api.nodes_info()
+			}
+			else {
+				let addr = try!(node_addr.0.parse().map_err(
+					|_| errors::invalid_params("node", "Invalid ip address format, should be ip address (127.0.0.1)")));
+				let node_info = try!(
+					self.api.node_info(addr)
+						.map_err(|_| errors::node_not_added())
+				);
+				vec![node_info]
+			}
+		)
+	}
+
+	fn connection_count(&self) -> Result<usize, Error> {
+		Ok(self.api.connection_count())
 	}
 }
 
@@ -64,5 +89,44 @@ impl NetworkApi for NetworkClientCore {
 
 	fn connect(&self, socket_addr: SocketAddr) {
 		p2p::Context::connect_normal(self.p2p.clone(), socket_addr);
+	}
+
+	fn node_info(&self, node_addr: IpAddr) -> Result<NodeInfo, p2p::NodeTableError> {
+		let exact_node = try!(
+			self.p2p.nodes()
+				.iter()
+				.find(|n| n.address().ip() == node_addr)
+				.cloned()
+				.ok_or(p2p::NodeTableError::NoAddressInTable)
+		);
+
+		let peers: Vec<p2p::PeerInfo> = self.p2p.connections().info()
+			.into_iter()
+			.filter(|p| p.address == exact_node.address()).collect();
+
+		Ok(
+			NodeInfo {
+				addednode: format!("{}", exact_node.address()),
+				connected: !peers.is_empty(),
+				addresses: peers.into_iter().map(|p| p.into()).collect(),
+			}
+		)
+	}
+
+	fn nodes_info(&self) -> Vec<NodeInfo> {
+		let peers: Vec<p2p::PeerInfo> = self.p2p.connections().info();
+
+		self.p2p.nodes().iter().map(|n| {
+			let node_peers: Vec<p2p::PeerInfo> = peers.iter().filter(|p| p.address == n.address()).cloned().collect();
+			NodeInfo {
+				addednode: format!("{}", n.address()),
+				connected: !node_peers.is_empty(),
+				addresses: node_peers.into_iter().map(|p| p.into()).collect(),
+			}
+		}).collect()
+	}
+
+	fn connection_count(&self) -> usize {
+		self.p2p.connections().count()
 	}
 }

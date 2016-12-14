@@ -78,3 +78,6 @@ subcommands:
             - PATH:
                 required: true
                 help: Path of the bitcoin core database
+            - skip-verification:
+                long: skip-verification
+                help: Skip blocks verification

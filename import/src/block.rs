@@ -1,13 +1,13 @@
 use std::io;
 use hash::H32;
 use ser::{Deserializable, Reader, Error as ReaderError};
-use chain;
+use chain::IndexedBlock;
 
 #[derive(Debug, PartialEq)]
 pub struct Block {
 	pub magic: H32,
 	pub block_size: u32,
-	pub block: chain::Block,
+	pub block: IndexedBlock,
 }
 
 impl Deserializable for Block {

@@ -28,9 +28,7 @@ mod transaction_provider;
 mod transaction_meta_provider;
 mod error;
 mod update_context;
-mod indexed_block;
-mod indexed_header;
-mod indexed_transaction;
+mod impls;
 
 #[derive(Debug, Clone)]
 pub enum BlockRef {
@@ -75,9 +73,6 @@ pub use transaction_meta_provider::{TransactionMetaProvider, TransactionOutputOb
 pub use transaction_meta::TransactionMeta;
 pub use block_stapler::{BlockStapler, BlockInsertedChain};
 pub use block_provider::{BlockProvider, BlockHeaderProvider};
-pub use indexed_block::IndexedBlock;
-pub use indexed_header::IndexedBlockHeader;
-pub use indexed_transaction::IndexedTransaction;
 
 #[cfg(feature="dev")]
 pub use test_storage::TestStorage;

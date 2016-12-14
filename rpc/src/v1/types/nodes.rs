@@ -1,4 +1,5 @@
-use serde::{Deserialize, Deserializer};
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use p2p::{Direction, PeerInfo};
 
 #[derive(Debug, PartialEq)]
 pub enum AddNodeOperation {
@@ -27,5 +28,44 @@ impl Deserialize for AddNodeOperation {
 		}
 
 		deserializer.deserialize(DummyVisitor)
+	}
+}
+
+#[derive(Serialize)]
+pub struct NodeInfoAddress {
+	address: String,
+	connected: NodeInfoAddressConnectionType,
+}
+
+impl From<PeerInfo> for NodeInfoAddress {
+	fn from(info: PeerInfo) -> Self {
+		NodeInfoAddress {
+			address: format!("{}", info.address),
+			connected: match info.direction {
+				Direction::Inbound => NodeInfoAddressConnectionType::Inbound,
+				Direction::Outbound => NodeInfoAddressConnectionType::Outbound,
+			},
+		}
+	}
+}
+
+#[derive(Serialize)]
+pub struct NodeInfo {
+	pub addednode: String,
+	pub connected: bool,
+	pub addresses: Vec<NodeInfoAddress>,
+}
+
+pub enum NodeInfoAddressConnectionType {
+	Inbound,
+	Outbound,
+}
+
+impl Serialize for NodeInfoAddressConnectionType {
+	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: Serializer {
+		match *self {
+			NodeInfoAddressConnectionType::Inbound => "inbound".serialize(serializer),
+			NodeInfoAddressConnectionType::Outbound => "outbound".serialize(serializer),
+		}
 	}
 }

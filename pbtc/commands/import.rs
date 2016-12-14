@@ -8,9 +8,11 @@ pub fn import(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 	// TODO: this might be unnecessary here!
 	try!(init_db(&cfg, &db));
 
-	let mut writer = create_sync_blocks_writer(db, cfg.magic);
-
 	let blk_path = matches.value_of("PATH").expect("PATH is required in cli.yml; qed");
+	let skip_verification = matches.is_present("skip-verification");
+
+	let mut writer = create_sync_blocks_writer(db, cfg.magic, !skip_verification);
+
 	let blk_dir = try!(::import::open_blk_dir(blk_path).map_err(|_| "Import directory does not exist".to_owned()));
 	let mut counter = 0;
 	for blk in blk_dir {
@@ -20,7 +22,7 @@ pub fn import(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 			Ok(_) => {
 				counter += 1;
 				if counter % 1000 == 0 {
-					info!("Imported {} blocks", counter);
+					info!(target: "sync", "Imported {} blocks", counter);
 				}
 			}
 			Err(Error::TooManyOrphanBlocks) => return Err("Too many orphan (unordered) blocks".into()),
