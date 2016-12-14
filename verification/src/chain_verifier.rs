@@ -43,7 +43,6 @@ impl BackwardsCompatibleChainVerifier {
 		}
 	}
 
-	#[cfg(test)]
 	pub fn pow_skip(mut self) -> Self {
 		self.skip_pow = true;
 		self
