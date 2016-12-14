@@ -459,6 +459,12 @@ impl Storage {
 	}
 }
 
+impl Drop for Storage {
+	fn drop(&mut self) {
+		self.database.flush();
+	}
+}
+
 impl BlockHeaderProvider for Storage {
 	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes> {
 		self.resolve_hash(block_ref).and_then(|h| self.get(COL_BLOCK_HEADERS, &*h))
