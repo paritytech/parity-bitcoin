@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use devtools::RandomTempPath;
-use db::{Storage, BlockStapler, IndexedBlock};
+use db::{Storage, BlockStapler};
+use chain::IndexedBlock;
 use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify};
 use network::Magic;
 use test_data;
@@ -80,7 +81,7 @@ pub fn main(benchmark: &mut Benchmark) {
 						.build()
 			}
 
-			builder = tx_builder.output().value(5000000000000).build().build()
+			builder = tx_builder.output().value(0).build().build()
 		}
 
 		verification_blocks.push(builder.merkled_header().parent(rolling_hash.clone()).build().build().into());
