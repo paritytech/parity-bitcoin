@@ -2935,4 +2935,9 @@ pub mod tests {
 		// should not panic
 		sync.on_peer_transaction(1, test_data::TransactionBuilder::with_default_input(0).into());
 	}
+
+	#[test]
+	fn when_transaction_replaces_locked_transaction() {
+		// TODO
+	}
 }
