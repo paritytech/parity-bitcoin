@@ -89,7 +89,6 @@ pub fn main(benchmark: &mut Benchmark) {
 			builder
 				.merkled_header()
 					.parent(rolling_hash.clone())
-					.bits(Compact::new(486604799))
 					.build()
 				.build()
 			.into());
