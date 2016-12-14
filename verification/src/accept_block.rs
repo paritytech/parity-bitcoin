@@ -114,6 +114,29 @@ impl<'a> BlockCoinbaseClaim<'a> {
 impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
+
+		let mut fee: u64 = 0;
+
+		for tx in self.block.transactions.iter().skip(1) {
+			let mut incoming: u64 = 0;
+			for input in tx.inputs.iter() {
+				let (sum, overflow) = incoming.overflowing_add(
+					store.previous_transaction_output(&input.previous_output).map(|o| o.value).unwrap_or(0));
+				if overflow {
+					return Err(Error::ReferencedInputsSumOverflow);
+				}
+				incoming = sum;
+			}
+
+			let spends = tx.total_spends();
+
+			let (sum, overflow) = fee.overflowing_add(incoming);
+			if overflow {
+				return Err(Error::
+			}
+
+		}
+
 		let available = self.block.transactions.iter()
 			.skip(1)
 			.flat_map(|tx| tx.raw.inputs.iter())
