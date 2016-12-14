@@ -1,4 +1,4 @@
-use primitives::hash::H256;
+use primitives::{H256, Compact};
 
 #[derive(Debug, PartialEq)]
 /// All possible verification errors
@@ -20,7 +20,7 @@ pub enum Error {
 	/// One of the transactions is invalid (corresponding index and specific transaction error)
 	Transaction(usize, TransactionError),
 	/// nBits do not match difficulty rules
-	Difficulty,
+	Difficulty { expected: Compact, actual: Compact },
 	/// Invalid merkle root
 	MerkleRoot,
 	/// Coinbase spends too much
