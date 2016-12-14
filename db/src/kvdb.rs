@@ -1,38 +1,21 @@
 //! Key-Value store abstraction with `RocksDB` backend.
 
-use std::{self, fs, mem};
-use std::io::ErrorKind;
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::mem;
+use parking_lot::{Mutex, MutexGuard, RwLock};
+use elastic_array::*;
+use std::default::Default;
 use rocksdb::{DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
-	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column};
-use elastic_array::ElasticArray32;
-use parking_lot::RwLock;
-use primitives::bytes::Bytes;
+	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column, ReadOptions};
+use std::collections::HashMap;
 use byteorder::{LittleEndian, ByteOrder};
-
-/// Database error
-pub enum Error {
-	/// Rocksdb error
-	DB(String),
-	/// Io error
-	Io(std::io::Error),
-}
-
-impl From<String> for Error {
-	fn from(err: String) -> Error {
-		Error::DB(err)
-	}
-}
-
-impl From<std::io::Error> for Error {
-	fn from(err: std::io::Error) -> Error {
-		Error::Io(err)
-	}
-}
+//use std::path::Path;
 
 const DB_BACKGROUND_FLUSHES: i32 = 2;
 const DB_BACKGROUND_COMPACTIONS: i32 = 2;
+
+type Bytes = Vec<u8>;
+
+pub type DBValue = ElasticArray128<u8>;
 
 /// Write transaction. Batches a sequence of put/delete operations for efficiency.
 pub struct DBTransaction {
@@ -44,7 +27,7 @@ enum DBOp {
 	Insert {
 		col: Option<u32>,
 		key: ElasticArray32<u8>,
-		value: Bytes,
+		value: DBValue,
 	},
 	Delete {
 		col: Option<u32>,
@@ -68,7 +51,7 @@ impl DBTransaction {
 		self.ops.push(DBOp::Insert {
 			col: col,
 			key: ekey,
-			value: value.to_vec().into(),
+			value: DBValue::from_slice(value),
 		});
 	}
 
@@ -79,7 +62,7 @@ impl DBTransaction {
 		self.ops.push(DBOp::Insert {
 			col: col,
 			key: ekey,
-			value: value,
+			value: DBValue::from_vec(value),
 		});
 	}
 
@@ -93,7 +76,6 @@ impl DBTransaction {
 		});
 	}
 
-	/// Write u64
 	pub fn write_u64(&mut self, col: Option<u32>, key: &[u8], value: u64) {
 		let mut val = [0u8; 8];
 		LittleEndian::write_u64(&mut val, value);
@@ -119,12 +101,12 @@ impl DBTransaction {
 }
 
 enum KeyState {
-	Insert(Bytes),
+	Insert(DBValue),
 	Delete,
 }
 
 /// Compaction profile for the database settings
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct CompactionProfile {
 	/// L0-L1 target file size
 	pub initial_file_size: u64,
@@ -137,16 +119,22 @@ pub struct CompactionProfile {
 impl Default for CompactionProfile {
 	/// Default profile suitable for most storage
 	fn default() -> CompactionProfile {
+		CompactionProfile::ssd()
+	}
+}
+
+impl CompactionProfile {
+
+	/// Default profile suitable for SSD storage
+	pub fn ssd() -> CompactionProfile {
 		CompactionProfile {
 			initial_file_size: 32 * 1024 * 1024,
 			file_size_multiplier: 2,
 			write_rate_limit: None,
 		}
 	}
-}
 
-impl CompactionProfile {
-	/// Slow hdd compaction profile
+	/// Slow HDD compaction profile
 	pub fn hdd() -> CompactionProfile {
 		CompactionProfile {
 			initial_file_size: 192 * 1024 * 1024,
@@ -219,10 +207,15 @@ struct DBAndColumns {
 /// Key-Value database.
 pub struct Database {
 	db: RwLock<Option<DBAndColumns>>,
-	config: DatabaseConfig,
 	write_opts: WriteOptions,
+	read_opts: ReadOptions,
+	// Dirty values added with `write_buffered`. Cleaned on `flush`.
 	overlay: RwLock<Vec<HashMap<ElasticArray32<u8>, KeyState>>>,
-	path: String,
+	// Values currently being flushed. Cleared when `flush` completes.
+	flushing: RwLock<Vec<HashMap<ElasticArray32<u8>, KeyState>>>,
+	// Prevents concurrent flushes.
+	// Value indicates if a flush is in progress.
+	flushing_lock: Mutex<bool>,
 }
 
 impl Database {
@@ -241,6 +234,7 @@ impl Database {
 			try!(opts.set_parsed_options(&format!("rate_limiter_bytes_per_sec={}", rate_limit)));
 		}
 		try!(opts.set_parsed_options(&format!("max_total_wal_size={}", 64 * 1024 * 1024)));
+		try!(opts.set_parsed_options("verify_checksums_in_compaction=0"));
 		opts.set_max_open_files(config.max_open_files);
 		opts.create_if_missing(true);
 		opts.set_use_fsync(false);
@@ -254,6 +248,8 @@ impl Database {
 		opts.set_target_file_size_multiplier(config.compaction.file_size_multiplier);
 
 		let mut cf_options = Vec::with_capacity(config.columns.unwrap_or(0) as usize);
+		let cfnames: Vec<_> = (0..config.columns.unwrap_or(0)).map(|c| format!("col{}", c)).collect();
+		let cfnames: Vec<&str> = cfnames.iter().map(|n| n as &str).collect();
 
 		for col in 0 .. config.columns.unwrap_or(0) {
 			let mut opts = Options::new();
@@ -278,15 +274,16 @@ impl Database {
 		if !config.wal {
 			write_opts.disable_wal(true);
 		}
+		let mut read_opts = ReadOptions::new();
+		read_opts.set_verify_checksums(false);
 
 		let mut cfs: Vec<Column> = Vec::new();
 		let db = match config.columns {
 			Some(columns) => {
-				let cfnames: Vec<_> = (0..columns).map(|c| format!("col{}", c)).collect();
-				let cfnames: Vec<&str> = cfnames.iter().map(|n| n as &str).collect();
 				match DB::open_cf(&opts, path, &cfnames, &cf_options) {
 					Ok(db) => {
-						cfs = cfnames.iter().map(|n| db.cf_handle(n).unwrap()).collect();
+						cfs = cfnames.iter().map(|n| db.cf_handle(n)
+							.expect("rocksdb opens a cf_handle for each cfname; qed")).collect();
 						assert!(cfs.len() == columns as usize);
 						Ok(db)
 					}
@@ -294,31 +291,39 @@ impl Database {
 						// retry and create CFs
 						match DB::open_cf(&opts, path, &[], &[]) {
 							Ok(mut db) => {
-								cfs = cfnames.iter().enumerate().map(|(i, n)| db.create_cf(n, &cf_options[i]).unwrap()).collect();
+								cfs = try!(cfnames.iter().enumerate().map(|(i, n)| db.create_cf(n, &cf_options[i])).collect());
 								Ok(db)
 							},
-							err => err,
+							err @ Err(_) => err,
 						}
 					}
 				}
 			},
 			None => DB::open(&opts, path)
 		};
+
 		let db = match db {
 			Ok(db) => db,
 			Err(ref s) if s.starts_with("Corruption:") => {
+				info!("{}", s);
+				info!("Attempting DB repair for {}", path);
 				try!(DB::repair(&opts, path));
-				try!(DB::open(&opts, path))
+
+				match cfnames.is_empty() {
+					true => try!(DB::open(&opts, path)),
+					false => try!(DB::open_cf(&opts, path, &cfnames, &cf_options))
+				}
 			},
 			Err(s) => { return Err(s); }
 		};
 		let num_cols = cfs.len();
 		Ok(Database {
 			db: RwLock::new(Some(DBAndColumns{ db: db, cfs: cfs })),
-			config: config.clone(),
 			write_opts: write_opts,
 			overlay: RwLock::new((0..(num_cols + 1)).map(|_| HashMap::new()).collect()),
-			path: path.to_owned(),
+			flushing: RwLock::new((0..(num_cols + 1)).map(|_| HashMap::new()).collect()),
+			flushing_lock: Mutex::new((false)),
+			read_opts: read_opts,
 		})
 	}
 
@@ -350,38 +355,58 @@ impl Database {
 		};
 	}
 
-	/// Commit buffered changes to database.
-	pub fn flush(&self) -> Result<(), String> {
+	/// Commit buffered changes to database. Must be called under `flush_lock`
+	fn write_flushing_with_lock(&self, _lock: &mut MutexGuard<bool>) -> Result<(), String> {
 		match *self.db.read() {
 			Some(DBAndColumns { ref db, ref cfs }) => {
 				let batch = WriteBatch::new();
-				let mut overlay = self.overlay.write();
-
-				for (c, column) in overlay.iter_mut().enumerate() {
-					let column_data = mem::replace(column, HashMap::new());
-					for (key, state) in column_data {
-						match state {
-							KeyState::Delete => {
-								if c > 0 {
-									try!(batch.delete_cf(cfs[c - 1], &key));
-								} else {
-									try!(batch.delete(&key));
-								}
-							},
-							KeyState::Insert(value) => {
-								if c > 0 {
-									try!(batch.put_cf(cfs[c - 1], &key, &value));
-								} else {
-									try!(batch.put(&key, &value));
-								}
-							},
+				mem::swap(&mut *self.overlay.write(), &mut *self.flushing.write());
+				{
+					for (c, column) in self.flushing.read().iter().enumerate() {
+						for (ref key, ref state) in column.iter() {
+							match **state {
+								KeyState::Delete => {
+									if c > 0 {
+										try!(batch.delete_cf(cfs[c - 1], &key));
+									} else {
+										try!(batch.delete(&key));
+									}
+								},
+								KeyState::Insert(ref value) => {
+									if c > 0 {
+										try!(batch.put_cf(cfs[c - 1], &key, value));
+									} else {
+										try!(batch.put(&key, &value));
+									}
+								},
+							}
 						}
 					}
 				}
-				db.write_opt(batch, &self.write_opts)
+				try!(db.write_opt(batch, &self.write_opts));
+				for column in self.flushing.write().iter_mut() {
+					column.clear();
+					column.shrink_to_fit();
+				}
+				Ok(())
 			},
 			None => Err("Database is closed".to_owned())
 		}
+	}
+
+	/// Commit buffered changes to database.
+	pub fn flush(&self) -> Result<(), String> {
+		let mut lock = self.flushing_lock.lock();
+		// If RocksDB batch allocation fails the thread gets terminated and the lock is released.
+		// The value inside the lock is used to detect that.
+		if *lock {
+			// This can only happen if another flushing thread is terminated unexpectedly.
+			return Err("Database write failure. Running low on memory perhaps?".to_owned());
+		}
+		*lock = true;
+		let result = self.write_flushing_with_lock(&mut lock);
+		*lock = false;
+		result
 	}
 
 	/// Commit transaction to database.
@@ -407,7 +432,7 @@ impl Database {
 	}
 
 	/// Get value by key.
-	pub fn get(&self, col: Option<u32>, key: &[u8]) -> Result<Option<Bytes>, String> {
+	pub fn get(&self, col: Option<u32>, key: &[u8]) -> Result<Option<DBValue>, String> {
 		match *self.db.read() {
 			Some(DBAndColumns { ref db, ref cfs }) => {
 				let overlay = &self.overlay.read()[Self::to_overlay_column(col)];
@@ -415,9 +440,16 @@ impl Database {
 					Some(&KeyState::Insert(ref value)) => Ok(Some(value.clone())),
 					Some(&KeyState::Delete) => Ok(None),
 					None => {
-						col.map_or_else(
-							|| db.get(key).map(|r| r.map(|v| v.to_vec().into())),
-							|c| db.get_cf(cfs[c as usize], key).map(|r| r.map(|v| v.to_vec().into())))
+						let flushing = &self.flushing.read()[Self::to_overlay_column(col)];
+						match flushing.get(key) {
+							Some(&KeyState::Insert(ref value)) => Ok(Some(value.clone())),
+							Some(&KeyState::Delete) => Ok(None),
+							None => {
+								col.map_or_else(
+									|| db.get_opt(key, &self.read_opts).map(|r| r.map(|v| DBValue::from_slice(&v))),
+									|c| db.get_cf_opt(cfs[c as usize], key, &self.read_opts).map(|r| r.map(|v| DBValue::from_slice(&v))))
+							},
+						}
 					},
 				}
 			},
@@ -430,57 +462,26 @@ impl Database {
 		//TODO: iterate over overlay
 		match *self.db.read() {
 			Some(DBAndColumns { ref db, ref cfs }) => {
-				col.map_or_else(|| DatabaseIterator { iter: db.iterator(IteratorMode::Start) },
-					|c| DatabaseIterator { iter: db.iterator_cf(cfs[c as usize], IteratorMode::Start).unwrap() })
+				col.map_or_else(|| DatabaseIterator { iter: db.iterator_opt(IteratorMode::Start, &self.read_opts) },
+					|c| DatabaseIterator { iter: db.iterator_cf_opt(cfs[c as usize], IteratorMode::Start, &self.read_opts)
+						.expect("iterator params are valid; qed") })
 			},
 			None => panic!("Not supported yet") //TODO: return an empty iterator or change return type
 		}
 	}
 
 	/// Close the database
-	fn close(&self) {
+	pub fn close(&self) {
 		*self.db.write() = None;
 		self.overlay.write().clear();
+		self.flushing.write().clear();
 	}
+}
 
-	/// Restore the database from a copy at given path.
-	pub fn restore(&self, new_db: &str) -> Result<(), Error> {
-		self.close();
-
-		let mut backup_db = PathBuf::from(&self.path);
-		backup_db.pop();
-		backup_db.push("backup_db");
-
-		let existed = match fs::rename(&self.path, &backup_db) {
-			Ok(_) => true,
-			Err(e) => if let ErrorKind::NotFound = e.kind() {
-				false
-			} else {
-				return Err(e.into());
-			}
-		};
-
-		match fs::rename(&new_db, &self.path) {
-			Ok(_) => {
-				// clean up the backup.
-				if existed {
-					try!(fs::remove_dir_all(&backup_db));
-				}
-			}
-			Err(e) => {
-				// restore the backup.
-				if existed {
-					try!(fs::rename(&backup_db, &self.path));
-				}
-				return Err(e.into())
-			}
-		}
-
-		// reopen the database and steal handles into self
-		let db = try!(Self::open(&self.config, &self.path));
-		*self.db.write() = mem::replace(&mut *db.db.write(), None);
-		*self.overlay.write() = mem::replace(&mut *db.overlay.write(), Vec::new());
-		Ok(())
+impl Drop for Database {
+	fn drop(&mut self) {
+		// write all buffered changes if we can.
+		let _ = self.flush();
 	}
 }
 
