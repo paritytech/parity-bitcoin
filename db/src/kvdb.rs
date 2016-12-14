@@ -1,19 +1,3 @@
-// Copyright 2015, 2016 Parity Technologies (UK) Ltd.
-// This file is part of Parity.
-
-// Parity is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-
-// Parity is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-
-// You should have received a copy of the GNU General Public License
-// along with Parity.  If not, see <http://www.gnu.org/licenses/>.
-
 //! Key-Value store abstraction with `RocksDB` backend.
 
 use std::mem;
@@ -22,12 +6,6 @@ use elastic_array::*;
 use std::default::Default;
 use rocksdb::{DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
 	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column, ReadOptions};
-#[cfg(target_os = "linux")]
-use regex::Regex;
-#[cfg(target_os = "linux")]
-use std::process::Command;
-#[cfg(target_os = "linux")]
-use std::fs::File;
 use std::collections::HashMap;
 use byteorder::{LittleEndian, ByteOrder};
 //use std::path::Path;
@@ -143,25 +121,6 @@ impl Default for CompactionProfile {
 	fn default() -> CompactionProfile {
 		CompactionProfile::ssd()
 	}
-}
-
-/// Given output of df command return Linux rotational flag file path.
-#[cfg(target_os = "linux")]
-pub fn rotational_from_df_output(df_out: Vec<u8>) -> Option<PathBuf> {
-	str::from_utf8(df_out.as_slice())
-		.ok()
-		// Get the drive name.
-		.and_then(|df_str| Regex::new(r"/dev/(sd[:alpha:]{1,2})")
-			.ok()
-			.and_then(|re| re.captures(df_str))
-			.and_then(|captures| captures.at(1)))
-		// Generate path e.g. /sys/block/sda/queue/rotational
-		.map(|drive_path| {
-			let mut p = PathBuf::from("/sys/block");
-			p.push(drive_path);
-			p.push("queue/rotational");
-			p
-		})
 }
 
 impl CompactionProfile {
