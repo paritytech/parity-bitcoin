@@ -17,7 +17,7 @@ The Parity Bitcoin client
 
 - [Logging](#logging)
 
-- [Internal Documentation][doc-url]
+- [Internal Documentation](#internal-documentation)
 
 - [Project Graph][graph]
 
@@ -214,3 +214,13 @@ RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace
 ```
 
 *note* `RUST_LOG` does not work together with command line option `--print-to-console`
+
+## Internal documentation
+
+Once released, `pbtc` documentation will be available [here][doc-url]. Meanwhile it's only possible to build it locally:
+
+```
+cd parity-bitcoin
+cargo doc
+open target/doc/pbtc/index.html
+```
