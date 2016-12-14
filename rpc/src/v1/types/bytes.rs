@@ -1,4 +1,5 @@
 ///! Serializable wrapper around vector of bytes
+use std::ops;
 use rustc_serialize::hex::{ToHex, FromHex};
 use serde::{Serialize, Serializer, Deserialize, Deserializer, Error};
 use serde::de::Visitor;
@@ -63,6 +64,14 @@ impl Visitor for BytesVisitor {
 
 	fn visit_string<E>(&mut self, value: String) -> Result<Self::Value, E> where E: Error {
 		self.visit_str(value.as_ref())
+	}
+}
+
+impl ops::Deref for Bytes {
+	type Target = Vec<u8>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0
 	}
 }
 
