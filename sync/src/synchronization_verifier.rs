@@ -259,7 +259,6 @@ impl ChainMemoryPoolTransactionOutputProvider {
 	}
 
 	fn for_double_spend_check_result(chain: ChainRef, check_result: DoubleSpendCheckResult) -> Result<Self, verification::TransactionError> {
-println!("{:?}", check_result);
 		match check_result {
 			DoubleSpendCheckResult::DoubleSpend(_, hash, index) => Err(verification::TransactionError::UsingSpentOutput(hash, index)),
 			DoubleSpendCheckResult::NoDoubleSpend => Ok(ChainMemoryPoolTransactionOutputProvider {
