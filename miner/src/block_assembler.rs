@@ -10,9 +10,7 @@ pub use verification::constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 const BLOCK_VERSION: u32 = 0x20000000;
 const BLOCK_HEADER_SIZE: u32 = 4 + 32 + 32 + 4 + 4 + 4;
 
-/// Block template as described in BIP0022
-/// Minimal version
-/// [BIP0022](https://github.com/bitcoin/bips/blob/master/bip-0022.mediawiki#block-template-request)
+/// Block template as described in [BIP0022](https://github.com/bitcoin/bips/blob/master/bip-0022.mediawiki#block-template-request)
 pub struct BlockTemplate {
 	/// Version
 	pub version: u32,

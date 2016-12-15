@@ -3,8 +3,10 @@ use chain::constants::{
 	SEQUENCE_FINAL, SEQUENCE_LOCKTIME_DISABLE_FLAG,
 	SEQUENCE_LOCKTIME_MASK, SEQUENCE_LOCKTIME_TYPE_FLAG, LOCKTIME_THRESHOLD
 };
-use {SignatureVersion, Script, TransactionInputSigner, Num};
+use sign::SignatureVersion;
+use {Script, TransactionInputSigner, Num};
 
+/// Checks transaction signature
 pub trait SignatureChecker {
 	fn check_signature(
 		&self,

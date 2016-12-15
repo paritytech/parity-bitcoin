@@ -3,9 +3,9 @@ use bytes::Bytes;
 use keys::{Signature, Public};
 use chain::constants::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
+use sign::{SignatureVersion, Sighash};
 use {
-	script, Script, Num, VerificationFlags, Opcode, Error,
-	Sighash, SignatureChecker, SignatureVersion, Stack
+	script, Script, Num, VerificationFlags, Opcode, Error, SignatureChecker, Stack
 };
 
 /// Helper function.
@@ -225,6 +225,7 @@ fn cast_to_bool(data: &[u8]) -> bool {
 	!(last == 0 || last == 0x80)
 }
 
+/// Verifies script signature and pubkey
 pub fn verify_script(
 	script_sig: &Script,
 	script_pubkey: &Script,
@@ -286,6 +287,7 @@ pub fn verify_script(
 	Ok(())
 }
 
+/// Evaluautes the script
 #[cfg_attr(feature="cargo-clippy", allow(match_same_arms))]
 pub fn eval_script(
 	stack: &mut Stack<Bytes>,
@@ -892,9 +894,10 @@ pub fn eval_script(
 mod tests {
 	use bytes::Bytes;
 	use chain::Transaction;
+	use sign::SignatureVersion;
 	use {
 		Opcode, Script, VerificationFlags, Builder, Error, Num, TransactionInputSigner,
-		NoopSignatureChecker, SignatureVersion, TransactionSignatureChecker, Stack
+		NoopSignatureChecker, TransactionSignatureChecker, Stack
 	};
 	use super::{eval_script, verify_script, is_public_key};
 

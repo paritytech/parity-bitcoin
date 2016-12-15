@@ -1,4 +1,5 @@
-use primitives::{H256, Compact};
+use primitives::hash::H256;
+use primitives::compact::Compact;
 
 #[derive(Debug, PartialEq)]
 /// All possible verification errors

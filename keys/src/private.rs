@@ -1,3 +1,5 @@
+//! Secret with additional network identifier and format type
+
 use std::fmt;
 use std::str::FromStr;
 use secp256k1::key;
@@ -9,6 +11,7 @@ use hash::H520;
 use network::Network;
 use {Secret, DisplayLayout, Error, Message, Signature, CompactSignature, SECP256K1};
 
+/// Secret with additional network identifier and format type
 #[derive(PartialEq)]
 pub struct Private {
 	/// The network on which this key should be used.

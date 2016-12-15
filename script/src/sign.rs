@@ -1,3 +1,5 @@
+//! Transaction signer
+
 use bytes::Bytes;
 use keys::KeyPair;
 use crypto::dhash256;
@@ -27,8 +29,7 @@ impl From<SighashBase> for u32 {
 }
 
 #[cfg_attr(feature="cargo-clippy", allow(doc_markdown))]
-/// Documentation
-/// https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE
+/// Signature hash type. [Documentation](https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE)
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Sighash {
 	pub base: SighashBase,

@@ -1,4 +1,4 @@
-//! Stream used for serialization.
+//! Stream used for serialization of Bitcoin structures
 use std::io::{self, Write};
 use std::borrow::Borrow;
 use compact_integer::CompactInteger;
@@ -26,7 +26,7 @@ pub trait Serializable {
 	}
 }
 
-/// Stream used for serialization.
+/// Stream used for serialization of Bitcoin structures
 #[derive(Default)]
 pub struct Stream {
 	buffer: Vec<u8>,

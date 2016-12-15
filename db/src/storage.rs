@@ -764,7 +764,7 @@ mod tests {
 	use chain::Block;
 	use super::super::{BlockRef, BlockLocation};
 	use test_data;
-	use primitives::Compact;
+	use primitives::compact::Compact;
 
 	#[test]
 	fn open_store() {

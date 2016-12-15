@@ -9,8 +9,3 @@ pub mod hash;
 pub mod uint;
 
 pub use rustc_serialize::hex;
-
-pub use uint::U256;
-pub use hash::{H160, H256};
-pub use bytes::Bytes;
-pub use compact::Compact;

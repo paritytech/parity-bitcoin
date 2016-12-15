@@ -17,6 +17,7 @@ pub const MAX_PUBKEYS_PER_MULTISIG: usize = 20;
 /// Maximum script length in bytes
 pub const MAX_SCRIPT_SIZE: usize = 10000;
 
+/// Classified script type
 #[derive(PartialEq, Debug)]
 pub enum ScriptType {
 	NonStandard,
