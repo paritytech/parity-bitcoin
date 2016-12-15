@@ -28,7 +28,7 @@ The Parity Bitcoin client
 
 ## Install guide
 
-As for now `pbtc` can be installed only from source. It requires `rustc` and `cargo`. 
+As for now `pbtc` can be installed only from source. It requires `rustc` and `cargo`.
 
 Minimal supported version is `rustc 1.13.0 (2c6933acc 2016-11-07)`
 
@@ -187,7 +187,7 @@ TODO
 
 ## Logging
 
-This is a section only for dev / power users. 
+This is a section only for dev / power users.
 
 You can enable detailed client logging by setting env variable `RUST_LOG`
 
@@ -221,6 +221,6 @@ Once released, `pbtc` documentation will be available [here][doc-url]. Meanwhile
 
 ```
 cd parity-bitcoin
-cargo doc
+./tools/doc.sh
 open target/doc/pbtc/index.html
 ```
