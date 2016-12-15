@@ -36,17 +36,17 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 
 	let (in_connections, out_connections) = match magic {
 		Magic::Testnet | Magic::Mainnet | Magic::Other(_) => (10, 10),
-		Magic::Regtest => (1, 0),
+		Magic::Regtest | Magic::Unitest => (1, 0),
 	};
 
 	let p2p_threads = match magic {
 		Magic::Testnet | Magic::Mainnet | Magic::Other(_) => 4,
-		Magic::Regtest => 1,
+		Magic::Regtest | Magic::Unitest => 1,
 	};
 
 	// to skip idiotic 30 seconds delay in test-scripts
 	let user_agent = match magic {
-		Magic::Testnet | Magic::Mainnet | Magic::Other(_) => USER_AGENT,
+		Magic::Testnet | Magic::Mainnet | Magic::Unitest | Magic::Other(_) => USER_AGENT,
 		Magic::Regtest => REGTEST_USER_AGENT,
 	};
 
@@ -70,7 +70,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => match magic {
 			Magic::Mainnet => mainnet_seednodes().into_iter().map(Into::into).collect(),
 			Magic::Testnet => testnet_seednodes().into_iter().map(Into::into).collect(),
-			Magic::Other(_) | Magic::Regtest => Vec::new(),
+			Magic::Other(_) | Magic::Regtest | Magic::Unitest => Vec::new(),
 		},
 	};
 

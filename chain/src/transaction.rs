@@ -51,10 +51,6 @@ impl OutPoint {
 		}
 	}
 
-	pub fn hash(&self) -> &H256 {
-		&self.hash
-	}
-
 	pub fn is_null(&self) -> bool {
 		self.hash.is_zero() && self.index == u32::max_value()
 	}
@@ -68,6 +64,14 @@ pub struct TransactionInput {
 }
 
 impl TransactionInput {
+	pub fn coinbase(script_sig: Bytes) -> Self {
+		TransactionInput {
+			previous_output: OutPoint::null(),
+			script_sig: script_sig,
+			sequence: SEQUENCE_FINAL,
+		}
+	}
+
 	pub fn is_final(&self) -> bool {
 		self.sequence == SEQUENCE_FINAL
 	}

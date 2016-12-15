@@ -6,7 +6,6 @@ use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify};
 use network::Magic;
 use test_data;
 use byteorder::{LittleEndian, ByteOrder};
-use primitives::Compact;
 
 use super::Benchmark;
 
@@ -98,7 +97,7 @@ pub fn main(benchmark: &mut Benchmark) {
 	let store = Arc::new(Storage::new(path.as_path()).unwrap());
 	assert_eq!(store.best_block().unwrap().hash, rolling_hash);
 
-	let chain_verifier = ChainVerifier::new(store.clone(), Magic::Mainnet).pow_skip();
+	let chain_verifier = ChainVerifier::new(store.clone(), Magic::Unitest);
 
 	// bench
 	benchmark.start();

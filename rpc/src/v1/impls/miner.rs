@@ -63,7 +63,7 @@ pub mod tests {
 				version: 777,
 				previous_header_hash: H256::from(1),
 				time: 33,
-				nbits: 44,
+				bits: 44.into(),
 				height: 55,
 				transactions: vec![
 					tx.into(),

@@ -192,7 +192,7 @@ impl<F> BlockHeaderBuilder<F> where F: Invoke<chain::BlockHeader> {
 			nonce: 0,
 			merkle_root: 0.into(),
 			parent: 0.into(),
-			bits: 0.into(),
+			bits: Compact::max_value(),
 			version: 1,
 		}
 	}
