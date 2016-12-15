@@ -25,14 +25,18 @@ addons:
     - g++-4.8
     - oracle-java8-set-default
 script:
-  - echo -en 'travis_fold:start:tests'
+  - echo 'Running tests from /tools/test.sh' && echo -en 'travis_fold:start:tests'
   - ./tools/test.sh
   - echo -en 'travis_fold:end:tests'
-  - echo -en 'travis_fold:start:build.release'
+  - echo 'Building in release mode' && echo -en 'travis_fold:start:build.release'
   - cargo build --release
   - echo -en 'travis_fold:end:build.release'
-  - ./tools/bench.sh
+  - echo 'Running regtests from ./tools/compare-tool/pull-tests-be0eef7.jar' && echo -en 'travis_fold:start:regtests'
   - ./tools/regtests.sh
+  - echo -en 'travis_fold:end:regtests'
+  - echo 'Running bench from /benhcer' && echo -en 'travis_fold:start:bench'
+  - ./tools/bench.sh
+  - echo -en 'travis_fold:end:bench'
 after_success: |
   [ false ] &&
   [ $TRAVIS_BRANCH = master ] &&
@@ -48,3 +52,4 @@ env:
   - CXX="g++-4.8"
   - CC="gcc-4.8"
   - secure: IbTkR3KY7N9e3lc6hreWuY2mhuKyf7k6LSRUMMrOeb1k9TIncYMbR6Sl2W1t5+CJVp7WqVoUbP9YIH8o8a9BBuFldTyAz3tapa908KrZKIRlb/uCTef11z/jzasye4Ttj+358DBrCXZqueFw5Bh5Bnaie3r5bSYWTcQU693Bm/tKFp0lh4fSjzGyk7kRZ4V4rz2YHudZOcNIXN+QfY8aY6dxQraw82GUnNXJLzGiC5GJgeSV1uSnxMUM/lb4+zP1qRlcLBLnwHSTH/3vHH5xsOaRwHEYOQT9pTDyxMnJzDgYfjH4mNu3jSvZ7WFrP+Sza/yR+3sjHpOCFN6rsWc88iTq6Nwp+ESfyjHiLT+jqWs7r57sg2VfwHXuzoEW5GGagrIoF/pDEWJvhtNRYvdYevDtlZYPTfhSR4WOPkMPCg7Ln2W7a7vrSH2iRNxawUDnq3bOIyGGBeGwBJFDOEd6CmP+ojjUUm9L5I4berYACgYEDuZ4bpRX3WpGR1yAhSF4o5BTh+88EWU/VhL2ceXreHlztma3KQ5526Ip46lC4eLFrl/w64zaupesEZFjLsOFm7U9Vx9IM6aqBzOFr8Mt8DlPLaTRmRrbzPRYqHg0MLpHkH8S/HyNbK0xvqbQFRHQ6XPXNJVJXZPz8XPUYWYPK9ayplVdRN9nonHQO7F0gV8=
+  - RUST_BACKTRACE=1
