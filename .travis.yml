@@ -25,12 +25,10 @@ addons:
     - g++-4.8
     - oracle-java8-set-default
 script:
-  - echo -en 'travis_fold:start:tests'
-  - echo Running tests from /tools/test.sh
+  - echo 'Running tests from /tools/test.sh' && echo -en 'travis_fold:start:tests'
   - ./tools/test.sh
   - echo -en 'travis_fold:end:tests'
-  - echo -en 'travis_fold:start:build.release'
-  - echo Building in release mode
+  - echo 'Building in release mode' && echo -en 'travis_fold:start:build.release'
   - cargo build --release
   - echo -en 'travis_fold:end:build.release'
   - ./tools/bench.sh
