@@ -146,7 +146,7 @@ pub struct HashedOutPoint {
 	out_point: OutPoint,
 }
 
-/// Result of checking double spend with 
+/// Result of checking double spend with
 #[derive(Debug, PartialEq)]
 pub enum DoubleSpendCheckResult {
 	/// No double spend
@@ -411,7 +411,8 @@ impl Storage {
 
 				// forget that all inputs of this transaction are spent
 				for input in &entry.transaction.inputs {
-					let spent_in_tx = self.by_previous_output.remove(&input.previous_output.clone().into()).expect("every spent output must be indexed");
+					let spent_in_tx = self.by_previous_output.remove(&input.previous_output.clone().into())
+						.expect("by_spent_output is filled for each incoming transaction inputs; so the drained value should exist; qed");
 					assert_eq!(&spent_in_tx, h);
 				}
 
