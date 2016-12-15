@@ -36,6 +36,10 @@ impl Compact {
 		Compact(u)
 	}
 
+	pub fn max_value() -> Self {
+		U256::max_value().into()
+	}
+
 	/// Computes the target [0, T] that a blockhash must land in to be valid
 	/// Returns value in error, if there is an overflow or its negative value
 	pub fn to_u256(&self) -> Result<U256, U256> {

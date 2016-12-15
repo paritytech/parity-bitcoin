@@ -81,6 +81,12 @@ impl From<Vec<u8>> for Script {
 	}
 }
 
+impl From<Script> for Bytes {
+	fn from(script: Script) -> Self {
+		script.data
+	}
+}
+
 impl Script {
 	/// Script constructor.
 	pub fn new(data: Bytes) -> Self {

@@ -30,7 +30,6 @@ pub type VerificationResult = Result<Chain, Error>;
 
 pub struct BackwardsCompatibleChainVerifier {
 	store: SharedStore,
-	skip_pow: bool,
 	network: Magic,
 }
 
@@ -38,21 +37,15 @@ impl BackwardsCompatibleChainVerifier {
 	pub fn new(store: SharedStore, network: Magic) -> Self {
 		BackwardsCompatibleChainVerifier {
 			store: store,
-			skip_pow: false,
 			network: network,
 		}
-	}
-
-	pub fn pow_skip(mut self) -> Self {
-		self.skip_pow = true;
-		self
 	}
 
 	fn verify_block(&self, block: &IndexedBlock) -> VerificationResult {
 		let current_time = ::time::get_time().sec as u32;
 		// first run pre-verification
 		let chain_verifier = ChainVerifier::new(block, self.network, current_time);
-		try!(chain_verifier.check_with_pow(!self.skip_pow));
+		try!(chain_verifier.check());
 
 		// check pre-verified header location
 		// TODO: now this function allows full verification for sidechain block
@@ -84,7 +77,7 @@ impl BackwardsCompatibleChainVerifier {
 		let current_time = ::time::get_time().sec as u32;
 		let header = IndexedBlockHeader::new(hash.clone(), header.clone());
 		let header_verifier = HeaderVerifier::new(&header, self.network, current_time);
-		header_verifier.check_with_pow(!self.skip_pow)
+		header_verifier.check()
 	}
 
 	pub fn verify_mempool_transaction<T>(
@@ -144,7 +137,7 @@ mod tests {
 	fn verify_orphan() {
 		let storage = TestStorage::with_blocks(&vec![test_data::genesis()]);
 		let b2 = test_data::block_h2();
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
 		assert_eq!(Chain::Orphan, verifier.verify(&b2.into()).unwrap());
 	}
@@ -153,7 +146,7 @@ mod tests {
 	fn verify_smoky() {
 		let storage = TestStorage::with_blocks(&vec![test_data::genesis()]);
 		let b1 = test_data::block_h1();
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 		assert_eq!(Chain::Main, verifier.verify(&b1.into()).unwrap());
 	}
 
@@ -166,7 +159,7 @@ mod tests {
 			]
 		);
 		let b1 = test_data::block_h170();
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet);
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 		assert_eq!(Chain::Main, verifier.verify(&b1.into()).unwrap());
 	}
 
@@ -199,7 +192,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
 		let expected = Err(Error::Transaction(
 			1,
@@ -240,7 +233,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
 		let expected = Ok(Chain::Main);
 		assert_eq!(expected, verifier.verify(&block.into()));
@@ -282,7 +275,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
 		let expected = Ok(Chain::Main);
 		assert_eq!(expected, verifier.verify(&block.into()));
@@ -326,7 +319,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
 		let expected = Err(Error::Transaction(2, TransactionError::Overspend));
 		assert_eq!(expected, verifier.verify(&block.into()));
@@ -370,7 +363,7 @@ mod tests {
 			.merkled_header().parent(best_hash).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
 		let expected = Ok(Chain::Main);
 
@@ -423,7 +416,7 @@ mod tests {
 			.build()
 			.into();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
 		let expected = Err(Error::MaximumSigops);
 		assert_eq!(expected, verifier.verify(&block.into()));
@@ -450,7 +443,7 @@ mod tests {
 			.build()
 			.into();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Testnet).pow_skip();
+		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
 		let expected = Err(Error::CoinbaseOverspend {
 			expected_max: 5000000000,
