@@ -116,7 +116,6 @@ impl AsyncVerifier {
 						}
 					} else {
 						ChainMemoryPoolTransactionOutputProvider::for_block(chain.clone())
-							.expect("no error when creating for block")
 					};
 					execute_verification_task(&sink, &prevout_provider, &verifier, task)
 				},
@@ -252,10 +251,11 @@ impl ChainMemoryPoolTransactionOutputProvider {
 		ChainMemoryPoolTransactionOutputProvider::for_double_spend_check_result(chain, check_result)
 	}
 
-	pub fn for_block(chain: ChainRef) -> Result<Self, verification::TransactionError> {
+	pub fn for_block(chain: ChainRef) -> Self {
 		// we have to check if there are another in-mempool transactions which spent same outputs here
 		let check_result = DoubleSpendCheckResult::NoDoubleSpend;
 		ChainMemoryPoolTransactionOutputProvider::for_double_spend_check_result(chain, check_result)
+			.expect("check_result is NoDoubleSpend; NoDoubleSpend means no error; qed")
 	}
 
 	fn for_double_spend_check_result(chain: ChainRef, check_result: DoubleSpendCheckResult) -> Result<Self, verification::TransactionError> {
