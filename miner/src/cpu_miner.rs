@@ -85,6 +85,7 @@ pub struct Solution {
 }
 
 /// Simple bitcoin cpu miner.
+///
 /// First it tries to find solution by changing block header nonce.
 /// Once all nonce values have been tried, it increases extranonce.
 /// Once all of them have been tried (quite unlikely on cpu ;),

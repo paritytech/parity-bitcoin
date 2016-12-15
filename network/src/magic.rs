@@ -15,8 +15,7 @@ const MAX_BITS_MAINNET: u32 = 0x1d00ffff;
 const MAX_BITS_TESTNET: u32 = 0x1d00ffff;
 const MAX_BITS_REGTEST: u32 = 0x207fffff;
 
-/// Bitcoin network
-/// https://bitcoin.org/en/glossary/mainnet
+/// Bitcoin [network](https://bitcoin.org/en/glossary/mainnet)
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Magic {
 	/// The original and main network for Bitcoin transactions, where satoshis have real economic value.

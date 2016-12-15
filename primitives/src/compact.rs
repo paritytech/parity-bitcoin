@@ -1,5 +1,8 @@
+//! Compact representation of `U256`
+
 use uint::U256;
 
+/// Compact representation of `U256`
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Compact(u32);
 

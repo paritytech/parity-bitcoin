@@ -1,6 +1,9 @@
+//! Interpreter errors
+
 use std::fmt;
 use Opcode;
 
+/// Interpreter errors
 #[derive(Debug, PartialEq)]
 pub enum Error {
 	Unknown,
