@@ -8,6 +8,7 @@
 use std::{str, fmt};
 use std::ops::{Shr, Shl, BitAnd, BitOr, BitXor, Not, Div, Rem, Mul, Add, Sub};
 use std::cmp::Ordering;
+use byteorder::{WriteBytesExt, LittleEndian, BigEndian};
 use hex::{FromHex, FromHexError};
 
 /// Conversion from decimal string error
@@ -372,6 +373,19 @@ macro_rules! construct_uint {
 		pub struct $name(pub [u64; $n_words]);
 
 		impl $name {
+			pub fn to_little_endian(&self, result: &mut [u8]) {
+				let mut result_ref = result;
+				for i in 0..$n_words {
+					result_ref.write_u64::<LittleEndian>(self.0[i]).unwrap();
+				}
+			}
+
+			pub fn to_big_endian(&self, result: &mut [u8]) {
+				let mut result_ref =result;
+				for i in 0..$n_words {
+					result_ref.write_u64::<BigEndian>(self.0[$n_words - 1 - i]).unwrap();
+				}
+			}
 
 			pub fn from_dec_str(value: &str) -> Result<Self, FromDecStrErr> {
 				if !value.bytes().all(|b| b >= 48 && b <= 57) {
@@ -1545,5 +1559,41 @@ mod tests {
 		let x1septima = x1penta * x1;
 		let x1septima_right: U256 = "00022cca1da3f6e5722b7d3cc5bbfb486465ebc5a708dd293042f932d7eee119".into();
 		assert_eq!(x1septima_right, x1septima);
+	}
+
+	#[test]
+	fn test_to_little_endian() {
+		let number: U256 = "00022cca1da3f6e5722b7d3cc5bbfb486465ebc5a708dd293042f932d7eee119".into();
+		let expected = [
+			0x19, 0xe1, 0xee, 0xd7,
+			0x32, 0xf9, 0x42, 0x30,
+			0x29, 0xdd, 0x08, 0xa7,
+			0xc5, 0xeb, 0x65, 0x64,
+			0x48, 0xfb, 0xbb, 0xc5,
+			0x3c, 0x7d, 0x2b, 0x72,
+			0xe5, 0xf6, 0xa3, 0x1d,
+			0xca, 0x2c, 0x02, 0x00
+		];
+		let mut result = [0u8; 32];
+		number.to_little_endian(&mut result);
+		assert_eq!(expected, result);
+	}
+
+	#[test]
+	fn test_to_big_endian() {
+		let number: U256 = "00022cca1da3f6e5722b7d3cc5bbfb486465ebc5a708dd293042f932d7eee119".into();
+		let expected = [
+			0x00, 0x02, 0x2c, 0xca,
+			0x1d, 0xa3, 0xf6, 0xe5,
+			0x72, 0x2b, 0x7d, 0x3c,
+			0xc5, 0xbb, 0xfb, 0x48,
+			0x64, 0x65, 0xeb, 0xc5,
+			0xa7, 0x08, 0xdd, 0x29,
+			0x30, 0x42, 0xf9, 0x32,
+			0xd7, 0xee, 0xe1, 0x19
+		];
+		let mut result = [0u8; 32];
+		number.to_big_endian(&mut result);
+		assert_eq!(expected, result);
 	}
 }
