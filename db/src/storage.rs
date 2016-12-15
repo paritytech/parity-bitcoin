@@ -156,8 +156,8 @@ impl Storage {
 		if best_number.is_some() {
 			*storage.best_block.write() = Some(
 				BestBlock {
-					number: best_number.expect("is_some() is checked above for block number"),
-					hash: best_hash.expect("is_some() is checked above for block hash"),
+					number: best_number.expect("best.number.is_some() is checked above; qed"),
+					hash: best_hash.expect("best_number.is_some() is equal to best_hash.is_some(); best_number.is_some() = true checked above; so best_hash.is_some() is also true; qed"),
 				}
 			);
 		}

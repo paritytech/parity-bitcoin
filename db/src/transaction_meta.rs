@@ -70,7 +70,7 @@ impl TransactionMeta {
 	}
 
 	pub fn is_spent(&self, idx: usize) -> Option<bool> {
-		self.bits.get(idx + 1) //.expect("Index should be verified by the caller")
+		self.bits.get(idx + 1)
 	}
 
 	pub fn is_fully_spent(&self) -> bool {
