@@ -3,13 +3,14 @@ use std::sync::Arc;
 use std::collections::{VecDeque, HashSet};
 use linked_hash_map::LinkedHashMap;
 use parking_lot::RwLock;
-use chain::{BlockHeader, Transaction, IndexedBlock};
+use chain::{BlockHeader, Transaction, IndexedBlockHeader, IndexedBlock, IndexedTransaction};
 use db;
 use best_headers_chain::{BestHeadersChain, Information as BestHeadersInformation};
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
 use hash_queue::{HashQueueChain, HashPosition};
-use miner::{MemoryPool, MemoryPoolOrderingStrategy, MemoryPoolInformation};
+use miner::{MemoryPoolOrderingStrategy, MemoryPoolInformation};
+use types::MemoryPoolRef;
 
 /// Thread-safe reference to `Chain`
 pub type ChainRef = Arc<RwLock<Chain>>;
@@ -29,7 +30,7 @@ pub struct BlockInsertionResult {
 	/// Hashes of blocks, which were canonized during this insertion procedure. Order matters
 	pub canonized_blocks_hashes: Vec<H256>,
 	/// Transaction to 'reverify'. Order matters
-	pub transactions_to_reverify: Vec<(H256, Transaction)>,
+	pub transactions_to_reverify: Vec<IndexedTransaction>,
 }
 
 impl BlockInsertionResult {
@@ -88,25 +89,6 @@ pub struct Information {
 	pub headers: BestHeadersInformation,
 }
 
-/// Result of intersecting chain && inventory
-#[derive(Debug, PartialEq)]
-pub enum HeadersIntersection {
-	/// 3.2: No intersection with in-memory queue && no intersection with db
-	NoKnownBlocks(usize),
-	/// 2.3: Inventory has no new blocks && some of blocks in inventory are in in-memory queue
-	InMemoryNoNewBlocks,
-	/// 2.4.2: Inventory has new blocks && these blocks are right after chain' best block
-	InMemoryMainNewBlocks(usize),
-	/// 2.4.3: Inventory has new blocks && these blocks are forked from our chain' best block
-	InMemoryForkNewBlocks(usize),
-	/// 3.3: No intersection with in-memory queue && has intersection with db && all blocks are already stored in db
-	DbAllBlocksKnown,
-	/// 3.4: No intersection with in-memory queue && has intersection with db && some blocks are not yet stored in db
-	DbForkNewBlocks(usize),
-	/// Dead-end blocks are starting from given index
-	DeadEnd(usize),
-}
-
 /// Blockchain from synchroniation point of view, consisting of:
 /// 1) all blocks from the `storage` [oldest blocks]
 /// 2) all blocks currently verifying by `verification_queue`
@@ -124,9 +106,9 @@ pub struct Chain {
 	/// In-memory queue of blocks headers
 	headers_chain: BestHeadersChain,
 	/// Currently verifying transactions
-	verifying_transactions: LinkedHashMap<H256, Transaction>,
+	verifying_transactions: LinkedHashMap<H256, IndexedTransaction>,
 	/// Transactions memory pool
-	memory_pool: MemoryPool,
+	memory_pool: MemoryPoolRef,
 	/// Blocks that have been marked as dead-ends
 	dead_end_blocks: HashSet<H256>,
 }
@@ -153,7 +135,7 @@ impl BlockState {
 
 impl Chain {
 	/// Create new `Chain` with given storage
-	pub fn new(storage: db::SharedStore) -> Self {
+	pub fn new(storage: db::SharedStore, memory_pool: MemoryPoolRef) -> Self {
 		// we only work with storages with genesis block
 		let genesis_block_hash = storage.block_hash(0)
 			.expect("storage with genesis block is required");
@@ -168,7 +150,7 @@ impl Chain {
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
 			headers_chain: BestHeadersChain::new(best_storage_block_hash),
 			verifying_transactions: LinkedHashMap::new(),
-			memory_pool: MemoryPool::new(),
+			memory_pool: memory_pool,
 			dead_end_blocks: HashSet::new(),
 		}
 	}
@@ -180,7 +162,7 @@ impl Chain {
 			requested: self.hash_chain.len_of(REQUESTED_QUEUE),
 			verifying: self.hash_chain.len_of(VERIFYING_QUEUE),
 			stored: self.best_storage_block.number + 1,
-			transactions: self.memory_pool.information(),
+			transactions: self.memory_pool.read().information(),
 			headers: self.headers_chain.information(),
 		}
 	}
@@ -191,14 +173,8 @@ impl Chain {
 	}
 
 	/// Get memory pool
-	pub fn memory_pool(&self) -> &MemoryPool {
-		&self.memory_pool
-	}
-
-	/// Get mutable memory pool
-	#[cfg(test)]
-	pub fn memory_pool_mut(&mut self) -> &mut MemoryPool {
-		&mut self.memory_pool
+	pub fn memory_pool(&self) -> MemoryPoolRef {
+		self.memory_pool.clone()
 	}
 
 	/// Get number of blocks in given state
@@ -243,7 +219,7 @@ impl Chain {
 			number: self.best_storage_block.number + headers_chain_information.best,
 			hash: self.headers_chain.at(headers_chain_information.best - 1)
 				.expect("got this index above; qed")
-				.hash(),
+				.hash,
 		}
 	}
 
@@ -266,18 +242,18 @@ impl Chain {
 	}
 
 	/// Get block header by number
-	pub fn block_header_by_number(&self, number: u32) -> Option<BlockHeader> {
+	pub fn block_header_by_number(&self, number: u32) -> Option<IndexedBlockHeader> {
 		if number <= self.best_storage_block.number {
-			self.storage.block_header(db::BlockRef::Number(number))
+			self.storage.block_header(db::BlockRef::Number(number)).map(Into::into)
 		} else {
 			self.headers_chain.at(number - self.best_storage_block.number)
 		}
 	}
 
 	/// Get block header by hash
-	pub fn block_header_by_hash(&self, hash: &H256) -> Option<BlockHeader> {
+	pub fn block_header_by_hash(&self, hash: &H256) -> Option<IndexedBlockHeader> {
 		if let Some(block) = self.storage.block(db::BlockRef::Hash(hash.clone())) {
-			return Some(block.block_header);
+			return Some(block.block_header.into());
 		}
 		self.headers_chain.by_hash(hash)
 	}
@@ -317,8 +293,8 @@ impl Chain {
 	}
 
 	/// Schedule blocks hashes for requesting
-	pub fn schedule_blocks_headers(&mut self, hashes: Vec<H256>, headers: Vec<BlockHeader>) {
-		self.hash_chain.push_back_n_at(SCHEDULED_QUEUE, hashes);
+	pub fn schedule_blocks_headers(&mut self, headers: Vec<IndexedBlockHeader>) {
+		self.hash_chain.push_back_n_at(SCHEDULED_QUEUE, headers.iter().map(|h| h.hash.clone()).collect());
 		self.headers_chain.insert_n(headers);
 	}
 
@@ -330,16 +306,16 @@ impl Chain {
 	}
 
 	/// Add block to verifying queue
-	pub fn verify_block(&mut self, hash: H256, header: BlockHeader) {
+	pub fn verify_block(&mut self, header: IndexedBlockHeader) {
 		// insert header to the in-memory chain in case when it is not already there (non-headers-first sync)
+		self.hash_chain.push_back_at(VERIFYING_QUEUE, header.hash.clone());
 		self.headers_chain.insert(header);
-		self.hash_chain.push_back_at(VERIFYING_QUEUE, hash);
 	}
 
 	/// Add blocks to verifying queue
-	pub fn verify_blocks(&mut self, blocks: Vec<(H256, BlockHeader)>) {
-		for (hash, header) in blocks {
-			self.verify_block(hash, header);
+	pub fn verify_blocks(&mut self, blocks: Vec<IndexedBlockHeader>) {
+		for block in blocks {
+			self.verify_block(block);
 		}
 	}
 
@@ -357,7 +333,7 @@ impl Chain {
 	}
 
 	/// Insert new best block to storage
-	pub fn insert_best_block(&mut self, hash: H256, block: &IndexedBlock) -> Result<BlockInsertionResult, db::Error> {
+	pub fn insert_best_block(&mut self, block: &IndexedBlock) -> Result<BlockInsertionResult, db::Error> {
 		let is_appending_to_main_branch = self.best_storage_block.hash == block.header.raw.previous_header_hash;
 
 		// insert to storage
@@ -367,32 +343,33 @@ impl Chain {
 		self.best_storage_block = self.storage.best_block().expect("Inserted block above");
 
 		// remove inserted block + handle possible reorganization in headers chain
-		self.headers_chain.block_inserted_to_storage(&hash, &self.best_storage_block.hash);
+		self.headers_chain.block_inserted_to_storage(block.hash(), &self.best_storage_block.hash);
 
 		// case 1: block has been added to the main branch
 		if is_appending_to_main_branch {
 			// double check
-			assert_eq!(self.best_storage_block.hash, hash);
+			assert_eq!(self.best_storage_block.hash, block.hash().clone());
 
 			// all transactions from this block were accepted
 			// => delete accepted transactions from verification queue and from the memory pool
 			// + also remove transactions which spent outputs which have been spent by transactions from the block
+			let mut memory_pool = self.memory_pool.write();
 			for tx in &block.transactions {
-				self.memory_pool.remove_by_hash(&tx.hash);
+				memory_pool.remove_by_hash(&tx.hash);
 				self.verifying_transactions.remove(&tx.hash);
 				for tx_input in &tx.raw.inputs {
-					self.memory_pool.remove_by_prevout(&tx_input.previous_output);
+					memory_pool.remove_by_prevout(&tx_input.previous_output);
 				}
 			}
 			// no transactions to reverify, because we have just appended new transactions to the blockchain
 
 			Ok(BlockInsertionResult {
-				canonized_blocks_hashes: vec![hash],
+				canonized_blocks_hashes: vec![block.hash().clone()],
 				transactions_to_reverify: Vec::new(),
 			})
 		}
 		// case 2: block has been added to the side branch with reorganization to this branch
-		else if self.best_storage_block.hash == hash {
+		else if &self.best_storage_block.hash == block.hash() {
 			let mut reorganization = match storage_insertion {
 				db::BlockInsertedChain::Reorganized(reorganization) => reorganization,
 				// we have just inserted block to side chain (!is_appending_to_main_branch)
@@ -412,8 +389,10 @@ impl Chain {
 				new_main_blocks_transactions_hashes.extend(canonized_transactions_hashes);
 				canonized_blocks_hashes.push(canonized_block_hash);
 			}
+
+			let mut memory_pool = self.memory_pool.write();
 			for transaction_accepted in this_block_transactions_hashes.into_iter().chain(new_main_blocks_transactions_hashes.into_iter()) {
-				self.memory_pool.remove_by_hash(&transaction_accepted);
+				memory_pool.remove_by_hash(&transaction_accepted);
 				self.verifying_transactions.remove(&transaction_accepted);
 			}
 			canonized_blocks_hashes.reverse();
@@ -424,24 +403,23 @@ impl Chain {
 				let decanonized_transactions_hashes = self.storage.block_transaction_hashes(db::BlockRef::Hash(decanonized_block_hash));
 				old_main_blocks_transactions_hashes.extend(decanonized_transactions_hashes);
 			}
-			let old_main_blocks_transactions: Vec<(H256, Transaction)> = old_main_blocks_transactions_hashes.into_iter()
-				.map(|h| (h.clone(), self.storage.transaction(&h).expect("block in storage => block transaction in storage")))
+			let old_main_blocks_transactions: Vec<IndexedTransaction> = old_main_blocks_transactions_hashes.into_iter()
+				.map(|h| self.storage.transaction(&h).expect("block in storage => block transaction in storage").into())
 				.collect();
 
 			// reverify memory pool transactions, sorted by timestamp
-			let memory_pool_transactions_count = self.memory_pool.information().transactions_count;
-			let memory_pool_transactions: Vec<_> = self.memory_pool
+			let memory_pool_transactions_count = memory_pool.information().transactions_count;
+			let memory_pool_transactions: Vec<IndexedTransaction> = memory_pool
 				.remove_n_with_strategy(memory_pool_transactions_count, MemoryPoolOrderingStrategy::ByTimestamp)
 				.into_iter()
-				.map(|t| (t.hash(), t))
+				.map(|t| t.into())
 				.collect();
 
 			// reverify verifying transactions
-			let verifying_transactions: Vec<_> = self.verifying_transactions
+			let verifying_transactions: Vec<IndexedTransaction> = self.verifying_transactions
 				.iter()
-				.map(|(h, t)| (h.clone(), t.clone()))
+				.map(|(_, t)| t.clone())
 				.collect();
-			// there's no guarantee (in docs) that LinkedHashMap::into_iter() will return values ordered by insertion time
 			self.verifying_transactions.clear();
 
 			Ok(BlockInsertionResult {
@@ -527,94 +505,16 @@ impl Chain {
 		self.headers_chain.remove_n(hashes);
 	}
 
-	/// Intersect chain with inventory
-	pub fn intersect_with_blocks_headers(&self, hashes: &[H256], headers: &[BlockHeader]) -> HeadersIntersection {
-		let hashes_len = hashes.len();
-		assert!(hashes_len != 0 && hashes.len() == headers.len());
-
-		// giving that headers are ordered
-		let (is_first_known, first_state) = match self.block_state(&hashes[0]) {
-			BlockState::Unknown => (false, self.block_state(&headers[0].previous_header_hash)),
-			state => (true, state),
-		};
-		match first_state {
-			// if first block of inventory is dead-end, then all other blocks are also dead-end blocks
-			BlockState::DeadEnd => {
-				HeadersIntersection::DeadEnd(0)
-			},
-			// if first block of inventory is unknown && its parent is unknonw => all other blocks are also unknown
-			BlockState::Unknown => {
-				HeadersIntersection::NoKnownBlocks(0)
-			},
-			// else if first block is known
-			first_block_state => match self.block_state(&hashes[hashes_len - 1]) {
-				// if last block is known to be in db => all inventory blocks are also in db
-				BlockState::Stored => {
-					HeadersIntersection::DbAllBlocksKnown
-				},
-				// if first block is known && last block is unknown but we know block before first one => intersection with queue or with db
-				BlockState::Unknown if !is_first_known => {
-					// previous block is stored => fork from stored block
-					if first_state == BlockState::Stored {
-						HeadersIntersection::DbForkNewBlocks(0)
-					}
-					// previous block is best block => no fork
-					else if &self.best_block().hash == &headers[0].previous_header_hash {
-						HeadersIntersection::InMemoryMainNewBlocks(0)
-					}
-					// previous block is not a best block => fork
-					else {
-						HeadersIntersection::InMemoryForkNewBlocks(0)
-					}
-				},
-				// if first block is known && last block is unknown => intersection with queue or with db
-				BlockState::Unknown | BlockState::DeadEnd if is_first_known => {
-					// find last known block
-					let mut previous_state = first_block_state;
-					for (index, hash) in hashes.iter().enumerate().take(hashes_len).skip(1) {
-						let state = self.block_state(hash);
-						if state == BlockState::Unknown || state == BlockState::DeadEnd {
-							// if state is dead end => there are no useful blocks
-							if state == BlockState::DeadEnd {
-								return HeadersIntersection::DeadEnd(index);
-							}
-							// previous block is stored => fork from stored block
-							else if previous_state == BlockState::Stored {
-								return HeadersIntersection::DbForkNewBlocks(index);
-							}
-							// previous block is best block => no fork
-							else if &self.best_block().hash == &hashes[index - 1] {
-								return HeadersIntersection::InMemoryMainNewBlocks(index);
-							}
-							// previous block is not a best block => fork
-							else {
-								return HeadersIntersection::InMemoryForkNewBlocks(index);
-							}
-						}
-						previous_state = state;
-					}
-
-					// unreachable because last block is unknown && in above loop we search for unknown blocks
-					unreachable!();
-				},
-				// if first block is known && last block is also known && is in queue => queue intersection with no new block
-				_ => {
-					HeadersIntersection::InMemoryNoNewBlocks
-				}
-			}
-		}
-	}
-
 	/// Get transaction state
 	pub fn transaction_state(&self, hash: &H256) -> TransactionState {
 		if self.verifying_transactions.contains_key(hash) {
 			return TransactionState::Verifying;
 		}
-		if self.memory_pool.contains(hash) {
-			return TransactionState::InMemory;
-		}
 		if self.storage.contains_transaction(hash) {
 			return TransactionState::Stored;
+		}
+		if self.memory_pool.read().contains(hash) {
+			return TransactionState::InMemory;
 		}
 		TransactionState::Unknown
 	}
@@ -622,15 +522,15 @@ impl Chain {
 	/// Get transactions hashes with given state
 	pub fn transactions_hashes_with_state(&self, state: TransactionState) -> Vec<H256> {
 		match state {
-			TransactionState::InMemory => self.memory_pool.get_transactions_ids(),
+			TransactionState::InMemory => self.memory_pool.read().get_transactions_ids(),
 			TransactionState::Verifying => self.verifying_transactions.keys().cloned().collect(),
 			_ => panic!("wrong argument"),
 		}
 	}
 
 	/// Add transaction to verifying queue
-	pub fn verify_transaction(&mut self, hash: H256, tx: Transaction) {
-		self.verifying_transactions.insert(hash, tx);
+	pub fn verify_transaction(&mut self, tx: IndexedTransaction) {
+		self.verifying_transactions.insert(tx.hash.clone(), tx);
 	}
 
 	/// Remove verifying trasaction
@@ -650,7 +550,7 @@ impl Chain {
 			for h in all_keys {
 				let remove_verifying_transaction = {
 					if let Some(entry) = self.verifying_transactions.get(&h) {
-						if entry.inputs.iter().any(|i| i.previous_output.hash == hash) {
+						if entry.raw.inputs.iter().any(|i| i.previous_output.hash == hash) {
 							queue.push_back(h.clone());
 							true
 						} else {
@@ -670,21 +570,22 @@ impl Chain {
 	}
 
 	/// Get transaction by hash (if it's in memory pool or verifying)
-	pub fn transaction_by_hash(&self, hash: &H256) -> Option<Transaction> {
+	pub fn transaction_by_hash(&self, hash: &H256) -> Option<IndexedTransaction> {
 		self.verifying_transactions.get(hash).cloned()
-			.or_else(|| self.memory_pool.read_by_hash(hash).cloned())
+			.or_else(|| self.memory_pool.read().read_by_hash(hash).cloned().map(|t| t.into()))
 	}
 
 	/// Insert transaction to memory pool
-	pub fn insert_verified_transaction(&mut self, transaction: Transaction) {
+	pub fn insert_verified_transaction(&mut self, transaction: IndexedTransaction) {
 		// we have verified transaction, but possibly this transaction replaces
 		// existing transaction from memory pool
 		// => remove previous transactions before
-		for input in &transaction.inputs {
-			self.memory_pool.remove_by_prevout(&input.previous_output);
+		let mut memory_pool = self.memory_pool.write();
+		for input in &transaction.raw.inputs {
+			memory_pool.remove_by_prevout(&input.previous_output);
 		}
 		// now insert transaction itself
-		self.memory_pool.insert_verified(transaction);
+		memory_pool.insert_verified(transaction);
 	}
 
 	/// Calculate block locator hashes for hash queue
@@ -735,13 +636,27 @@ impl Chain {
 
 impl db::TransactionProvider for Chain {
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
-		self.memory_pool.transaction_bytes(hash)
+		self.memory_pool.read().transaction_bytes(hash)
 			.or_else(|| self.storage.transaction_bytes(hash))
 	}
 
 	fn transaction(&self, hash: &H256) -> Option<Transaction> {
-		self.memory_pool.transaction(hash)
+		self.memory_pool.read().transaction(hash)
 			.or_else(|| self.storage.transaction(hash))
+	}
+}
+
+impl db::BlockHeaderProvider for Chain {
+	fn block_header_bytes(&self, block_ref: db::BlockRef) -> Option<Bytes> {
+		use ser::serialize;
+		self.block_header(block_ref).map(|h| serialize(&h))
+	}
+
+	fn block_header(&self, block_ref: db::BlockRef) -> Option<BlockHeader> {
+		match block_ref {
+			db::BlockRef::Hash(hash) => self.block_header_by_hash(&hash).map(|h| h.raw),
+			db::BlockRef::Number(n) => self.block_header_by_number(n).map(|h| h.raw),
+		}
 	}
 }
 
@@ -783,20 +698,22 @@ impl fmt::Debug for Chain {
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
-	use chain::Transaction;
+	use chain::{Transaction, IndexedBlockHeader};
 	use hash_queue::HashPosition;
-	use super::{Chain, BlockState, TransactionState, HeadersIntersection, BlockInsertionResult};
+	use super::{Chain, BlockState, TransactionState, BlockInsertionResult};
 	use db::{self, Store, BestBlock};
 	use primitives::hash::H256;
 	use devtools::RandomTempPath;
 	use test_data;
 	use db::BlockStapler;
+	use parking_lot::RwLock;
+	use miner::MemoryPool;
 
 	#[test]
 	fn chain_empty() {
 		let db = Arc::new(db::TestStorage::with_genesis_block());
 		let db_best_block = BestBlock { number: 0, hash: db.best_block().expect("storage with genesis block is required").hash };
-		let chain = Chain::new(db.clone());
+		let chain = Chain::new(db.clone(), Arc::new(RwLock::new(MemoryPool::new())));
 		assert_eq!(chain.information().scheduled, 0);
 		assert_eq!(chain.information().requested, 0);
 		assert_eq!(chain.information().verifying, 0);
@@ -813,13 +730,13 @@ mod tests {
 	#[test]
 	fn chain_block_path() {
 		let db = Arc::new(db::TestStorage::with_genesis_block());
-		let mut chain = Chain::new(db.clone());
+		let mut chain = Chain::new(db.clone(), Arc::new(RwLock::new(MemoryPool::new())));
 
 		// add 6 blocks to scheduled queue
 		let blocks = test_data::build_n_empty_blocks_from_genesis(6, 0);
-		let headers: Vec<_> = blocks.into_iter().map(|b| b.block_header).collect();
-		let hashes: Vec<_> = headers.iter().map(|h| h.hash()).collect();
-		chain.schedule_blocks_headers(hashes.clone(), headers);
+		let headers: Vec<IndexedBlockHeader> = blocks.into_iter().map(|b| b.block_header.into()).collect();
+		let hashes: Vec<_> = headers.iter().map(|h| h.hash.clone()).collect();
+		chain.schedule_blocks_headers(headers.clone());
 		assert!(chain.information().scheduled == 6 && chain.information().requested == 0
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 
@@ -846,17 +763,17 @@ mod tests {
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 0 && chain.information().stored == 1);
 		// mark 0 & 1 as verifying
-		chain.verify_block(hashes[1].clone(), test_data::genesis().block_header);
-		chain.verify_block(hashes[2].clone(), test_data::genesis().block_header);
+		chain.verify_block(headers[0].clone().into());
+		chain.verify_block(headers[1].clone().into());
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 2 && chain.information().stored == 1);
 
 		// mark block 0 as verified
-		assert_eq!(chain.forget_block_with_state(&hashes[1], BlockState::Verifying), HashPosition::Front);
+		assert_eq!(chain.forget_block_with_state(&hashes[0], BlockState::Verifying), HashPosition::Front);
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 1);
 		// insert new best block to the chain
-		chain.insert_best_block(test_data::block_h1().hash(), &test_data::block_h1().into()).expect("Db error");
+		chain.insert_best_block(&test_data::block_h1().into()).expect("Db error");
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 2);
 		assert_eq!(db.best_block().expect("storage with genesis block is required").number, 1);
@@ -864,26 +781,26 @@ mod tests {
 
 	#[test]
 	fn chain_block_locator_hashes() {
-		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
 		let genesis_hash = chain.best_block().hash;
 		assert_eq!(chain.block_locator_hashes(), vec![genesis_hash.clone()]);
 
 		let block1 = test_data::block_h1();
 		let block1_hash = block1.hash();
 
-		chain.insert_best_block(block1_hash.clone(), &block1.into()).expect("Error inserting new block");
+		chain.insert_best_block(&block1.into()).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block1_hash.clone(), genesis_hash.clone()]);
 
 		let block2 = test_data::block_h2();
 		let block2_hash = block2.hash();
 
-		chain.insert_best_block(block2_hash.clone(), &block2.into()).expect("Error inserting new block");
+		chain.insert_best_block(&block2.into()).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
 
 		let blocks0 = test_data::build_n_empty_blocks_from_genesis(11, 0);
-		let headers0: Vec<_> = blocks0.into_iter().map(|b| b.block_header).collect();
-		let hashes0: Vec<_> = headers0.iter().map(|h| h.hash()).collect();
-		chain.schedule_blocks_headers(hashes0.clone(), headers0.clone());
+		let headers0: Vec<IndexedBlockHeader> = blocks0.into_iter().map(|b| b.block_header.into()).collect();
+		let hashes0: Vec<_> = headers0.iter().map(|h| h.hash.clone()).collect();
+		chain.schedule_blocks_headers(headers0.clone());
 		chain.request_blocks_hashes(10);
 		chain.verify_blocks_hashes(10);
 
@@ -902,10 +819,10 @@ mod tests {
 			genesis_hash.clone(),
 		]);
 
-		let blocks1 = test_data::build_n_empty_blocks_from(6, 0, &headers0[10]);
-		let headers1: Vec<_> = blocks1.into_iter().map(|b| b.block_header).collect();
-		let hashes1: Vec<_> = headers1.iter().map(|h| h.hash()).collect();
-		chain.schedule_blocks_headers(hashes1.clone(), headers1.clone());
+		let blocks1 = test_data::build_n_empty_blocks_from(6, 0, &headers0[10].raw);
+		let headers1: Vec<IndexedBlockHeader> = blocks1.into_iter().map(|b| b.block_header.into()).collect();
+		let hashes1: Vec<_> = headers1.iter().map(|h| h.hash.clone()).collect();
+		chain.schedule_blocks_headers(headers1.clone());
 		chain.request_blocks_hashes(10);
 
 		assert_eq!(chain.block_locator_hashes(), vec![
@@ -924,10 +841,10 @@ mod tests {
 			genesis_hash.clone(),
 		]);
 
-		let blocks2 = test_data::build_n_empty_blocks_from(3, 0, &headers1[5]);
-		let headers2: Vec<_> = blocks2.into_iter().map(|b| b.block_header).collect();
-		let hashes2: Vec<_> = headers2.iter().map(|h| h.hash()).collect();
-		chain.schedule_blocks_headers(hashes2.clone(), headers2);
+		let blocks2 = test_data::build_n_empty_blocks_from(3, 0, &headers1[5].raw);
+		let headers2: Vec<IndexedBlockHeader> = blocks2.into_iter().map(|b| b.block_header.into()).collect();
+		let hashes2: Vec<_> = headers2.iter().map(|h| h.hash.clone()).collect();
+		chain.schedule_blocks_headers(headers2);
 
 		assert_eq!(chain.block_locator_hashes(), vec![
 			hashes2[2].clone(),
@@ -947,92 +864,16 @@ mod tests {
 	}
 
 	#[test]
-	fn chain_intersect_with_inventory() {
-		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
-		// append 2 db blocks
-		chain.insert_best_block(test_data::block_h1().hash(), &test_data::block_h1().into()).expect("Error inserting new block");
-		chain.insert_best_block(test_data::block_h2().hash(), &test_data::block_h2().into()).expect("Error inserting new block");
-
-		// prepare blocks
-		let blocks0 = test_data::build_n_empty_blocks_from(9, 0, &test_data::block_h2().block_header);
-		let headers0: Vec<_> = blocks0.into_iter().map(|b| b.block_header).collect();
-		let hashes0: Vec<_> = headers0.iter().map(|h| h.hash()).collect();
-		// append 3 verifying blocks, 3 requested blocks && 3 scheduled blocks
-		chain.schedule_blocks_headers(hashes0.clone(), headers0.clone());
-		chain.request_blocks_hashes(6);
-		chain.verify_blocks_hashes(3);
-
-		let blocks1 = test_data::build_n_empty_blocks(2, 0);
-		let headers1: Vec<_> = blocks1.into_iter().map(|b| b.block_header).collect();
-		let hashes1: Vec<_> = headers1.iter().map(|h| h.hash()).collect();
-		assert_eq!(chain.intersect_with_blocks_headers(&hashes1, &headers1), HeadersIntersection::NoKnownBlocks(0));
-
-		assert_eq!(chain.intersect_with_blocks_headers(&vec![
-			hashes0[2].clone(),
-			hashes0[3].clone(),
-			hashes0[4].clone(),
-			hashes0[5].clone(),
-			hashes0[6].clone(),
-		], &vec![
-			headers0[2].clone(),
-			headers0[3].clone(),
-			headers0[4].clone(),
-			headers0[5].clone(),
-			headers0[6].clone(),
-		]), HeadersIntersection::InMemoryNoNewBlocks);
-
-		assert_eq!(chain.intersect_with_blocks_headers(&vec![
-			hashes0[7].clone(),
-			hashes0[8].clone(),
-			hashes1[0].clone(),
-			hashes1[1].clone(),
-		], &vec![
-			headers0[7].clone(),
-			headers0[8].clone(),
-			headers1[0].clone(),
-			headers1[1].clone(),
-		]), HeadersIntersection::InMemoryMainNewBlocks(2));
-
-		assert_eq!(chain.intersect_with_blocks_headers(&vec![
-			hashes0[6].clone(),
-			hashes0[7].clone(),
-			hashes1[0].clone(),
-			hashes1[1].clone(),
-		], &vec![
-			headers0[6].clone(),
-			headers0[7].clone(),
-			headers1[0].clone(),
-			headers1[1].clone(),
-		]), HeadersIntersection::InMemoryForkNewBlocks(2));
-
-		assert_eq!(chain.intersect_with_blocks_headers(&vec![
-			test_data::block_h1().hash(),
-			test_data::block_h2().hash(),
-		], &vec![
-			test_data::block_h1().block_header,
-			test_data::block_h2().block_header,
-		]), HeadersIntersection::DbAllBlocksKnown);
-
-		assert_eq!(chain.intersect_with_blocks_headers(&vec![
-			test_data::block_h2().hash(),
-			hashes1[0].clone(),
-		], &vec![
-			test_data::block_h2().block_header,
-			headers1[0].clone(),
-		]), HeadersIntersection::DbForkNewBlocks(1));
-	}
-
-	#[test]
 	fn chain_transaction_state() {
-		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
 		let genesis_block = test_data::genesis();
 		let block1 = test_data::block_h1();
 		let tx1: Transaction = test_data::TransactionBuilder::with_version(1).into();
 		let tx2: Transaction = test_data::TransactionBuilder::with_version(2).into();
 		let tx1_hash = tx1.hash();
 		let tx2_hash = tx2.hash();
-		chain.verify_transaction(tx1_hash.clone(), tx1);
-		chain.insert_verified_transaction(tx2);
+		chain.verify_transaction(tx1.into());
+		chain.insert_verified_transaction(tx2.into());
 
 		assert_eq!(chain.transaction_state(&genesis_block.transactions[0].hash()), TransactionState::Stored);
 		assert_eq!(chain.transaction_state(&block1.transactions[0].hash()), TransactionState::Unknown);
@@ -1056,15 +897,15 @@ mod tests {
 		let tx2 = b1.transactions[1].clone();
 		let tx2_hash = tx2.hash();
 
-		let mut chain = Chain::new(Arc::new(db::TestStorage::with_blocks(&vec![b0])));
-		chain.verify_transaction(tx1_hash.clone(), tx1);
-		chain.insert_verified_transaction(tx2);
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_blocks(&vec![b0])), Arc::new(RwLock::new(MemoryPool::new())));
+		chain.verify_transaction(tx1.into());
+		chain.insert_verified_transaction(tx2.into());
 
 		// only one transaction is in the memory pool
 		assert_eq!(chain.information().transactions.transactions_count, 1);
 
 		// when block is inserted to the database => all accepted transactions are removed from mempool && verifying queue
-		chain.insert_best_block(b1.hash(), &b1.into()).expect("block accepted");
+		chain.insert_best_block(&b1.into()).expect("block accepted");
 
 		assert_eq!(chain.information().transactions.transactions_count, 0);
 		assert!(!chain.forget_verifying_transaction(&tx1_hash));
@@ -1079,11 +920,11 @@ mod tests {
 			.into_input(0).add_output(300).store(test_chain)				// t1 -> t2 -> t3
 			.set_default_input(0).set_output(400).store(test_chain);		// t4
 
-		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
-		chain.verify_transaction(test_chain.at(0).hash(), test_chain.at(0));
-		chain.verify_transaction(test_chain.at(1).hash(), test_chain.at(1));
-		chain.verify_transaction(test_chain.at(2).hash(), test_chain.at(2));
-		chain.verify_transaction(test_chain.at(3).hash(), test_chain.at(3));
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
+		chain.verify_transaction(test_chain.at(0).into());
+		chain.verify_transaction(test_chain.at(1).into());
+		chain.verify_transaction(test_chain.at(2).into());
+		chain.verify_transaction(test_chain.at(3).into());
 
 		chain.forget_verifying_transaction_with_children(&test_chain.at(0).hash());
 		assert!(!chain.forget_verifying_transaction(&test_chain.at(0).hash()));
@@ -1100,11 +941,11 @@ mod tests {
 			.into_input(0).add_output(300).store(test_chain)				// t1 -> t2 -> t3
 			.set_default_input(0).set_output(400).store(test_chain);		// t4
 
-		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
-		chain.insert_verified_transaction(test_chain.at(0));
-		chain.insert_verified_transaction(test_chain.at(1));
-		chain.insert_verified_transaction(test_chain.at(2));
-		chain.insert_verified_transaction(test_chain.at(3));
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
+		chain.insert_verified_transaction(test_chain.at(0).into());
+		chain.insert_verified_transaction(test_chain.at(1).into());
+		chain.insert_verified_transaction(test_chain.at(2).into());
+		chain.insert_verified_transaction(test_chain.at(3).into());
 
 		let chain_transactions = chain.transactions_hashes_with_state(TransactionState::InMemory);
 		assert!(chain_transactions.contains(&test_chain.at(0).hash()));
@@ -1129,23 +970,23 @@ mod tests {
 		let storage = Arc::new(db::Storage::new(path.as_path()).unwrap());
 		storage.insert_block(&b0).expect("no db error");
 
-		let mut chain = Chain::new(storage);
-		chain.verify_transaction(tx1_hash.clone(), tx1);
-		chain.insert_verified_transaction(tx2);
+		let mut chain = Chain::new(storage, Arc::new(RwLock::new(MemoryPool::new())));
+		chain.verify_transaction(tx1.into());
+		chain.insert_verified_transaction(tx2.into());
 
 		// no reorg
-		let result = chain.insert_best_block(b1.hash(), &b1.into()).expect("no error");
+		let result = chain.insert_best_block(&b1.into()).expect("no error");
 		assert_eq!(result.transactions_to_reverify.len(), 0);
 
 		// no reorg
-		let result = chain.insert_best_block(b2.hash(), &b2.into()).expect("no error");
+		let result = chain.insert_best_block(&b2.into()).expect("no error");
 		assert_eq!(result.transactions_to_reverify.len(), 0);
 
 		// reorg
-		let result = chain.insert_best_block(b3.hash(), &b3.into()).expect("no error");
+		let result = chain.insert_best_block(&b3.into()).expect("no error");
 		assert_eq!(result.transactions_to_reverify.len(), 2);
-		assert!(result.transactions_to_reverify.iter().any(|&(ref h, _)| h == &tx1_hash));
-		assert!(result.transactions_to_reverify.iter().any(|&(ref h, _)| h == &tx2_hash));
+		assert!(result.transactions_to_reverify.iter().any(|ref tx| &tx.hash == &tx1_hash));
+		assert!(result.transactions_to_reverify.iter().any(|ref tx| &tx.hash == &tx2_hash));
 	}
 
 	#[test]
@@ -1177,31 +1018,31 @@ mod tests {
 		let tx5 = b5.transactions[0].clone();
 
 		let path = RandomTempPath::create_dir();
-		let storage = Arc::new(db::Storage::new(path.as_path()).unwrap());
+		let storage = Arc::new(db::Storage::new(path.as_path()).unwrap(), );
 		storage.insert_block(&genesis).expect("no db error");
 
-		let mut chain = Chain::new(storage);
+		let mut chain = Chain::new(storage, Arc::new(RwLock::new(MemoryPool::new())));
 
-		chain.insert_verified_transaction(tx3);
-		chain.insert_verified_transaction(tx4);
-		chain.insert_verified_transaction(tx5);
+		chain.insert_verified_transaction(tx3.into());
+		chain.insert_verified_transaction(tx4.into());
+		chain.insert_verified_transaction(tx5.into());
 
-		assert_eq!(chain.insert_best_block(b0.hash(), &b0.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b0.hash()]));
+		assert_eq!(chain.insert_best_block(&b0.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b0.hash()]));
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(b1.hash(), &b1.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b1.hash()]));
+		assert_eq!(chain.insert_best_block(&b1.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b1.hash()]));
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(b2.hash(), &b2.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b2.hash()]));
+		assert_eq!(chain.insert_best_block(&b2.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b2.hash()]));
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(b3.hash(), &b3.clone().into()).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.insert_best_block(&b3.clone().into()).expect("block accepted"), BlockInsertionResult::default());
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(b4.hash(), &b4.clone().into()).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.insert_best_block(&b4.clone().into()).expect("block accepted"), BlockInsertionResult::default());
 		assert_eq!(chain.information().transactions.transactions_count, 3);
 		// order matters
-		let insert_result = chain.insert_best_block(b5.hash(), &b5.clone().into()).expect("block accepted");
+		let insert_result = chain.insert_best_block(&b5.clone().into()).expect("block accepted");
 		let transactions_to_reverify_hashes: Vec<_> = insert_result
 			.transactions_to_reverify
 			.into_iter()
-			.map(|(h, _)| h)
+			.map(|tx| tx.hash)
 			.collect();
 		assert_eq!(transactions_to_reverify_hashes, vec![tx1_hash, tx2_hash]);
 		assert_eq!(insert_result.canonized_blocks_hashes, vec![b3.hash(), b4.hash(), b5.hash()]);
@@ -1223,58 +1064,13 @@ mod tests {
 		let tx3: Transaction = test_data::TransactionBuilder::with_output(20).add_input(&tx0, 1).into();
 
 		// insert tx2 to memory pool
-		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
-		chain.insert_verified_transaction(tx2.clone());
-		chain.insert_verified_transaction(tx3.clone());
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
+		chain.insert_verified_transaction(tx2.clone().into());
+		chain.insert_verified_transaction(tx3.clone().into());
 		// insert verified block with tx1
-		chain.insert_best_block(b0.hash(), &b0.into()).expect("no error");
+		chain.insert_best_block(&b0.into()).expect("no error");
 		// => tx2 is removed from memory pool, but tx3 remains
 		assert_eq!(chain.information().transactions.transactions_count, 1);
-	}
-
-	#[test]
-	fn chain_dead_end() {
-		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
-
-		let blocks = test_data::build_n_empty_blocks_from(5, 0, &test_data::genesis().block_header);
-		let headers: Vec<_> = blocks.iter().map(|b| b.block_header.clone()).collect();
-		let hashes: Vec<_> = headers.iter().map(|h| h.hash()).collect();
-
-		chain.insert_best_block(blocks[0].hash(), &blocks[0].clone().into()).expect("no error");
-		chain.insert_best_block(blocks[1].hash(), &blocks[1].clone().into()).expect("no error");
-		chain.mark_dead_end_block(&blocks[2].hash());
-
-		assert_eq!(chain.intersect_with_blocks_headers(&vec![
-			hashes[0].clone(),
-			hashes[1].clone(),
-			hashes[2].clone(),
-			hashes[3].clone(),
-			hashes[4].clone(),
-		], &vec![
-			headers[0].clone(),
-			headers[1].clone(),
-			headers[2].clone(),
-			headers[3].clone(),
-			headers[4].clone(),
-		]), HeadersIntersection::DeadEnd(2));
-
-		assert_eq!(chain.intersect_with_blocks_headers(&vec![
-			hashes[2].clone(),
-			hashes[3].clone(),
-			hashes[4].clone(),
-		], &vec![
-			headers[2].clone(),
-			headers[3].clone(),
-			headers[4].clone(),
-		]), HeadersIntersection::DeadEnd(0));
-
-		assert_eq!(chain.intersect_with_blocks_headers(&vec![
-			hashes[3].clone(),
-			hashes[4].clone(),
-		], &vec![
-			headers[3].clone(),
-			headers[4].clone(),
-		]), HeadersIntersection::DeadEnd(0));
 	}
 
 	#[test]
@@ -1286,10 +1082,10 @@ mod tests {
 			.reset().set_input(&data_chain.at(0), 0).add_output(20).lock().store(data_chain)	// transaction0 -> transaction1
 			.reset().set_input(&data_chain.at(0), 0).add_output(30).store(data_chain);			// transaction0 -> transaction2
 		
-		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
-		chain.insert_verified_transaction(data_chain.at(1));
+		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
+		chain.insert_verified_transaction(data_chain.at(1).into());
 		assert_eq!(chain.information().transactions.transactions_count, 1);
-		chain.insert_verified_transaction(data_chain.at(2));
+		chain.insert_verified_transaction(data_chain.at(2).into());
 		assert_eq!(chain.information().transactions.transactions_count, 1); // tx was replaces
 	}
 }

@@ -4,14 +4,15 @@ use ser::{Deserializable, Reader, Error as ReaderError};
 use transaction::Transaction;
 use read_and_hash::ReadAndHash;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct IndexedTransaction {
 	pub hash: H256,
 	pub raw: Transaction,
 }
 
-impl From<Transaction> for IndexedTransaction {
-	fn from(tx: Transaction) -> Self {
+impl<T> From<T> for IndexedTransaction where Transaction: From<T> {
+	fn from(other: T) -> Self {
+		let tx = Transaction::from(other);
 		IndexedTransaction {
 			hash: tx.hash(),
 			raw: tx,

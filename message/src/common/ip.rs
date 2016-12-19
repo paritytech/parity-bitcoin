@@ -5,6 +5,12 @@ use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct IpAddress(net::IpAddr);
 
+impl Default for IpAddress {
+	fn default() -> Self {
+		IpAddress(net::IpAddr::V4(net::Ipv4Addr::new(0, 0, 0, 0)))
+	}
+}
+
 impl From<net::IpAddr> for IpAddress {
 	fn from(ip: net::IpAddr) -> Self {
 		IpAddress(ip)

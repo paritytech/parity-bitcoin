@@ -50,7 +50,7 @@ impl BlocksWriter {
 		}
 		// verify && insert only if parent block is already in the storage
 		if !self.storage.contains_block(db::BlockRef::Hash(block.header.raw.previous_header_hash.clone())) {
-			self.orphaned_blocks_pool.insert_orphaned_block(block.hash().clone(), block);
+			self.orphaned_blocks_pool.insert_orphaned_block(block);
 			// we can't hold many orphaned blocks in memory during import
 			if self.orphaned_blocks_pool.len() > MAX_ORPHANED_BLOCKS {
 				return Err(Error::TooManyOrphanBlocks);
@@ -59,7 +59,7 @@ impl BlocksWriter {
 		}
 
 		// verify && insert block && all its orphan children
-		let mut verification_queue: VecDeque<chain::IndexedBlock> = self.orphaned_blocks_pool.remove_blocks_for_parent(block.hash()).into_iter().map(|(_, b)| b).collect();
+		let mut verification_queue: VecDeque<chain::IndexedBlock> = self.orphaned_blocks_pool.remove_blocks_for_parent(block.hash());
 		verification_queue.push_front(block);
 		while let Some(block) = verification_queue.pop_front() {
 			if self.verification {
@@ -115,7 +115,7 @@ impl BlockVerificationSink for BlocksWriterSink {
 }
 
 impl TransactionVerificationSink for BlocksWriterSink {
-	fn on_transaction_verification_success(&self, _transaction: chain::Transaction) {
+	fn on_transaction_verification_success(&self, _transaction: chain::IndexedTransaction) {
 		unreachable!("not intended to verify transactions")
 	}
 

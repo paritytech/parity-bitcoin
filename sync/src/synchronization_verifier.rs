@@ -1,15 +1,16 @@
-use std::thread;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
-use chain::{Transaction, OutPoint, TransactionOutput, IndexedBlock};
-use network::Magic;
-use miner::{DoubleSpendCheckResult, NonFinalDoubleSpendSet};
-use primitives::hash::H256;
-use synchronization_chain::ChainRef;
-use verification::{self, BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify, Chain};
-use db::{SharedStore, PreviousTransactionOutputProvider, TransactionOutputObserver};
+use std::thread;
+use parking_lot::Mutex;
 use time::get_time;
+use chain::{IndexedBlock, IndexedTransaction};
+use db::{SharedStore, PreviousTransactionOutputProvider, TransactionOutputObserver};
+use network::Magic;
+use primitives::hash::H256;
+use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify, Chain};
+use types::{StorageRef, MemoryPoolRef};
+use utils::{MemoryPoolTransactionOutputProvider, StorageTransactionOutputProvider};
 
 /// Block verification events sink
 pub trait BlockVerificationSink : Send + Sync + 'static {
@@ -22,7 +23,7 @@ pub trait BlockVerificationSink : Send + Sync + 'static {
 /// Transaction verification events sink
 pub trait TransactionVerificationSink : Send + Sync + 'static {
 	/// When transaction verification has completed successfully.
-	fn on_transaction_verification_success(&self, transaction: Transaction);
+	fn on_transaction_verification_success(&self, transaction: IndexedTransaction);
 	/// When transaction verification has failed.
 	fn on_transaction_verification_error(&self, err: &str, hash: &H256);
 }
@@ -37,39 +38,30 @@ pub enum VerificationTask {
 	/// Verify single block
 	VerifyBlock(IndexedBlock),
 	/// Verify single transaction
-	VerifyTransaction(u32, Transaction),
+	VerifyTransaction(u32, IndexedTransaction),
 	/// Stop verification thread
 	Stop,
 }
 
 /// Synchronization verifier
-pub trait Verifier : Send + 'static {
+pub trait Verifier : Send + Sync + 'static {
 	/// Verify block
 	fn verify_block(&self, block: IndexedBlock);
 	/// Verify transaction
-	fn verify_transaction(&self, height: u32, transaction: Transaction);
+	fn verify_transaction(&self, height: u32, transaction: IndexedTransaction);
 }
 
 /// Asynchronous synchronization verifier
 pub struct AsyncVerifier {
 	/// Verification work transmission channel.
-	verification_work_sender: Sender<VerificationTask>,
+	verification_work_sender: Mutex<Sender<VerificationTask>>,
 	/// Verification thread.
 	verification_worker_thread: Option<thread::JoinHandle<()>>,
 }
 
-/// Transaction output observer, which looks into storage && into memory pool
-struct ChainMemoryPoolTransactionOutputProvider {
-	/// Chain reference
-	chain: ChainRef,
-	/// Previous outputs, for which we should return 'Not spent' value.
-	/// These are used when new version of transaction is received.
-	nonfinal_spends: Option<NonFinalDoubleSpendSet>,
-}
-
 impl VerificationTask {
 	/// Returns transaction reference if it is transaction verification task
-	pub fn transaction(&self) -> Option<&Transaction> {
+	pub fn transaction(&self) -> Option<&IndexedTransaction> {
 		match self {
 			&VerificationTask::VerifyTransaction(_, ref transaction) => Some(&transaction),
 			_ => None,
@@ -79,37 +71,37 @@ impl VerificationTask {
 
 impl AsyncVerifier {
 	/// Create new async verifier
-	pub fn new<T: VerificationSink>(verifier: Arc<ChainVerifier>, chain: ChainRef, sink: Arc<T>) -> Self {
+	pub fn new<T: VerificationSink>(verifier: Arc<ChainVerifier>, storage: StorageRef, memory_pool: MemoryPoolRef, sink: Arc<T>) -> Self {
 		let (verification_work_sender, verification_work_receiver) = channel();
 		AsyncVerifier {
-			verification_work_sender: verification_work_sender,
+			verification_work_sender: Mutex::new(verification_work_sender),
 			verification_worker_thread: Some(thread::Builder::new()
 				.name("Sync verification thread".to_string())
 				.spawn(move || {
-					AsyncVerifier::verification_worker_proc(sink, chain, verifier, verification_work_receiver)
+					AsyncVerifier::verification_worker_proc(sink, storage, memory_pool, verifier, verification_work_receiver)
 				})
 				.expect("Error creating verification thread"))
 		}
 	}
 
 	/// Thread procedure for handling verification tasks
-	fn verification_worker_proc<T: VerificationSink>(sink: Arc<T>, chain: ChainRef, verifier: Arc<ChainVerifier>, work_receiver: Receiver<VerificationTask>) {
+	fn verification_worker_proc<T: VerificationSink>(sink: Arc<T>, storage: StorageRef, memory_pool: MemoryPoolRef, verifier: Arc<ChainVerifier>, work_receiver: Receiver<VerificationTask>) {
 		while let Ok(task) = work_receiver.recv() {
 			match task {
 				VerificationTask::Stop => break,
 				_ => {
 					let prevout_provider = if let Some(ref transaction) = task.transaction() {
-						match ChainMemoryPoolTransactionOutputProvider::for_transaction(chain.clone(), transaction) {
+						match MemoryPoolTransactionOutputProvider::for_transaction(storage.clone(), &memory_pool, &transaction.raw) {
 							Err(e) => {
-								sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash());
+								sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash);
 								return;
 							},
-							Ok(prevout_provider) => Some(prevout_provider),
+							Ok(prevout_provider) => prevout_provider,
 						}
 					} else {
-						None
+						MemoryPoolTransactionOutputProvider::for_block(storage.clone())
 					};
-					execute_verification_task(&sink, prevout_provider.as_ref(), &verifier, task)
+					execute_verification_task(&sink, &prevout_provider, &verifier, task)
 				},
 			}
 		}
@@ -120,8 +112,11 @@ impl AsyncVerifier {
 impl Drop for AsyncVerifier {
 	fn drop(&mut self) {
 		if let Some(join_handle) = self.verification_worker_thread.take() {
-			// ignore send error here <= destructing anyway
-			let _ = self.verification_work_sender.send(VerificationTask::Stop);
+			{
+				let verification_work_sender = self.verification_work_sender.lock();
+				// ignore send error here <= destructing anyway
+				let _ = verification_work_sender.send(VerificationTask::Stop);
+			}
 			join_handle.join().expect("Clean shutdown.");
 		}
 	}
@@ -130,14 +125,14 @@ impl Drop for AsyncVerifier {
 impl Verifier for AsyncVerifier {
 	/// Verify block
 	fn verify_block(&self, block: IndexedBlock) {
-		self.verification_work_sender
+		self.verification_work_sender.lock()
 			.send(VerificationTask::VerifyBlock(block))
 			.expect("Verification thread have the same lifetime as `AsyncVerifier`");
 	}
 
 	/// Verify transaction
-	fn verify_transaction(&self, height: u32, transaction: Transaction) {
-		self.verification_work_sender
+	fn verify_transaction(&self, height: u32, transaction: IndexedTransaction) {
+		self.verification_work_sender.lock()
 			.send(VerificationTask::VerifyTransaction(height, transaction))
 			.expect("Verification thread have the same lifetime as `AsyncVerifier`");
 	}
@@ -145,6 +140,8 @@ impl Verifier for AsyncVerifier {
 
 /// Synchronous synchronization verifier
 pub struct SyncVerifier<T: VerificationSink> {
+	/// Storage reference
+	storage: StorageRef,
 	/// Verifier
 	verifier: ChainVerifier,
 	/// Verification sink
@@ -154,8 +151,9 @@ pub struct SyncVerifier<T: VerificationSink> {
 impl<T> SyncVerifier<T> where T: VerificationSink {
 	/// Create new sync verifier
 	pub fn new(network: Magic, storage: SharedStore, sink: Arc<T>) -> Self {
-		let verifier = ChainVerifier::new(storage, network);
+		let verifier = ChainVerifier::new(storage.clone(), network);
 		SyncVerifier {
+			storage: storage,
 			verifier: verifier,
 			sink: sink,
 		}
@@ -165,21 +163,25 @@ impl<T> SyncVerifier<T> where T: VerificationSink {
 impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
 	/// Verify block
 	fn verify_block(&self, block: IndexedBlock) {
-		execute_verification_task::<T, ChainMemoryPoolTransactionOutputProvider>(&self.sink, None, &self.verifier, VerificationTask::VerifyBlock(block))
+		let prevout_provider = StorageTransactionOutputProvider::with_storage(self.storage.clone());
+		execute_verification_task(&self.sink, &prevout_provider, &self.verifier, VerificationTask::VerifyBlock(block))
 	}
 
 	/// Verify transaction
-	fn verify_transaction(&self, _height: u32, _transaction: Transaction) {
+	fn verify_transaction(&self, _height: u32, _transaction: IndexedTransaction) {
 		unimplemented!() // sync verifier is currently only used for blocks verification
 	}
 }
 
 /// Execute single verification task
-fn execute_verification_task<T: VerificationSink, U: TransactionOutputObserver + PreviousTransactionOutputProvider>(sink: &Arc<T>, tx_output_provider: Option<&U>, verifier: &ChainVerifier, task: VerificationTask) {
+fn execute_verification_task<T: VerificationSink, U: TransactionOutputObserver + PreviousTransactionOutputProvider>(sink: &Arc<T>, tx_output_provider: &U, verifier: &ChainVerifier, task: VerificationTask) {
 	let mut tasks_queue: VecDeque<VerificationTask> = VecDeque::new();
 	tasks_queue.push_back(task);
 
 	while let Some(task) = tasks_queue.pop_front() {
+		// TODO: for each task different output provider must be created
+		// reorg => txes from storage are reverifying + mempool txes are reverifying
+		// => some mempool can be invalid after reverifying
 		match task {
 			VerificationTask::VerifyBlock(block) => {
 				// verify block
@@ -200,10 +202,9 @@ fn execute_verification_task<T: VerificationSink, U: TransactionOutputObserver +
 			},
 			VerificationTask::VerifyTransaction(height, transaction) => {
 				let time: u32 = get_time().sec as u32;
-				let tx_output_provider = tx_output_provider.expect("must be provided for transaction checks");
-				match verifier.verify_mempool_transaction(tx_output_provider, height, time, &transaction) {
-					Ok(_) => sink.on_transaction_verification_success(transaction),
-					Err(e) => sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash()),
+				match verifier.verify_mempool_transaction(tx_output_provider, height, time, &transaction.raw) {
+					Ok(_) => sink.on_transaction_verification_success(transaction.into()),
+					Err(e) => sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash),
 				}
 			},
 			_ => unreachable!("must be checked by caller"),
@@ -211,77 +212,15 @@ fn execute_verification_task<T: VerificationSink, U: TransactionOutputObserver +
 	}
 }
 
-impl ChainMemoryPoolTransactionOutputProvider {
-	pub fn for_transaction(chain: ChainRef, transaction: &Transaction) -> Result<Self, verification::TransactionError> {
-		// we have to check if there are another in-mempool transactions which spent same outputs here
-		let check_result = chain.read().memory_pool().check_double_spend(transaction);
-		ChainMemoryPoolTransactionOutputProvider::for_double_spend_check_result(chain, check_result)
-	}
-
-	pub fn for_double_spend_check_result(chain: ChainRef, check_result: DoubleSpendCheckResult) -> Result<Self, verification::TransactionError> {
-		match check_result {
-			DoubleSpendCheckResult::DoubleSpend(_, hash, index) => Err(verification::TransactionError::UsingSpentOutput(hash, index)),
-			DoubleSpendCheckResult::NoDoubleSpend => Ok(ChainMemoryPoolTransactionOutputProvider {
-				chain: chain.clone(),
-				nonfinal_spends: None,
-			}),
-			DoubleSpendCheckResult::NonFinalDoubleSpend(nonfinal_spends) => Ok(ChainMemoryPoolTransactionOutputProvider {
-				chain: chain.clone(),
-				nonfinal_spends: Some(nonfinal_spends),
-			}),
-		}
-	}
-}
-
-impl TransactionOutputObserver for ChainMemoryPoolTransactionOutputProvider {
-	fn is_spent(&self, prevout: &OutPoint) -> Option<bool> {
-		// check if this output is 'locked' by mempool transaction
-		if let Some(ref nonfinal_spends) = self.nonfinal_spends {
-			if nonfinal_spends.double_spends.contains(&prevout.clone().into()) {
-				return Some(false);
-			}
-		}
-
-		// we can omit memory_pool check here, because it has been completed in `for_transaction` method
-		// => just check spending in storage
-		self.chain.read().storage()
-			.transaction_meta(&prevout.hash)
-			.and_then(|tm| tm.is_spent(prevout.index as usize))
-	}
-}
-
-impl PreviousTransactionOutputProvider for ChainMemoryPoolTransactionOutputProvider {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		// check if that is output of some transaction, which is vitually removed from memory pool
-		if let Some(ref nonfinal_spends) = self.nonfinal_spends {
-			if nonfinal_spends.dependent_spends.contains(&prevout.clone().into()) {
-				// transaction is trying to replace some nonfinal transaction
-				// + it is also depends on this transaction
-				// => this is definitely an error
-				return None;
-			}
-		}
-
-		let chain = self.chain.read();
-		chain.memory_pool().previous_transaction_output(prevout)
-			.or_else(|| chain.storage().as_previous_transaction_output_provider().previous_transaction_output(prevout))
-	}
-}
-
 #[cfg(test)]
 pub mod tests {
 	use std::sync::Arc;
 	use std::collections::HashMap;
-	use chain::{Transaction, OutPoint};
-	use synchronization_chain::{Chain, ChainRef};
-	use synchronization_client::CoreVerificationSink;
+	use synchronization_client_core::CoreVerificationSink;
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use primitives::hash::H256;
-	use chain::IndexedBlock;
-	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink, ChainMemoryPoolTransactionOutputProvider};
-	use db::{self, TransactionOutputObserver, PreviousTransactionOutputProvider};
-	use test_data;
-	use parking_lot::RwLock;
+	use chain::{IndexedBlock, IndexedTransaction};
+	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink};
 
 	#[derive(Default)]
 	pub struct DummyVerifier {
@@ -313,59 +252,14 @@ pub mod tests {
 			}
 		}
 
-		fn verify_transaction(&self, _height: u32, transaction: Transaction) {
+		fn verify_transaction(&self, _height: u32, transaction: IndexedTransaction) {
 			match self.sink {
-				Some(ref sink) => match self.errors.get(&transaction.hash()) {
-					Some(err) => sink.on_transaction_verification_error(&err, &transaction.hash()),
-					None => sink.on_transaction_verification_success(transaction),
+				Some(ref sink) => match self.errors.get(&transaction.hash) {
+					Some(err) => sink.on_transaction_verification_error(&err, &transaction.hash),
+					None => sink.on_transaction_verification_success(transaction.into()),
 				},
 				None => panic!("call set_sink"),
 			}
 		}
-	}
-
-	#[test]
-	fn when_transaction_spends_output_twice() {
-		let tx1: Transaction = test_data::TransactionBuilder::with_default_input(0).into();
-		let tx2: Transaction = test_data::TransactionBuilder::with_default_input(1).into();
-		let out1 = tx1.inputs[0].previous_output.clone();
-		let out2 = tx2.inputs[0].previous_output.clone();
-		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
-		chain.memory_pool_mut().insert_verified(tx1);
-		assert!(chain.memory_pool().is_spent(&out1));
-		assert!(!chain.memory_pool().is_spent(&out2));
-	}
-
-	#[test]
-	fn when_transaction_depends_on_removed_nonfinal_transaction() {
-		let dchain = &mut test_data::ChainBuilder::new();
-
-		test_data::TransactionBuilder::with_output(10).store(dchain)					// t0
-			.reset().set_input(&dchain.at(0), 0).add_output(20).lock().store(dchain)	// nonfinal: t0[0] -> t1
-			.reset().set_input(&dchain.at(1), 0).add_output(30).store(dchain)			// dependent: t0[0] -> t1[0] -> t2
-			.reset().set_input(&dchain.at(0), 0).add_output(40).store(dchain);			// good replacement: t0[0] -> t3
-
-		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()));
-		chain.memory_pool_mut().insert_verified(dchain.at(0));
-		chain.memory_pool_mut().insert_verified(dchain.at(1));
-		chain.memory_pool_mut().insert_verified(dchain.at(2));
-
-		// when inserting t3:
-		// check that is_spent(t0[0]) == Some(false) (as it is spent by nonfinal t1)
-		// check that is_spent(t1[0]) == None (as t1 is virtually removed)
-		// check that is_spent(t2[0]) == None (as t2 is virtually removed)
-		// check that previous_transaction_output(t0[0]) = Some(_)
-		// check that previous_transaction_output(t1[0]) = None (as t1 is virtually removed)
-		// check that previous_transaction_output(t2[0]) = None (as t2 is virtually removed)
-		// =>
-		// if t3 is also depending on t1[0] || t2[0], it will be rejected by verification as missing inputs
-		let chain = ChainRef::new(RwLock::new(chain));
-		let provider = ChainMemoryPoolTransactionOutputProvider::for_transaction(chain, &dchain.at(3)).unwrap();
-		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(0).hash(), index: 0, }), Some(false));
-		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(1).hash(), index: 0, }), None);
-		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(2).hash(), index: 0, }), None);
-		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(0).hash(), index: 0, }), Some(dchain.at(0).outputs[0].clone()));
-		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(1).hash(), index: 0, }), None);
-		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(2).hash(), index: 0, }), None);
 	}
 }

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use time::precise_time_s;
 use orphan_blocks_pool::OrphanBlocksPool;
 use orphan_transactions_pool::OrphanTransactionsPool;
-use synchronization_peers::Peers;
+use synchronization_peers_tasks::PeersTasks;
 use primitives::hash::H256;
 
 /// Management interval (in ms)
@@ -72,7 +72,7 @@ impl Default for ManageOrphanTransactionsConfig {
 }
 
 /// Manage stalled synchronization peers blocks tasks
-pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &mut Peers) -> (Vec<H256>, Vec<H256>) {
+pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &mut PeersTasks) -> (Vec<H256>, Vec<H256>) {
 	let mut blocks_to_request: Vec<H256> = Vec::new();
 	let mut blocks_to_forget: Vec<H256> = Vec::new();
 	let now = precise_time_s();
@@ -104,7 +104,7 @@ pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &m
 }
 
 /// Manage stalled synchronization peers inventory tasks
-pub fn manage_synchronization_peers_inventory(config: &ManagePeersConfig, peers: &mut Peers) {
+pub fn manage_synchronization_peers_inventory(config: &ManagePeersConfig, peers: &mut PeersTasks) {
 	let now = precise_time_s();
 	// reset tasks for peers, which has not responded during given period
 	for (worst_peer_index, worst_peer_time) in peers.ordered_inventory_requests() {
@@ -146,7 +146,7 @@ pub fn manage_unknown_orphaned_blocks(config: &ManageUnknownBlocksConfig, orphan
 
 	// remove unknown blocks
 	let unknown_to_remove: Vec<H256> = orphaned_blocks_pool.remove_blocks(&unknown_to_remove).into_iter()
-		.map(|t| t.0)
+		.map(|b| b.header.hash)
 		.collect();
 
 	if unknown_to_remove.is_empty() { None } else { Some(unknown_to_remove) }
@@ -180,7 +180,7 @@ pub fn manage_orphaned_transactions(config: &ManageOrphanTransactionsConfig, orp
 
 	// remove unknown blocks
 	let orphans_to_remove: Vec<H256> = orphaned_transactions_pool.remove_transactions(&orphans_to_remove).into_iter()
-		.map(|t| t.0)
+		.map(|t| t.hash)
 		.collect();
 
 	if orphans_to_remove.is_empty() { None } else { Some(orphans_to_remove) }
@@ -191,7 +191,7 @@ mod tests {
 	use std::collections::HashSet;
 	use super::{ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig, manage_synchronization_peers_blocks,
 		manage_unknown_orphaned_blocks, manage_orphaned_transactions};
-	use synchronization_peers::Peers;
+	use synchronization_peers_tasks::PeersTasks;
 	use primitives::hash::H256;
 	use test_data;
 	use orphan_blocks_pool::OrphanBlocksPool;
@@ -200,7 +200,7 @@ mod tests {
 	#[test]
 	fn manage_good_peer() {
 		let config = ManagePeersConfig { block_failure_interval_ms: 1000, ..Default::default() };
-		let mut peers = Peers::new();
+		let mut peers = PeersTasks::new();
 		peers.on_blocks_requested(1, &vec![H256::from(0), H256::from(1)]);
 		peers.on_block_received(1, &H256::from(0));
 		assert_eq!(manage_synchronization_peers_blocks(&config, &mut peers), (vec![], vec![]));
@@ -212,7 +212,7 @@ mod tests {
 		use std::thread::sleep;
 		use std::time::Duration;
 		let config = ManagePeersConfig { block_failure_interval_ms: 0, ..Default::default() };
-		let mut peers = Peers::new();
+		let mut peers = PeersTasks::new();
 		peers.on_blocks_requested(1, &vec![H256::from(0)]);
 		peers.on_blocks_requested(2, &vec![H256::from(1)]);
 		sleep(Duration::from_millis(1));
@@ -231,7 +231,7 @@ mod tests {
 		let config = ManageUnknownBlocksConfig { removal_time_ms: 1000, max_number: 100 };
 		let mut pool = OrphanBlocksPool::new();
 		let block = test_data::genesis();
-		pool.insert_unknown_block(block.hash(), block.into());
+		pool.insert_unknown_block(block.into());
 		assert_eq!(manage_unknown_orphaned_blocks(&config, &mut pool), None);
 		assert_eq!(pool.len(), 1);
 	}
@@ -244,7 +244,7 @@ mod tests {
 		let mut pool = OrphanBlocksPool::new();
 		let block = test_data::genesis();
 		let block_hash = block.hash();
-		pool.insert_unknown_block(block_hash.clone(), block.into());
+		pool.insert_unknown_block(block.into());
 		sleep(Duration::from_millis(1));
 
 		assert_eq!(manage_unknown_orphaned_blocks(&config, &mut pool), Some(vec![block_hash]));
@@ -258,9 +258,8 @@ mod tests {
 		let block1 = test_data::genesis();
 		let block1_hash = block1.hash();
 		let block2 = test_data::block_h2();
-		let block2_hash = block2.hash();
-		pool.insert_unknown_block(block1_hash.clone(), block1.into());
-		pool.insert_unknown_block(block2_hash.clone(), block2.into());
+		pool.insert_unknown_block(block1.into());
+		pool.insert_unknown_block(block2.into());
 		assert_eq!(manage_unknown_orphaned_blocks(&config, &mut pool), Some(vec![block1_hash]));
 		assert_eq!(pool.len(), 1);
 	}
@@ -271,7 +270,7 @@ mod tests {
 		let mut pool = OrphanTransactionsPool::new();
 		let transaction = test_data::block_h170().transactions[1].clone();
 		let unknown_inputs: HashSet<H256> = transaction.inputs.iter().map(|i| i.previous_output.hash.clone()).collect();
-		pool.insert(transaction.hash(), transaction, unknown_inputs);
+		pool.insert(transaction.into(), unknown_inputs);
 		assert_eq!(manage_orphaned_transactions(&config, &mut pool), None);
 		assert_eq!(pool.len(), 1);
 	}
@@ -285,7 +284,7 @@ mod tests {
 		let transaction = test_data::block_h170().transactions[1].clone();
 		let unknown_inputs: HashSet<H256> = transaction.inputs.iter().map(|i| i.previous_output.hash.clone()).collect();
 		let transaction_hash = transaction.hash();
-		pool.insert(transaction_hash.clone(), transaction, unknown_inputs);
+		pool.insert(transaction.into(), unknown_inputs);
 		sleep(Duration::from_millis(1));
 
 		assert_eq!(manage_orphaned_transactions(&config, &mut pool), Some(vec![transaction_hash]));
@@ -301,9 +300,8 @@ mod tests {
 		let transaction1_hash = transaction1.hash();
 		let transaction2 = test_data::block_h182().transactions[1].clone();
 		let unknown_inputs2: HashSet<H256> = transaction2.inputs.iter().map(|i| i.previous_output.hash.clone()).collect();
-		let transaction2_hash = transaction2.hash();
-		pool.insert(transaction1_hash.clone(), transaction1, unknown_inputs1);
-		pool.insert(transaction2_hash.clone(), transaction2, unknown_inputs2);
+		pool.insert(transaction1.into(), unknown_inputs1);
+		pool.insert(transaction2.into(), unknown_inputs2);
 		assert_eq!(manage_orphaned_transactions(&config, &mut pool), Some(vec![transaction1_hash]));
 		assert_eq!(pool.len(), 1);
 	}
