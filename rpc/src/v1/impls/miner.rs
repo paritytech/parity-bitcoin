@@ -46,7 +46,7 @@ impl<T> Miner for MinerClient<T> where T: MinerClientCoreApi {
 
 #[cfg(test)]
 pub mod tests {
-	use jsonrpc_core::{IoHandler, GenericIoHandler};
+	use jsonrpc_core::IoHandler;
 	use v1::traits::Miner;
 	use primitives::hash::H256;
 	use chain;
@@ -78,8 +78,8 @@ pub mod tests {
 	#[test]
 	fn getblocktemplate_accepted() {
 		let client = MinerClient::new(SuccessMinerClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{

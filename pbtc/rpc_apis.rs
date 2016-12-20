@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::collections::HashSet;
 use rpc::Dependencies;
-use ethcore_rpc::Extendable;
+use ethcore_rpc::MetaIoHandler;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum Api {
@@ -48,16 +48,17 @@ impl ApiSet {
 	}
 }
 
-pub fn setup_rpc<T: Extendable>(server: T, apis: ApiSet, deps: Dependencies) -> T {
+pub fn setup_rpc(mut handler: MetaIoHandler<()>, apis: ApiSet, deps: Dependencies) -> MetaIoHandler<()> {
 	use ethcore_rpc::v1::*;
 
 	for api in apis.list_apis() {
 		match api {
-			Api::Raw => server.add_delegate(RawClient::new(RawClientCore::new(deps.local_sync_node.clone())).to_delegate()),
-			Api::Miner => server.add_delegate(MinerClient::new(MinerClientCore::new(deps.local_sync_node.clone())).to_delegate()),
-			Api::BlockChain => server.add_delegate(BlockChainClient::new(BlockChainClientCore::new(deps.network, deps.storage.clone())).to_delegate()),
-			Api::Network => server.add_delegate(NetworkClient::new(NetworkClientCore::new(deps.p2p_context.clone())).to_delegate()),
+			Api::Raw => handler.extend_with(RawClient::new(RawClientCore::new(deps.local_sync_node.clone())).to_delegate()),
+			Api::Miner => handler.extend_with(MinerClient::new(MinerClientCore::new(deps.local_sync_node.clone())).to_delegate()),
+			Api::BlockChain => handler.extend_with(BlockChainClient::new(BlockChainClientCore::new(deps.network, deps.storage.clone())).to_delegate()),
+			Api::Network => handler.extend_with(NetworkClient::new(NetworkClientCore::new(deps.p2p_context.clone())).to_delegate()),
 		}
 	}
-	server
+
+	handler
 }
