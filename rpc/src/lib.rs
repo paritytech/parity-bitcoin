@@ -29,7 +29,7 @@ extern crate keys;
 pub mod v1;
 pub mod rpc_server;
 
-pub use jsonrpc_core::MetaIoHandler;
+pub use jsonrpc_core::{MetaIoHandler, Compatibility};
 pub use jsonrpc_core::reactor::{RpcHandler, Remote};
 
 pub use jsonrpc_http_server::{Server, RpcServerError};

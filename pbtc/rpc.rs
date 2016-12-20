@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use rpc_apis::{self, ApiSet};
-use ethcore_rpc::{Server, RpcServerError, start_http, MetaIoHandler, RpcHandler, Remote};
+use ethcore_rpc::{Server, RpcServerError, start_http, MetaIoHandler, RpcHandler, Remote, Compatibility};
 use network::Magic;
 use std::io;
 use sync;
@@ -72,5 +72,5 @@ pub fn setup_http_rpc_server(
 }
 
 fn setup_rpc_server(apis: ApiSet, deps: Dependencies) -> MetaIoHandler<()> {
-	rpc_apis::setup_rpc(MetaIoHandler::default(), apis, deps)
+	rpc_apis::setup_rpc(MetaIoHandler::with_compatibility(Compatibility::Both), apis, deps)
 }
