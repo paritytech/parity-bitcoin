@@ -123,7 +123,7 @@ impl<T> Raw for RawClient<T> where T: RawClientCoreApi {
 				input.txid = input.txid.reversed();
 				input
 			}).collect();
-		
+
 		let transaction = try!(self.core.create_raw_transaction(inputs, outputs, lock_time).map_err(|e| execution(e)));
 		let transaction = serialize(&transaction);
 		Ok(transaction.into())
@@ -141,7 +141,7 @@ impl<T> Raw for RawClient<T> where T: RawClientCoreApi {
 #[cfg(test)]
 pub mod tests {
 	use jsonrpc_macros::Trailing;
-	use jsonrpc_core::{IoHandler, GenericIoHandler};
+	use jsonrpc_core::IoHandler;
 	use chain::Transaction;
 	use primitives::hash::H256 as GlobalH256;
 	use v1::traits::Raw;
@@ -176,8 +176,8 @@ pub mod tests {
 	#[test]
 	fn sendrawtransaction_accepted() {
 		let client = RawClient::new(SuccessRawClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
@@ -196,8 +196,8 @@ pub mod tests {
 	#[test]
 	fn sendrawtransaction_rejected() {
 		let client = RawClient::new(ErrorRawClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
@@ -240,8 +240,8 @@ pub mod tests {
 	#[test]
 	fn createrawtransaction_success() {
 		let client = RawClient::new(SuccessRawClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
@@ -258,8 +258,8 @@ pub mod tests {
 	#[test]
 	fn createrawtransaction_error() {
 		let client = RawClient::new(ErrorRawClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
