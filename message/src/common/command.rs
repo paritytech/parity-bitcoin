@@ -4,7 +4,7 @@ use hash::H96;
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 use Error;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Hash, Eq)]
 pub struct Command(H96);
 
 impl str::FromStr for Command {
