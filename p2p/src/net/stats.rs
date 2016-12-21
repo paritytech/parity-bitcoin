@@ -3,21 +3,6 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 #[derive(Default, Clone)]
-pub struct MessageStats {
-	pub addr: u64,
-	pub getdata: u64,
-	pub getheaders: u64,
-	pub headers: u64,
-	pub reject: u64,
-	pub tx: u64,
-	pub inv: u64,
-	pub ping: u64,
-	pub pong: u64,
-	pub verack: u64,
-	pub version: u64,
-}
-
-#[derive(Default, Clone)]
 pub struct RunningAverage {
 	count: u64,
 	bytes: u64,
@@ -33,15 +18,15 @@ impl RunningAverage {
 		// self.count guaranteed to be at least 1, since self.count min value is 0 and we just added 1 above
 		// so division by zero is impossible; qed
 		//
-		// let x = self.bytes, x >= 0
+		// let x = self.bytes
 		// let y = bytes, y >= 0
 		// to not overflow, this following be true:
 		// x + (y - x) / c >= 0
 		// so
 		// y / c  >= 0
-		// which is true by u64 definition;
+		// which is true by usize definition;
 		// qed
-		self.bytes += (bytes as u64 - self.bytes) / self.count;
+		self.bytes = (self.bytes as i64 + ((bytes as i64 - self.bytes as i64) / self.count as i64)) as u64;
 	}
 }
 
@@ -65,6 +50,8 @@ pub struct PeerStats {
 
 impl PeerStats {
 	pub fn report_send(&mut self, command: Command, bytes: usize) {
+		self.total_send += bytes as u64;
+		self.last_send = ::time::get_time().sec as u32;
 		match self.send_avg.entry(command) {
 			Entry::Occupied(mut avg) => {
 				avg.get_mut().add(bytes);
@@ -76,6 +63,8 @@ impl PeerStats {
 	}
 
 	pub fn report_recv(&mut self, command: Command, bytes: usize) {
+		self.total_recv += bytes as u64;
+		self.last_recv = ::time::get_time().sec as u32;
 		match self.recv_avg.entry(command) {
 			Entry::Occupied(mut avg) => {
 				avg.get_mut().add(bytes);
@@ -84,5 +73,30 @@ impl PeerStats {
 				entry.insert(RunningAverage::new(bytes));
 			},
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+
+	use super::RunningAverage;
+
+	#[test]
+	fn avg() {
+		let mut avg = RunningAverage::new(10);
+		avg.add(12);
+
+		assert_eq!(avg.bytes, 11);
+	}
+
+	#[test]
+	fn avg_l() {
+		let mut avg = RunningAverage::new(10);
+		avg.add(12);
+		avg.add(20);
+		avg.add(28);
+		avg.add(12);
+
+		assert_eq!(avg.bytes, 16);
 	}
 }
