@@ -4,12 +4,14 @@ use message::{Payload, Message};
 use p2p::Context;
 use util::{PeerInfo, ConfigurableSynchronizer, ResponseQueue, Synchronizer, Responses};
 use futures::{lazy, finished};
+use net::PeerStats;
 
 pub struct PeerContext {
 	context: Arc<Context>,
 	info: PeerInfo,
 	synchronizer: Mutex<ConfigurableSynchronizer>,
 	response_queue: Mutex<ResponseQueue>,
+	stats: Mutex<PeerStats>,
 }
 
 impl PeerContext {
@@ -19,6 +21,7 @@ impl PeerContext {
 			info: info,
 			synchronizer: Mutex::new(ConfigurableSynchronizer::new(synchronous)),
 			response_queue: Mutex::default(),
+			stats: Mutex::default(),
 		}
 	}
 
@@ -122,5 +125,9 @@ impl PeerContext {
 
 	pub fn global(&self) -> &Arc<Context> {
 		&self.context
+	}
+
+	pub fn stats(&self) -> &Mutex<PeerStats> {
+		&self.stats
 	}
 }
