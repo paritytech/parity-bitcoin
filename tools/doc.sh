@@ -17,4 +17,5 @@ cargo doc --no-deps\
 	-p script\
 	-p serialization\
 	-p sync\
+	-p test-data\
 	-p verification

@@ -1,9 +1,11 @@
 //! Various chain-specific test dummies
 
+extern crate time;
+
 extern crate chain;
 extern crate primitives;
 extern crate serialization as ser;
-extern crate time;
+extern crate script;
 
 use chain::Block;
 
