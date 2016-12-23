@@ -1,1 +1,0 @@
-// TODO: ignore messages from peers, which have no outbound connections

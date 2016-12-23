@@ -25,7 +25,6 @@ extern crate ethcore_devtools as devtools;
 extern crate rand;
 extern crate network;
 
-//mod v2;
 mod best_headers_chain;
 mod blocks_writer;
 mod connection_filter;

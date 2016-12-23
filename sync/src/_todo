@@ -1,7 +1,0 @@
-+ 1. block_locator_hashes
-+ 2. known_hash_filter нигде сейчас не заполняется
-+ 3. relay new *
-4. &block.header.hash -> block.hash()
-5. IndexedBlock && IndexedTransaction everywhere
-6. verifier should be replaced with single-thread mempool + futures to avoid sinks + custom sinks + local accept transaction
- + fix error - for_transaction must be called for each transaction verification
