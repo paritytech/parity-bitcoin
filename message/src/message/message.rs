@@ -27,6 +27,10 @@ impl<T> Message<T> where T: Payload {
 
 		Ok(message)
 	}
+
+	pub fn len(&self) -> usize {
+		self.bytes.len()
+	}
 }
 
 impl<T> AsRef<[u8]> for Message<T> {

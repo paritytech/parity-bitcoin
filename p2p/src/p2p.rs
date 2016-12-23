@@ -314,6 +314,7 @@ impl Context {
 			Some(channel) => {
 				let info = channel.peer_info();
 				let message = Message::new(info.magic, info.version, payload).expect("failed to create outgoing message");
+				channel.session().stats().lock().report_send(T::command().into(), message.len());
 				Context::send(context, channel, message)
 			},
 			None => {
