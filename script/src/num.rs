@@ -1,8 +1,11 @@
-//! Script numeric.
+//! Script numeric
+
 use std::ops;
 use bytes::Bytes;
 use Error;
 
+/// Script numeric
+///
 /// Numeric opcodes (`OP_1ADD`, etc) are restricted to operating on 4-byte integers.
 /// The semantics are subtle, though: operands must be in the range [-2^31 +1...2^31 -1],
 /// but results may overflow (and are valid as long as they are not used in a subsequent

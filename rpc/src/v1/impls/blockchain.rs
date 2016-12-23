@@ -220,7 +220,7 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 pub mod tests {
 	use std::sync::Arc;
 	use devtools::RandomTempPath;
-	use jsonrpc_core::{IoHandler, GenericIoHandler};
+	use jsonrpc_core::IoHandler;
 	use jsonrpc_core::Error;
 	use db::{self, BlockStapler};
 	use primitives::bytes::Bytes as GlobalBytes;
@@ -333,8 +333,8 @@ pub mod tests {
 	#[test]
 	fn best_block_hash_success() {
 		let client = BlockChainClient::new(SuccessBlockChainClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
@@ -352,8 +352,8 @@ pub mod tests {
 	#[test]
 	fn block_hash_success() {
 		let client = BlockChainClient::new(SuccessBlockChainClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
@@ -371,8 +371,8 @@ pub mod tests {
 	#[test]
 	fn block_hash_error() {
 		let client = BlockChainClient::new(ErrorBlockChainClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
@@ -388,8 +388,8 @@ pub mod tests {
 	#[test]
 	fn difficulty_success() {
 		let client = BlockChainClient::new(SuccessBlockChainClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
@@ -468,8 +468,8 @@ pub mod tests {
 	#[test]
 	fn raw_block_success() {
 		let client = BlockChainClient::new(SuccessBlockChainClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let expected = r#"{"jsonrpc":"2.0","result":"010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd610101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d010bffffffff0100f2052a010000004341047211a824f55b505228e4c3d5194c1fcfaa15a456abdf37f9b9d97a4040afc073dee6c89064984f03385237d92167c13e236446b417ab79a0fcae412ae3316b77ac00000000","id":1}"#;
 
@@ -496,8 +496,8 @@ pub mod tests {
 	#[test]
 	fn raw_block_error() {
 		let client = BlockChainClient::new(ErrorBlockChainClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
@@ -513,8 +513,8 @@ pub mod tests {
 	#[test]
 	fn verbose_block_success() {
 		let client = BlockChainClient::new(SuccessBlockChainClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
@@ -530,8 +530,8 @@ pub mod tests {
 	#[test]
 	fn verbose_block_error() {
 		let client = BlockChainClient::new(ErrorBlockChainClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
@@ -574,8 +574,8 @@ pub mod tests {
 	#[test]
 	fn transaction_out_success() {
 		let client = BlockChainClient::new(SuccessBlockChainClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{
@@ -591,8 +591,8 @@ pub mod tests {
 	#[test]
 	fn transaction_out_failure() {
 		let client = BlockChainClient::new(ErrorBlockChainClientCore::default());
-		let handler = IoHandler::new();
-		handler.add_delegate(client.to_delegate());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
 
 		let sample = handler.handle_request_sync(&(r#"
 			{

@@ -29,15 +29,6 @@ impl<'a> ChainVerifier<'a> {
 		Ok(())
 	}
 
-	/// backwards test compatibility
-	/// TODO: get rid of this
-	pub fn check_with_pow(&self, pow: bool) -> Result<(), Error> {
-		try!(self.block.check());
-		try!(self.header.check_with_pow(pow));
-		try!(self.check_transactions());
-		Ok(())
-	}
-
 	fn check_transactions(&self) -> Result<(), Error> {
 		self.transactions.par_iter()
 			.enumerate()

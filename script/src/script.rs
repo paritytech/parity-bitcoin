@@ -17,6 +17,7 @@ pub const MAX_PUBKEYS_PER_MULTISIG: usize = 20;
 /// Maximum script length in bytes
 pub const MAX_SCRIPT_SIZE: usize = 10000;
 
+/// Classified script type
 #[derive(PartialEq, Debug)]
 pub enum ScriptType {
 	NonStandard,
@@ -77,6 +78,12 @@ impl From<Bytes> for Script {
 impl From<Vec<u8>> for Script {
 	fn from(v: Vec<u8>) -> Self {
 		Script::new(v.into())
+	}
+}
+
+impl From<Script> for Bytes {
+	fn from(script: Script) -> Self {
+		script.data
 	}
 }
 

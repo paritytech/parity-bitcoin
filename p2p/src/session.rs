@@ -3,7 +3,7 @@ use parking_lot::Mutex;
 use bytes::Bytes;
 use message::{Command, Error};
 use p2p::Context;
-use net::PeerContext;
+use net::{PeerContext, PeerStats};
 use protocol::{Protocol, PingProtocol, SyncProtocol, AddrProtocol, SeednodeProtocol};
 use util::PeerInfo;
 
@@ -36,14 +36,14 @@ impl SessionFactory for NormalSessionFactory {
 }
 
 pub struct Session {
-	_peer_context: Arc<PeerContext>,
+	peer_context: Arc<PeerContext>,
 	protocols: Mutex<Vec<Box<Protocol>>>,
 }
 
 impl Session {
 	pub fn new(peer_context: Arc<PeerContext>, protocols: Vec<Box<Protocol>>) -> Self {
 		Session {
-			_peer_context: peer_context,
+			peer_context: peer_context,
 			protocols: Mutex::new(protocols),
 		}
 	}
@@ -55,6 +55,8 @@ impl Session {
 	}
 
 	pub fn on_message(&self, command: Command, payload: Bytes) -> Result<(), Error> {
+		self.stats().lock().report_recv(command.clone(), payload.len());
+
 		self.protocols.lock()
 			.iter_mut()
 			.map(|protocol| {
@@ -68,6 +70,10 @@ impl Session {
 		for protocol in self.protocols.lock().iter_mut() {
 			protocol.on_close();
 		}
+	}
+
+	pub fn stats(&self) -> &Mutex<PeerStats> {
+		self.peer_context.stats()
 	}
 }
 

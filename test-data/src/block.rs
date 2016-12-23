@@ -4,7 +4,9 @@ use std::cell::Cell;
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use primitives::compact::Compact;
+use ser::{Serializable, serialized_list_size};
 use chain;
+use script::{Builder as ScriptBuilder, Opcode};
 use invoke::{Invoke, Identity};
 use super::genesis;
 
@@ -118,6 +120,20 @@ impl<F> BlockBuilder<F> where F: Invoke<chain::Block> {
 		TransactionBuilder::with_callback(self)
 	}
 
+	pub fn transaction_with_sigops(self, sigops: usize) -> TransactionBuilder<Self> {
+		// calling `index` creates previous output
+		TransactionBuilder::with_callback(self).input().index(0).signature_with_sigops(sigops).build()
+	}
+
+	pub fn transaction_with_size(self, size: usize) -> TransactionBuilder<Self> {
+		let builder = TransactionBuilder::with_callback(self);
+		let current_size = builder.size();
+		assert!(size > current_size, "desired transaction size is too low");
+		// calling `index` creates previous output
+		// let's remove current size and 1 (size of 0 script len)
+		builder.input_with_size(size - current_size - 1).index(0).build()
+	}
+
 	pub fn derived_transaction(self, tx_idx: usize, output_idx: u32) -> TransactionBuilder<Self> {
 		let tx = self.transactions.get(tx_idx).expect(&format!("using derive_transaction with the wrong index ({})", tx_idx)).clone();
 		TransactionBuilder::with_callback(self).input().hash(tx.hash()).index(output_idx).build()
@@ -192,7 +208,7 @@ impl<F> BlockHeaderBuilder<F> where F: Invoke<chain::BlockHeader> {
 			nonce: 0,
 			merkle_root: 0.into(),
 			parent: 0.into(),
-			bits: 0.into(),
+			bits: Compact::max_value(),
 			version: 1,
 		}
 	}
@@ -265,6 +281,13 @@ impl<F> TransactionBuilder<F> where F: Invoke<chain::Transaction> {
 		self
 	}
 
+	fn size(&self) -> usize {
+		self.version.serialized_size() +
+			self.lock_time.serialized_size() +
+			serialized_list_size(&self.inputs) +
+			serialized_list_size(&self.outputs)
+	}
+
 	pub fn lock_time(mut self, time: u32) -> Self {
 		self.lock_time = time;
 		self
@@ -272,6 +295,23 @@ impl<F> TransactionBuilder<F> where F: Invoke<chain::Transaction> {
 
 	pub fn input(self) -> TransactionInputBuilder<Self> {
 		TransactionInputBuilder::with_callback(self)
+	}
+
+	pub fn input_with_size(self, size: usize) -> TransactionInputBuilder<Self> {
+		// `OutPoint` and sequence size
+		let raw_input_size = 40;
+		let script_len_size = match size {
+			//0...(0xfc + 1) => 1,
+			0...0xfd => 1,
+			//0xfd...(0xffff + 3) => 3,
+			0xfd...0x10002 => 3,
+			//0x10000...(0xffff_ffff + 5) => 5,
+			0x10000...0x1_0000_0004 => 5,
+			_ => 9,
+		};
+
+		assert!(size >= raw_input_size + script_len_size, "Desired input size is too small");
+		TransactionInputBuilder::with_callback(self).signature_with_size(size - raw_input_size - script_len_size)
 	}
 
 	pub fn coinbase(self) -> Self {
@@ -342,6 +382,32 @@ impl<F> TransactionInputBuilder<F> where F: Invoke<chain::TransactionInput> {
 		self
 	}
 
+	pub fn signature_with_sigops(mut self, sigops: usize) -> Self {
+		let mut builder = ScriptBuilder::default();
+		for _ in 0..sigops {
+			builder = builder
+				.push_data(&[])
+				.push_data(&[])
+				.push_opcode(Opcode::OP_CHECKSIG);
+		}
+		self.signature = builder.into_script().into();
+		self
+	}
+
+	pub fn signature_with_size(mut self, size: usize) -> Self {
+		assert!(size >= 4, "Only signatures with size > 4 are supported");
+		let data_size = size - 4;
+		let mut data = Bytes::new();
+		data.push(Opcode::OP_PUSHDATA4 as u8);
+		data.push(data_size as u8);
+		data.push((data_size >> 8) as u8);
+		data.push((data_size >> 16) as u8);
+		data.push((data_size >> 24) as u8);
+		data.extend(vec![0u8; data_size]);
+		self.signature = data;
+		self
+	}
+
 	pub fn hash(mut self, hash: H256) -> Self {
 		let mut output = self.output.unwrap_or(chain::OutPoint { hash: hash.clone(), index: 0 });
 		output.hash = hash;
@@ -365,7 +431,7 @@ impl<F> TransactionInputBuilder<F> where F: Invoke<chain::TransactionInput> {
 	pub fn build(self) -> F::Result {
 		self.callback.invoke(
 			chain::TransactionInput {
-				previous_output: self.output.unwrap_or_else(|| panic!("Building input without previous output")),
+				previous_output: self.output.expect("Building input without previous output"),
 				script_sig: self.signature,
 				sequence: self.sequence,
 			}
@@ -384,9 +450,8 @@ impl<F> TransactionOutputBuilder<F> where F: Invoke<chain::TransactionOutput> {
 	fn with_callback(callback: F) -> Self {
 		TransactionOutputBuilder {
 			callback: callback,
-			// 0x51 is OP_1 opcode
-			// so the evaluation is always true
-			script_pubkey: vec![0x51].into(),
+			// always spendable by default
+			script_pubkey: ScriptBuilder::default().push_opcode(Opcode::OP_1).into_script().into(),
 			value: 0,
 		}
 	}
@@ -403,6 +468,19 @@ impl<F> TransactionOutputBuilder<F> where F: Invoke<chain::TransactionOutput> {
 
 	pub fn script_pubkey_bytes(mut self, script_pubkey: Bytes) -> Self {
 		self.script_pubkey = script_pubkey;
+		self
+	}
+
+	pub fn script_pubkey_with_sigops(mut self, sigops: usize) -> Self {
+		let mut builder = ScriptBuilder::default();
+		for _ in 0..sigops {
+			builder = builder
+				.push_data(&[])
+				.push_data(&[])
+				.push_opcode(Opcode::OP_CHECKSIG);
+		}
+		builder = builder.push_opcode(Opcode::OP_1);
+		self.script_pubkey = builder.into_script().into();
 		self
 	}
 
@@ -492,6 +570,25 @@ fn example5() {
 			.build()
 		.build();
 
-	assert_eq!(hash, "9f54dbfe94217c473e9acd5f52303d85ce1ef5e563a7e55b378ad555089fdd4d".into());
+	assert_eq!(hash, "842cee5f58ad1b1caf1896902fc62a0542188a1462372b166ca550acd7fccf1a".into());
 	assert_eq!(block.header().previous_header_hash, "0000000000000000000000000000000000000000000000000000000000000000".into());
+}
+
+#[test]
+fn transaction_with_size() {
+	let block = block_builder().header().build()
+		.transaction().coinbase()
+			.output().value(10).build()
+			.build()
+		.transaction_with_size(100)
+			.build()
+		.transaction_with_size(2000)
+			.build()
+		.transaction_with_size(50000)
+			.build()
+		.build();
+
+	assert_eq!(block.transactions[1].serialized_size(), 100);
+	assert_eq!(block.transactions[2].serialized_size(), 2000);
+	assert_eq!(block.transactions[3].serialized_size(), 50000);
 }

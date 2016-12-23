@@ -4,6 +4,8 @@ extern crate heapsize;
 extern crate bitcrypto as crypto;
 extern crate chain;
 extern crate db;
+extern crate keys;
+extern crate script;
 extern crate network;
 extern crate primitives;
 extern crate serialization as ser;

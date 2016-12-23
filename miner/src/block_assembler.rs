@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use primitives::hash::H256;
+use primitives::compact::Compact;
 use chain::{OutPoint, TransactionOutput, IndexedTransaction};
 use db::{SharedStore, PreviousTransactionOutputProvider};
 use network::Magic;
@@ -10,9 +11,7 @@ pub use verification::constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 const BLOCK_VERSION: u32 = 0x20000000;
 const BLOCK_HEADER_SIZE: u32 = 4 + 32 + 32 + 4 + 4 + 4;
 
-/// Block template as described in BIP0022
-/// Minimal version
-/// [BIP0022](https://github.com/bitcoin/bips/blob/master/bip-0022.mediawiki#block-template-request)
+/// Block template as described in [BIP0022](https://github.com/bitcoin/bips/blob/master/bip-0022.mediawiki#block-template-request)
 pub struct BlockTemplate {
 	/// Version
 	pub version: u32,
@@ -21,7 +20,7 @@ pub struct BlockTemplate {
 	/// The current time as seen by the server
 	pub time: u32,
 	/// The compressed difficulty
-	pub nbits: u32,
+	pub bits: Compact,
 	/// Block height
 	pub height: u32,
 	/// Block transactions (excluding coinbase)
@@ -246,7 +245,7 @@ impl BlockAssembler {
 		let best_block = store.best_block().expect("Cannot assemble new block without genesis block");
 		let previous_header_hash = best_block.hash;
 		let height = best_block.number + 1;
-		let nbits = work_required(previous_header_hash.clone(), time, height, store.as_block_header_provider(), network);
+		let bits = work_required(previous_header_hash.clone(), time, height, store.as_block_header_provider(), network);
 		let version = BLOCK_VERSION;
 
 		let mut coinbase_value = block_reward_satoshi(height);
@@ -266,7 +265,7 @@ impl BlockAssembler {
 			version: version,
 			previous_header_hash: previous_header_hash,
 			time: time,
-			nbits: nbits.into(),
+			bits: bits,
 			height: height,
 			transactions: transactions,
 			coinbase_value: coinbase_value,

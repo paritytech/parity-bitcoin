@@ -6,8 +6,11 @@ use crypto::dhash160;
 use hash::{H264, H520};
 use {AddressHash, Error, CompactSignature, Signature, Message, SECP256K1};
 
+/// Secret public key
 pub enum Public {
+	/// Normal version of public key
 	Normal(H520),
+	/// Compressed version of public key
 	Compressed(H264),
 }
 

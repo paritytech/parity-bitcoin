@@ -1,6 +1,9 @@
+//! Wrapper around `Vec<u8>`
+
 use std::{ops, str, fmt, io, marker};
 use hex::{ToHex, FromHex, FromHexError};
 
+/// Wrapper around `Vec<u8>`
 #[derive(Default, PartialEq, Clone)]
 pub struct Bytes(Vec<u8>);
 
@@ -96,6 +99,7 @@ impl AsMut<[u8]> for Bytes {
 	}
 }
 
+/// Wrapper around `Vec<u8>` which represent associated type
 #[derive(Default, PartialEq, Clone)]
 pub struct TaggedBytes<T> {
 	bytes: Bytes,

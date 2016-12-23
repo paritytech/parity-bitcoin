@@ -1,5 +1,4 @@
-//! A type of variable-length integer commonly used in the Bitcoin P2P protocol and Bitcoin serialized data structures.
-//! https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers
+//! Variable-length integer commonly used in the Bitcoin [P2P protocol](https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers)
 
 use std::{fmt, io};
 use {

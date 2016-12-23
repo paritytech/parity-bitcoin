@@ -25,6 +25,7 @@ impl Iterator for BlkFile {
 	}
 }
 
+/// Creates iterator over bitcoind database blocks
 pub fn open_blk_dir<P>(path: P) -> Result<BlkDir, io::Error> where P: AsRef<path::Path> {
 	let files = read_blk_dir(path)?.collect::<Result<BTreeSet<_>, _>>()?;
 
@@ -41,6 +42,7 @@ pub fn open_blk_dir<P>(path: P) -> Result<BlkDir, io::Error> where P: AsRef<path
 	Ok(blk_dir)
 }
 
+/// Bitcoind database blocks iterator
 pub struct BlkDir {
 	iter: Box<Iterator<Item = Result<Block, ReaderError>>>,
 }

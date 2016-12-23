@@ -156,8 +156,8 @@ impl Storage {
 		if best_number.is_some() {
 			*storage.best_block.write() = Some(
 				BestBlock {
-					number: best_number.expect("is_some() is checked above for block number"),
-					hash: best_hash.expect("is_some() is checked above for block hash"),
+					number: best_number.expect("best.number.is_some() is checked above; qed"),
+					hash: best_hash.expect("best_number.is_some() is equal to best_hash.is_some(); best_number.is_some() = true checked above; so best_hash.is_some() is also true; qed"),
 				}
 			);
 		}
@@ -204,7 +204,7 @@ impl Storage {
 	fn block_transactions_by_hash(&self, h: &H256) -> Vec<chain::Transaction> {
 		self.block_transaction_hashes_by_hash(h)
 			.iter()
-			.map(|tx_hash| self.transaction(tx_hash).expect("Missing transaction, possible db corruption"))
+			.map(|tx_hash| self.transaction(tx_hash).expect("Missing transaction that is referenced by block transaction index, possible db corruption"))
 			.collect()
 	}
 
@@ -219,7 +219,7 @@ impl Storage {
 			let tx_hashes = self.block_transaction_hashes_by_hash(h);
 			let txs = tx_hashes.into_iter()
 				.map(|tx_hash| {
-					let tx = self.transaction(&tx_hash).expect("Missing transaction, possible db corruption");
+					let tx = self.transaction(&tx_hash).expect("Missing transaction referenced by block transaction index, possible db corruption");
 					IndexedTransaction::new(tx_hash, tx)
 				})
 				.collect::<Vec<_>>();
@@ -295,7 +295,7 @@ impl Storage {
 		let tx_hashes = self.block_transaction_hashes_by_hash(hash);
 		for (tx_hash_num, tx_hash) in tx_hashes.iter().enumerate() {
 			let tx = self.transaction(tx_hash)
-				.expect("Transaction in the saved block should exist as a separate entity indefinitely");
+				.expect("Block hash is proved to exist above; all transaction of the known hash never deleted from database; so transaction should exist in database; qed");
 
 			// remove meta & meta cache
 			context.db_transaction.delete(Some(COL_TRANSACTIONS_META), &**tx_hash);
@@ -315,7 +315,7 @@ impl Storage {
 					},
 					Entry::Vacant(entry) => {
 						let mut meta = self.transaction_meta(&input.previous_output.hash)
-							.expect("No transaction metadata! Possible db corruption");
+							.expect("Block hash is proven to be canonical above by requesting it's number; Transaction meta for each transaction of the canonical block is guaranteed to be saved; So the transaction meta should exist; qed");
 						meta.denote_unused(input.previous_output.index as usize);
 						entry.insert(meta);
 					},
@@ -600,7 +600,7 @@ impl BlockStapler for Storage {
 						},
 						ConsistencyError::UnknownSpending(hash) => {
 							warn!(
-								target: "reorg",
+								target: "db",
 								"Failed to reorganize to {} due to spending unknown transaction {}",
 								block_hash.to_reversed_str(),
 								hash.to_reversed_str()
@@ -612,7 +612,7 @@ impl BlockStapler for Storage {
 							// this is orphan block inserted or disconnected chain head updated, we allow that (by now)
 							// so it is no-op
 							warn!(
-								target: "reorg",
+								target: "db",
 								"Disconnected chain head {} updated with {}",
 								hash.to_reversed_str(),
 								block_hash.to_reversed_str()
@@ -764,7 +764,7 @@ mod tests {
 	use chain::Block;
 	use super::super::{BlockRef, BlockLocation};
 	use test_data;
-	use primitives::Compact;
+	use primitives::compact::Compact;
 
 	#[test]
 	fn open_store() {

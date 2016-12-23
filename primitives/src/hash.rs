@@ -1,3 +1,5 @@
+//! Fixed-size hashes
+
 use std::{fmt, ops, cmp, str};
 use hex::{ToHex, FromHex, FromHexError};
 use std::hash::{Hash, Hasher};

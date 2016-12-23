@@ -2,11 +2,14 @@ use byteorder::{WriteBytesExt, LittleEndian};
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
 use primitives::uint::U256;
-use chain::{merkle_root, Transaction};
+use primitives::compact::Compact;
+use chain::{merkle_root, Transaction, TransactionInput, TransactionOutput};
 use crypto::dhash256;
 use ser::Stream;
-use block_assembler::BlockTemplate;
 use verification::is_valid_proof_of_work_hash;
+use keys::AddressHash;
+use script::Builder;
+use block_assembler::BlockTemplate;
 
 /// Instead of serializing `BlockHeader` from scratch over and over again,
 /// let's keep it serialized in memory and replace needed bytes
@@ -16,7 +19,7 @@ struct BlockHeaderBytes {
 
 impl BlockHeaderBytes {
 	/// Creates new instance of block header bytes.
-	fn new(version: u32, previous_header_hash: H256, nbits: u32) -> Self {
+	fn new(version: u32, previous_header_hash: H256, bits: Compact) -> Self {
 		let merkle_root_hash = H256::default();
 		let time = 0u32;
 		let nonce = 0u32;
@@ -27,7 +30,7 @@ impl BlockHeaderBytes {
 			.append(&previous_header_hash)
 			.append(&merkle_root_hash)
 			.append(&time)
-			.append(&nbits)
+			.append(&bits)
 			.append(&nonce);
 
 		BlockHeaderBytes {
@@ -60,16 +63,13 @@ impl BlockHeaderBytes {
 }
 
 /// This trait should be implemented by coinbase transaction.
-pub trait CoinbaseTransaction {
-	/// Protocols like stratum limit number of extranonce bytes.
-	/// This function informs miner about maximum size of extra nonce.
-	fn max_extranonce(&self) -> U256;
+pub trait CoinbaseTransactionBuilder {
 	/// Should be used to increase number of hash possibities for miner
-	fn set_extranonce(&mut self, extranocne: &U256);
+	fn set_extranonce(&mut self, extranonce: &[u8]);
 	/// Returns transaction hash
 	fn hash(&self) -> H256;
 	/// Coverts transaction into raw bytes
-	fn drain(self) -> Transaction;
+	fn finish(self) -> Transaction;
 }
 
 /// Cpu miner solution.
@@ -85,26 +85,28 @@ pub struct Solution {
 }
 
 /// Simple bitcoin cpu miner.
+///
 /// First it tries to find solution by changing block header nonce.
 /// Once all nonce values have been tried, it increases extranonce.
 /// Once all of them have been tried (quite unlikely on cpu ;),
 /// and solution still hasn't been found it returns None.
 /// It's possible to also experiment with time, but I find it pointless
 /// to implement on CPU.
-pub fn find_solution<T>(block: BlockTemplate, mut coinbase_transaction: T) -> Option<Solution> where T: CoinbaseTransaction {
-	let max_extranonce = coinbase_transaction.max_extranonce();
+pub fn find_solution<T>(block: &BlockTemplate, mut coinbase_transaction_builder: T, max_extranonce: U256) -> Option<Solution> where T: CoinbaseTransactionBuilder {
 	let mut extranonce = U256::default();
+	let mut extranonce_bytes = [0u8; 32];
 
-	let mut header_bytes = BlockHeaderBytes::new(block.version, block.previous_header_hash, block.nbits);
+	let mut header_bytes = BlockHeaderBytes::new(block.version, block.previous_header_hash.clone(), block.bits);
 	// update header with time
 	header_bytes.set_time(block.time);
 
 	while extranonce < max_extranonce {
+		extranonce.to_little_endian(&mut extranonce_bytes);
 		// update coinbase transaction with new extranonce
-		coinbase_transaction.set_extranonce(&extranonce);
+		coinbase_transaction_builder.set_extranonce(&extranonce_bytes);
 
 		// recalculate merkle root hash
-		let coinbase_hash = coinbase_transaction.hash();
+		let coinbase_hash = coinbase_transaction_builder.hash();
 		let mut merkle_tree = vec![&coinbase_hash];
 		merkle_tree.extend(block.transactions.iter().map(|tx| &tx.hash));
 		let merkle_root_hash = merkle_root(&merkle_tree);
@@ -116,12 +118,12 @@ pub fn find_solution<T>(block: BlockTemplate, mut coinbase_transaction: T) -> Op
 			// update §
 			header_bytes.set_nonce(nonce as u32);
 			let hash = header_bytes.hash();
-			if is_valid_proof_of_work_hash(block.nbits.into(), &hash) {
+			if is_valid_proof_of_work_hash(block.bits, &hash) {
 				let solution = Solution {
 					nonce: nonce as u32,
 					extranonce: extranonce,
 					time: block.time,
-					coinbase_transaction: coinbase_transaction.drain(),
+					coinbase_transaction: coinbase_transaction_builder.finish(),
 				};
 
 				return Some(solution);
@@ -132,4 +134,69 @@ pub fn find_solution<T>(block: BlockTemplate, mut coinbase_transaction: T) -> Op
 	}
 
 	None
+}
+
+pub struct P2shCoinbaseTransactionBuilder {
+	transaction: Transaction,
+}
+
+impl P2shCoinbaseTransactionBuilder {
+	pub fn new(hash: &AddressHash, value: u64) -> Self {
+		let script_pubkey = Builder::build_p2sh(hash).into();
+
+		let transaction = Transaction {
+			version: 0,
+			inputs: vec![TransactionInput::coinbase(Bytes::default())],
+			outputs: vec![TransactionOutput {
+				value: value,
+				script_pubkey: script_pubkey,
+			}],
+			lock_time: 0,
+		};
+
+		P2shCoinbaseTransactionBuilder {
+			transaction: transaction,
+		}
+	}
+}
+
+impl CoinbaseTransactionBuilder for P2shCoinbaseTransactionBuilder {
+	fn set_extranonce(&mut self, extranonce: &[u8]) {
+		self.transaction.inputs[0].script_sig = extranonce.to_vec().into();
+	}
+
+	fn hash(&self) -> H256 {
+		self.transaction.hash()
+	}
+
+	fn finish(self) -> Transaction {
+		self.transaction
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use primitives::uint::U256;
+	use block_assembler::BlockTemplate;
+	use super::{find_solution, P2shCoinbaseTransactionBuilder};
+
+	#[test]
+	fn test_cpu_miner_low_difficulty() {
+		let block_template = BlockTemplate {
+			version: 0,
+			previous_header_hash: 0.into(),
+			time: 0,
+			bits: U256::max_value().into(),
+			height: 0,
+			transactions: Vec::new(),
+			coinbase_value: 10,
+			size_limit: 1000,
+			sigop_limit: 100
+		};
+
+		let hash = Default::default();
+		let coinbase_builder = P2shCoinbaseTransactionBuilder::new(&hash, 10);
+		let solution = find_solution(&block_template, coinbase_builder, U256::max_value());
+		assert!(solution.is_some());
+	}
 }

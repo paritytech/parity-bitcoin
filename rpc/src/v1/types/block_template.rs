@@ -85,7 +85,7 @@ impl From<miner::BlockTemplate> for BlockTemplate {
 			version: block.version,
 			previousblockhash: block.previous_header_hash.reversed().into(),
 			curtime: block.time,
-			bits: block.nbits,
+			bits: block.bits.into(),
 			height: block.height,
 			transactions: block.transactions.into_iter().map(Into::into).collect(),
 			coinbasevalue: Some(block.coinbase_value),

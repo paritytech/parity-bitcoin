@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cargo test\
+cargo doc --no-deps\
 	-p bitcrypto\
 	-p chain\
 	-p db\
