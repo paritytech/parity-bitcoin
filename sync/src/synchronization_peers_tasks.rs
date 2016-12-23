@@ -306,7 +306,7 @@ impl PeersTasks {
 		let requests = self.blocks_requests.remove(&peer_index);
 		self.blocks_requests_order.remove(&peer_index);
 		self.try_mark_idle(peer_index);
-		requests.expect("empty requests queue is not allowed").into_iter().collect()
+		requests.unwrap_or_default().into_iter().collect()
 	}
 
 	/// Try to mark peer as idle

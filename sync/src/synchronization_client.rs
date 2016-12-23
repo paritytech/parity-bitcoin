@@ -136,6 +136,8 @@ pub trait Client : Send + Sync + 'static {
 
 /// Synchronization client facade
 pub struct SynchronizationClient<T: TaskExecutor, U: Verifier> {
+	/// Verification mutex
+	verification_lock: Mutex<()>,
 	/// Shared client state
 	shared_state: SynchronizationStateRef,
 	/// Client core
@@ -165,12 +167,17 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		// block can became:
 		// ignored, unknown, orphaned => no verification should occur
 		// on-time => this block + all dependent orphaned should be verified
-		let blocks_to_verify = self.core.lock().on_block(peer_index, block);
+		{
+			// verification tasks must be scheduled in the same order as they were built in on_block
+			// => here we use verification_lock for this
+			let _verification_lock = self.verification_lock.lock();
+			let blocks_to_verify = self.core.lock().on_block(peer_index, block);
 
-		// verify blocks
-		if let Some(mut blocks_to_verify) = blocks_to_verify {
-			while let Some(block) = blocks_to_verify.pop_front() {
-				self.verifier.verify_block(block);
+			// verify blocks
+			if let Some(mut blocks_to_verify) = blocks_to_verify {
+				while let Some(block) = blocks_to_verify.pop_front() {
+					self.verifier.verify_block(block);
+				}
 			}
 		}
 
@@ -223,6 +230,7 @@ impl<T, U> SynchronizationClient<T, U> where T: TaskExecutor, U: Verifier {
 	/// Create new synchronization client
 	pub fn new(shared_state: SynchronizationStateRef, core: Arc<Mutex<SynchronizationClientCore<T>>>, verifier: U) -> Arc<Self> {
 		Arc::new(SynchronizationClient {
+			verification_lock: Mutex::new(()),
 			shared_state: shared_state,
 			core: core,
 			verifier: verifier,
