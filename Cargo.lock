@@ -1080,6 +1080,7 @@ version = "0.1.0"
 dependencies = [
  "chain 0.1.0",
  "primitives 0.1.0",
+ "script 0.1.0",
  "serialization 0.1.0",
  "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
