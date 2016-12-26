@@ -8,7 +8,7 @@ use message::types::{Ping, Pong};
 // delay somewhere near communication timeout
 const ENORMOUS_PING_DELAY: f64 = 10f64;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct RunningAverage {
 	count: u64,
 	bytes: u64,
@@ -33,6 +33,10 @@ impl RunningAverage {
 		// which is true by usize definition;
 		// qed
 		self.bytes = (self.bytes as i64 + ((bytes as i64 - self.bytes as i64) / self.count as i64)) as u64;
+	}
+
+	pub fn val(&self) -> u64 {
+		self.bytes
 	}
 }
 
@@ -117,7 +121,7 @@ impl PeerStats {
 #[cfg(test)]
 mod tests {
 
-	use super::RunningAverage;
+	use super::{RunningAverage, PeerStats};
 
 	#[test]
 	fn avg() {
@@ -136,5 +140,19 @@ mod tests {
 		avg.add(12);
 
 		assert_eq!(avg.bytes, 16);
+	}
+
+	#[test]
+	fn smoky() {
+		let mut stats = PeerStats::default();
+		stats.report_send("ping".into(), 200);
+
+		assert_eq!(stats.send_avg[&"ping".into()].val(), 200);
+
+		::std::thread::sleep(::std::time::Duration::from_millis(50));
+
+		stats.report_recv("pong".into(), 50);
+		assert!(stats.avg_ping > 0.03);
+		assert!(stats.avg_ping < 0.1);
 	}
 }
