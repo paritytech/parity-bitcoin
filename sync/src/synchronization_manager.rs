@@ -8,8 +8,8 @@ use utils::{OrphanBlocksPool, OrphanTransactionsPool};
 pub const MANAGEMENT_INTERVAL_MS: u64 = 10 * 1000;
 /// Response time before getting block to decrease peer score
 const DEFAULT_PEER_BLOCK_FAILURE_INTERVAL_MS: u32 = 60 * 1000;
-/// Response time before getting inventory to decrease peer score
-const DEFAULT_PEER_INVENTORY_FAILURE_INTERVAL_MS: u32 = 60 * 1000;
+/// Response time before getting headers to decrease peer score
+const DEFAULT_PEER_HEADERS_FAILURE_INTERVAL_MS: u32 = 60 * 1000;
 /// Unknown orphan block removal time
 const DEFAULT_UNKNOWN_BLOCK_REMOVAL_TIME_MS: u32 = 20 * 60 * 1000;
 /// Maximal number of orphaned blocks
@@ -23,15 +23,15 @@ const DEFAULT_ORPHAN_TRANSACTIONS_MAX_LEN: usize = 10000;
 pub struct ManagePeersConfig {
 	/// Time interval (in milliseconds) to wait block from the peer before penalizing && reexecuting tasks
 	pub block_failure_interval_ms: u32,
-	/// Time interval (in milliseconds) to wait inventory from the peer before penalizing && reexecuting tasks
-	pub inventory_failure_interval_ms: u32,
+	/// Time interval (in milliseconds) to wait headers from the peer before penalizing && reexecuting tasks
+	pub headers_failure_interval_ms: u32,
 }
 
 impl Default for ManagePeersConfig {
 	fn default() -> Self {
 		ManagePeersConfig {
 			block_failure_interval_ms: DEFAULT_PEER_BLOCK_FAILURE_INTERVAL_MS,
-			inventory_failure_interval_ms: DEFAULT_PEER_INVENTORY_FAILURE_INTERVAL_MS,
+			headers_failure_interval_ms: DEFAULT_PEER_HEADERS_FAILURE_INTERVAL_MS,
 		}
 	}
 }
@@ -77,9 +77,10 @@ pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &m
 	let now = precise_time_s();
 
 	// reset tasks for peers, which has not responded during given period
-	for (worst_peer_index, worst_peer_time) in peers.ordered_blocks_requests() {
+	let ordered_blocks_requests: Vec<_> = peers.ordered_blocks_requests().clone().into_iter().collect();
+	for (worst_peer_index, blocks_request) in ordered_blocks_requests {
 		// check if peer has not responded within given time
-		let time_diff = now - worst_peer_time;
+		let time_diff = now - blocks_request.timestamp;
 		if time_diff <= config.block_failure_interval_ms as f64 / 1000f64 {
 			break;
 		}
@@ -96,24 +97,26 @@ pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &m
 		// if peer failed many times => forget it
 		if peers.on_peer_block_failure(worst_peer_index) {
 			warn!(target: "sync", "Too many failures for peer#{}. Excluding from synchronization", worst_peer_index);
+			peers.unuseful_peer(worst_peer_index);
 		}
 	}
 
 	(blocks_to_request, blocks_to_forget)
 }
 
-/// Manage stalled synchronization peers inventory tasks
-pub fn manage_synchronization_peers_inventory(config: &ManagePeersConfig, peers: &mut PeersTasks) {
+/// Manage stalled synchronization peers headers tasks
+pub fn manage_synchronization_peers_headers(config: &ManagePeersConfig, peers: &mut PeersTasks) {
 	let now = precise_time_s();
 	// reset tasks for peers, which has not responded during given period
-	for (worst_peer_index, worst_peer_time) in peers.ordered_inventory_requests() {
+	let ordered_headers_requests: Vec<_> = peers.ordered_headers_requests().clone().into_iter().collect();
+	for (worst_peer_index, headers_request) in ordered_headers_requests {
 		// check if peer has not responded within given time
-		let time_diff = now - worst_peer_time;
-		if time_diff <= config.inventory_failure_interval_ms as f64 / 1000f64 {
+		let time_diff = now - headers_request.timestamp;
+		if time_diff <= config.headers_failure_interval_ms as f64 / 1000f64 {
 			break;
 		}
 
-		peers.on_peer_inventory_failure(worst_peer_index);
+		peers.on_peer_headers_failure(worst_peer_index);
 	}
 }
 
@@ -198,11 +201,11 @@ mod tests {
 	#[test]
 	fn manage_good_peer() {
 		let config = ManagePeersConfig { block_failure_interval_ms: 1000, ..Default::default() };
-		let mut peers = PeersTasks::new();
+		let mut peers = PeersTasks::default();
 		peers.on_blocks_requested(1, &vec![H256::from(0), H256::from(1)]);
 		peers.on_block_received(1, &H256::from(0));
 		assert_eq!(manage_synchronization_peers_blocks(&config, &mut peers), (vec![], vec![]));
-		assert_eq!(peers.idle_peers_for_blocks(), vec![]);
+		assert_eq!(peers.idle_peers_for_blocks().len(), 0);
 	}
 
 	#[test]
@@ -210,7 +213,7 @@ mod tests {
 		use std::thread::sleep;
 		use std::time::Duration;
 		let config = ManagePeersConfig { block_failure_interval_ms: 0, ..Default::default() };
-		let mut peers = PeersTasks::new();
+		let mut peers = PeersTasks::default();
 		peers.on_blocks_requested(1, &vec![H256::from(0)]);
 		peers.on_blocks_requested(2, &vec![H256::from(1)]);
 		sleep(Duration::from_millis(1));

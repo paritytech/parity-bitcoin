@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use time;
 
 /// Speed meter with given items number
+#[derive(Debug, Default)]
 pub struct AverageSpeedMeter {
 	/// Number of items to inspect
 	inspect_items: usize,
@@ -48,5 +49,13 @@ impl AverageSpeedMeter {
 			self.inspected_items.push_back(newest);
 		}
 		self.last_timestamp = Some(now);
+	}
+
+	pub fn start(&mut self) {
+		self.last_timestamp = Some(time::precise_time_s());
+	}
+
+	pub fn stop(&mut self) {
+		self.last_timestamp = None;
 	}
 }

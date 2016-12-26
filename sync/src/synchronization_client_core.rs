@@ -19,7 +19,7 @@ use primitives::hash::H256;
 use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 use synchronization_chain::{Chain, BlockState, TransactionState, BlockInsertionResult};
 use synchronization_executor::{Task, TaskExecutor};
-use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchronization_peers_inventory,
+use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchronization_peers_headers,
 	manage_unknown_orphaned_blocks, manage_orphaned_transactions, MANAGEMENT_INTERVAL_MS,
 	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
 use synchronization_peers_tasks::PeersTasks;
@@ -261,7 +261,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		let mut headers: Vec<_> = message.headers.into_iter().map(IndexedBlockHeader::from).collect();
 
 		// update peers to select next tasks
-		self.peers_tasks.on_inventory_received(peer_index);
+		self.peers_tasks.on_headers_received(peer_index);
 
 		// headers are ordered
 		// => if we know nothing about headers[0].parent
@@ -459,13 +459,15 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		// we only interested in blocks, which we were asking before
-		if let Some(requested_blocks) = self.peers_tasks.get_blocks_tasks(peer_index) {
+		let is_requested_block = if let Some(requested_blocks) = self.peers_tasks.get_blocks_tasks(peer_index) {
 			// check if peer has responded with notfound to requested blocks
-			if requested_blocks.intersection(&notfound_blocks).nth(0).is_none() {
-				// if notfound some other blocks => just ignore the message
-				return;
-			}
+			// if notfound some other blocks => just ignore the message
+			requested_blocks.intersection(&notfound_blocks).nth(0).is_some()
+		} else {
+			false
+		};
 
+		if is_requested_block {
 			// for now, let's exclude peer from synchronization - we are relying on full nodes for synchronization
 			let removed_tasks = self.peers_tasks.reset_blocks_tasks(peer_index);
 			self.peers_tasks.unuseful_peer(peer_index);
@@ -536,22 +538,22 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		let mut blocks_requests: Option<Vec<H256>> = None;
-		let blocks_idle_peers = self.peers_tasks.idle_peers_for_blocks();
+		let blocks_idle_peers: Vec<_> = self.peers_tasks.idle_peers_for_blocks().iter().cloned().collect();
 		{
-			// check if we can query some blocks hashes
-			let inventory_idle_peers = self.peers_tasks.idle_peers_for_inventory();
-			if !inventory_idle_peers.is_empty() {
+			// check if we can query some blocks headers
+			let headers_idle_peers: Vec<_> = self.peers_tasks.idle_peers_for_headers().iter().cloned().collect();
+			if !headers_idle_peers.is_empty() {
 				let scheduled_hashes_len = self.chain.length_of_blocks_state(BlockState::Scheduled);
 				if scheduled_hashes_len < MAX_SCHEDULED_HASHES {
-					for inventory_peer in &inventory_idle_peers {
-						self.peers_tasks.on_inventory_requested(*inventory_peer);
+					for header_peer in &headers_idle_peers {
+						self.peers_tasks.on_headers_requested(*header_peer);
 					}
 
 					let block_locator_hashes = self.chain.block_locator_hashes();
-					let inventory_tasks = inventory_idle_peers
-						.into_iter()
-						.map(move |peer_index| Task::GetHeaders(peer_index, types::GetHeaders::with_block_locator_hashes(block_locator_hashes.clone())));
-					tasks.extend(inventory_tasks);
+					let headers_tasks = headers_idle_peers
+						.iter()
+						.map(move |peer_index| Task::GetHeaders(*peer_index, types::GetHeaders::with_block_locator_hashes(block_locator_hashes.clone())));
+					tasks.extend(headers_tasks);
 				}
 			}
 
@@ -706,7 +708,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				shared_state: shared_state,
 				state: State::Saturated,
 				peers: peers,
-				peers_tasks: PeersTasks::new(),
+				peers_tasks: PeersTasks::default(),
 				pool: CpuPool::new(config.threads_num),
 				management_worker: None,
 				executor: executor,
@@ -748,7 +750,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 							if blocks_to_forget.is_empty() { None } else { Some(blocks_to_forget) },
 						);
 
-						manage_synchronization_peers_inventory(&peers_config, &mut client.peers_tasks);
+						manage_synchronization_peers_headers(&peers_config, &mut client.peers_tasks);
 						manage_orphaned_transactions(&orphan_config, &mut client.orphaned_transactions_pool);
 						if let Some(orphans_to_remove) = manage_unknown_orphaned_blocks(&unknown_config, &mut client.orphaned_blocks_pool) {
 							for orphan_to_remove in orphans_to_remove {
@@ -896,10 +898,12 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 	}
 
-	fn prepare_blocks_requests_tasks(&mut self, peers: Vec<PeerIndex>, mut hashes: Vec<H256>) -> Vec<Task> {
+	fn prepare_blocks_requests_tasks(&mut self, mut peers: Vec<PeerIndex>, mut hashes: Vec<H256>) -> Vec<Task> {
 		use std::mem::swap;
 
-		// TODO: ask most fast peers for hashes at the beginning of `hashes`
+		// ask fastest peers for hashes at the beginning of `hashes`
+		self.peers_tasks.sort_peers_for_blocks(&mut peers);
+
 		let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(hashes.len() as BlockHeight, MIN_BLOCKS_IN_REQUEST));
 		let last_peer_index = peers.len() - 1;
 		let mut tasks: Vec<Task> = Vec::new();
@@ -978,8 +982,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		{
 			let block_locator_hashes: Vec<H256> = self.chain.block_locator_hashes();
 			for peer in self.peers_tasks.all_peers() {
-				self.executor.execute(Task::GetHeaders(peer, types::GetHeaders::with_block_locator_hashes(block_locator_hashes.clone())));
-				self.executor.execute(Task::MemoryPool(peer));
+				self.executor.execute(Task::GetHeaders(*peer, types::GetHeaders::with_block_locator_hashes(block_locator_hashes.clone())));
+				self.executor.execute(Task::MemoryPool(*peer));
 			}
 		}
 	}
