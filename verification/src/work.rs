@@ -1,7 +1,7 @@
 use std::cmp;
 use primitives::compact::Compact;
 use primitives::hash::H256;
-use primitives::uint::U256;
+use primitives::bigint::U256;
 use network::Magic;
 use db::{BlockHeaderProvider, BlockRef};
 

@@ -8,6 +8,7 @@ build = "build.rs"
 heapsize = "0.3"
 rustc-serialize = "0.3"
 byteorder = "0.5"
+bigint = "1.0"
 
 [build-dependencies]
 rustc_version = "0.1"
