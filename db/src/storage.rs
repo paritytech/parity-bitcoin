@@ -126,7 +126,7 @@ impl Storage {
 		cfg.set_cache(Some(COL_BLOCK_TRANSACTIONS), total_cache / 12);
 		cfg.set_cache(Some(COL_BLOCK_NUMBERS), total_cache / 12);
 
-		cfg.bloom_filters.insert(Some(COL_TRANSACTIONS_META), 16);
+		cfg.bloom_filters.insert(Some(COL_TRANSACTIONS_META), 32);
 
 		let db = try!(Database::open(&cfg, &*path.as_ref().to_string_lossy()));
 
