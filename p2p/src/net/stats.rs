@@ -51,8 +51,6 @@ pub struct PeerStats {
 	pub avg_ping: f64,
 	pub min_ping: Option<f64>,
 
-	pub synced_blocks: u32,
-	pub synced_headers: u32,
 	pub send_avg: HashMap<Command, RunningAverage>,
 	pub recv_avg: HashMap<Command, RunningAverage>,
 
