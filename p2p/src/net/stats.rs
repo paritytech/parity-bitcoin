@@ -1,6 +1,12 @@
-use message::Command;
+use std::time::Instant;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+
+use message::{Command, Payload};
+use message::types::{Ping, Pong};
+
+// delay somewhere near communication timeout
+const ENORMOUS_PING_DELAY: f64 = 10f64;
 
 #[derive(Default, Clone)]
 pub struct RunningAverage {
@@ -39,19 +45,26 @@ pub struct PeerStats {
 	pub total_recv: u64,
 
 	pub avg_ping: f64,
-	pub min_ping: f64,
-	pub total_ping: u64,
+	pub min_ping: Option<f64>,
 
 	pub synced_blocks: u32,
 	pub synced_headers: u32,
 	pub send_avg: HashMap<Command, RunningAverage>,
 	pub recv_avg: HashMap<Command, RunningAverage>,
+
+	last_ping: Option<Instant>,
+	ping_count: u64,
 }
 
 impl PeerStats {
 	pub fn report_send(&mut self, command: Command, bytes: usize) {
 		self.total_send += bytes as u64;
 		self.last_send = ::time::get_time().sec as u32;
+
+		if command == Ping::command() {
+			self.report_ping_send();
+		}
+
 		match self.send_avg.entry(command) {
 			Entry::Occupied(mut avg) => {
 				avg.get_mut().add(bytes);
@@ -62,9 +75,34 @@ impl PeerStats {
 		}
 	}
 
+	fn report_ping_send(&mut self) {
+		self.last_ping = Some(Instant::now());
+		self.ping_count += 1;
+	}
+
+	fn report_pong_recv(&mut self) {
+		if let Some(last_ping) = self.last_ping {
+			let dur = last_ping.elapsed();
+			let update = if dur.as_secs() > 10 {
+				ENORMOUS_PING_DELAY
+			}
+			else {
+				// max is 10, checked above, dur.as_secs() as u32 cannot overflow; qed
+				f64::from(dur.as_secs() as u32) + f64::from(dur.subsec_nanos()) / 1e9
+			};
+			self.min_ping = Some(self.min_ping.unwrap_or(ENORMOUS_PING_DELAY).min(update));
+			self.avg_ping += (update - self.avg_ping) / (self.ping_count as f64);
+		}
+	}
+
 	pub fn report_recv(&mut self, command: Command, bytes: usize) {
 		self.total_recv += bytes as u64;
 		self.last_recv = ::time::get_time().sec as u32;
+
+		if command == Pong::command() {
+			self.report_pong_recv();
+		}
+
 		match self.recv_avg.entry(command) {
 			Entry::Occupied(mut avg) => {
 				avg.get_mut().add(bytes);
