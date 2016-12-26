@@ -40,6 +40,8 @@ impl RunningAverage {
 	}
 }
 
+pub enum Flow { Receive, Send }
+
 #[derive(Default, Clone)]
 pub struct PeerStats {
 	pub last_send: u32,
@@ -51,12 +53,13 @@ pub struct PeerStats {
 	pub avg_ping: f64,
 	pub min_ping: Option<f64>,
 
-	pub send_avg: HashMap<Command, RunningAverage>,
-	pub recv_avg: HashMap<Command, RunningAverage>,
+	send_avg: HashMap<Command, RunningAverage>,
+	recv_avg: HashMap<Command, RunningAverage>,
 
 	last_ping: Option<Instant>,
 	ping_count: u64,
 }
+
 
 impl PeerStats {
 	pub fn report_send(&mut self, command: Command, bytes: usize) {
@@ -114,12 +117,21 @@ impl PeerStats {
 			},
 		}
 	}
+
+	pub fn avg<T>(&self, dir: Flow, cmd: T) -> u64
+		where T: Into<Command>
+	{
+		match dir {
+			Flow::Receive => self.recv_avg.get(&cmd.into()).and_then(|x| Some(x.val())).unwrap_or_default(),
+			Flow::Send => self.send_avg.get(&cmd.into()).and_then(|x| Some(x.val())).unwrap_or_default(),
+		}
+	}
 }
 
 #[cfg(test)]
 mod tests {
 
-	use super::{RunningAverage, PeerStats};
+	use super::{RunningAverage, PeerStats, Flow};
 
 	#[test]
 	fn avg() {
@@ -152,5 +164,20 @@ mod tests {
 		stats.report_recv("pong".into(), 50);
 		assert!(stats.avg_ping > 0.03);
 		assert!(stats.avg_ping < 0.1);
+	}
+
+	#[test]
+	fn avg_t() {
+		let mut stats = PeerStats::default();
+		stats.report_send("inv".into(), 200);
+		stats.report_send("inv".into(), 300);
+
+		assert_eq!(stats.avg(Flow::Send, "inv"), 250);
+
+		let mut stats = PeerStats::default();
+		stats.report_recv("inv".into(), 2000);
+		stats.report_recv("inv".into(), 3000);
+
+		assert_eq!(stats.avg(Flow::Receive, "inv"), 2500);
 	}
 }
