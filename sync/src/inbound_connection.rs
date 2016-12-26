@@ -187,6 +187,7 @@ pub mod tests {
 	use parking_lot::Mutex;
 	use message::types;
 	use p2p::OutboundSyncConnection;
+	use types::RequestId;
 
 	pub struct DummyOutboundSyncConnection {
 		pub messages: Mutex<HashMap<String, usize>>,
@@ -208,7 +209,7 @@ pub mod tests {
 		fn send_transaction(&self, _message: &types::Tx) { *self.messages.lock().entry("transaction".to_owned()).or_insert(0) += 1; }
 		fn send_block(&self, _message: &types::Block) { *self.messages.lock().entry("block".to_owned()).or_insert(0) += 1; }
 		fn send_headers(&self, _message: &types::Headers) { *self.messages.lock().entry("headers".to_owned()).or_insert(0) += 1; }
-		fn respond_headers(&self, _message: &types::Headers, _id: u32) { *self.messages.lock().entry("headers".to_owned()).or_insert(0) += 1; }
+		fn respond_headers(&self, _message: &types::Headers, _id: RequestId) { *self.messages.lock().entry("headers".to_owned()).or_insert(0) += 1; }
 		fn send_mempool(&self, _message: &types::MemPool) { *self.messages.lock().entry("mempool".to_owned()).or_insert(0) += 1; }
 		fn send_filterload(&self, _message: &types::FilterLoad) { *self.messages.lock().entry("filterload".to_owned()).or_insert(0) += 1; }
 		fn send_filteradd(&self, _message: &types::FilterAdd) { *self.messages.lock().entry("filteradd".to_owned()).or_insert(0) += 1; }
@@ -221,7 +222,7 @@ pub mod tests {
 		fn send_get_block_txn(&self, _message: &types::GetBlockTxn) { *self.messages.lock().entry("getblocktxn".to_owned()).or_insert(0) += 1; }
 		fn send_block_txn(&self, _message: &types::BlockTxn) { *self.messages.lock().entry("blocktxn".to_owned()).or_insert(0) += 1; }
 		fn send_notfound(&self, _message: &types::NotFound) { *self.messages.lock().entry("notfound".to_owned()).or_insert(0) += 1; }
-		fn ignored(&self, _id: u32) {}
+		fn ignored(&self, _id: RequestId) {}
 		fn close(&self) {}
 	}
 }

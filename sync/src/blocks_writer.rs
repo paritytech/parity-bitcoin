@@ -1,36 +1,50 @@
-use std::sync::Arc;
 use std::collections::VecDeque;
+use std::sync::Arc;
 use parking_lot::Mutex;
 use chain;
 use db;
 use network::Magic;
-use orphan_blocks_pool::OrphanBlocksPool;
-use synchronization_verifier::{Verifier, SyncVerifier, VerificationTask,
-	VerificationSink, BlockVerificationSink, TransactionVerificationSink};
 use primitives::hash::H256;
 use super::Error;
+use synchronization_verifier::{Verifier, SyncVerifier, VerificationTask,
+	VerificationSink, BlockVerificationSink, TransactionVerificationSink};
+use types::StorageRef;
+use utils::OrphanBlocksPool;
 
+/// Maximum number of orphaned in-memory blocks
 pub const MAX_ORPHANED_BLOCKS: usize = 1024;
 
+/// Synchronous block writer
 pub struct BlocksWriter {
-	storage: db::SharedStore,
+	/// Blocks storage
+	storage: StorageRef,
+	/// Orphaned blocks pool
 	orphaned_blocks_pool: OrphanBlocksPool,
+	/// Blocks verifier
 	verifier: SyncVerifier<BlocksWriterSink>,
+	/// Verification events receiver
 	sink: Arc<BlocksWriterSinkData>,
+	/// True if verification is enabled
 	verification: bool,
 }
 
+/// Verification events receiver
 struct BlocksWriterSink {
+	/// Reference to blocks writer data
 	data: Arc<BlocksWriterSinkData>,
 }
 
+/// Blocks writer data
 struct BlocksWriterSinkData {
-	storage: db::SharedStore,
+	/// Blocks storage
+	storage: StorageRef,
+	/// Last verification error
 	err: Mutex<Option<Error>>,
 }
 
 impl BlocksWriter {
-	pub fn new(storage: db::SharedStore, network: Magic, verification: bool) -> BlocksWriter {
+	/// Create new synchronous blocks writer
+	pub fn new(storage: StorageRef, network: Magic, verification: bool) -> BlocksWriter {
 		let sink_data = Arc::new(BlocksWriterSinkData::new(storage.clone()));
 		let sink = Arc::new(BlocksWriterSink::new(sink_data.clone()));
 		let verifier = SyncVerifier::new(network, storage.clone(), sink);
@@ -43,11 +57,13 @@ impl BlocksWriter {
 		}
 	}
 
+	/// Append new block
 	pub fn append_block(&mut self, block: chain::IndexedBlock) -> Result<(), Error> {
 		// do not append block if it is already there
 		if self.storage.contains_block(db::BlockRef::Hash(block.hash().clone())) {
 			return Ok(());
 		}
+
 		// verify && insert only if parent block is already in the storage
 		if !self.storage.contains_block(db::BlockRef::Hash(block.header.raw.previous_header_hash.clone())) {
 			self.orphaned_blocks_pool.insert_orphaned_block(block);
@@ -78,6 +94,7 @@ impl BlocksWriter {
 }
 
 impl BlocksWriterSink {
+	/// Create new verification events receiver
 	pub fn new(data: Arc<BlocksWriterSinkData>) -> Self {
 		BlocksWriterSink {
 			data: data,
@@ -86,13 +103,15 @@ impl BlocksWriterSink {
 }
 
 impl BlocksWriterSinkData {
-	pub fn new(storage: db::SharedStore) -> Self {
+	/// Create new blocks writer data
+	pub fn new(storage: StorageRef) -> Self {
 		BlocksWriterSinkData {
 			storage: storage,
 			err: Mutex::new(None),
 		}
 	}
 
+	/// Take last verification error
 	pub fn error(&self) -> Option<Error> {
 		self.err.lock().take()
 	}

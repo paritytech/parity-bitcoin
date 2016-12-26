@@ -25,15 +25,10 @@ extern crate ethcore_devtools as devtools;
 extern crate rand;
 extern crate network;
 
-mod best_headers_chain;
 mod blocks_writer;
-mod connection_filter;
-mod hash_queue;
 mod inbound_connection;
 mod inbound_connection_factory;
 mod local_node;
-mod orphan_blocks_pool;
-mod orphan_transactions_pool;
 mod synchronization_chain;
 mod synchronization_client;
 mod synchronization_client_core;

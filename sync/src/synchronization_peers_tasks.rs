@@ -3,6 +3,7 @@ use std::collections::hash_map::Entry;
 use linked_hash_map::LinkedHashMap;
 use time::precise_time_s;
 use primitives::hash::H256;
+use types::PeerIndex;
 
 /// Max peer failures # before excluding from sync process
 const MAX_PEER_FAILURES: usize = 2;
@@ -13,21 +14,21 @@ const MAX_BLOCKS_FAILURES: usize = 6;
 #[derive(Debug)]
 pub struct PeersTasks {
 	/// Peers that are marked as useful for current synchronization session && have no pending requests.
-	idle: HashSet<usize>,
+	idle: HashSet<PeerIndex>,
 	/// Peers that are marked as non-useful for current synchronization session && have no pending requests.
-	unuseful: HashSet<usize>,
+	unuseful: HashSet<PeerIndex>,
 	/// # of failures for given peer.
-	failures: HashMap<usize, usize>,
+	failures: HashMap<PeerIndex, usize>,
 	/// # of failures for given block.
 	blocks_failures: HashMap<H256, usize>,
 	/// Peers that are marked as useful for current synchronization session && have pending blocks requests.
-	blocks_requests: HashMap<usize, HashSet<H256>>,
+	blocks_requests: HashMap<PeerIndex, HashSet<H256>>,
 	/// Last block message time from peer.
-	blocks_requests_order: LinkedHashMap<usize, f64>,
+	blocks_requests_order: LinkedHashMap<PeerIndex, f64>,
 	/// Peers that are marked as useful for current synchronization session && have pending requests.
-	inventory_requests: HashSet<usize>,
+	inventory_requests: HashSet<PeerIndex>,
 	/// Last inventory message time from peer.
-	inventory_requests_order: LinkedHashMap<usize, f64>,
+	inventory_requests_order: LinkedHashMap<PeerIndex, f64>,
 }
 
 /// Information on synchronization peers
@@ -70,7 +71,7 @@ impl PeersTasks {
 	}
 
 	/// Get all peers
-	pub fn all_peers(&self) -> Vec<usize> {
+	pub fn all_peers(&self) -> Vec<PeerIndex> {
 		let mut unique: Vec<_> = self.idle.iter().cloned()
 			.chain(self.unuseful.iter().cloned())
 			.chain(self.blocks_requests.keys().cloned())
@@ -83,7 +84,7 @@ impl PeersTasks {
 	}
 
 	/// Get useful peers
-	pub fn useful_peers(&self) -> Vec<usize> {
+	pub fn useful_peers(&self) -> Vec<PeerIndex> {
 		let mut unique: Vec<_> = self.idle.iter().cloned()
 			.chain(self.blocks_requests.keys().cloned())
 			.chain(self.inventory_requests.iter().cloned())
@@ -95,7 +96,7 @@ impl PeersTasks {
 	}
 
 	/// Get idle peers for inventory request.
-	pub fn idle_peers_for_inventory(&self) -> Vec<usize> {
+	pub fn idle_peers_for_inventory(&self) -> Vec<PeerIndex> {
 		let peers: HashSet<_> = self.idle.iter().cloned()
 			.chain(self.blocks_requests.keys().cloned())
 			.collect();
@@ -104,7 +105,7 @@ impl PeersTasks {
 	}
 
 	/// Get idle peers for blocks request.
-	pub fn idle_peers_for_blocks(&self) -> Vec<usize> {
+	pub fn idle_peers_for_blocks(&self) -> Vec<PeerIndex> {
 		let peers: HashSet<_> = self.idle.iter().cloned()
 			.chain(self.inventory_requests.iter().cloned())
 			.collect();
@@ -113,26 +114,26 @@ impl PeersTasks {
 	}
 
 	/// Get active blocks requests, sorted by last response time (oldest first).
-	pub fn ordered_blocks_requests(&self) -> Vec<(usize, f64)> {
+	pub fn ordered_blocks_requests(&self) -> Vec<(PeerIndex, f64)> {
 		self.blocks_requests_order.iter()
 			.map(|(&pi, &t)| (pi, t))
 			.collect()
 	}
 
 	/// Get active inventory requests, sorted by last response time (oldest first).
-	pub fn ordered_inventory_requests(&self) -> Vec<(usize, f64)> {
+	pub fn ordered_inventory_requests(&self) -> Vec<(PeerIndex, f64)> {
 		self.inventory_requests_order.iter()
 			.map(|(&pi, &t)| (pi, t))
 			.collect()
 	}
 
 	/// Get peer tasks
-	pub fn get_blocks_tasks(&self, peer_index: usize) -> Option<HashSet<H256>> {
+	pub fn get_blocks_tasks(&self, peer_index: PeerIndex) -> Option<HashSet<H256>> {
 		self.blocks_requests.get(&peer_index).cloned()
 	}
 
 	/// Mark peer as useful.
-	pub fn useful_peer(&mut self, peer_index: usize) {
+	pub fn useful_peer(&mut self, peer_index: PeerIndex) {
 		// if peer is unknown => insert to idle queue
 		// if peer is known && not useful => insert to idle queue
 		if !self.idle.contains(&peer_index)
@@ -145,7 +146,7 @@ impl PeersTasks {
 	}
 
 	/// Mark peer as unuseful.
-	pub fn unuseful_peer(&mut self, peer_index: usize) {
+	pub fn unuseful_peer(&mut self, peer_index: PeerIndex) {
 		// if peer is unknown => insert to idle queue
 		// if peer is known && not useful => insert to idle queue
 		assert!(!self.blocks_requests.contains_key(&peer_index));
@@ -159,7 +160,7 @@ impl PeersTasks {
 	}
 
 	/// Peer has been disconnected
-	pub fn disconnect(&mut self, peer_index: usize) {
+	pub fn disconnect(&mut self, peer_index: PeerIndex) {
 		// forget this peer without any chances to reuse
 		self.idle.remove(&peer_index);
 		self.unuseful.remove(&peer_index);
@@ -171,7 +172,7 @@ impl PeersTasks {
 	}
 
 	/// Block is received from peer.
-	pub fn on_block_received(&mut self, peer_index: usize, block_hash: &H256) {
+	pub fn on_block_received(&mut self, peer_index: PeerIndex, block_hash: &H256) {
 		// forget block failures
 		self.blocks_failures.remove(block_hash);
 
@@ -198,7 +199,7 @@ impl PeersTasks {
 	}
 
 	/// Inventory received from peer.
-	pub fn on_inventory_received(&mut self, peer_index: usize) {
+	pub fn on_inventory_received(&mut self, peer_index: PeerIndex) {
 		// if we have requested inventory => remove from inventory_requests
 		self.inventory_requests.remove(&peer_index);
 		self.inventory_requests_order.remove(&peer_index);
@@ -208,7 +209,7 @@ impl PeersTasks {
 	}
 
 	/// Blocks have been requested from peer.
-	pub fn on_blocks_requested(&mut self, peer_index: usize, blocks_hashes: &[H256]) {
+	pub fn on_blocks_requested(&mut self, peer_index: PeerIndex, blocks_hashes: &[H256]) {
 		// mark peer as active
 		self.idle.remove(&peer_index);
 		self.unuseful.remove(&peer_index);
@@ -218,7 +219,7 @@ impl PeersTasks {
 	}
 
 	/// Inventory has been requested from peer.
-	pub fn on_inventory_requested(&mut self, peer_index: usize) {
+	pub fn on_inventory_requested(&mut self, peer_index: PeerIndex) {
 		self.inventory_requests.insert(peer_index);
 		self.inventory_requests_order.remove(&peer_index);
 		self.inventory_requests_order.insert(peer_index, precise_time_s());
@@ -258,7 +259,7 @@ impl PeersTasks {
 	}
 
 	/// We have failed to get block from peer during given period
-	pub fn on_peer_block_failure(&mut self, peer_index: usize) -> bool {
+	pub fn on_peer_block_failure(&mut self, peer_index: PeerIndex) -> bool {
 		let peer_failures = match self.failures.entry(peer_index) {
 			Entry::Occupied(mut entry) => {
 				let failures = entry.get() + 1;
@@ -280,7 +281,7 @@ impl PeersTasks {
 	}
 
 	/// We have failed to get inventory from peer during given period
-	pub fn on_peer_inventory_failure(&mut self, peer_index: usize) {
+	pub fn on_peer_inventory_failure(&mut self, peer_index: PeerIndex) {
 		// ignore inventory failures
 		self.inventory_requests.remove(&peer_index);
 		self.inventory_requests_order.remove(&peer_index);
@@ -302,7 +303,7 @@ impl PeersTasks {
 	}
 
 	/// Reset peer tasks && move peer to idle state
-	pub fn reset_blocks_tasks(&mut self, peer_index: usize) -> Vec<H256> {
+	pub fn reset_blocks_tasks(&mut self, peer_index: PeerIndex) -> Vec<H256> {
 		let requests = self.blocks_requests.remove(&peer_index);
 		self.blocks_requests_order.remove(&peer_index);
 		self.try_mark_idle(peer_index);
@@ -310,7 +311,7 @@ impl PeersTasks {
 	}
 
 	/// Try to mark peer as idle
-	fn try_mark_idle(&mut self, peer_index: usize) {
+	fn try_mark_idle(&mut self, peer_index: PeerIndex) {
 		if self.blocks_requests.contains_key(&peer_index)
 			|| self.inventory_requests.contains(&peer_index) {
 			return;

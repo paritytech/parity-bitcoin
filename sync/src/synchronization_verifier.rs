@@ -5,11 +5,11 @@ use std::thread;
 use parking_lot::Mutex;
 use time::get_time;
 use chain::{IndexedBlock, IndexedTransaction};
-use db::{SharedStore, PreviousTransactionOutputProvider, TransactionOutputObserver};
+use db::{PreviousTransactionOutputProvider, TransactionOutputObserver};
 use network::Magic;
 use primitives::hash::H256;
 use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify, Chain};
-use types::{StorageRef, MemoryPoolRef};
+use types::{BlockHeight, StorageRef, MemoryPoolRef};
 use utils::{MemoryPoolTransactionOutputProvider, StorageTransactionOutputProvider};
 
 /// Block verification events sink
@@ -38,7 +38,7 @@ pub enum VerificationTask {
 	/// Verify single block
 	VerifyBlock(IndexedBlock),
 	/// Verify single transaction
-	VerifyTransaction(u32, IndexedTransaction),
+	VerifyTransaction(BlockHeight, IndexedTransaction),
 	/// Stop verification thread
 	Stop,
 }
@@ -48,7 +48,7 @@ pub trait Verifier : Send + Sync + 'static {
 	/// Verify block
 	fn verify_block(&self, block: IndexedBlock);
 	/// Verify transaction
-	fn verify_transaction(&self, height: u32, transaction: IndexedTransaction);
+	fn verify_transaction(&self, height: BlockHeight, transaction: IndexedTransaction);
 }
 
 /// Asynchronous synchronization verifier
@@ -131,7 +131,7 @@ impl Verifier for AsyncVerifier {
 	}
 
 	/// Verify transaction
-	fn verify_transaction(&self, height: u32, transaction: IndexedTransaction) {
+	fn verify_transaction(&self, height: BlockHeight, transaction: IndexedTransaction) {
 		self.verification_work_sender.lock()
 			.send(VerificationTask::VerifyTransaction(height, transaction))
 			.expect("Verification thread have the same lifetime as `AsyncVerifier`");
@@ -150,7 +150,7 @@ pub struct SyncVerifier<T: VerificationSink> {
 
 impl<T> SyncVerifier<T> where T: VerificationSink {
 	/// Create new sync verifier
-	pub fn new(network: Magic, storage: SharedStore, sink: Arc<T>) -> Self {
+	pub fn new(network: Magic, storage: StorageRef, sink: Arc<T>) -> Self {
 		let verifier = ChainVerifier::new(storage.clone(), network);
 		SyncVerifier {
 			storage: storage,
@@ -168,7 +168,7 @@ impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
 	}
 
 	/// Verify transaction
-	fn verify_transaction(&self, _height: u32, _transaction: IndexedTransaction) {
+	fn verify_transaction(&self, _height: BlockHeight, _transaction: IndexedTransaction) {
 		unimplemented!() // sync verifier is currently only used for blocks verification
 	}
 }
@@ -221,6 +221,7 @@ pub mod tests {
 	use primitives::hash::H256;
 	use chain::{IndexedBlock, IndexedTransaction};
 	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink};
+	use types::BlockHeight;
 
 	#[derive(Default)]
 	pub struct DummyVerifier {
@@ -252,7 +253,7 @@ pub mod tests {
 			}
 		}
 
-		fn verify_transaction(&self, _height: u32, transaction: IndexedTransaction) {
+		fn verify_transaction(&self, _height: BlockHeight, transaction: IndexedTransaction) {
 			match self.sink {
 				Some(ref sink) => match self.errors.get(&transaction.hash) {
 					Some(err) => sink.on_transaction_verification_error(&err, &transaction.hash),

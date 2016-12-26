@@ -4,9 +4,8 @@ use chain::{IndexedBlock, IndexedTransaction};
 use message::types;
 use p2p::OutboundSyncConnectionRef;
 use primitives::hash::H256;
-use connection_filter::ConnectionFilter;
 use types::PeerIndex;
-use utils::KnownHashType;
+use utils::{KnownHashType, ConnectionFilter};
 
 /// Block announcement type
 #[derive(Debug, Clone, Copy)]

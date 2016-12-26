@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use chain::IndexedBlockHeader;
 use primitives::hash::H256;
-use hash_queue::{HashQueue, HashPosition};
+use super::{HashQueue, HashPosition};
 
 /// Best headers chain information
 #[derive(Debug)]
@@ -25,6 +25,7 @@ pub struct BestHeadersChain {
 }
 
 impl BestHeadersChain {
+	/// Create new best headers chain
 	pub fn new(storage_best_hash: H256) -> Self {
 		BestHeadersChain {
 			storage_best_hash: storage_best_hash,
@@ -33,6 +34,7 @@ impl BestHeadersChain {
 		}
 	}
 
+	/// Get information on headers chain
 	pub fn information(&self) -> Information {
 		Information {
 			best: self.best.len(),
@@ -40,19 +42,23 @@ impl BestHeadersChain {
 		}
 	}
 
+	/// Get header from main chain at given position
 	pub fn at(&self, height: u32) -> Option<IndexedBlockHeader> {
 		self.best.at(height)
 			.and_then(|hash| self.headers.get(&hash).cloned())
 	}
 
+	/// Get geader by given hash
 	pub fn by_hash(&self, hash: &H256) -> Option<IndexedBlockHeader> {
 		self.headers.get(hash).cloned()
 	}
 
+	/// Get height of main chain
 	pub fn height(&self, hash: &H256) -> Option<u32> {
 		self.best.position(hash)
 	}
 
+	/// Get all direct child blocks hashes of given block hash
 	pub fn children(&self, hash: &H256) -> Vec<H256> {
 		self.best.position(hash)
 			.and_then(|pos| self.best.at(pos + 1))
@@ -60,10 +66,14 @@ impl BestHeadersChain {
 			.unwrap_or_default()
 	}
 
+	/// Get hash of best block
 	pub fn best_block_hash(&self) -> H256 {
-		self.best.back().or_else(|| Some(self.storage_best_hash.clone())).expect("storage_best_hash is always known")
+		self.best.back()
+			.or_else(|| Some(self.storage_best_hash.clone()))
+			.expect("storage_best_hash is always known")
 	}
 
+	/// Insert new block header
 	pub fn insert(&mut self, header: IndexedBlockHeader) {
 		// append to the best chain
 		if self.best_block_hash() == header.raw.previous_header_hash {
@@ -74,12 +84,14 @@ impl BestHeadersChain {
 		}
 	}
 
+	/// Insert new blocks headers
 	pub fn insert_n(&mut self, headers: Vec<IndexedBlockHeader>) {
 		for header in headers {
 			self.insert(header);
 		}
 	}
 
+	/// Remove block header with given hash and all its children
 	pub fn remove(&mut self, hash: &H256) {
 		if self.headers.remove(hash).is_some() {
 			match self.best.remove(hash) {
@@ -90,12 +102,14 @@ impl BestHeadersChain {
 		}
 	}
 
+	/// Remove blocks headers with given hash and all its children
 	pub fn remove_n<I: IntoIterator<Item=H256>> (&mut self, hashes: I) {
 		for hash in hashes {
 			self.remove(&hash);
 		}
 	}
 
+	/// Called when new blocks is inserted to storage
 	pub fn block_inserted_to_storage(&mut self, hash: &H256, storage_best_hash: &H256) {
 		if self.best.front().map(|h| &h == hash).unwrap_or(false) {
 			self.best.pop_front();
@@ -104,11 +118,13 @@ impl BestHeadersChain {
 		self.storage_best_hash = storage_best_hash.clone();
 	}
 
+	/// Clears headers chain
 	pub fn clear(&mut self) {
 		self.headers.clear();
 		self.best.clear();
 	}
 
+	/// Remove headers after position
 	fn clear_after(&mut self, position: u32) {
 		if position == 0 {
 			self.clear()

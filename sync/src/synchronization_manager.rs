@@ -1,9 +1,8 @@
 use std::collections::HashSet;
 use time::precise_time_s;
-use orphan_blocks_pool::OrphanBlocksPool;
-use orphan_transactions_pool::OrphanTransactionsPool;
-use synchronization_peers_tasks::PeersTasks;
 use primitives::hash::H256;
+use synchronization_peers_tasks::PeersTasks;
+use utils::{OrphanBlocksPool, OrphanTransactionsPool};
 
 /// Management interval (in ms)
 pub const MANAGEMENT_INTERVAL_MS: u64 = 10 * 1000;
@@ -189,13 +188,12 @@ pub fn manage_orphaned_transactions(config: &ManageOrphanTransactionsConfig, orp
 #[cfg(test)]
 mod tests {
 	use std::collections::HashSet;
-	use super::{ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig, manage_synchronization_peers_blocks,
-		manage_unknown_orphaned_blocks, manage_orphaned_transactions};
-	use synchronization_peers_tasks::PeersTasks;
 	use primitives::hash::H256;
 	use test_data;
-	use orphan_blocks_pool::OrphanBlocksPool;
-	use orphan_transactions_pool::OrphanTransactionsPool;
+	use synchronization_peers_tasks::PeersTasks;
+	use super::{ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig, manage_synchronization_peers_blocks,
+		manage_unknown_orphaned_blocks, manage_orphaned_transactions};
+	use utils::{OrphanBlocksPool, OrphanTransactionsPool};
 
 	#[test]
 	fn manage_good_peer() {

@@ -38,9 +38,9 @@ pub enum Task {
 	/// Send notfound
 	NotFound(PeerIndex, types::NotFound),
 	/// Send inventory
-	Inventory(usize, types::Inv),
+	Inventory(PeerIndex, types::Inv),
 	/// Send headers
-	Headers(usize, types::Headers, Option<RequestId>),
+	Headers(PeerIndex, types::Headers, Option<RequestId>),
 	/// Relay new block to peers
 	RelayNewBlock(IndexedBlock),
 	/// Relay new transaction to peers

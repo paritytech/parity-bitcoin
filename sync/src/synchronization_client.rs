@@ -130,7 +130,7 @@ pub trait Client : Send + Sync + 'static {
 	fn on_block(&self, peer_index: PeerIndex, block: IndexedBlock);
 	fn on_transaction(&self, peer_index: PeerIndex, transaction: IndexedTransaction);
 	fn on_notfound(&self, peer_index: PeerIndex, message: types::NotFound);
-	fn after_peer_nearly_blocks_verified(&self, peer_index: usize, future: EmptyBoxFuture);
+	fn after_peer_nearly_blocks_verified(&self, peer_index: PeerIndex, future: EmptyBoxFuture);
 	fn accept_transaction(&self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<(), String>;
 }
 
@@ -155,7 +155,7 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().on_disconnect(peer_index);
 	}
 
-	fn on_inventory(&self, peer_index: usize, message: types::Inv) {
+	fn on_inventory(&self, peer_index: PeerIndex, message: types::Inv) {
 		self.core.lock().on_inventory(peer_index, message);
 	}
 
@@ -211,7 +211,7 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().on_notfound(peer_index, message);
 	}
 
-	fn after_peer_nearly_blocks_verified(&self, peer_index: usize, future: EmptyBoxFuture) {
+	fn after_peer_nearly_blocks_verified(&self, peer_index: PeerIndex, future: EmptyBoxFuture) {
 		self.core.lock().after_peer_nearly_blocks_verified(peer_index, future);
 	}
 

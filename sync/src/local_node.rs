@@ -164,7 +164,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 	}
 
 	/// When peer asks us from specific transactions from specific block
-	pub fn on_get_block_txn(&self, peer_index: usize, message: types::GetBlockTxn) {
+	pub fn on_get_block_txn(&self, peer_index: PeerIndex, message: types::GetBlockTxn) {
 		if self.state.synchronizing() {
 			trace!(target: "sync", "Ignored `getblocktxn` message from peer#{}", peer_index);
 			return;

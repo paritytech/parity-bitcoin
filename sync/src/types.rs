@@ -11,11 +11,10 @@ use synchronization_server::ServerImpl;
 use synchronization_verifier::AsyncVerifier;
 use utils::SynchronizationState;
 
+pub use utils::BlockHeight;
+
 /// Network request id
 pub type RequestId = u32;
-
-/// Block height type
-pub type BlockHeight = u32;
 
 /// Peer is indexed using this type
 pub type PeerIndex = usize;

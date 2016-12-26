@@ -1,19 +1,13 @@
-use std::fmt;
-use std::sync::Arc;
 use std::collections::{VecDeque, HashSet};
+use std::fmt;
 use linked_hash_map::LinkedHashMap;
-use parking_lot::RwLock;
 use chain::{BlockHeader, Transaction, IndexedBlockHeader, IndexedBlock, IndexedTransaction};
 use db;
-use best_headers_chain::{BestHeadersChain, Information as BestHeadersInformation};
+use miner::{MemoryPoolOrderingStrategy, MemoryPoolInformation};
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
-use hash_queue::{HashQueueChain, HashPosition};
-use miner::{MemoryPoolOrderingStrategy, MemoryPoolInformation};
-use types::MemoryPoolRef;
-
-/// Thread-safe reference to `Chain`
-pub type ChainRef = Arc<RwLock<Chain>>;
+use utils::{BestHeadersChain, BestHeadersChainInformation, HashQueueChain, HashPosition};
+use types::{BlockHeight, StorageRef, MemoryPoolRef};
 
 /// Index of 'verifying' queue
 const VERIFYING_QUEUE: usize = 0;
@@ -76,17 +70,17 @@ pub enum TransactionState {
 /// Synchronization chain information
 pub struct Information {
 	/// Number of blocks hashes currently scheduled for requesting
-	pub scheduled: u32,
+	pub scheduled: BlockHeight,
 	/// Number of blocks hashes currently requested from peers
-	pub requested: u32,
+	pub requested: BlockHeight,
 	/// Number of blocks currently verifying
-	pub verifying: u32,
+	pub verifying: BlockHeight,
 	/// Number of blocks in the storage
-	pub stored: u32,
+	pub stored: BlockHeight,
 	/// Information on memory pool
 	pub transactions: MemoryPoolInformation,
 	/// Information on headers chain
-	pub headers: BestHeadersInformation,
+	pub headers: BestHeadersChainInformation,
 }
 
 /// Blockchain from synchroniation point of view, consisting of:
@@ -100,7 +94,7 @@ pub struct Chain {
 	/// Best storage block (stored for optimizations)
 	best_storage_block: db::BestBlock,
 	/// Local blocks storage
-	storage: db::SharedStore,
+	storage: StorageRef,
 	/// In-memory queue of blocks hashes
 	hash_chain: HashQueueChain,
 	/// In-memory queue of blocks headers
@@ -135,7 +129,7 @@ impl BlockState {
 
 impl Chain {
 	/// Create new `Chain` with given storage
-	pub fn new(storage: db::SharedStore, memory_pool: MemoryPoolRef) -> Self {
+	pub fn new(storage: StorageRef, memory_pool: MemoryPoolRef) -> Self {
 		// we only work with storages with genesis block
 		let genesis_block_hash = storage.block_hash(0)
 			.expect("storage with genesis block is required");
@@ -168,7 +162,7 @@ impl Chain {
 	}
 
 	/// Get storage
-	pub fn storage(&self) -> db::SharedStore {
+	pub fn storage(&self) -> StorageRef {
 		self.storage.clone()
 	}
 
@@ -178,7 +172,7 @@ impl Chain {
 	}
 
 	/// Get number of blocks in given state
-	pub fn length_of_blocks_state(&self, state: BlockState) -> u32 {
+	pub fn length_of_blocks_state(&self, state: BlockState) -> BlockHeight {
 		match state {
 			BlockState::Stored => self.best_storage_block.number + 1,
 			_ => self.hash_chain.len_of(state.to_queue_index()),
@@ -186,7 +180,7 @@ impl Chain {
 	}
 
 	/// Get n best blocks of given state
-	pub fn best_n_of_blocks_state(&self, state: BlockState, n: u32) -> Vec<H256> {
+	pub fn best_n_of_blocks_state(&self, state: BlockState, n: BlockHeight) -> Vec<H256> {
 		match state {
 			BlockState::Scheduled | BlockState::Requested | BlockState::Verifying => self.hash_chain.front_n_at(state.to_queue_index(), n),
 			_ => unreachable!("must be checked by caller"),
@@ -224,7 +218,7 @@ impl Chain {
 	}
 
 	/// Get block header by hash
-	pub fn block_hash(&self, number: u32) -> Option<H256> {
+	pub fn block_hash(&self, number: BlockHeight) -> Option<H256> {
 		if number <= self.best_storage_block.number {
 			self.storage.block_hash(number)
 		} else {
@@ -234,7 +228,7 @@ impl Chain {
 	}
 
 	/// Get block number by hash
-	pub fn block_number(&self, hash: &H256) -> Option<u32> {
+	pub fn block_number(&self, hash: &H256) -> Option<BlockHeight> {
 		if let Some(number) = self.storage.block_number(hash) {
 			return Some(number);
 		}
@@ -242,7 +236,7 @@ impl Chain {
 	}
 
 	/// Get block header by number
-	pub fn block_header_by_number(&self, number: u32) -> Option<IndexedBlockHeader> {
+	pub fn block_header_by_number(&self, number: BlockHeight) -> Option<IndexedBlockHeader> {
 		if number <= self.best_storage_block.number {
 			self.storage.block_header(db::BlockRef::Number(number)).map(Into::into)
 		} else {
@@ -299,7 +293,7 @@ impl Chain {
 	}
 
 	/// Moves n blocks from scheduled queue to requested queue
-	pub fn request_blocks_hashes(&mut self, n: u32) -> Vec<H256> {
+	pub fn request_blocks_hashes(&mut self, n: BlockHeight) -> Vec<H256> {
 		let scheduled = self.hash_chain.pop_front_n_at(SCHEDULED_QUEUE, n);
 		self.hash_chain.push_back_n_at(REQUESTED_QUEUE, scheduled.clone());
 		scheduled
@@ -321,7 +315,7 @@ impl Chain {
 
 	/// Moves n blocks from requested queue to verifying queue
 	#[cfg(test)]
-	pub fn verify_blocks_hashes(&mut self, n: u32) -> Vec<H256> {
+	pub fn verify_blocks_hashes(&mut self, n: BlockHeight) -> Vec<H256> {
 		let requested = self.hash_chain.pop_front_n_at(REQUESTED_QUEUE, n);
 		self.hash_chain.push_back_n_at(VERIFYING_QUEUE, requested.clone());
 		requested
@@ -589,7 +583,7 @@ impl Chain {
 	}
 
 	/// Calculate block locator hashes for hash queue
-	fn block_locator_hashes_for_queue(&self, hashes: &mut Vec<H256>) -> (u32, u32) {
+	fn block_locator_hashes_for_queue(&self, hashes: &mut Vec<H256>) -> (BlockHeight, BlockHeight) {
 		let queue_len = self.hash_chain.len();
 		if queue_len == 0 {
 			return (0, 1);
@@ -612,7 +606,7 @@ impl Chain {
 	}
 
 	/// Calculate block locator hashes for storage
-	fn block_locator_hashes_for_storage(&self, mut index: u32, mut step: u32, hashes: &mut Vec<H256>) {
+	fn block_locator_hashes_for_storage(&self, mut index: BlockHeight, mut step: BlockHeight, hashes: &mut Vec<H256>) {
 		loop {
 			let block_hash = self.storage.block_hash(index)
 				.expect("private function; index calculated in `block_locator_hashes`; qed");
@@ -698,16 +692,15 @@ impl fmt::Debug for Chain {
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
-	use chain::{Transaction, IndexedBlockHeader};
-	use hash_queue::HashPosition;
-	use super::{Chain, BlockState, TransactionState, BlockInsertionResult};
-	use db::{self, Store, BestBlock};
-	use primitives::hash::H256;
-	use devtools::RandomTempPath;
-	use test_data;
-	use db::BlockStapler;
 	use parking_lot::RwLock;
+	use chain::{Transaction, IndexedBlockHeader};
+	use devtools::RandomTempPath;
+	use db::{self, Store, BestBlock, BlockStapler};
 	use miner::MemoryPool;
+	use primitives::hash::H256;
+	use test_data;
+	use super::{Chain, BlockState, TransactionState, BlockInsertionResult};
+	use utils::HashPosition;
 
 	#[test]
 	fn chain_empty() {

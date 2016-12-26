@@ -1,50 +1,45 @@
-use std::sync::Arc;
 use std::cmp::{min, max};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
-use parking_lot::Mutex;
+use std::time::Duration;
+use std::sync::Arc;
 use futures::{Future, finished};
 use futures::stream::Stream;
-use tokio_core::reactor::{Handle, Interval};
 use futures_cpupool::CpuPool;
-use db;
+use parking_lot::Mutex;
+use time;
+use tokio_core::reactor::{Handle, Interval};
 use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
+use db;
+use message::types;
+use message::common::{InventoryType, InventoryVector};
+use miner::transaction_fee_rate;
+use network::Magic;
 use primitives::hash::H256;
-use synchronization_peers_tasks::PeersTasks;
-#[cfg(test)] use synchronization_peers::Peers;
+use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 use synchronization_chain::{Chain, BlockState, TransactionState, BlockInsertionResult};
 use synchronization_executor::{Task, TaskExecutor};
-use orphan_blocks_pool::OrphanBlocksPool;
-use orphan_transactions_pool::OrphanTransactionsPool;
 use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchronization_peers_inventory,
 	manage_unknown_orphaned_blocks, manage_orphaned_transactions, MANAGEMENT_INTERVAL_MS,
 	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
+use synchronization_peers_tasks::PeersTasks;
 use synchronization_verifier::{VerificationSink, BlockVerificationSink, TransactionVerificationSink, VerificationTask};
-use hash_queue::HashPosition;
-use miner::transaction_fee_rate;
-use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
-use time;
-use message::common::{InventoryType, InventoryVector};
-use std::time::Duration;
-use network::Magic;
-use utils::{AverageSpeedMeter, MessageBlockHeadersProvider};
-use message::types;
-use types::{PeersRef, PeerIndex, EmptyBoxFuture};
-use types::SynchronizationStateRef;
+use types::{BlockHeight, PeersRef, PeerIndex, SynchronizationStateRef, EmptyBoxFuture};
+use utils::{AverageSpeedMeter, MessageBlockHeadersProvider, OrphanBlocksPool, OrphanTransactionsPool, HashPosition};
+#[cfg(test)] use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers_tasks::{Information as PeersTasksInformation};
-#[cfg(test)]
-use synchronization_chain::{Information as ChainInformation};
+#[cfg(test)] use synchronization_chain::{Information as ChainInformation};
 
 /// Approximate maximal number of blocks hashes in scheduled queue.
-const MAX_SCHEDULED_HASHES: u32 = 4 * 1024;
+const MAX_SCHEDULED_HASHES: BlockHeight = 4 * 1024;
 /// Approximate maximal number of blocks hashes in requested queue.
-const MAX_REQUESTED_BLOCKS: u32 = 256;
+const MAX_REQUESTED_BLOCKS: BlockHeight = 256;
 /// Approximate maximal number of blocks in verifying queue.
-const MAX_VERIFYING_BLOCKS: u32 = 256;
+const MAX_VERIFYING_BLOCKS: BlockHeight = 256;
 /// Minimum number of blocks to request from peer
-const MIN_BLOCKS_IN_REQUEST: u32 = 32;
+const MIN_BLOCKS_IN_REQUEST: BlockHeight = 32;
 /// Maximum number of blocks to request from peer
-const MAX_BLOCKS_IN_REQUEST: u32 = 128;
+const MAX_BLOCKS_IN_REQUEST: BlockHeight = 128;
 /// Number of blocks to receive since synchronization start to begin duplicating blocks requests
 const NEAR_EMPTY_VERIFICATION_QUEUE_THRESHOLD_BLOCKS: usize = 20;
 /// Number of seconds left before verification queue will be empty to count it as 'near empty queue'
@@ -74,12 +69,12 @@ pub struct Information {
 pub trait ClientCore {
 	fn on_connect(&mut self, peer_index: PeerIndex);
 	fn on_disconnect(&mut self, peer_index: PeerIndex);
-	fn on_inventory(&self, peer_index: usize, message: types::Inv);
+	fn on_inventory(&self, peer_index: PeerIndex, message: types::Inv);
 	fn on_headers(&mut self, peer_index: PeerIndex, message: types::Headers);
 	fn on_block(&mut self, peer_index: PeerIndex, block: IndexedBlock) -> Option<VecDeque<IndexedBlock>>;
 	fn on_transaction(&mut self, peer_index: PeerIndex, transaction: IndexedTransaction) -> Option<VecDeque<IndexedTransaction>>;
 	fn on_notfound(&mut self, peer_index: PeerIndex, message: types::NotFound);
-	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: EmptyBoxFuture);
+	fn after_peer_nearly_blocks_verified(&mut self, peer_index: PeerIndex, future: EmptyBoxFuture);
 	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String>;
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>, final_blocks_requests: Option<Vec<H256>>);
 	fn try_switch_to_saturated_state(&mut self) -> bool;
@@ -123,9 +118,9 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	/// Verify block headers?
 	verify_headers: bool,
 	/// Verifying blocks by peer
-	verifying_blocks_by_peer: HashMap<H256, usize>,
+	verifying_blocks_by_peer: HashMap<H256, PeerIndex>,
 	/// Verifying blocks futures
-	verifying_blocks_futures: HashMap<usize, (HashSet<H256>, Vec<EmptyBoxFuture>)>,
+	verifying_blocks_futures: HashMap<PeerIndex, (HashSet<H256>, Vec<EmptyBoxFuture>)>,
 	/// Verifying transactions futures
 	verifying_transactions_sinks: HashMap<H256, Box<TransactionVerificationSink>>,
 	/// Hashes of items we do not want to relay after verification is completed
@@ -148,7 +143,7 @@ pub struct CoreVerificationSink<T: TaskExecutor> {
 #[derive(Debug, Clone, Copy)]
 pub enum State {
 	/// We know that there are > 1 unknown blocks, unknown to us in the blockchain
-	Synchronizing(f64, u32),
+	Synchronizing(f64, BlockHeight),
 	/// There is only one unknown block in the blockchain
 	NearlySaturated,
 	/// We have downloaded all blocks of the blockchain of which we have ever heard
@@ -211,7 +206,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		self.execute_synchronization_tasks(Some(peer_tasks), None);
 	}
 
-	fn on_inventory(&self, peer_index: usize, message: types::Inv) {
+	fn on_inventory(&self, peer_index: PeerIndex, message: types::Inv) {
 		// we are synchronizing => we ask only for blocks with known headers => there are no useful blocks hashes for us
 		// we are synchronizing => we ignore all transactions until it is completed => there are no useful transactions hashes for us
 		if self.state.is_synchronizing() {
@@ -440,7 +435,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		result
 	}
 
-	fn on_transaction(&mut self, peer_index: usize, transaction: IndexedTransaction) -> Option<VecDeque<IndexedTransaction>> {
+	fn on_transaction(&mut self, peer_index: PeerIndex, transaction: IndexedTransaction) -> Option<VecDeque<IndexedTransaction>> {
 		// check if this transaction is already known
 		if self.orphaned_transactions_pool.contains(&transaction.hash) ||
 			self.chain.transaction_state(&transaction.hash) != TransactionState::Unknown {
@@ -482,7 +477,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 	/// Execute after last block from this peer in NearlySaturated state is verified.
 	/// If there are no verifying blocks from this peer or we are not in the NearlySaturated state => execute immediately.
-	fn after_peer_nearly_blocks_verified(&mut self, peer_index: usize, future: EmptyBoxFuture) {
+	fn after_peer_nearly_blocks_verified(&mut self, peer_index: PeerIndex, future: EmptyBoxFuture) {
 		// if we are currently synchronizing => no need to wait
 		if self.state.is_synchronizing() {
 			future.wait().expect("no-error future");
@@ -560,7 +555,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 				}
 			}
 
-			let blocks_idle_peers_len = blocks_idle_peers.len() as u32;
+			let blocks_idle_peers_len = blocks_idle_peers.len() as BlockHeight;
 			if blocks_idle_peers_len != 0 {
 				// check if verification queue is empty/almost empty
 				// && there are pending blocks requests
@@ -617,7 +612,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 						// blocks / second * second -> blocks
 						let hashes_requests_to_duplicate_len = synchronization_speed * (synchronization_queue_will_be_full_in - verification_queue_will_be_empty_in);
 						// do not ask for too many blocks
-						let hashes_requests_to_duplicate_len = min(MAX_BLOCKS_IN_REQUEST, hashes_requests_to_duplicate_len as u32);
+						let hashes_requests_to_duplicate_len = min(MAX_BLOCKS_IN_REQUEST, hashes_requests_to_duplicate_len as BlockHeight);
 						// ask for at least 1 block
 						let hashes_requests_to_duplicate_len = max(1, min(requested_hashes_len, hashes_requests_to_duplicate_len));
 						blocks_requests = Some(self.chain.best_n_of_blocks_state(BlockState::Requested, hashes_requests_to_duplicate_len));
@@ -850,7 +845,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Process new peer transaction
-	fn process_peer_transaction(&mut self, _peer_index: Option<usize>, transaction: IndexedTransaction, relay: bool) -> Option<VecDeque<IndexedTransaction>> {
+	fn process_peer_transaction(&mut self, _peer_index: Option<PeerIndex>, transaction: IndexedTransaction, relay: bool) -> Option<VecDeque<IndexedTransaction>> {
 		match self.try_append_transaction(transaction.clone(), relay) {
 			Err(AppendTransactionError::Orphan(unknown_parents)) => {
 				self.orphaned_transactions_pool.insert(transaction, unknown_parents);
@@ -901,11 +896,11 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 	}
 
-	fn prepare_blocks_requests_tasks(&mut self, peers: Vec<usize>, mut hashes: Vec<H256>) -> Vec<Task> {
+	fn prepare_blocks_requests_tasks(&mut self, peers: Vec<PeerIndex>, mut hashes: Vec<H256>) -> Vec<Task> {
 		use std::mem::swap;
 
 		// TODO: ask most fast peers for hashes at the beginning of `hashes`
-		let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(hashes.len() as u32, MIN_BLOCKS_IN_REQUEST));
+		let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(hashes.len() as BlockHeight, MIN_BLOCKS_IN_REQUEST));
 		let last_peer_index = peers.len() - 1;
 		let mut tasks: Vec<Task> = Vec::new();
 		for (peer_index, peer) in peers.into_iter().enumerate() {
@@ -1179,34 +1174,33 @@ pub mod tests {
 	use parking_lot::{Mutex, RwLock};
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, Transaction};
-	use network::Magic;
-	use message::common::InventoryVector;
-	use message::types;
-	use synchronization_client::{SynchronizationClient, Client};
-	use super::{Config, SynchronizationClientCore, ClientCore, CoreVerificationSink};
-	use synchronization_executor::Task;
-	use synchronization_chain::Chain;
-	use synchronization_executor::tests::DummyTaskExecutor;
-	use synchronization_verifier::tests::DummyVerifier;
-	use primitives::hash::H256;
-	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
-	use p2p::event_loop;
-	use test_data;
 	use db;
 	use devtools::RandomTempPath;
-	use synchronization_peers::PeersImpl;
+	use message::common::InventoryVector;
+	use message::types;
 	use miner::MemoryPool;
-	use utils::SynchronizationState;
-	use types::SynchronizationStateRef;
-	use types::PeerIndex;
+	use network::Magic;
+	use p2p::event_loop;
+	use primitives::hash::H256;
+	use test_data;
+	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 	use inbound_connection::tests::DummyOutboundSyncConnection;
+	use synchronization_chain::Chain;
+	use synchronization_client::{SynchronizationClient, Client};
+	use synchronization_peers::PeersImpl;
+	use synchronization_executor::Task;
+	use synchronization_executor::tests::DummyTaskExecutor;
+	use synchronization_verifier::tests::DummyVerifier;
+	use utils::SynchronizationState;
+	use types::{PeerIndex, StorageRef, SynchronizationStateRef};
+	use super::{Config, SynchronizationClientCore, ClientCore, CoreVerificationSink};
 
-	fn create_disk_storage() -> db::SharedStore {
+	fn create_disk_storage() -> StorageRef {
 		let path = RandomTempPath::create_dir();
 		Arc::new(db::Storage::new(path.as_path()).unwrap())
 	}
 
-	fn create_sync(storage: Option<db::SharedStore>, verifier: Option<DummyVerifier>) -> (Core, Handle, Arc<DummyTaskExecutor>, Arc<Mutex<SynchronizationClientCore<DummyTaskExecutor>>>, Arc<SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
+	fn create_sync(storage: Option<StorageRef>, verifier: Option<DummyVerifier>) -> (Core, Handle, Arc<DummyTaskExecutor>, Arc<Mutex<SynchronizationClientCore<DummyTaskExecutor>>>, Arc<SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
 		let sync_peers = Arc::new(PeersImpl::default());
 		let event_loop = event_loop();
 		let handle = event_loop.handle();

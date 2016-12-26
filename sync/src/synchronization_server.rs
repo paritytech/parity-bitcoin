@@ -5,11 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use parking_lot::{Mutex, Condvar};
 use chain::IndexedTransaction;
-use db;
 use message::{types, common};
 use primitives::hash::H256;
 use synchronization_executor::{Task, TaskExecutor};
-use types::{PeerIndex, RequestId, BlockHeight, ExecutorRef, MemoryPoolRef, PeersRef};
+use types::{PeerIndex, RequestId, BlockHeight, StorageRef, ExecutorRef, MemoryPoolRef, PeersRef};
 use utils::KnownHashType;
 
 /// Synchronization server task
@@ -59,7 +58,7 @@ struct ServerTaskExecutor<T> where T: TaskExecutor {
 	/// Executor
 	executor: ExecutorRef<T>,
 	/// Storage reference
-	storage: db::SharedStore,
+	storage: StorageRef,
 	/// Memory pool reference
 	memory_pool: MemoryPoolRef,
 }
@@ -88,7 +87,7 @@ impl ServerTask {
 }
 
 impl ServerImpl {
-	pub fn new<T: TaskExecutor>(peers: PeersRef, storage: db::SharedStore, memory_pool: MemoryPoolRef, executor: Arc<T>) -> Self {
+	pub fn new<T: TaskExecutor>(peers: PeersRef, storage: StorageRef, memory_pool: MemoryPoolRef, executor: Arc<T>) -> Self {
 		let executor = ServerTaskExecutor::new(peers, storage, memory_pool, executor);
 		let queue_ready = Arc::new(Condvar::new());
 		let queue = Arc::new(Mutex::new(ServerQueue::new(queue_ready.clone())));
@@ -219,7 +218,7 @@ impl ServerQueue {
 }
 
 impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
-	pub fn new(peers: PeersRef, storage: db::SharedStore, memory_pool: MemoryPoolRef, executor: ExecutorRef<TExecutor>) -> Self {
+	pub fn new(peers: PeersRef, storage: StorageRef, memory_pool: MemoryPoolRef, executor: ExecutorRef<TExecutor>) -> Self {
 		ServerTaskExecutor {
 			peers: peers,
 			storage: storage,
@@ -323,7 +322,7 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 
 	fn serve_get_blocks(&self, peer_index: PeerIndex, message: types::GetBlocks) {
 		if let Some(block_height) = self.locate_best_common_block(&message.hash_stop, &message.block_locator_hashes) {
-			let inventory: Vec<_> = (block_height + 1..block_height + 1 + (types::GETBLOCKS_MAX_RESPONSE_HASHES as u32))
+			let inventory: Vec<_> = (block_height + 1..block_height + 1 + (types::GETBLOCKS_MAX_RESPONSE_HASHES as BlockHeight))
 				.map(|block_height| self.storage.block_hash(block_height))
 				.take_while(Option::is_some)
 				.map(Option::unwrap)
@@ -345,7 +344,7 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 
 	fn serve_get_headers(&self, peer_index: PeerIndex, message: types::GetHeaders, request_id: RequestId) {
 		if let Some(block_height) = self.locate_best_common_block(&message.hash_stop, &message.block_locator_hashes) {
-			let headers: Vec<_> = (block_height + 1..block_height + 1 + (types::GETHEADERS_MAX_RESPONSE_HEADERS as u32))
+			let headers: Vec<_> = (block_height + 1..block_height + 1 + (types::GETHEADERS_MAX_RESPONSE_HEADERS as BlockHeight))
 				.map(|block_height| self.storage.block_hash(block_height))
 				.take_while(Option::is_some)
 				.map(Option::unwrap)
@@ -460,25 +459,24 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 
 #[cfg(test)]
 pub mod tests {
-	use std::sync::Arc;
 	use std::mem::replace;
+	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
 	use db::{self, BlockStapler};
-	use synchronization_peers::{PeersContainer, PeersFilters};
-	use test_data;
-	use primitives::hash::H256;
-	use chain::Transaction;
 	use message::types;
 	use message::common::{self, InventoryVector, InventoryType};
-	use synchronization_executor::Task;
-	use synchronization_executor::tests::DummyTaskExecutor;
-	use synchronization_peers::PeersImpl;
+	use primitives::hash::H256;
+	use test_data;
+	use chain::Transaction;
 	use inbound_connection::tests::DummyOutboundSyncConnection;
-	use types::{PeerIndex, PeersRef};
 	use miner::MemoryPool;
 	use local_node::tests::{default_filterload, make_filteradd};
-	use super::{Server, ServerTask, ServerImpl, ServerTaskExecutor};
+	use synchronization_executor::Task;
+	use synchronization_executor::tests::DummyTaskExecutor;
+	use synchronization_peers::{PeersContainer, PeersFilters, PeersImpl};
+	use types::{PeerIndex, StorageRef, MemoryPoolRef, PeersRef, ExecutorRef};
 	use utils::KnownHashType;
+	use super::{Server, ServerTask, ServerImpl, ServerTaskExecutor};
 
 	pub struct DummyServer {
 		tasks: Mutex<Vec<ServerTask>>,
@@ -505,7 +503,7 @@ pub mod tests {
 		}
 	}
 
-	fn create_synchronization_server() -> (db::SharedStore, Arc<RwLock<MemoryPool>>, Arc<DummyTaskExecutor>, PeersRef, ServerImpl) {
+	fn create_synchronization_server() -> (StorageRef, MemoryPoolRef, ExecutorRef<DummyTaskExecutor>, PeersRef, ServerImpl) {
 		let peers = Arc::new(PeersImpl::default());
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
