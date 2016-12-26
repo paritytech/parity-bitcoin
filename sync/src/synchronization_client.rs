@@ -5,9 +5,7 @@ use message::types;
 use synchronization_executor::TaskExecutor;
 use synchronization_verifier::{Verifier, TransactionVerificationSink};
 use synchronization_client_core::{ClientCore, SynchronizationClientCore};
-use types::PeerIndex;
-use types::SynchronizationStateRef;
-use types::EmptyBoxFuture;
+use types::{PeerIndex, ClientCoreRef, SynchronizationStateRef, EmptyBoxFuture};
 
 #[cfg_attr(feature="cargo-clippy", allow(doc_markdown))]
 ///! TODO: update with headers-first corrections
@@ -141,7 +139,7 @@ pub struct SynchronizationClient<T: TaskExecutor, U: Verifier> {
 	/// Shared client state
 	shared_state: SynchronizationStateRef,
 	/// Client core
-	core: Arc<Mutex<SynchronizationClientCore<T>>>,
+	core: ClientCoreRef<SynchronizationClientCore<T>>,
 	/// Verifier
 	verifier: U,
 }
@@ -228,7 +226,7 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 
 impl<T, U> SynchronizationClient<T, U> where T: TaskExecutor, U: Verifier {
 	/// Create new synchronization client
-	pub fn new(shared_state: SynchronizationStateRef, core: Arc<Mutex<SynchronizationClientCore<T>>>, verifier: U) -> Arc<Self> {
+	pub fn new(shared_state: SynchronizationStateRef, core: ClientCoreRef<SynchronizationClientCore<T>>, verifier: U) -> Arc<Self> {
 		Arc::new(SynchronizationClient {
 			verification_lock: Mutex::new(()),
 			shared_state: shared_state,

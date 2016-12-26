@@ -1,13 +1,10 @@
 use std::sync::Arc;
-use parking_lot::Mutex;
 use chain::{IndexedBlock, IndexedTransaction};
 use message::common::InventoryVector;
 use message::types;
 use synchronization_peers::{BlockAnnouncementType, TransactionAnnouncementType};
 use types::{PeerIndex, PeersRef, RequestId};
 use utils::KnownHashType;
-
-pub type LocalSynchronizationTaskExecutorRef = Arc<Mutex<LocalSynchronizationTaskExecutor>>;
 
 /// Synchronization task executor
 pub trait TaskExecutor : Send + Sync + 'static {

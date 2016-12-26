@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use futures::BoxFuture;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use db;
 use local_node::LocalNode;
 use miner::MemoryPool;
@@ -39,6 +39,9 @@ pub type ExecutorRef<T> = Arc<T>;
 
 /// Reference to synchronization client
 pub type ClientRef<T> = Arc<T>;
+
+/// Reference to synchronization client core
+pub type ClientCoreRef<T> = Arc<Mutex<T>>;
 
 /// Reference to synchronization server
 pub type ServerRef<T> = Arc<T>;

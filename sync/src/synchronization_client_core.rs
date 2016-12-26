@@ -24,7 +24,7 @@ use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchr
 	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
 use synchronization_peers_tasks::PeersTasks;
 use synchronization_verifier::{VerificationSink, BlockVerificationSink, TransactionVerificationSink, VerificationTask};
-use types::{BlockHeight, PeersRef, PeerIndex, SynchronizationStateRef, EmptyBoxFuture};
+use types::{BlockHeight, ClientCoreRef, PeersRef, PeerIndex, SynchronizationStateRef, EmptyBoxFuture};
 use utils::{AverageSpeedMeter, MessageBlockHeadersProvider, OrphanBlocksPool, OrphanTransactionsPool, HashPosition};
 #[cfg(test)] use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers_tasks::{Information as PeersTasksInformation};
@@ -136,7 +136,7 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 /// Verification sink for synchronization client core
 pub struct CoreVerificationSink<T: TaskExecutor> {
 	/// Client core reference
-	core: Arc<Mutex<SynchronizationClientCore<T>>>,
+	core: ClientCoreRef<SynchronizationClientCore<T>>,
 }
 
 /// Synchronization state
@@ -664,7 +664,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 }
 
 impl<T> CoreVerificationSink<T> where T: TaskExecutor {
-	pub fn new(core: Arc<Mutex<SynchronizationClientCore<T>>>) -> Self {
+	pub fn new(core: ClientCoreRef<SynchronizationClientCore<T>>) -> Self {
 		CoreVerificationSink {
 			core: core,
 		}
@@ -700,7 +700,7 @@ impl<T> TransactionVerificationSink for CoreVerificationSink<T> where T: TaskExe
 
 impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	/// Create new synchronization client core
-	pub fn new(config: Config, handle: &Handle, shared_state: SynchronizationStateRef, peers: PeersRef, executor: Arc<T>, chain: Chain, chain_verifier: Arc<ChainVerifier>) -> Arc<Mutex<Self>> {
+	pub fn new(config: Config, handle: &Handle, shared_state: SynchronizationStateRef, peers: PeersRef, executor: Arc<T>, chain: Chain, chain_verifier: Arc<ChainVerifier>) -> ClientCoreRef<Self> {
 		let sync = Arc::new(Mutex::new(
 			SynchronizationClientCore {
 				shared_state: shared_state,
@@ -1171,7 +1171,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 #[cfg(test)]
 pub mod tests {
 	use std::sync::Arc;
-	use parking_lot::{Mutex, RwLock};
+	use parking_lot::RwLock;
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, Transaction};
 	use db;
@@ -1192,7 +1192,7 @@ pub mod tests {
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use synchronization_verifier::tests::DummyVerifier;
 	use utils::SynchronizationState;
-	use types::{PeerIndex, StorageRef, SynchronizationStateRef};
+	use types::{PeerIndex, StorageRef, SynchronizationStateRef, ClientCoreRef};
 	use super::{Config, SynchronizationClientCore, ClientCore, CoreVerificationSink};
 
 	fn create_disk_storage() -> StorageRef {
@@ -1200,7 +1200,7 @@ pub mod tests {
 		Arc::new(db::Storage::new(path.as_path()).unwrap())
 	}
 
-	fn create_sync(storage: Option<StorageRef>, verifier: Option<DummyVerifier>) -> (Core, Handle, Arc<DummyTaskExecutor>, Arc<Mutex<SynchronizationClientCore<DummyTaskExecutor>>>, Arc<SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
+	fn create_sync(storage: Option<StorageRef>, verifier: Option<DummyVerifier>) -> (Core, Handle, Arc<DummyTaskExecutor>, ClientCoreRef<SynchronizationClientCore<DummyTaskExecutor>>, Arc<SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
 		let sync_peers = Arc::new(PeersImpl::default());
 		let event_loop = event_loop();
 		let handle = event_loop.handle();
