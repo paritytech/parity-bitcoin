@@ -22,7 +22,7 @@ pub trait RepresentH256 {
 }
 
 pub use rustc_serialize::hex;
-pub use primitives::{hash, bytes, uint, compact};
+pub use primitives::{hash, bytes, bigint, compact};
 
 pub use block::Block;
 pub use block_header::BlockHeader;

@@ -1,6 +1,6 @@
 use std::str::FromStr;
 use serde;
-use primitives::uint::U256 as GlobalU256;
+use primitives::bigint::{U256 as GlobalU256, Uint};
 
 macro_rules! impl_uint {
 	($name: ident, $other: ident, $size: expr) => {
@@ -32,7 +32,7 @@ macro_rules! impl_uint {
 
 		impl serde::Serialize for $name {
 			fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: serde::Serializer {
-				let as_hex = format!("{:x}", self.0);
+				let as_hex = format!("{}", self.0.to_hex());
 				serializer.serialize_str(&as_hex)
 			}
 		}

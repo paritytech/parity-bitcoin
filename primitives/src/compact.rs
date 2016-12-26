@@ -1,6 +1,6 @@
 //! Compact representation of `U256`
 
-use uint::U256;
+use bigint::{U256, Uint};
 
 /// Compact representation of `U256`
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -95,7 +95,7 @@ impl Compact {
 
 #[cfg(test)]
 mod tests {
-	use uint::U256;
+	use bigint::{U256, Uint};
 	use super::Compact;
 
 	#[test]

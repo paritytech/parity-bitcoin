@@ -1,7 +1,7 @@
 use byteorder::{WriteBytesExt, LittleEndian};
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
-use primitives::uint::U256;
+use primitives::bigint::{U256, Uint};
 use primitives::compact::Compact;
 use chain::{merkle_root, Transaction, TransactionInput, TransactionOutput};
 use crypto::dhash256;
@@ -176,7 +176,7 @@ impl CoinbaseTransactionBuilder for P2shCoinbaseTransactionBuilder {
 
 #[cfg(test)]
 mod tests {
-	use primitives::uint::U256;
+	use primitives::bigint::{U256, Uint};
 	use block_assembler::BlockTemplate;
 	use super::{find_solution, P2shCoinbaseTransactionBuilder};
 
