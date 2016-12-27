@@ -35,7 +35,6 @@ const _COL_RESERVED6: u32 = 10;
 
 const DB_VERSION: u32 = 1;
 
-// TODO: check how bitcoin core deals with long forks
 const MAX_FORK_ROUTE_PRESET: usize = 2048;
 const TRANSACTION_CACHE_SIZE: usize = 524288;
 
@@ -379,7 +378,6 @@ impl Storage {
 		match self.maybe_reorganize_fallable(context, hash) {
 			Ok(result) => Ok(result),
 			Err(e) => {
-				// todo: log error here
 				context.restore();
 				warn!("Error while reorganizing to {}: {:?}", hash, e);
 				Err(e)
