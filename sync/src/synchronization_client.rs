@@ -98,7 +98,7 @@ use types::{PeerIndex, ClientCoreRef, SynchronizationStateRef, EmptyBoxFuture};
 ///!
 ///! manage_synchronization_peers: When management thread awakes:
 ///! 1) for peer in active_peers.where(p => now() - p.last_request_time() > failure_interval):
-///! 1.1) return all peer' tasks to the tasks pool + TODO: filter tasks (if we have requested some hash several times from several peers && they haven't responded => drop this hash + reset sync???)
+///! 1.1) return all peer' tasks to the tasks pool
 ///! 1.2) increase # of failures for this peer
 ///! 1.3) if # of failures > max_failures: ===> super-bad peer
 ///! 1.3.1) forget peer

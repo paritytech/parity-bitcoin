@@ -1,5 +1,4 @@
 use chain::{IndexedTransaction, IndexedBlock};
-use message::common;
 use message::types;
 use p2p::{InboundSyncConnection, InboundSyncConnectionRef};
 use types::{PeersRef, LocalNodeRef, PeerIndex, RequestId};
@@ -32,18 +31,7 @@ impl InboundConnection {
 }
 
 impl InboundSyncConnection for InboundConnection {
-	fn start_sync_session(&self, version: u32) {
-		// TODO
-		let version = types::Version::V0(types::version::V0 {
-			version: version,
-			services: common::Services::default(),
-			timestamp: 0,
-			receiver: common::NetAddress {
-				services: common::Services::default(),
-				address: common::IpAddress::from("127.0.0.1"),
-				port: common::Port::from(0),
-			},
-		});
+	fn start_sync_session(&self, version: types::Version) {
 		self.node.on_connect(self.peer_index, version);
 	}
 

@@ -1,8 +1,11 @@
 use std::sync::Arc;
 use parking_lot::{Mutex, Condvar};
+use time;
 use futures::{Future, lazy, finished};
 use chain::{Transaction, IndexedTransaction, IndexedBlock};
 use message::types;
+use miner::BlockAssembler;
+use network::Magic;
 use synchronization_client::{Client};
 use synchronization_executor::{Task as SynchronizationTask, TaskExecutor};
 use synchronization_server::{Server, ServerTask};
@@ -10,10 +13,17 @@ use synchronization_verifier::{TransactionVerificationSink};
 use primitives::hash::H256;
 use miner::BlockTemplate;
 use synchronization_peers::{TransactionAnnouncementType, BlockAnnouncementType};
-use types::{PeerIndex, RequestId, PeersRef, ExecutorRef, ClientRef, ServerRef, SynchronizationStateRef};
+use types::{PeerIndex, RequestId, StorageRef, MemoryPoolRef, PeersRef, ExecutorRef,
+	ClientRef, ServerRef, SynchronizationStateRef};
 
 /// Local synchronization node
 pub struct LocalNode<T: TaskExecutor, U: Server, V: Client> {
+	/// Network we are working on
+	network: Magic,
+	/// Storage reference
+	storage: StorageRef,
+	/// Memory pool reference
+	memory_pool: MemoryPoolRef,
 	/// Synchronization peers
 	peers: PeersRef,
 	/// Shared synchronization state
@@ -39,8 +49,12 @@ struct TransactionAcceptSinkData {
 
 impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 	/// Create new synchronization node
-	pub fn new(peers: PeersRef, state: SynchronizationStateRef, executor: ExecutorRef<T>, client: ClientRef<V>, server: ServerRef<U>) -> Self {
+	pub fn new(network: Magic, storage: StorageRef, memory_pool: MemoryPoolRef, peers: PeersRef,
+		state: SynchronizationStateRef, executor: ExecutorRef<T>, client: ClientRef<V>, server: ServerRef<U>) -> Self {
 		LocalNode {
+			network: network,
+			storage: storage,
+			memory_pool: memory_pool,
 			peers: peers,
 			state: state,
 			executor: executor,
@@ -258,7 +272,9 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 	}
 
 	pub fn get_block_template(&self) -> BlockTemplate {
-		unimplemented!() // TODO
+		let block_assembler = BlockAssembler::default();
+		let memory_pool = &*self.memory_pool.read();
+		block_assembler.create_new_block(&self.storage, memory_pool, time::get_time().sec as u32, self.network)
 	}
 }
 
@@ -348,7 +364,7 @@ pub mod tests {
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
-		let chain = Chain::new(storage.clone(), memory_pool);
+		let chain = Chain::new(storage.clone(), memory_pool.clone());
 		let sync_peers = Arc::new(PeersImpl::default());
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
@@ -361,7 +377,7 @@ pub mod tests {
 		};
 		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
 		let client = SynchronizationClient::new(sync_state.clone(), client_core, verifier);
-		let local_node = LocalNode::new(sync_peers, sync_state, executor.clone(), client, server.clone());
+		let local_node = LocalNode::new(Magic::Mainnet, storage, memory_pool, sync_peers, sync_state, executor.clone(), client, server.clone());
 		(event_loop, handle, executor, server, local_node)
 	}
 

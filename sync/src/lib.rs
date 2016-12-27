@@ -104,7 +104,7 @@ pub fn create_local_sync_node(handle: &Handle, network: Magic, db: db::SharedSto
 	let verifier_sink = Arc::new(CoreVerificationSink::new(sync_client_core.clone()));
 	let verifier = AsyncVerifier::new(chain_verifier, db.clone(), memory_pool.clone(), verifier_sink);
 	let sync_client = SynchronizationClient::new(sync_state.clone(), sync_client_core, verifier);
-	Arc::new(SyncNode::new(peers, sync_state, sync_executor, sync_client, sync_server))
+	Arc::new(SyncNode::new(network, db, memory_pool, peers, sync_state, sync_executor, sync_client, sync_server))
 }
 
 /// Create inbound synchronization connections factory for given local sync node.

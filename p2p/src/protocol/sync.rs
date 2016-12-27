@@ -13,7 +13,7 @@ pub trait LocalSyncNode : Send + Sync {
 }
 
 pub trait InboundSyncConnection : Send + Sync {
-	fn start_sync_session(&self, version: u32);
+	fn start_sync_session(&self, version: types::Version);
 	fn close_session(&self);
 	fn on_inventory(&self, message: types::Inv);
 	fn on_getdata(&self, message: types::GetData);
@@ -181,7 +181,20 @@ impl SyncProtocol {
 
 impl Protocol for SyncProtocol {
 	fn initialize(&mut self) {
-		self.inbound_connection.start_sync_session(self.context.info().version);
+		// TODO
+		use message::common;
+		let version = types::Version::V0(types::version::V0 {
+			version: self.context.info().version,
+			services: common::Services::default(),
+			timestamp: 0,
+			receiver: common::NetAddress {
+				services: common::Services::default(),
+				address: common::IpAddress::from("127.0.0.1"),
+				port: common::Port::from(0),
+			},
+		});
+
+		self.inbound_connection.start_sync_session(version);
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes) -> Result<(), Error> {
