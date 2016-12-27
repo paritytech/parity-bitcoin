@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
 use linked_hash_map::LinkedHashMap;
 use time;
-use chain::Transaction;
+use chain::IndexedTransaction;
 use primitives::hash::H256;
 
 #[derive(Debug)]
@@ -21,7 +21,7 @@ pub struct OrphanTransaction {
 	/// Time when this transaction was inserted to the pool
 	pub insertion_time: f64,
 	/// Transaction itself
-	pub transaction: Transaction,
+	pub transaction: IndexedTransaction,
 	/// Parent transactions, which are still unknown to us
 	pub unknown_parents: HashSet<H256>,
 }
@@ -47,31 +47,33 @@ impl OrphanTransactionsPool {
 	}
 
 	/// Check if pool contains this transaction
-	pub fn contains(&mut self, hash: &H256) -> bool {
+	pub fn contains(&self, hash: &H256) -> bool {
 		self.by_hash.contains_key(hash)
 	}
 
 	/// Insert orphan transaction
-	pub fn insert(&mut self, hash: H256, transaction: Transaction, unknown_parents: HashSet<H256>) {
-		assert!(!self.by_hash.contains_key(&hash));
-		assert!(unknown_parents.iter().all(|h| transaction.inputs.iter().any(|i| &i.previous_output.hash == h)));
+	pub fn insert(&mut self, transaction: IndexedTransaction, unknown_parents: HashSet<H256>) {
+		assert!(!self.by_hash.contains_key(&transaction.hash));
+		assert!(unknown_parents.iter().all(|h| transaction.raw.inputs.iter().any(|i| &i.previous_output.hash == h)));
 
 		for unknown_parent in &unknown_parents {
 			self.by_parent.entry(unknown_parent.clone())
 				.or_insert_with(HashSet::new)
-				.insert(hash.clone());
+				.insert(transaction.hash.clone());
 		}
+
+		let hash = transaction.hash.clone();
 		self.by_hash.insert(hash, OrphanTransaction::new(transaction, unknown_parents));
 	}
 
 	/// Remove all transactions, depending on this parent
-	pub fn remove_transactions_for_parent(&mut self, hash: &H256) -> Vec<(H256, Transaction)> {
+	pub fn remove_transactions_for_parent(&mut self, hash: &H256) -> Vec<IndexedTransaction> {
 		assert!(!self.by_hash.contains_key(hash));
 
 		let mut removal_queue: VecDeque<H256> = VecDeque::new();
 		removal_queue.push_back(hash.clone());
 
-		let mut removed_orphans: Vec<(H256, Transaction)> = Vec::new();
+		let mut removed_orphans: Vec<IndexedTransaction> = Vec::new();
 		while let Some(hash) = removal_queue.pop_front() {
 			// remove direct children of hash
 			let mut removed_orphans_hashes: Vec<H256> = Vec::new();
@@ -84,7 +86,7 @@ impl OrphanTransactionsPool {
 
 					if all_parents_are_known {
 						removed_orphans_hashes.push(child.clone());
-						removed_orphans.push((child.clone(), self.by_hash.remove(child).expect("checked couple of lines above").transaction));
+						removed_orphans.push(self.by_hash.remove(child).expect("checked couple of lines above").transaction);
 					}
 				}
 
@@ -99,11 +101,11 @@ impl OrphanTransactionsPool {
 	}
 
 	/// Remove transactions with given hashes + all dependent blocks
-	pub fn remove_transactions(&mut self, hashes: &[H256]) -> Vec<(H256, Transaction)> {
-		let mut removed: Vec<(H256, Transaction)> = Vec::new();
+	pub fn remove_transactions(&mut self, hashes: &[H256]) -> Vec<IndexedTransaction> {
+		let mut removed: Vec<IndexedTransaction> = Vec::new();
 		for hash in hashes {
 			if let Some(transaction) = self.by_hash.remove(hash) {
-				removed.push((hash.clone(), transaction.transaction));
+				removed.push(transaction.transaction);
 			}
 			removed.extend(self.remove_transactions_for_parent(hash));
 		}
@@ -113,7 +115,7 @@ impl OrphanTransactionsPool {
 
 impl OrphanTransaction {
 	/// Create new orphaned transaction
-	pub fn new(transaction: Transaction, unknown_parents: HashSet<H256>) -> Self {
+	pub fn new(transaction: IndexedTransaction, unknown_parents: HashSet<H256>) -> Self {
 		OrphanTransaction {
 			insertion_time: time::precise_time_s(),
 			transaction: transaction,
@@ -154,19 +156,19 @@ mod tests {
 		let t5_unknown: HashSet<H256> = chain.at(4).inputs.iter().map(|i| i.previous_output.hash.clone()).collect();
 
 		let mut pool = OrphanTransactionsPool::new();
-		pool.insert(chain.at(1).hash(), chain.at(1), t2_unknown); // t2
-		pool.insert(chain.at(2).hash(), chain.at(2), t3_unknown); // t3
-		pool.insert(chain.at(4).hash(), chain.at(4), t5_unknown); // t5
+		pool.insert(chain.at(1).into(), t2_unknown); // t2
+		pool.insert(chain.at(2).into(), t3_unknown); // t3
+		pool.insert(chain.at(4).into(), t5_unknown); // t5
 		assert_eq!(pool.len(), 3);
 
 		let removed = pool.remove_transactions_for_parent(&chain.at(0).hash());
 		assert_eq!(pool.len(), 1);
-		let removed: Vec<H256> = removed.into_iter().map(|(h, _)| h).collect();
+		let removed: Vec<H256> = removed.into_iter().map(|tx| tx.hash).collect();
 		assert_eq!(removed, vec![chain.at(1).hash(), chain.at(2).hash()]);
 
 		let removed = pool.remove_transactions_for_parent(&chain.at(3).hash());
 		assert_eq!(pool.len(), 0);
-		let removed: Vec<H256> = removed.into_iter().map(|(h, _)| h).collect();
+		let removed: Vec<H256> = removed.into_iter().map(|tx| tx.hash).collect();
 		assert_eq!(removed, vec![chain.at(4).hash()]);
 	}
 
@@ -186,20 +188,20 @@ mod tests {
 		let t7_unknown: HashSet<H256> = chain.at(6).inputs.iter().map(|i| i.previous_output.hash.clone()).collect();
 
 		let mut pool = OrphanTransactionsPool::new();
-		pool.insert(chain.at(1).hash(), chain.at(1), t2_unknown); // t2
-		pool.insert(chain.at(2).hash(), chain.at(2), t3_unknown); // t3
-		pool.insert(chain.at(4).hash(), chain.at(4), t5_unknown); // t5
-		pool.insert(chain.at(6).hash(), chain.at(6), t7_unknown); // t7
+		pool.insert(chain.at(1).into(), t2_unknown); // t2
+		pool.insert(chain.at(2).into(), t3_unknown); // t3
+		pool.insert(chain.at(4).into(), t5_unknown); // t5
+		pool.insert(chain.at(6).into(), t7_unknown); // t7
 		assert_eq!(pool.len(), 4);
 
 		let removed = pool.remove_transactions(&vec![chain.at(1).hash(), chain.at(3).hash()]);
 		assert_eq!(pool.len(), 1);
-		let removed: Vec<H256> = removed.into_iter().map(|(h, _)| h).collect();
+		let removed: Vec<H256> = removed.into_iter().map(|tx| tx.hash).collect();
 		assert_eq!(removed, vec![chain.at(1).hash(), chain.at(2).hash(), chain.at(4).hash()]);
 
 		let removed = pool.remove_transactions(&vec![chain.at(6).hash()]);
 		assert_eq!(pool.len(), 0);
-		let removed: Vec<H256> = removed.into_iter().map(|(h, _)| h).collect();
+		let removed: Vec<H256> = removed.into_iter().map(|tx| tx.hash).collect();
 		assert_eq!(removed, vec![chain.at(6).hash()]);
 	}
 }

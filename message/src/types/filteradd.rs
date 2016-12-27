@@ -3,6 +3,8 @@ use bytes::Bytes;
 use ser::{Stream, Reader};
 use {Payload, MessageResult};
 
+pub const FILTERADD_MAX_DATA_LEN: usize = 520;
+
 #[derive(Debug, PartialEq)]
 pub struct FilterAdd {
 	// TODO: check how this should be serialized

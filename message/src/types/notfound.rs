@@ -8,6 +8,14 @@ pub struct NotFound {
 	pub inventory: Vec<InventoryVector>,
 }
 
+impl NotFound {
+	pub fn with_inventory(inventory: Vec<InventoryVector>) -> Self {
+		NotFound {
+			inventory: inventory,
+		}
+	}
+}
+
 impl Payload for NotFound {
 	fn version() -> u32 {
 		0

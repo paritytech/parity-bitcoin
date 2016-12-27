@@ -15,6 +15,12 @@ pub enum Version {
 	V70001(V0, V106, V70001),
 }
 
+impl Default for Version {
+	fn default() -> Version {
+		Version::V0(V0::default())
+	}
+}
+
 impl Payload for Version {
 	fn version() -> u32 {
 		0
@@ -78,9 +84,17 @@ impl Version {
 			Version::V70001(ref s, _, _) => s.services,
 		}
 	}
+
+	pub fn relay_transactions(&self) -> bool {
+		match *self {
+			Version::V0(_) => true,
+			Version::V106(_, _) => true,
+			Version::V70001(_, _, ref v) => v.relay,
+		}
+	}
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct V0 {
 	pub version: u32,
 	pub services: Services,

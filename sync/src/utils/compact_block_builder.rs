@@ -10,7 +10,7 @@ use ser::{Stream, Serializable};
 /// Maximum size of prefilled transactions in compact block
 const MAX_COMPACT_BLOCK_PREFILLED_SIZE: usize = 10 * 1024;
 
-pub fn build_compact_block(block: IndexedBlock, prefilled_transactions_indexes: HashSet<usize>) -> BlockHeaderAndIDs {
+pub fn build_compact_block(block: &IndexedBlock, prefilled_transactions_indexes: HashSet<usize>) -> BlockHeaderAndIDs {
 	let nonce: u64 = thread_rng().gen();
 
 	let prefilled_transactions_len = prefilled_transactions_indexes.len();
@@ -19,14 +19,14 @@ pub fn build_compact_block(block: IndexedBlock, prefilled_transactions_indexes: 
 	let mut prefilled_transactions_size: usize = 0;
 
 	let (key0, key1) = short_transaction_id_keys(nonce, &block.header.raw);
-	for (transaction_index, transaction) in block.transactions.into_iter().enumerate() {
+	for (transaction_index, transaction) in block.transactions.iter().enumerate() {
 		let transaction_size = transaction.raw.serialized_size();
 		if prefilled_transactions_size + transaction_size < MAX_COMPACT_BLOCK_PREFILLED_SIZE
 			&& prefilled_transactions_indexes.contains(&transaction_index) {
 			prefilled_transactions_size += transaction_size;
 			prefilled_transactions.push(PrefilledTransaction {
 				index: transaction_index,
-				transaction: transaction.raw,
+				transaction: transaction.raw.clone(),
 			})
 		} else {
 			short_ids.push(short_transaction_id(key0, key1, &transaction.hash));
@@ -34,7 +34,7 @@ pub fn build_compact_block(block: IndexedBlock, prefilled_transactions_indexes: 
 	}
 
 	BlockHeaderAndIDs {
-		header: block.header.raw,
+		header: block.header.raw.clone(),
 		nonce: nonce,
 		short_ids: short_ids,
 		prefilled_transactions: prefilled_transactions,
@@ -99,7 +99,7 @@ mod tests {
 			.transaction().output().value(30).build().build()
 			.build(); // genesis -> block
 		let prefilled: HashSet<_> = vec![1].into_iter().collect();
-		let compact_block = build_compact_block(block.clone().into(), prefilled);
+		let compact_block = build_compact_block(&block.clone().into(), prefilled);
 		let (key0, key1) = short_transaction_id_keys(compact_block.nonce, &block.block_header);
 		let short_ids = vec![
 			short_transaction_id(key0, key1, &block.transactions[0].hash()),

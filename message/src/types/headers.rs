@@ -3,9 +3,19 @@ use chain::BlockHeader;
 use ser::{Stream, Reader, Serializable, Deserializable, CompactInteger, Error as ReaderError};
 use {Payload, MessageResult};
 
+pub const HEADERS_MAX_HEADERS_LEN: usize = 2000;
+
 #[derive(Debug, PartialEq)]
 pub struct Headers {
 	pub headers: Vec<BlockHeader>,
+}
+
+impl Headers {
+	pub fn with_headers(headers: Vec<BlockHeader>) -> Self {
+		Headers {
+			headers: headers,
+		}
+	}
 }
 
 #[derive(Debug, PartialEq)]

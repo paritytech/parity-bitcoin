@@ -25,25 +25,24 @@ extern crate ethcore_devtools as devtools;
 extern crate rand;
 extern crate network;
 
-mod best_headers_chain;
 mod blocks_writer;
-mod compact_block_builder;
-mod connection_filter;
-mod hash_queue;
 mod inbound_connection;
 mod inbound_connection_factory;
 mod local_node;
-mod orphan_blocks_pool;
-mod orphan_transactions_pool;
 mod synchronization_chain;
 mod synchronization_client;
+mod synchronization_client_core;
 mod synchronization_executor;
 mod synchronization_manager;
 mod synchronization_peers;
+mod synchronization_peers_tasks;
 mod synchronization_server;
 mod synchronization_verifier;
+mod types;
+mod utils;
 
-pub use local_node::LocalNodeRef;
+pub use types::LocalNodeRef;
+pub use types::PeersRef;
 
 use std::sync::Arc;
 use parking_lot::RwLock;
@@ -67,14 +66,25 @@ pub fn create_sync_blocks_writer(db: db::SharedStore, network: Magic, verificati
 	blocks_writer::BlocksWriter::new(db, network, verification)
 }
 
+/// Create synchronization peers
+pub fn create_sync_peers() -> PeersRef {
+	use synchronization_peers::PeersImpl;
+
+	Arc::new(PeersImpl::default())
+}
+
 /// Creates local sync node for given `db`
-pub fn create_local_sync_node(handle: &Handle, network: Magic, db: db::SharedStore) -> LocalNodeRef {
+pub fn create_local_sync_node(handle: &Handle, network: Magic, db: db::SharedStore, peers: PeersRef) -> LocalNodeRef {
+	use miner::MemoryPool;
 	use synchronization_chain::Chain as SyncChain;
 	use synchronization_executor::LocalSynchronizationTaskExecutor as SyncExecutor;
 	use local_node::LocalNode as SyncNode;
-	use synchronization_server::SynchronizationServer;
-	use synchronization_client::{SynchronizationClient, SynchronizationClientCore, CoreVerificationSink, Config as SynchronizationConfig};
+	use synchronization_server::ServerImpl;
+	use synchronization_client::SynchronizationClient;
+	use synchronization_client_core::{SynchronizationClientCore, CoreVerificationSink, Config as SynchronizationConfig};
 	use synchronization_verifier::AsyncVerifier;
+	use utils::SynchronizationState;
+	use types::SynchronizationStateRef;
 
 	let sync_client_config = SynchronizationConfig {
 		network: network,
@@ -84,20 +94,22 @@ pub fn create_local_sync_node(handle: &Handle, network: Magic, db: db::SharedSto
 		threads_num: 4,
 	};
 
-	let sync_chain = Arc::new(RwLock::new(SyncChain::new(db.clone())));
+	let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
+	let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(db.clone()));
+	let sync_chain = SyncChain::new(db.clone(), memory_pool.clone());
 	let chain_verifier = Arc::new(ChainVerifier::new(db.clone(), network));
-	let sync_executor = SyncExecutor::new(sync_chain.clone());
-	let sync_server = Arc::new(SynchronizationServer::new(sync_chain.clone(), sync_executor.clone()));
-	let sync_client_core = SynchronizationClientCore::new(sync_client_config, handle, sync_executor.clone(), sync_chain.clone(), chain_verifier.clone());
+	let sync_executor = SyncExecutor::new(peers.clone());
+	let sync_server = Arc::new(ServerImpl::new(peers.clone(), db.clone(), memory_pool.clone(), sync_executor.clone()));
+	let sync_client_core = SynchronizationClientCore::new(sync_client_config, handle, sync_state.clone(), peers.clone(), sync_executor.clone(), sync_chain, chain_verifier.clone());
 	let verifier_sink = Arc::new(CoreVerificationSink::new(sync_client_core.clone()));
-	let verifier = AsyncVerifier::new(chain_verifier, sync_chain, verifier_sink);
-	let sync_client = SynchronizationClient::new(sync_client_core, verifier);
-	Arc::new(SyncNode::new(sync_server, sync_client, sync_executor))
+	let verifier = AsyncVerifier::new(chain_verifier, db.clone(), memory_pool.clone(), verifier_sink);
+	let sync_client = SynchronizationClient::new(sync_state.clone(), sync_client_core, verifier);
+	Arc::new(SyncNode::new(network, db, memory_pool, peers, sync_state, sync_executor, sync_client, sync_server))
 }
 
 /// Create inbound synchronization connections factory for given local sync node.
-pub fn create_sync_connection_factory(local_sync_node: LocalNodeRef) -> p2p::LocalSyncNodeRef {
+pub fn create_sync_connection_factory(peers: PeersRef, local_sync_node: LocalNodeRef) -> p2p::LocalSyncNodeRef {
 	use inbound_connection_factory::InboundConnectionFactory as SyncConnectionFactory;
 
-	SyncConnectionFactory::with_local_node(local_sync_node)
+	SyncConnectionFactory::new(peers, local_sync_node).boxed()
 }

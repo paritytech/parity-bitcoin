@@ -3,6 +3,8 @@ use hash::H256;
 use ser::{Stream, Reader};
 use {Payload, MessageResult};
 
+pub const GETBLOCKS_MAX_RESPONSE_HASHES: usize = 500;
+
 #[derive(Debug, PartialEq)]
 pub struct GetBlocks {
 	pub version: u32,

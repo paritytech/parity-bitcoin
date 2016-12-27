@@ -2,7 +2,7 @@ use std::io;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub struct Port(u16);
 
 impl From<u16> for Port {

@@ -3,11 +3,23 @@ use hash::H256;
 use ser::{Stream, Reader};
 use {Payload, MessageResult};
 
+pub const GETHEADERS_MAX_RESPONSE_HEADERS: usize = 2_000;
+
 #[derive(Debug, PartialEq)]
 pub struct GetHeaders {
 	pub version: u32,
 	pub block_locator_hashes: Vec<H256>,
 	pub hash_stop: H256,
+}
+
+impl GetHeaders {
+	pub fn with_block_locator_hashes(block_locator_hashes: Vec<H256>) -> Self {
+		GetHeaders {
+			version: 0, // this field is ignored by implementations
+			block_locator_hashes: block_locator_hashes,
+			hash_stop: H256::default(),
+		}
+	}
 }
 
 impl Payload for GetHeaders {

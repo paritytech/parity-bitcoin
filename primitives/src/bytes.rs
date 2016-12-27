@@ -19,6 +19,10 @@ impl Bytes {
 	pub fn take(self) -> Vec<u8> {
 		self.0
 	}
+
+	pub fn len(&self) -> usize {
+		self.0.len()
+	}
 }
 
 impl<'a> From<&'a [u8]> for Bytes {

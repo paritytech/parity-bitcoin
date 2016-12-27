@@ -57,7 +57,7 @@ mod benchmarks {
 		let mut pool = MemoryPool::new();
 		let mut transactions = prepare_independent_transactions(iterations);
 		b.bench_n(iterations as u64, |b| b.iter(|| {
-			pool.insert_verified(transactions.pop_front().unwrap())
+			pool.insert_verified(transactions.pop_front().unwrap().into())
 		}));
 	}
 
@@ -67,10 +67,10 @@ mod benchmarks {
 		let iterations = 100usize;
 		let mut pool = MemoryPool::new();
 		let mut transactions = prepare_dependent_transactions(iterations);
-		pool.insert_verified(transactions.pop_front().unwrap());
+		pool.insert_verified(transactions.pop_front().unwrap().into());
 
 		b.bench_n(iterations as u64, |b| b.iter(|| {
-			pool.insert_verified(transactions.pop_front().unwrap())
+			pool.insert_verified(transactions.pop_front().unwrap().into())
 		}));
 	}
 
@@ -84,10 +84,10 @@ mod benchmarks {
 		let iterations = 100usize;
 		let mut pool = MemoryPool::new();
 		let mut transactions = prepare_dependent_transactions(iterations);
-		pool.insert_verified(transactions.pop_front().unwrap());
+		pool.insert_verified(transactions.pop_front().unwrap().into());
 
 		b.bench_n(iterations as u64, |b| b.iter(|| {
-			pool.insert_verified(transactions.pop_back().unwrap())
+			pool.insert_verified(transactions.pop_back().unwrap().into())
 		}));
 	}
 
@@ -97,7 +97,7 @@ mod benchmarks {
 		let iterations = 100;
 		let mut pool = MemoryPool::new();
 		for transaction in prepare_independent_transactions(iterations) {
-			pool.insert_verified(transaction)
+			pool.insert_verified(transaction.into())
 		}
 		b.bench_n(iterations as u64, |b| b.iter(|| {
 			pool.remove_with_strategy(MemoryPoolOrderingStrategy::ByTimestamp)
@@ -110,7 +110,7 @@ mod benchmarks {
 		let iterations = 100;
 		let mut pool = MemoryPool::new();
 		for transaction in prepare_dependent_transactions(iterations) {
-			pool.insert_verified(transaction)
+			pool.insert_verified(transaction.into())
 		}
 		b.bench_n(iterations as u64, |b| b.iter(|| {
 			pool.remove_with_strategy(MemoryPoolOrderingStrategy::ByTimestamp)

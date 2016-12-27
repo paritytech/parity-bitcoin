@@ -1,7 +1,7 @@
 use primitives::hash::H256;
 use ser::Serializable;
 use primitives::bytes::Bytes;
-use chain::{Transaction, TransactionInput, TransactionOutput, OutPoint};
+use chain::{Transaction, IndexedTransaction, TransactionInput, TransactionOutput, OutPoint};
 
 #[derive(Debug, Default, Clone)]
 pub struct ChainBuilder {
@@ -36,6 +36,15 @@ impl ChainBuilder {
 impl Into<Transaction> for TransactionBuilder {
 	fn into(self) -> Transaction {
 		self.transaction
+	}
+}
+
+impl Into<IndexedTransaction> for TransactionBuilder {
+	fn into(self) -> IndexedTransaction {
+		IndexedTransaction {
+			hash: self.transaction.hash(),
+			raw: self.transaction,
+		}
 	}
 }
 

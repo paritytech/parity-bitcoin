@@ -3,9 +3,19 @@ use ser::{Stream, Reader};
 use common::InventoryVector;
 use {Payload, MessageResult};
 
+pub const INV_MAX_INVENTORY_LEN: usize = 50_000;
+
 #[derive(Debug, PartialEq)]
 pub struct Inv {
 	pub inventory: Vec<InventoryVector>,
+}
+
+impl Inv {
+	pub fn with_inventory(inventory: Vec<InventoryVector>) -> Self {
+		Inv {
+			inventory: inventory,
+		}
+	}
 }
 
 impl Payload for Inv {
