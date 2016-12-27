@@ -194,7 +194,7 @@ dependencies = [
  "lru-cache 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
- "rocksdb 0.4.5 (git+https://github.com/ethcore/rust-rocksdb?branch=bloom)",
+ "rocksdb 0.4.5 (git+https://github.com/ethcore/rust-rocksdb)",
  "serialization 0.1.0",
  "test-data 0.1.0",
 ]
@@ -800,16 +800,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "rocksdb"
 version = "0.4.5"
-source = "git+https://github.com/ethcore/rust-rocksdb?branch=bloom#23533a08acaca376307824f39f224432be326244"
+source = "git+https://github.com/ethcore/rust-rocksdb#8579e896a98cdeff086392236d411dd4aa141774"
 dependencies = [
  "libc 0.2.18 (registry+https://github.com/rust-lang/crates.io-index)",
- "rocksdb-sys 0.3.0 (git+https://github.com/ethcore/rust-rocksdb?branch=bloom)",
+ "rocksdb-sys 0.3.0 (git+https://github.com/ethcore/rust-rocksdb)",
 ]
 
 [[package]]
 name = "rocksdb-sys"
 version = "0.3.0"
-source = "git+https://github.com/ethcore/rust-rocksdb?branch=bloom#23533a08acaca376307824f39f224432be326244"
+source = "git+https://github.com/ethcore/rust-rocksdb#8579e896a98cdeff086392236d411dd4aa141774"
 dependencies = [
  "gcc 0.3.40 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.18 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1305,8 +1305,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum rayon 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)" = "3b6a6e05e0e6b703e9f2ad266eb63f3712e693a17a2702b95a23de14ce8defa9"
 "checksum regex 0.1.80 (registry+https://github.com/rust-lang/crates.io-index)" = "4fd4ace6a8cf7860714a2c2280d6c1f7e6a413486c13298bbc86fd3da019402f"
 "checksum regex-syntax 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)" = "f9ec002c35e86791825ed294b50008eea9ddfc8def4420124fbc6b08db834957"
-"checksum rocksdb 0.4.5 (git+https://github.com/ethcore/rust-rocksdb?branch=bloom)" = "<none>"
-"checksum rocksdb-sys 0.3.0 (git+https://github.com/ethcore/rust-rocksdb?branch=bloom)" = "<none>"
+"checksum rocksdb 0.4.5 (git+https://github.com/ethcore/rust-rocksdb)" = "<none>"
+"checksum rocksdb-sys 0.3.0 (git+https://github.com/ethcore/rust-rocksdb)" = "<none>"
 "checksum rotor 0.6.3 (git+https://github.com/ethcore/rotor)" = "<none>"
 "checksum rust-crypto 0.2.36 (registry+https://github.com/rust-lang/crates.io-index)" = "f76d05d3993fd5f4af9434e8e436db163a12a9d40e1a58a726f27a01dfd12a2a"
 "checksum rustc-serialize 0.3.22 (registry+https://github.com/rust-lang/crates.io-index)" = "237546c689f20bb44980270c73c3b9edd0891c1be49cc1274406134a66d3957b"
