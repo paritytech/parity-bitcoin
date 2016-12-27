@@ -1,6 +1,7 @@
 use std::time::Instant;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use util::interval::{Interval, RealInterval};
 
 use message::{Command, Payload};
 use message::types::{Ping, Pong};
@@ -43,7 +44,7 @@ impl RunningAverage {
 pub enum Flow { Receive, Send }
 
 #[derive(Default, Clone)]
-pub struct PeerStats {
+pub struct PeerStats<T: Interval = RealInterval> {
 	pub last_send: u32,
 	pub last_recv: u32,
 
@@ -58,10 +59,19 @@ pub struct PeerStats {
 
 	last_ping: Option<Instant>,
 	ping_count: u64,
+
+	interval: T,
 }
 
+impl<I: Interval> PeerStats<I> {
 
-impl PeerStats {
+	pub fn with_interval(interval: I) -> PeerStats<I> {
+		PeerStats {
+			interval: interval,
+			.. PeerStats::default()
+		}
+	}
+
 	pub fn report_send(&mut self, command: Command, bytes: usize) {
 		self.total_send += bytes as u64;
 		self.last_send = ::time::get_time().sec as u32;
@@ -81,13 +91,13 @@ impl PeerStats {
 	}
 
 	fn report_ping_send(&mut self) {
-		self.last_ping = Some(Instant::now());
+		self.last_ping = Some(self.interval.now());
 		self.ping_count += 1;
 	}
 
 	fn report_pong_recv(&mut self) {
 		if let Some(last_ping) = self.last_ping {
-			let dur = last_ping.elapsed();
+			let dur = self.interval.elapsed(last_ping);
 			let update = if dur.as_secs() > 10 {
 				ENORMOUS_PING_DELAY
 			}
@@ -132,6 +142,7 @@ impl PeerStats {
 mod tests {
 
 	use super::{RunningAverage, PeerStats, Flow};
+	use util::interval::{FixedIntervalSpawner, RealInterval};
 
 	#[test]
 	fn avg() {
@@ -154,12 +165,10 @@ mod tests {
 
 	#[test]
 	fn smoky() {
-		let mut stats = PeerStats::default();
+		let mut stats = PeerStats::<FixedIntervalSpawner>::with_interval(FixedIntervalSpawner::new(50));
 		stats.report_send("ping".into(), 200);
 
 		assert_eq!(stats.send_avg[&"ping".into()].val(), 200);
-
-		::std::thread::sleep(::std::time::Duration::from_millis(50));
 
 		stats.report_recv("pong".into(), 50);
 		assert!(stats.avg_ping > 0.03);
@@ -168,13 +177,13 @@ mod tests {
 
 	#[test]
 	fn avg_t() {
-		let mut stats = PeerStats::default();
+		let mut stats = PeerStats::<RealInterval>::default();
 		stats.report_send("inv".into(), 200);
 		stats.report_send("inv".into(), 300);
 
 		assert_eq!(stats.avg(Flow::Send, "inv"), 250);
 
-		let mut stats = PeerStats::default();
+		let mut stats = PeerStats::<RealInterval>::default();
 		stats.report_recv("inv".into(), 2000);
 		stats.report_recv("inv".into(), 3000);
 
