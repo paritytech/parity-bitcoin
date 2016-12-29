@@ -3,6 +3,7 @@ use parking_lot::RwLock;
 use storage::Storage;
 use transaction_meta::TransactionMeta;
 use std::collections::{HashMap, HashSet};
+use std::collections::hash_map::Entry;
 use linked_hash_map::LinkedHashMap;
 use chain::{IndexedBlock, IndexedTransaction};
 use block_stapler::BlockInsertedChain;
@@ -23,6 +24,13 @@ pub type PreparedTransactions = HashMap<H256, TransactionParentLocation>;
 pub struct PreparedBlock {
 	block: IndexedBlock,
 	transactions: PreparedTransactions,
+	waits_on: HashSet<H256>,
+}
+
+impl PreparedBlock {
+	fn ready(&self) -> bool {
+		self.waits_on.len() == 0
+	}
 }
 
 pub struct VerifiedBlock {
@@ -57,6 +65,14 @@ struct BlockQueueSummary {
 	added: usize,
 	unverified: usize,
 	verified: usize,
+}
+
+struct DummyError;
+
+pub trait Verifier {
+	type Error;
+
+	fn verify(&self, block: &IndexedBlock) -> Result<(), Self::Error>;
 }
 
 impl BlockQueue {
@@ -101,13 +117,16 @@ impl BlockQueue {
 		};
 
 		let mut prepared_txes = PreparedTransactions::new();
+		let mut waits = HashSet::new();
 
 		for block_tx in block.transactions.iter() {
 			for input in block_tx.raw.inputs.iter().skip(1) {
 				let parent_tx_hash = &input.previous_output.hash;
 
+
 				if let Some(block_locator) = self.pending_transactions.read().get(parent_tx_hash) {
 					prepared_txes.insert(parent_tx_hash.clone(), TransactionParentLocation::PendingUpstream(block_locator.clone()));
+					waits.insert(block_locator.clone());
 				} else if let Some(block_locator) = self.verified_transactions.read().get(parent_tx_hash) {
 					prepared_txes.insert(parent_tx_hash.clone(), TransactionParentLocation::Upstream(block_locator.clone()));
 				} else {
@@ -136,8 +155,65 @@ impl BlockQueue {
 				PreparedBlock {
 					block: block,
 					transactions: prepared_txes,
+					waits_on: waits,
 				}
 			);
+		}
+
+		TaskResult::Ok
+	}
+
+	pub fn verify<V>(&self, verifier: &V) -> TaskResult where V: Verifier {
+		// will return first block that is ready to verify
+		let mut block = {
+			let mut unverified = self.unverified.write();
+			let mut processing = self.processing.write();
+
+			let mut ready_hash: Option<H256> = None;
+			for (hash, block) in unverified.iter() {
+				if block.ready() {
+					ready_hash = Some(hash.clone());
+				}
+			}
+
+			match ready_hash {
+				None => { return TaskResult::Wait; }
+				Some(hash) => {
+					let block = unverified.remove(&hash).expect("We just located it above with lock is still on");
+					processing.insert(hash);
+					block
+				}
+			}
+		};
+
+		match verifier.verify(&block.block) {
+			Ok(_) => {
+				// todo: chain notify
+				{
+					let verified_block = &block.block;
+					let verified_hash = block.block.hash();
+
+					let mut pending_txes = self.pending_transactions.write();
+					let mut verified_txes = self.verified_transactions.write();
+					let mut unverified = self.verified.write();
+
+					// kick pending blocks to proceed
+					for (hash, mut block) in unverified.iter_mut() {
+						block.waits_on.remove(verified_hash);
+					}
+
+					// move transactions from pending to verified
+					for tx in verified_block.transactions.iter() {
+						if let Entry::Occupied(entry) = pending_txes.entry(tx.hash.clone()) {
+							let (key, val) = entry.remove_entry();
+							verified_txes.insert(key, val);
+						}
+					}
+				}
+			},
+			Err(_) => {
+				// todo: chain notify
+			}
 		}
 
 		TaskResult::Ok
