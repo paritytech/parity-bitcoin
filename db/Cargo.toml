@@ -16,6 +16,7 @@ test-data = { path = "../test-data" }
 bit-vec = "0.4"
 log = "0.3"
 lru-cache = "0.1.0"
+linked-hash-map = "0.3.0"
 
 [features]
 dev = []
