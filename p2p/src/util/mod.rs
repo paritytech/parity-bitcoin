@@ -1,5 +1,6 @@
 pub mod nonce;
 pub mod time;
+pub mod interval;
 mod internet_protocol;
 mod node_table;
 mod peer;
