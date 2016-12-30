@@ -47,3 +47,9 @@ impl Clone for SharedTcpStream {
 		SharedTcpStream::new(self.io.clone())
 	}
 }
+
+impl Drop for SharedTcpStream {
+	fn drop(&mut self) {
+		trace!("Dropping shared tcp stream");
+	}
+}

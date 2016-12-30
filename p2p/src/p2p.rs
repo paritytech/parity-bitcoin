@@ -1,4 +1,4 @@
-use std::{io, net, error, time};
+use std::{io, net, error, time, fmt};
 use std::sync::Arc;
 use std::net::SocketAddr;
 use parking_lot::RwLock;
@@ -56,10 +56,15 @@ impl Context {
 	}
 
 	/// Spawns a future using thread pool and schedules execution of it with event loop handle.
-	pub fn spawn<F>(&self, f: F) where F: Future + Send + 'static, F::Item: Send + 'static, F::Error: Send + 'static {
+	pub fn spawn<F>(&self, f: F) where F: Future + Send + 'static, F::Item: Send + 'static, F::Error: Send + fmt::Debug + 'static {
 		let pool_work = self.pool.spawn(f);
 		self.remote.spawn(move |_handle| {
-			pool_work.then(|_| finished(()))
+			pool_work.then(|res| {
+				if let Err(err) = res {
+					error!("Failed to spawn with error: {:?}", err);
+				}
+				finished(())
+			})
 		})
 	}
 
@@ -136,7 +141,13 @@ impl Context {
 				Ok(())
 			})
 			.for_each(|_| Ok(()))
-			.then(|_| finished(()))
+			.then(|res| {
+				match res {
+					Err(err) => error!("Stopped autoconnecting with error: {:?}", err),
+					_ => info!("Stopped autoconnecting"),
+				}
+				finished(())
+			})
 			.boxed();
 		c.spawn(interval);
 	}
@@ -159,7 +170,7 @@ impl Context {
 				},
 				Ok(DeadlineStatus::Meet(Err(_))) => {
 					// protocol error
-					trace!("Handshake with {} failed", socket);
+					error!("Handshake with {} failed", socket);
 					// TODO: close socket
 					context.node_table.write().note_failure(&socket);
 					context.connection_counter.note_close_outbound_connection();
@@ -167,7 +178,7 @@ impl Context {
 				},
 				Ok(DeadlineStatus::Timeout) => {
 					// connection time out
-					trace!("Handshake with {} timed out", socket);
+					error!("Handshake with {} timed out", socket);
 					// TODO: close socket
 					context.node_table.write().note_failure(&socket);
 					context.connection_counter.note_close_outbound_connection();
@@ -175,7 +186,7 @@ impl Context {
 				},
 				Err(_) => {
 					// network error
-					trace!("Unable to connect to {}", socket);
+					error!("Unable to connect to {}", socket);
 					context.node_table.write().note_failure(&socket);
 					context.connection_counter.note_close_outbound_connection();
 					finished(Ok(())).boxed()
@@ -214,7 +225,7 @@ impl Context {
 				},
 				Ok(DeadlineStatus::Meet(Err(err))) => {
 					// protocol error
-					trace!("Accepting handshake from {} failed with error: {}", socket, err);
+					error!("Accepting handshake from {} failed with error: {}", socket, err);
 					// TODO: close socket
 					context.node_table.write().note_failure(&socket);
 					context.connection_counter.note_close_inbound_connection();
@@ -222,7 +233,7 @@ impl Context {
 				},
 				Ok(DeadlineStatus::Timeout) => {
 					// connection time out
-					trace!("Accepting handshake from {} timed out", socket);
+					error!("Accepting handshake from {} timed out", socket);
 					// TODO: close socket
 					context.node_table.write().note_failure(&socket);
 					context.connection_counter.note_close_inbound_connection();
@@ -230,7 +241,7 @@ impl Context {
 				},
 				Err(_) => {
 					// network error
-					trace!("Accepting handshake from {} failed with network error", socket);
+					error!("Accepting handshake from {} failed with network error", socket);
 					context.node_table.write().note_failure(&socket);
 					context.connection_counter.note_close_inbound_connection();
 					finished(Ok(())).boxed()
@@ -266,7 +277,13 @@ impl Context {
 				Ok(())
 			})
 			.for_each(|_| Ok(()))
-			.then(|_| finished(()))
+			.then(|res| {
+				match res {
+					Err(err) => error!("Stopped accepting connections with error: {:?}", err),
+					_ => info!("Stopped accepting connections"),
+				}
+				finished(())
+			})
 			.boxed();
 		Ok(server)
 	}
