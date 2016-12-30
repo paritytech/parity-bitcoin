@@ -10,17 +10,6 @@ use block_stapler::BlockInsertedChain;
 use transaction_provider::TransactionProvider;
 use transaction_meta_provider::TransactionMetaProvider;
 
-pub enum TransactionParentLocation {
-	// Parent transaction is in the same block as current transaction or in database
-	DatabaseOrSameBlock,
-	// Parent transaction is in the one of the block upper in queue
-	Upstream(H256),
-	// Parent transaction is in the one of the block upper in queue and is verified
-	PendingUpstream(H256),
-}
-
-pub type PreparedTransactions = HashMap<H256, TransactionParentLocation>;
-
 pub struct PreparedBlock {
 	block: IndexedBlock,
 	waits_on: HashSet<H256>,
@@ -56,6 +45,18 @@ impl PreparedBlock {
 
 	fn depends_mut(&mut self) -> &mut HashSet<H256> {
 		&mut self.depends_on
+	}
+}
+
+pub trait DependencyDenote {
+	fn denote_transaction(&self, hash: &H256);
+}
+
+impl<T> DependencyDenote for T where T: TransactionProvider + TransactionMetaProvider {
+	fn denote_transaction(&self, hash: &H256)  {
+		// this should put transacion and meta in the lru cache
+		self.transaction(hash);
+		self.transaction_meta(hash);
 	}
 }
 
@@ -119,7 +120,7 @@ impl BlockQueue {
 	}
 
 	// converts added indexed block into block prepared for verification
-	pub fn fetch(&self, db: &Storage) -> TaskResult {
+	pub fn fetch(&self, dependencies: &DependencyDenote) -> TaskResult {
 		let mut block: PreparedBlock = {
 			let mut added_lock = self.added.write();
 			let mut processing_lock = self.processing.write();
@@ -144,11 +145,9 @@ impl BlockQueue {
 				} else if let Some(block_locator) = self.verified_transactions.read().get(parent_tx_hash) {
 					depends.insert(block_locator.clone());
 				} else {
-					// this will put transaction parent and meta in lru cache
 					// todo: maybe use local cache
 					// todo: maybe scan block first (depends on how often transactions reference parents in the same block)
-					db.transaction(parent_tx_hash);
-					db.transaction_meta(parent_tx_hash);
+					dependencies.denote_transaction(parent_tx_hash);
 				}
 			}
 		}
@@ -206,6 +205,7 @@ impl BlockQueue {
 					let mut pending_txes = self.pending_transactions.write();
 					let mut verified_txes = self.verified_transactions.write();
 					let mut unverified = self.unverified.write();
+					let mut processing = self.processing.write();
 					let mut verified = self.verified.write();
 
 					// kick pending blocks to proceed
@@ -222,12 +222,26 @@ impl BlockQueue {
 							verified_txes.insert(key, val);
 						}
 					}
+					processing.remove(&verified_hash);
 
 					verified.insert(verified_hash, block);
 				}
 			},
 			Err(_) => {
 				// todo: chain notify
+
+				let mut pending_txes = self.pending_transactions.write();
+				let mut processing = self.processing.write();
+				let mut invalid = self.invalid.write();
+
+				// remove transactions from pending
+				for tx in block.raw().transactions.iter() {
+					pending_txes.remove(&tx.hash);
+				}
+
+				processing.remove(block.raw().hash());
+
+				invalid.insert(block.raw().hash().clone());
 			}
 		}
 
@@ -243,7 +257,7 @@ mod tests {
 	use devtools::RandomTempPath;
 	use test_data;
 	use chain::IndexedBlock;
-	use block_stapler::{BlockStapler, BlockInsertedChain};
+	use block_stapler::BlockStapler;
 
 	struct DummyError;
 	struct FacileVerifier;
@@ -251,7 +265,7 @@ mod tests {
 	impl VerifyBlock for FacileVerifier {
 		type Error = DummyError;
 
-		fn verify(&self, block: &IndexedBlock) -> Result<(), DummyError> {
+		fn verify(&self, _block: &IndexedBlock) -> Result<(), DummyError> {
 			Ok(())
 		}
 	}
@@ -289,7 +303,7 @@ mod tests {
 		let genesis_hash = genesis.hash();
 		let genesis_coinbase = genesis.transactions()[0].hash();
 
-		let b1: IndexedBlock  = test_data::block_builder()
+		let b1: IndexedBlock = test_data::block_builder()
 			.transaction()
 				.coinbase()
 				.output().value(1).build()
@@ -298,7 +312,7 @@ mod tests {
 				.input().hash(genesis_coinbase).build()
 				.output().build()
 				.build()
-			.merkled_header().build()
+			.merkled_header().parent(genesis_hash).build()
 			.build()
 			.into();
 
@@ -311,6 +325,92 @@ mod tests {
 		assert_eq!(queue.summary().verified, 1);
 		assert_eq!(queue.summary().unverified, 0);
 		assert_eq!(queue.summary().added, 0);
+	}
+
+	#[test]
+	fn fetch_tx_overlay() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_hash = genesis.hash();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+
+		let b1: IndexedBlock = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(1).build()
+				.build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().build()
+				.build()
+			.merkled_header().parent(genesis_hash).build()
+			.build()
+			.into();
+
+		let queue = BlockQueue::new();
+		queue.push(b1);
+		queue.fetch(&store);
+
+		// coinbase + one regular transaction
+		assert_eq!(queue.pending_transactions.read().len(), 2);
+	}
+
+
+	#[test]
+	fn dependant_block() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_hash = genesis.hash();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let b1: IndexedBlock = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(1).build()
+				.build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().build()
+				.build()
+			.merkled_header().parent(genesis_hash).build()
+			.build()
+			.into();
+		let unspent_tx = b1.transactions[1].hash.clone();
+		let test_hash_original = b1.hash().clone();
+
+		let b2: IndexedBlock = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(5).build()
+				.build()
+			.transaction()
+				.input().hash(unspent_tx).build()
+				.output().build()
+				.build()
+			.merkled_header().parent(b1.hash().clone()).build()
+			.build()
+			.into();
+		let test_hash = b2.hash().clone();
+
+		let queue = BlockQueue::new();
+		queue.push(b1);
+		queue.push(b2);
+		queue.fetch(&store);
+		queue.fetch(&store);
+
+		assert!(
+			queue.unverified.read().get(&test_hash)
+				.expect("There should be b2 in unverified list")
+				.waits_on
+				.contains(&test_hash_original)
+		);
 	}
 
 }
