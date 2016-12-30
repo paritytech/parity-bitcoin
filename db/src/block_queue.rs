@@ -23,40 +23,40 @@ pub type PreparedTransactions = HashMap<H256, TransactionParentLocation>;
 
 pub struct PreparedBlock {
 	block: IndexedBlock,
-	transactions: PreparedTransactions,
 	waits_on: HashSet<H256>,
+	depends_on: HashSet<H256>,
+}
+
+impl From<IndexedBlock> for PreparedBlock {
+	fn from(block: IndexedBlock) -> Self {
+		PreparedBlock {
+			block: block,
+			waits_on: HashSet::with_capacity(0), // much of the cases unused
+			depends_on: HashSet::with_capacity(0), // much of the cases unused
+		}
+	}
 }
 
 impl PreparedBlock {
 	fn ready(&self) -> bool {
 		self.waits_on.len() == 0
 	}
-}
 
-pub struct BlockInsertedChainHeight {
-	chain: BlockInsertedChain,
-	height: u32,
-}
-
-pub struct VerifiedBlock {
-	block: IndexedBlock,
-	location: BlockInsertedChainHeight,
-}
-
-pub struct VerificationArtifacts {
-	block_location: BlockInsertedChainHeight,
-	meta_update: HashMap<H256, MetaEntry>,
-}
-
-impl VerifiedBlock {
-	pub fn new(block: IndexedBlock, location: BlockInsertedChainHeight) -> Self {
-		VerifiedBlock { block: block, location: location }
+	fn valid(&self) -> bool {
+		self.ready() && self.depends_on.len() == 0
 	}
-}
 
-pub enum MetaEntry {
-	Updated(TransactionMeta),
-	Removed,
+	fn raw(&self) -> &IndexedBlock {
+		&self.block
+	}
+
+	fn waits_mut(&mut self) -> &mut HashSet<H256> {
+		&mut self.waits_on
+	}
+
+	fn depends_mut(&mut self) -> &mut HashSet<H256> {
+		&mut self.depends_on
+	}
 }
 
 // locks are aquired in the order in the struct
@@ -65,16 +65,14 @@ pub struct BlockQueue {
 	pending_transactions: RwLock<HashMap<H256, H256>>,
 	// location of transactions which are in verified blocks, with the block hash locator
 	verified_transactions: RwLock<HashMap<H256, H256>>,
-	// unspent overlay with updates caused by verified blocks
-	meta_overlay: RwLock<HashMap<H256, MetaEntry>>,
-	// inserted blocks
+	// pushed blocks
 	added: RwLock<LinkedHashMap<H256, IndexedBlock>>,
 	// blocks prepared for verification
 	unverified: RwLock<LinkedHashMap<H256, PreparedBlock>>,
 	// in process
 	processing: RwLock<HashSet<H256>>,
 	// verified blocks
-	verified: RwLock<LinkedHashMap<H256, VerifiedBlock>>,
+	verified: RwLock<LinkedHashMap<H256, PreparedBlock>>,
 	// invalid blocks
 	invalid: RwLock<HashSet<H256>>,
 }
@@ -90,7 +88,7 @@ pub struct BlockQueueSummary {
 pub trait VerifyBlock {
 	type Error;
 
-	fn verify(&self, block: &IndexedBlock) -> Result<VerificationArtifacts, Self::Error>;
+	fn verify(&self, block: &IndexedBlock) -> Result<(), Self::Error>;
 }
 
 impl BlockQueue {
@@ -100,7 +98,6 @@ impl BlockQueue {
 		BlockQueue {
 			pending_transactions: Default::default(),
 			verified_transactions: Default::default(),
-			meta_overlay: Default::default(),
 			added: Default::default(),
 			unverified: Default::default(),
 			processing: Default::default(),
@@ -123,7 +120,7 @@ impl BlockQueue {
 
 	// converts added indexed block into block prepared for verification
 	pub fn fetch(&self, db: &Storage) -> TaskResult {
-		let block: IndexedBlock = {
+		let mut block: PreparedBlock = {
 			let mut added_lock = self.added.write();
 			let mut processing_lock = self.processing.write();
 			let (hash, block) = match added_lock.pop_front() {
@@ -132,50 +129,44 @@ impl BlockQueue {
 			};
 			processing_lock.insert(hash);
 			block
-		};
+		}.into();
 
-		let mut prepared_txes = PreparedTransactions::new();
-		let mut waits = HashSet::new();
+		// many of the cases won't use it, so by default it does not allocate anything
+		let mut waits = HashSet::with_capacity(0);
+		let mut depends = HashSet::with_capacity(0);
 
-		for block_tx in block.transactions.iter() {
+		for block_tx in block.raw().transactions.iter() {
 			for input in block_tx.raw.inputs.iter().skip(1) {
 				let parent_tx_hash = &input.previous_output.hash;
 
-
 				if let Some(block_locator) = self.pending_transactions.read().get(parent_tx_hash) {
-					prepared_txes.insert(parent_tx_hash.clone(), TransactionParentLocation::PendingUpstream(block_locator.clone()));
 					waits.insert(block_locator.clone());
 				} else if let Some(block_locator) = self.verified_transactions.read().get(parent_tx_hash) {
-					prepared_txes.insert(parent_tx_hash.clone(), TransactionParentLocation::Upstream(block_locator.clone()));
+					depends.insert(block_locator.clone());
 				} else {
 					// this will put transaction parent and meta in lru cache
 					// todo: maybe use local cache
 					// todo: maybe scan block first (depends on how often transactions reference parents in the same block)
 					db.transaction(parent_tx_hash);
 					db.transaction_meta(parent_tx_hash);
-
-					prepared_txes.insert(parent_tx_hash.clone(), TransactionParentLocation::DatabaseOrSameBlock);
 				}
 			}
 		}
+
+		*block.waits_mut() = waits;
+		*block.depends_mut() = depends;
 
 		{
 			let mut unverified = self.unverified.write();
 			let mut processing = self.processing.write();
 			let mut pending_txes = self.pending_transactions.write();
 
-			for tx in block.transactions.iter() {
-				pending_txes.insert(tx.hash.clone(), block.hash().clone());
+			for tx in block.raw().transactions.iter() {
+				pending_txes.insert(tx.hash.clone(), block.raw().hash().clone());
 			}
 
-			processing.remove(block.hash());
-			unverified.insert(block.hash().clone(),
-				PreparedBlock {
-					block: block,
-					transactions: prepared_txes,
-					waits_on: waits,
-				}
-			);
+			processing.remove(block.raw().hash());
+			unverified.insert(block.raw().hash().clone(), block);
 		}
 
 		TaskResult::Ok
@@ -189,6 +180,8 @@ impl BlockQueue {
 
 			let mut ready_hash: Option<H256> = None;
 			for (hash, block) in unverified.iter() {
+				// check if block dependencies are fetched and if it has
+				// verified or known parent
 				if block.ready() {
 					ready_hash = Some(hash.clone());
 				}
@@ -205,11 +198,10 @@ impl BlockQueue {
 		};
 
 		match verifier.verify(&block.block) {
-			Ok(artifacts) => {
+			Ok(_) => {
 				// todo: chain notify
 				{
-					let verified_hash = block.block.hash().clone();
-					let verified_block = block.block;
+					let verified_hash = block.raw().hash().clone();
 
 					let mut pending_txes = self.pending_transactions.write();
 					let mut verified_txes = self.verified_transactions.write();
@@ -218,19 +210,20 @@ impl BlockQueue {
 
 					// kick pending blocks to proceed
 					for (_, mut block) in unverified.iter_mut() {
-						block.waits_on.remove(&verified_hash);
+						if block.waits_mut().remove(&verified_hash) {
+							block.depends_mut().insert(verified_hash.clone());
+						}
 					}
 
 					// move transactions from pending to verified
-					for tx in verified_block.transactions.iter() {
+					for tx in block.raw().transactions.iter() {
 						if let Entry::Occupied(entry) = pending_txes.entry(tx.hash.clone()) {
 							let (key, val) = entry.remove_entry();
 							verified_txes.insert(key, val);
 						}
 					}
 
-					verified.insert(verified_hash,
-						VerifiedBlock::new(verified_block, artifacts.block_location));
+					verified.insert(verified_hash, block);
 				}
 			},
 			Err(_) => {
@@ -245,7 +238,7 @@ impl BlockQueue {
 #[cfg(test)]
 mod tests {
 
-	use super::{BlockQueue, VerifyBlock, BlockInsertedChainHeight, VerificationArtifacts};
+	use super::{BlockQueue, VerifyBlock};
 	use storage::Storage;
 	use devtools::RandomTempPath;
 	use test_data;
@@ -258,15 +251,8 @@ mod tests {
 	impl VerifyBlock for FacileVerifier {
 		type Error = DummyError;
 
-		fn verify(&self, block: &IndexedBlock) -> Result<VerificationArtifacts, DummyError> {
-			Ok(
-				VerificationArtifacts {
-					block_location: BlockInsertedChainHeight {
-						chain: BlockInsertedChain::Main, height: 1
-					},
-					meta_update: Default::default(),
-				}
-			)
+		fn verify(&self, block: &IndexedBlock) -> Result<(), DummyError> {
+			Ok(())
 		}
 	}
 
