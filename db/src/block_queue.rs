@@ -33,10 +33,30 @@ impl PreparedBlock {
 	}
 }
 
+pub struct BlockInsertedChainHeight {
+	chain: BlockInsertedChain,
+	height: u32,
+}
+
 pub struct VerifiedBlock {
 	block: IndexedBlock,
-	transactions: PreparedTransactions,
-	location: BlockInsertedChain,
+	location: BlockInsertedChainHeight,
+}
+
+pub struct VerificationArtifacts {
+	block_location: BlockInsertedChainHeight,
+	meta_update: HashMap<H256, MetaEntry>,
+}
+
+impl VerifiedBlock {
+	pub fn new(block: IndexedBlock, location: BlockInsertedChainHeight) -> Self {
+		VerifiedBlock { block: block, location: location }
+	}
+}
+
+pub enum MetaEntry {
+	Updated(TransactionMeta),
+	Removed,
 }
 
 // locks are aquired in the order in the struct
@@ -46,7 +66,7 @@ pub struct BlockQueue {
 	// location of transactions which are in verified blocks, with the block hash locator
 	verified_transactions: RwLock<HashMap<H256, H256>>,
 	// unspent overlay with updates caused by verified blocks
-	unspent_overlay: RwLock<HashMap<H256, TransactionMeta>>,
+	meta_overlay: RwLock<HashMap<H256, MetaEntry>>,
 	// inserted blocks
 	added: RwLock<LinkedHashMap<H256, IndexedBlock>>,
 	// blocks prepared for verification
@@ -54,25 +74,23 @@ pub struct BlockQueue {
 	// in process
 	processing: RwLock<HashSet<H256>>,
 	// verified blocks
-	verified: RwLock<LinkedHashMap<H256, PreparedBlock>>,
+	verified: RwLock<LinkedHashMap<H256, VerifiedBlock>>,
 	// invalid blocks
 	invalid: RwLock<HashSet<H256>>,
 }
 
-enum TaskResult { Ok, Wait }
+pub enum TaskResult { Ok, Wait }
 
-struct BlockQueueSummary {
+pub struct BlockQueueSummary {
 	added: usize,
 	unverified: usize,
 	verified: usize,
 }
 
-struct DummyError;
-
-pub trait Verifier {
+pub trait VerifyBlock {
 	type Error;
 
-	fn verify(&self, block: &IndexedBlock) -> Result<(), Self::Error>;
+	fn verify(&self, block: &IndexedBlock) -> Result<VerificationArtifacts, Self::Error>;
 }
 
 impl BlockQueue {
@@ -82,7 +100,7 @@ impl BlockQueue {
 		BlockQueue {
 			pending_transactions: Default::default(),
 			verified_transactions: Default::default(),
-			unspent_overlay: Default::default(),
+			meta_overlay: Default::default(),
 			added: Default::default(),
 			unverified: Default::default(),
 			processing: Default::default(),
@@ -163,9 +181,9 @@ impl BlockQueue {
 		TaskResult::Ok
 	}
 
-	pub fn verify<V>(&self, verifier: &V) -> TaskResult where V: Verifier {
+	pub fn verify<V>(&self, verifier: &V) -> TaskResult where V: VerifyBlock {
 		// will return first block that is ready to verify
-		let mut block = {
+		let block = {
 			let mut unverified = self.unverified.write();
 			let mut processing = self.processing.write();
 
@@ -187,19 +205,20 @@ impl BlockQueue {
 		};
 
 		match verifier.verify(&block.block) {
-			Ok(_) => {
+			Ok(artifacts) => {
 				// todo: chain notify
 				{
-					let verified_block = &block.block;
-					let verified_hash = block.block.hash();
+					let verified_hash = block.block.hash().clone();
+					let verified_block = block.block;
 
 					let mut pending_txes = self.pending_transactions.write();
 					let mut verified_txes = self.verified_transactions.write();
-					let mut unverified = self.verified.write();
+					let mut unverified = self.unverified.write();
+					let mut verified = self.verified.write();
 
 					// kick pending blocks to proceed
-					for (hash, mut block) in unverified.iter_mut() {
-						block.waits_on.remove(verified_hash);
+					for (_, mut block) in unverified.iter_mut() {
+						block.waits_on.remove(&verified_hash);
 					}
 
 					// move transactions from pending to verified
@@ -209,6 +228,9 @@ impl BlockQueue {
 							verified_txes.insert(key, val);
 						}
 					}
+
+					verified.insert(verified_hash,
+						VerifiedBlock::new(verified_block, artifacts.block_location));
 				}
 			},
 			Err(_) => {
@@ -223,10 +245,30 @@ impl BlockQueue {
 #[cfg(test)]
 mod tests {
 
-	use super::BlockQueue;
+	use super::{BlockQueue, VerifyBlock, BlockInsertedChainHeight, VerificationArtifacts};
 	use storage::Storage;
 	use devtools::RandomTempPath;
 	use test_data;
+	use chain::IndexedBlock;
+	use block_stapler::{BlockStapler, BlockInsertedChain};
+
+	struct DummyError;
+	struct FacileVerifier;
+
+	impl VerifyBlock for FacileVerifier {
+		type Error = DummyError;
+
+		fn verify(&self, block: &IndexedBlock) -> Result<VerificationArtifacts, DummyError> {
+			Ok(
+				VerificationArtifacts {
+					block_location: BlockInsertedChainHeight {
+						chain: BlockInsertedChain::Main, height: 1
+					},
+					meta_update: Default::default(),
+				}
+			)
+		}
+	}
 
 	#[test]
 	fn push() {
@@ -250,4 +292,39 @@ mod tests {
 		assert_eq!(queue.summary().unverified, 1);
 		assert_eq!(queue.summary().added, 0);
 	}
+
+	#[test]
+	fn verify() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_hash = genesis.hash();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let b1: IndexedBlock  = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(1).build()
+				.build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().build()
+				.build()
+			.merkled_header().build()
+			.build()
+			.into();
+
+		let queue = BlockQueue::new();
+		queue.push(b1);
+		queue.fetch(&store);
+
+		queue.verify(&FacileVerifier);
+
+		assert_eq!(queue.summary().verified, 1);
+		assert_eq!(queue.summary().unverified, 0);
+		assert_eq!(queue.summary().added, 0);
+	}
+
 }
