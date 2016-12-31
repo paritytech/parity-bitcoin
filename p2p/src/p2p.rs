@@ -158,7 +158,8 @@ impl Context {
 		let connection = connect(&socket, handle, config);
 		connection.then(move |result| {
 			match result {
-				Ok(DeadlineStatus::Meet(Ok(connection))) => {
+				//Ok(DeadlineStatus::Meet(Ok(connection))) => {
+				Ok(Ok(connection)) => {
 					// successfull hanshake
 					trace!("Connected to {}", connection.address);
 					context.node_table.write().insert(connection.address, connection.services);
@@ -168,7 +169,8 @@ impl Context {
 					channel.session().initialize();
 					Context::on_message(context, channel)
 				},
-				Ok(DeadlineStatus::Meet(Err(_))) => {
+				//Ok(DeadlineStatus::Meet(Err(_))) => {
+				Ok(Err(_)) => {
 					// protocol error
 					error!("Handshake with {} failed", socket);
 					// TODO: close socket
@@ -176,14 +178,14 @@ impl Context {
 					context.connection_counter.note_close_outbound_connection();
 					finished(Ok(())).boxed()
 				},
-				Ok(DeadlineStatus::Timeout) => {
-					// connection time out
-					error!("Handshake with {} timed out", socket);
-					// TODO: close socket
-					context.node_table.write().note_failure(&socket);
-					context.connection_counter.note_close_outbound_connection();
-					finished(Ok(())).boxed()
-				},
+				//Ok(DeadlineStatus::Timeout) => {
+					//// connection time out
+					//error!("Handshake with {} timed out", socket);
+					//// TODO: close socket
+					//context.node_table.write().note_failure(&socket);
+					//context.connection_counter.note_close_outbound_connection();
+					//finished(Ok(())).boxed()
+				//},
 				Err(_) => {
 					// network error
 					error!("Unable to connect to {}", socket);
