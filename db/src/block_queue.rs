@@ -157,9 +157,9 @@ impl BlockQueue {
 		*block.depends_mut() = depends;
 
 		{
+			let mut pending_txes = self.pending_transactions.write();
 			let mut unverified = self.unverified.write();
 			let mut processing = self.processing.write();
-			let mut pending_txes = self.pending_transactions.write();
 
 			for tx in block.raw().transactions.iter() {
 				pending_txes.insert(tx.hash.clone(), block.raw().hash().clone());
@@ -280,6 +280,7 @@ mod tests {
 		assert_eq!(queue.summary().added, 1);
 	}
 
+	/// Fetching moves the block from `added` line to `unverified`,
 	#[test]
 	fn fetch() {
 
@@ -294,6 +295,8 @@ mod tests {
 		assert_eq!(queue.summary().added, 0);
 	}
 
+	/// Verification moves the block from `unverified` line to `verified`
+	/// if provided verifier returns Ok(_)
 	#[test]
 	fn verify() {
 		let path = RandomTempPath::create_dir();
@@ -328,6 +331,8 @@ mod tests {
 		assert_eq!(queue.summary().added, 0);
 	}
 
+	/// Once block is fetched, all it transactions should be put in `pending_transactions`
+	/// So that next blocks are aware that upstream blocks may contain transaction they spend
 	#[test]
 	fn fetch_tx_overlay() {
 		let path = RandomTempPath::create_dir();
@@ -360,7 +365,45 @@ mod tests {
 		assert_eq!(queue.pending_transactions.read().len(), 2);
 	}
 
+	/// Once block is verified, all it transactions should be moved from `pending_transactions`
+	/// to `verified_transactions`, so that next blocks are aware that upstream blocks may contain
+	/// transaction they spend and they are verified
+	#[test]
+	fn verify_tx_overlay() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
 
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_hash = genesis.hash();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+
+		let b1: IndexedBlock = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(1).build()
+				.build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().build()
+				.build()
+			.merkled_header().parent(genesis_hash).build()
+			.build()
+			.into();
+
+		let queue = BlockQueue::new();
+		queue.push(b1);
+		queue.fetch(&store);
+		queue.verify(&FacileVerifier);
+
+		// 2 transactions of b1
+		assert_eq!(queue.verified_transactions.read().len(), 2);
+	}
+
+	/// If fetching the block which reference transaction in the block not yet processed,
+	/// it is marked as waiting on that latter block
+	/// It will not get started to verify until master block is made it to the `verified`
 	#[test]
 	fn dependant_block() {
 		let path = RandomTempPath::create_dir();
@@ -410,6 +453,63 @@ mod tests {
 			queue.unverified.read().get(&test_hash)
 				.expect("There should be b2 in unverified list")
 				.waits_on
+				.contains(&test_hash_original)
+		);
+	}
+
+	/// Once block, that is current dependant on, verified, current block is no longer waits for it
+	/// but still depends on it since it will become invalid on insertion, the current block
+	/// is also will become invalid
+	#[test]
+	fn dependant_block_verified() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_hash = genesis.hash();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let b1: IndexedBlock = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(1).build()
+				.build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().build()
+				.build()
+			.merkled_header().parent(genesis_hash).build()
+			.build()
+			.into();
+		let unspent_tx = b1.transactions[1].hash.clone();
+		let test_hash_original = b1.hash().clone();
+
+		let b2: IndexedBlock = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(5).build()
+				.build()
+			.transaction()
+				.input().hash(unspent_tx).build()
+				.output().build()
+				.build()
+			.merkled_header().parent(b1.hash().clone()).build()
+			.build()
+			.into();
+		let test_hash = b2.hash().clone();
+
+		let queue = BlockQueue::new();
+		queue.push(b1);
+		queue.push(b2);
+		queue.fetch(&store);
+		queue.fetch(&store);
+		queue.verify(&FacileVerifier);
+
+		assert!(
+			queue.unverified.read().get(&test_hash)
+				.expect("There should be b2 in unverified list")
+				.depends_on
 				.contains(&test_hash_original)
 		);
 	}
