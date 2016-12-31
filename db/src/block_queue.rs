@@ -6,7 +6,6 @@ use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
 use linked_hash_map::LinkedHashMap;
 use chain::{IndexedBlock, IndexedTransaction};
-use block_stapler::BlockInsertedChain;
 use transaction_provider::TransactionProvider;
 use transaction_meta_provider::TransactionMetaProvider;
 
@@ -136,9 +135,11 @@ impl BlockQueue {
 		let mut waits = HashSet::with_capacity(0);
 		let mut depends = HashSet::with_capacity(0);
 
-		for block_tx in block.raw().transactions.iter() {
-			for input in block_tx.raw.inputs.iter().skip(1) {
+		trace!(target: "db", "fetching block hash {}, tx count {}", block.raw().hash(), block.raw().transactions.len());
+		for block_tx in block.raw().transactions.iter().skip(1) {
+			for input in block_tx.raw.inputs.iter() {
 				let parent_tx_hash = &input.previous_output.hash;
+				trace!(target: "db", "fetching parent transaction {}", parent_tx_hash);
 
 				if let Some(block_locator) = self.pending_transactions.read().get(parent_tx_hash) {
 					waits.insert(block_locator.clone());
