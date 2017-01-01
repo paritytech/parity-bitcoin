@@ -69,10 +69,10 @@ pub struct BlockQueue {
 	added: RwLock<LinkedHashMap<H256, IndexedBlock>>,
 	// blocks prepared for verification
 	unverified: RwLock<LinkedHashMap<H256, PreparedBlock>>,
-	// in process
-	processing: RwLock<HashSet<H256>>,
 	// verified blocks
 	verified: RwLock<LinkedHashMap<H256, PreparedBlock>>,
+	// in process
+	processing: RwLock<HashSet<H256>>,
 	// invalid blocks
 	invalid: RwLock<HashSet<H256>>,
 }
@@ -83,12 +83,19 @@ pub struct BlockQueueSummary {
 	added: usize,
 	unverified: usize,
 	verified: usize,
+	invalid: usize,
 }
 
 pub trait VerifyBlock {
 	type Error;
 
 	fn verify(&self, block: &IndexedBlock) -> Result<(), Self::Error>;
+}
+
+pub trait InsertBlock {
+	type Error;
+
+	fn insert(&self, block: &IndexedBlock) -> Result<(), Self::Error>;
 }
 
 impl BlockQueue {
@@ -115,6 +122,7 @@ impl BlockQueue {
 			added: self.added.read().len(),
 			unverified: self.unverified.read().len(),
 			verified: self.verified.read().len(),
+			invalid: self.invalid.read().len(),
 		}
 	}
 
@@ -131,7 +139,8 @@ impl BlockQueue {
 			block
 		}.into();
 
-		// many of the cases won't use it, so by default it does not allocate anything
+		// many of the cases won't use it
+		// hence no allocation by default
 		let mut waits = HashSet::with_capacity(0);
 		let mut depends = HashSet::with_capacity(0);
 
@@ -206,8 +215,8 @@ impl BlockQueue {
 					let mut pending_txes = self.pending_transactions.write();
 					let mut verified_txes = self.verified_transactions.write();
 					let mut unverified = self.unverified.write();
-					let mut processing = self.processing.write();
 					let mut verified = self.verified.write();
+					let mut processing = self.processing.write();
 
 					// kick pending blocks to proceed
 					for (_, mut block) in unverified.iter_mut() {
@@ -248,12 +257,46 @@ impl BlockQueue {
 
 		TaskResult::Ok
 	}
+
+	/// This is supposed to be quick and synchronous
+	/// Since all dependencies are fetched
+	pub fn insert_verified<I>(&self, inserter: &I) -> TaskResult where I: InsertBlock {
+		let mut verified = self.verified.write();
+
+		// check head block if it is exists and ready for insertion
+		match verified.front() {
+			Some((_, block)) if block.valid() => { }
+			_ => { return TaskResult::Wait; }
+		};
+		let (hash, block) = verified.pop_front().expect("We just checked above that front item exists; So pop should produce existing item; qed");
+
+		let mut verified_txes = self.verified_transactions.write();
+		// remove transactions from verified list
+		for tx in block.raw().transactions.iter() {
+			verified_txes.remove(&tx.hash);
+		}
+
+		match inserter.insert(&block.raw()) {
+			Ok(()) => {
+				// todo: chain notify
+			}
+			Err(_) => {
+				// todo: chain notify
+				let mut invalid = self.invalid.write();
+				invalid.insert(hash);
+				// todo: also invalidate all dependant blocks
+
+			}
+		};
+
+		TaskResult::Ok
+	}
 }
 
 #[cfg(test)]
 mod tests {
 
-	use super::{BlockQueue, VerifyBlock};
+	use super::{BlockQueue, VerifyBlock, InsertBlock};
 	use storage::Storage;
 	use devtools::RandomTempPath;
 	use test_data;
@@ -267,6 +310,16 @@ mod tests {
 		type Error = DummyError;
 
 		fn verify(&self, _block: &IndexedBlock) -> Result<(), DummyError> {
+			Ok(())
+		}
+	}
+
+	struct FacileInserter;
+
+	impl InsertBlock for FacileInserter {
+		type Error = DummyError;
+
+		fn insert(&self, _block: &IndexedBlock) -> Result<(), DummyError> {
 			Ok(())
 		}
 	}
@@ -293,6 +346,9 @@ mod tests {
 
 		assert_eq!(queue.summary().unverified, 1);
 		assert_eq!(queue.summary().added, 0);
+		assert_eq!(queue.summary().invalid, 0);
+		assert_eq!(queue.summary().verified, 0);
+
 	}
 
 	/// Verification moves the block from `unverified` line to `verified`
@@ -329,6 +385,44 @@ mod tests {
 		assert_eq!(queue.summary().verified, 1);
 		assert_eq!(queue.summary().unverified, 0);
 		assert_eq!(queue.summary().added, 0);
+		assert_eq!(queue.summary().invalid, 0);
+	}
+
+
+	#[test]
+	fn insert() {
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+
+		let genesis = test_data::genesis();
+		store.insert_block(&genesis).unwrap();
+		let genesis_hash = genesis.hash();
+		let genesis_coinbase = genesis.transactions()[0].hash();
+
+		let b1: IndexedBlock = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(1).build()
+				.build()
+			.transaction()
+				.input().hash(genesis_coinbase).build()
+				.output().build()
+				.build()
+			.merkled_header().parent(genesis_hash).build()
+			.build()
+			.into();
+
+		let queue = BlockQueue::new();
+		queue.push(b1);
+		queue.fetch(&store);
+		queue.verify(&FacileVerifier);
+
+		queue.insert_verified(&FacileInserter);
+
+		assert_eq!(queue.summary().verified, 0);
+		assert_eq!(queue.summary().unverified, 0);
+		assert_eq!(queue.summary().added, 0);
+		assert_eq!(queue.summary().invalid, 0);
 	}
 
 	/// Once block is fetched, all it transactions should be put in `pending_transactions`
@@ -457,7 +551,8 @@ mod tests {
 		);
 	}
 
-	/// Once block, that is current dependant on, verified, current block is no longer waits for it
+	/// Once block, that is current block dependant on, verified,
+	/// current block is no longer waits for it
 	/// but still depends on it since it will become invalid on insertion, the current block
 	/// is also will become invalid
 	#[test]
