@@ -31,6 +31,7 @@ mod error;
 mod update_context;
 mod impls;
 mod block_queue;
+mod chain_client;
 
 #[derive(Debug, Clone)]
 pub enum BlockRef {

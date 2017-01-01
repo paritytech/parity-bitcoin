@@ -8,6 +8,7 @@ use linked_hash_map::LinkedHashMap;
 use chain::{IndexedBlock, IndexedTransaction};
 use transaction_provider::TransactionProvider;
 use transaction_meta_provider::TransactionMetaProvider;
+use error::{VerificationError, ConsistencyError};
 
 pub struct PreparedBlock {
 	block: IndexedBlock,
@@ -80,22 +81,18 @@ pub struct BlockQueue {
 pub enum TaskResult { Ok, Wait }
 
 pub struct BlockQueueSummary {
-	added: usize,
-	unverified: usize,
-	verified: usize,
-	invalid: usize,
+	pub added: usize,
+	pub unverified: usize,
+	pub verified: usize,
+	pub invalid: usize,
 }
 
 pub trait VerifyBlock {
-	type Error;
-
-	fn verify(&self, block: &IndexedBlock) -> Result<(), Self::Error>;
+	fn verify(&self, block: &IndexedBlock) -> Result<(), VerificationError>;
 }
 
 pub trait InsertBlock {
-	type Error;
-
-	fn insert(&self, block: &IndexedBlock) -> Result<(), Self::Error>;
+	fn insert(&self, block: &IndexedBlock) -> Result<(), ConsistencyError>;
 }
 
 impl BlockQueue {
@@ -291,6 +288,10 @@ impl BlockQueue {
 
 		TaskResult::Ok
 	}
+
+	pub fn has_invalid(&self, hash: &H256) -> bool {
+		self.invalid.read().contains(hash)
+	}
 }
 
 #[cfg(test)]
@@ -302,14 +303,12 @@ mod tests {
 	use test_data;
 	use chain::IndexedBlock;
 	use block_stapler::BlockStapler;
+	use error::{VerificationError, ConsistencyError};
 
-	struct DummyError;
 	struct FacileVerifier;
 
 	impl VerifyBlock for FacileVerifier {
-		type Error = DummyError;
-
-		fn verify(&self, _block: &IndexedBlock) -> Result<(), DummyError> {
+		fn verify(&self, _block: &IndexedBlock) -> Result<(), VerificationError> {
 			Ok(())
 		}
 	}
@@ -317,9 +316,7 @@ mod tests {
 	struct FacileInserter;
 
 	impl InsertBlock for FacileInserter {
-		type Error = DummyError;
-
-		fn insert(&self, _block: &IndexedBlock) -> Result<(), DummyError> {
+		fn insert(&self, _block: &IndexedBlock) -> Result<(), ConsistencyError> {
 			Ok(())
 		}
 	}
@@ -608,5 +605,4 @@ mod tests {
 				.contains(&test_hash_original)
 		);
 	}
-
 }
