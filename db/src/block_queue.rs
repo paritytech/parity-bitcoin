@@ -8,7 +8,8 @@ use linked_hash_map::LinkedHashMap;
 use chain::{IndexedBlock, IndexedTransaction};
 use transaction_provider::TransactionProvider;
 use transaction_meta_provider::TransactionMetaProvider;
-use error::{VerificationError, ConsistencyError};
+use block_stapler::BlockStapler;
+use error::{Error as StorageError, VerificationError, ConsistencyError};
 
 pub struct PreparedBlock {
 	block: IndexedBlock,
@@ -95,6 +96,19 @@ pub trait InsertBlock {
 	fn insert(&self, block: &IndexedBlock) -> Result<(), ConsistencyError>;
 }
 
+impl<T> InsertBlock for T where T: BlockStapler {
+	fn insert(&self, block: &IndexedBlock) -> Result<(), ConsistencyError> {
+		match self.insert_indexed_block(block) {
+			Ok(_) => Ok(()),
+			Err(StorageError::Consistency(c_err)) => Err(c_err),
+			Err(e) => {
+				// unknown error (io/corruption) should fail fast
+				panic!("Unexpected error on block insertion: {:?}", e);
+			}
+		}
+	}
+}
+
 impl BlockQueue {
 	// new queue
 
@@ -178,7 +192,7 @@ impl BlockQueue {
 		TaskResult::Ok
 	}
 
-	pub fn verify<V>(&self, verifier: &V) -> TaskResult where V: VerifyBlock {
+	pub fn verify(&self, verifier: &VerifyBlock) -> TaskResult {
 		// will return first block that is ready to verify
 		let block = {
 			let mut unverified = self.unverified.write();
@@ -256,7 +270,7 @@ impl BlockQueue {
 	}
 
 	/// This is supposed to be quick and synchronous
-	/// Since all dependencies are fetched
+	/// Since all dependencies are fetched (and flushes are in another thread)
 	pub fn insert_verified<I>(&self, inserter: &I) -> TaskResult where I: InsertBlock {
 		let mut verified = self.verified.write();
 
