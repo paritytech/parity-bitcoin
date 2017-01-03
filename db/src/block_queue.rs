@@ -1,11 +1,9 @@
 use primitives::hash::H256;
 use parking_lot::RwLock;
-use storage::Storage;
-use transaction_meta::TransactionMeta;
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
 use linked_hash_map::LinkedHashMap;
-use chain::{IndexedBlock, IndexedTransaction};
+use chain::IndexedBlock;
 use transaction_provider::TransactionProvider;
 use transaction_meta_provider::TransactionMetaProvider;
 use block_stapler::BlockStapler;
@@ -86,6 +84,7 @@ pub struct BlockQueueSummary {
 	pub unverified: usize,
 	pub verified: usize,
 	pub invalid: usize,
+	pub processing: usize,
 }
 
 pub trait VerifyBlock {
@@ -134,6 +133,7 @@ impl BlockQueue {
 			unverified: self.unverified.read().len(),
 			verified: self.verified.read().len(),
 			invalid: self.invalid.read().len(),
+			processing: self.processing.read().len(),
 		}
 	}
 

@@ -76,6 +76,7 @@ pub use transaction_meta_provider::{TransactionMetaProvider, TransactionOutputOb
 pub use transaction_meta::TransactionMeta;
 pub use block_stapler::{BlockStapler, BlockInsertedChain};
 pub use block_provider::{BlockProvider, BlockHeaderProvider};
+pub use chain_client::ChainClient;
 
 #[cfg(feature="dev")]
 pub use test_storage::TestStorage;

@@ -9,7 +9,7 @@ use storage::{Store, Storage};
 use block_stapler::{BlockInsertedChain, BlockStapler};
 use block_queue::{BlockQueue, VerifyBlock, TaskResult};
 use chain::{IndexedBlock, IndexedTransaction, Block};
-use error::{VerificationError, Error as StorageError};
+use error::Error as StorageError;
 
 const MAX_BLOCK_QUEUE: usize = 256;
 
@@ -22,24 +22,41 @@ const FLUSH_THREADS: usize = 2;
 const FLUSH_INTERVAL: u64 = 200;
 const TASK_TIMEOUT_INTERVAL: u64 = 100;
 
-trait ChainNotify {
-	fn block(&self, block: &IndexedBlock, route: BlockInsertedChain) {
+pub trait ChainNotify {
+	fn block(&self, _block: &IndexedBlock, _route: BlockInsertedChain) {
 	}
 
-	fn transaction(&self, transaction: &IndexedTransaction) {
+	fn transaction(&self, _transaction: &IndexedTransaction) {
 	}
 }
 
-struct ChainNotifyEntry {
+pub struct ChainNotifyEntry {
 	subscriber: Weak<ChainNotify>,
 	notify_blocks: bool,
 	notify_transactions: bool,
 }
 
 impl ChainNotifyEntry {
+	pub fn new(subscriber: Arc<ChainNotify>) -> ChainNotifyEntry {
+		ChainNotifyEntry {
+			subscriber: Arc::downgrade(&subscriber),
+			notify_blocks: false,
+			notify_transactions: false,
+		}
+	}
+
+	pub fn blocks(mut self, notify: bool) -> Self {
+		self.notify_blocks = notify;
+		self
+	}
+
+	pub fn transactions(mut self, notify: bool) -> Self {
+		self.notify_transactions = notify;
+		self
+	}
 }
 
-struct ChainClient {
+pub struct ChainClient {
 	store: Arc<Storage>,
 	verifier: Arc<VerifyBlock + Send + Sync>,
 	queue: Arc<BlockQueue>,
@@ -57,6 +74,7 @@ pub trait VerifierFactory {
 	fn genesis(&self) -> Option<Block>;
 }
 
+#[derive(Debug)]
 pub enum PushBlockError {
 	QueueFull,
 	ParentInvalid,
@@ -81,7 +99,7 @@ impl ChainClient {
 		};
 
 		if let Some(genesis) = verifier_factory.genesis() {
-			chain.store.insert_block(&genesis);
+			try!(chain.store.insert_block(&genesis));
 		}
 
 		for _ in 0..FETCH_THREADS {
@@ -121,7 +139,11 @@ impl ChainClient {
 		Ok(())
 	}
 
-	fn store(&self) -> &Arc<Storage> {
+	pub fn subcribe(&self, notify: ChainNotifyEntry) {
+		self.notify.lock().push(notify);
+	}
+
+	fn store(&self) -> &Storage {
 		&self.store
 	}
 
@@ -191,10 +213,10 @@ impl ChainClient {
 		})
 	}
 
-	fn flush(&self) {
+	pub fn flush(&self) {
 		while {
 			let summary = self.queue.summary();
-			summary.added != 0 || summary.verified != 0 || summary.unverified != 0
+			summary.added != 0 || summary.verified != 0 || summary.unverified != 0 || summary.processing != 0
 		} {
 			thread::park_timeout(::std::time::Duration::from_millis(TASK_TIMEOUT_INTERVAL));
 		}
@@ -228,7 +250,7 @@ mod tests {
 	struct FacileFactory;
 
 	impl VerifierFactory for FacileFactory {
-		fn spawn(&self, db: Arc<Store>) -> Arc<VerifyBlock + Send + Sync> {
+		fn spawn(&self, _db: Arc<Store>) -> Arc<VerifyBlock + Send + Sync> {
 			Arc::new(FacileVerifier)
 		}
 
@@ -249,7 +271,7 @@ mod tests {
 		let path = RandomTempPath::create_dir();
 		let client = ChainClient::new(path.as_path(), &FacileFactory).expect("Client should be created");
 
-		client.push_block(test_data::block_h1().into());
+		client.push_block(test_data::block_h1().into()).expect("block height 1 should be inserted");
 		client.flush();
 
 		assert_eq!(
