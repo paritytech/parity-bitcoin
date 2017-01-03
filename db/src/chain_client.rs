@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use storage::{Store, Storage};
 use block_stapler::{BlockInsertedChain, BlockStapler};
 use block_queue::{BlockQueue, VerifyBlock, TaskResult};
-use chain::{IndexedBlock, IndexedTransaction};
+use chain::{IndexedBlock, IndexedTransaction, Block};
 use error::{VerificationError, Error as StorageError};
 
 const MAX_BLOCK_QUEUE: usize = 256;
@@ -53,6 +53,8 @@ struct ChainClient {
 
 pub trait VerifierFactory {
 	fn spawn(&self, db: Arc<Store>) -> Arc<VerifyBlock + Send + Sync>;
+
+	fn genesis(&self) -> Option<Block>;
 }
 
 pub enum PushBlockError {
@@ -77,6 +79,10 @@ impl ChainClient {
 			notify: Default::default(),
 			stop: Arc::new(AtomicBool::new(false)),
 		};
+
+		if let Some(genesis) = verifier_factory.genesis() {
+			chain.store.insert_block(&genesis);
+		}
 
 		for _ in 0..FETCH_THREADS {
 			let thread = chain.fetch_thread();
@@ -188,7 +194,7 @@ impl ChainClient {
 	fn flush(&self) {
 		while {
 			let summary = self.queue.summary();
-			summary.added == 0 && summary.verified == 0 && summary.unverified == 0
+			summary.added != 0 || summary.verified != 0 || summary.unverified != 0
 		} {
 			thread::park_timeout(::std::time::Duration::from_millis(TASK_TIMEOUT_INTERVAL));
 		}
@@ -202,6 +208,7 @@ impl Drop for ChainClient {
 		for thread in self.flush_threads.drain(..) { thread.join().expect("Failed to join flush thread"); }
 		for thread in self.verification_threads.drain(..) { thread.join().expect("Failed to join verification thread"); }
 		for thread in self.fetch_threads.drain(..) { thread.join().expect("Failed to join fetch thread"); }
+		self.store.flush();
 	}
 }
 
@@ -211,10 +218,11 @@ mod tests {
 	use super::{ChainClient, VerifierFactory};
 	use block_queue::VerifyBlock;
 	use devtools::RandomTempPath;
-	use chain::IndexedBlock;
+	use chain::{IndexedBlock, Block};
 	use error::VerificationError;
 	use std::sync::Arc;
 	use storage::Store;
+	use test_data;
 
 	struct FacileVerifier;
 	struct FacileFactory;
@@ -223,17 +231,30 @@ mod tests {
 		fn spawn(&self, db: Arc<Store>) -> Arc<VerifyBlock + Send + Sync> {
 			Arc::new(FacileVerifier)
 		}
+
+		fn genesis(&self) -> Option<Block> {
+			Some(test_data::genesis())
+		}
 	}
 
 	impl VerifyBlock for FacileVerifier {
 		fn verify(&self, _block: &IndexedBlock) -> Result<(), VerificationError> {
 			Ok(())
 		}
+
 	}
 
 	#[test]
 	fn smoky() {
 		let path = RandomTempPath::create_dir();
-		let client = ChainClient::new(path.as_path(), &FacileFactory);
+		let client = ChainClient::new(path.as_path(), &FacileFactory).expect("Client should be created");
+
+		client.push_block(test_data::block_h1().into());
+		client.flush();
+
+		assert_eq!(
+			client.store().best_block().expect("There should be best block").hash,
+			test_data::block_h1().hash()
+		);
 	}
 }
