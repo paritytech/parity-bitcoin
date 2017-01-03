@@ -58,7 +58,6 @@ impl ChainNotifyEntry {
 
 pub struct ChainClient {
 	store: Arc<Storage>,
-	verifier: Arc<VerifyBlock + Send + Sync>,
 	queue: Arc<BlockQueue>,
 	fetch_threads: Vec<JoinHandle<()>>,
 	verification_threads: Vec<JoinHandle<()>>,
@@ -66,10 +65,11 @@ pub struct ChainClient {
 	flush_threads: Vec<JoinHandle<()>>,
 	notify: Mutex<Vec<ChainNotifyEntry>>,
 	stop: Arc<AtomicBool>,
+	verifier_factory: Box<VerifierFactory>,
 }
 
 pub trait VerifierFactory {
-	fn spawn(&self, db: Arc<Store>) -> Arc<VerifyBlock + Send + Sync>;
+	fn spawn(&self, db: Arc<Store>) -> Box<VerifyBlock + Send>;
 
 	fn genesis(&self) -> Option<Block>;
 }
@@ -82,13 +82,10 @@ pub enum PushBlockError {
 
 impl ChainClient {
 
-	pub fn new<P: AsRef<Path>, V: VerifierFactory>(path: P, verifier_factory: &V) -> Result<ChainClient, StorageError> {
+	pub fn new<P: AsRef<Path>>(path: P, verifier_factory: Box<VerifierFactory>) -> Result<ChainClient, StorageError> {
 		let store = Arc::new(try!(Storage::new(path)));
-		let verifier = verifier_factory.spawn(store.clone());
-
 		let mut chain = ChainClient {
 			store: store,
-			verifier: verifier,
 			queue: Arc::new(BlockQueue::new()),
 			fetch_threads: Vec::new(),
 			verification_threads: Vec::new(),
@@ -96,9 +93,10 @@ impl ChainClient {
 			flush_threads: Vec::new(),
 			notify: Default::default(),
 			stop: Arc::new(AtomicBool::new(false)),
+			verifier_factory: verifier_factory,
 		};
 
-		if let Some(genesis) = verifier_factory.genesis() {
+		if let Some(genesis) = chain.verifier_factory.genesis() {
 			try!(chain.store.insert_block(&genesis));
 		}
 
@@ -164,7 +162,7 @@ impl ChainClient {
 
 	fn verification_thread(&self) -> JoinHandle<()> {
 		let thread_stop = self.stop.clone();
-		let thread_verifier = self.verifier.clone();
+		let thread_verifier = self.verifier_factory.spawn(self.store.clone());
 		let thread_queue = self.queue.clone();
 
 		thread::spawn(move || {
@@ -250,8 +248,8 @@ mod tests {
 	struct FacileFactory;
 
 	impl VerifierFactory for FacileFactory {
-		fn spawn(&self, _db: Arc<Store>) -> Arc<VerifyBlock + Send + Sync> {
-			Arc::new(FacileVerifier)
+		fn spawn(&self, _db: Arc<Store>) -> Box<VerifyBlock + Send> {
+			Box::new(FacileVerifier)
 		}
 
 		fn genesis(&self) -> Option<Block> {
@@ -269,7 +267,7 @@ mod tests {
 	#[test]
 	fn smoky() {
 		let path = RandomTempPath::create_dir();
-		let client = ChainClient::new(path.as_path(), &FacileFactory).expect("Client should be created");
+		let client = ChainClient::new(path.as_path(), Box::new(FacileFactory)).expect("Client should be created");
 
 		client.push_block(test_data::block_h1().into()).expect("block height 1 should be inserted");
 		client.flush();
