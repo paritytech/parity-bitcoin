@@ -1,12 +1,11 @@
 use primitives::hash::H256;
-use db::{TransactionMetaProvider, PreviousTransactionOutputProvider, TransactionOutputObserver};
+use db::{TransactionMetaProvider, PreviousTransactionOutputProvider, TransactionOutputObserver, TransactionError};
 use network::{Magic, ConsensusParams};
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner};
 use duplex_store::{DuplexTransactionOutputProvider};
 use sigops::transaction_sigops;
 use canon::CanonTransaction;
 use constants::{COINBASE_MATURITY, MAX_BLOCK_SIGOPS};
-use error::TransactionError;
 
 pub struct TransactionAcceptor<'a> {
 	pub bip30: TransactionBip30<'a>,

@@ -2,8 +2,8 @@ use primitives::compact::Compact;
 use chain::IndexedBlockHeader;
 use network::Magic;
 use work::is_valid_proof_of_work;
-use error::Error;
 use constants::BLOCK_MAX_FUTURE;
+use db::VerificationError;
 
 pub struct HeaderVerifier<'a> {
 	pub proof_of_work: HeaderProofOfWork<'a>,
@@ -18,7 +18,7 @@ impl<'a> HeaderVerifier<'a> {
 		}
 	}
 
-	pub fn check(&self) -> Result<(), Error> {
+	pub fn check(&self) -> Result<(), VerificationError> {
 		try!(self.proof_of_work.check());
 		try!(self.timestamp.check());
 		Ok(())
@@ -26,7 +26,7 @@ impl<'a> HeaderVerifier<'a> {
 }
 
 pub trait HeaderRule {
-	fn check(&self) -> Result<(), Error>;
+	fn check(&self) -> Result<(), VerificationError>;
 }
 
 pub struct HeaderProofOfWork<'a> {
@@ -44,11 +44,11 @@ impl<'a> HeaderProofOfWork<'a> {
 }
 
 impl<'a> HeaderRule for HeaderProofOfWork<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		if is_valid_proof_of_work(self.max_work_bits, self.header.raw.bits, &self.header.hash) {
 			Ok(())
 		} else {
-			Err(Error::Pow)
+			Err(VerificationError::Pow)
 		}
 	}
 }
@@ -70,9 +70,9 @@ impl<'a> HeaderTimestamp<'a> {
 }
 
 impl<'a> HeaderRule for HeaderTimestamp<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		if self.header.raw.time > self.current_time + self.max_future {
-			Err(Error::FuturisticTimestamp)
+			Err(VerificationError::FuturisticTimestamp)
 		} else {
 			Ok(())
 		}

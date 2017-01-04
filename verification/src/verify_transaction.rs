@@ -3,8 +3,8 @@ use serialization::Serializable;
 use chain::IndexedTransaction;
 use duplex_store::NoopStore;
 use sigops::transaction_sigops;
-use error::TransactionError;
 use constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS, MIN_COINBASE_SIZE, MAX_COINBASE_SIZE};
+use db::TransactionError;
 
 pub struct TransactionVerifier<'a> {
 	pub empty: TransactionEmpty<'a>,

@@ -1,11 +1,10 @@
 use network::{Magic, ConsensusParams};
-use db::PreviousTransactionOutputProvider;
+use db::{PreviousTransactionOutputProvider, VerificationError, TransactionError};
 use sigops::transaction_sigops;
 use work::block_reward_satoshi;
 use duplex_store::DuplexTransactionOutputProvider;
 use canon::CanonBlock;
 use constants::MAX_BLOCK_SIGOPS;
-use error::{Error, TransactionError};
 
 /// Flexible verification of ordered block
 pub struct BlockAcceptor<'a> {
@@ -24,7 +23,7 @@ impl<'a> BlockAcceptor<'a> {
 		}
 	}
 
-	pub fn check(&self) -> Result<(), Error> {
+	pub fn check(&self) -> Result<(), VerificationError> {
 		try!(self.finality.check());
 		try!(self.sigops.check());
 		try!(self.coinbase_claim.check());
@@ -34,7 +33,7 @@ impl<'a> BlockAcceptor<'a> {
 
 trait BlockRule {
 	/// If verification fails returns an error
-	fn check(&self) -> Result<(), Error>;
+	fn check(&self) -> Result<(), VerificationError>;
 }
 
 pub struct BlockFinality<'a> {
@@ -52,11 +51,11 @@ impl<'a> BlockFinality<'a> {
 }
 
 impl<'a> BlockRule for BlockFinality<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		if self.block.is_final(self.height) {
 			Ok(())
 		} else {
-			Err(Error::NonFinalBlock)
+			Err(VerificationError::NonFinalBlock)
 		}
 	}
 }
@@ -80,7 +79,7 @@ impl<'a> BlockSigops<'a> {
 }
 
 impl<'a> BlockRule for BlockSigops<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
 		let bip16_active = self.block.header.raw.time >= self.consensus_params.bip16_time;
 		let sigops = self.block.transactions.iter()
@@ -88,7 +87,7 @@ impl<'a> BlockRule for BlockSigops<'a> {
 			.sum::<usize>();
 
 		if sigops > self.max_sigops {
-			Err(Error::MaximumSigops)
+			Err(VerificationError::MaximumSigops)
 		} else {
 			Ok(())
 		}
@@ -112,7 +111,7 @@ impl<'a> BlockCoinbaseClaim<'a> {
 }
 
 impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
 
 		let mut fees: u64 = 0;
@@ -124,7 +123,7 @@ impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 				let (sum, overflow) = incoming.overflowing_add(
 					store.previous_transaction_output(&input.previous_output).map(|o| o.value).unwrap_or(0));
 				if overflow {
-					return Err(Error::ReferencedInputsSumOverflow);
+					return Err(VerificationError::ReferencedInputsSumOverflow);
 				}
 				incoming = sum;
 			}
@@ -135,13 +134,13 @@ impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 			// Difference between (1) and (2)
 			let (difference, overflow) = incoming.overflowing_sub(spends);
 			if overflow {
-				return Err(Error::Transaction(tx_idx + 1, TransactionError::Overspend))
+				return Err(VerificationError::Transaction(tx_idx + 1, TransactionError::Overspend))
 			}
 
 			// Adding to total fees (with possible overflow)
 			let (sum, overflow) = fees.overflowing_add(difference);
 			if overflow {
-				return Err(Error::TransactionFeesOverflow)
+				return Err(VerificationError::TransactionFeesOverflow)
 			}
 
 			fees = sum;
@@ -151,11 +150,11 @@ impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 
 		let (reward, overflow) = fees.overflowing_add(block_reward_satoshi(self.height));
 		if overflow {
-			return Err(Error::TransactionFeeAndRewardOverflow);
+			return Err(VerificationError::TransactionFeeAndRewardOverflow);
 		}
 
 		if claim > reward {
-			Err(Error::CoinbaseOverspend { expected_max: reward, actual: claim })
+			Err(VerificationError::CoinbaseOverspend { expected_max: reward, actual: claim })
 		} else {
 			Ok(())
 		}
