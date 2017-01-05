@@ -1,12 +1,14 @@
 use primitives::hash::H256;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, Mutex};
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
+use std::sync::{Arc, Weak};
+
 use linked_hash_map::LinkedHashMap;
-use chain::IndexedBlock;
+use chain::{IndexedBlock, IndexedTransaction};
 use transaction_provider::TransactionProvider;
 use transaction_meta_provider::TransactionMetaProvider;
-use block_stapler::BlockStapler;
+use block_stapler::{BlockStapler, BlockInsertedChain};
 use error::{Error as StorageError, VerificationError, ConsistencyError};
 
 pub struct PreparedBlock {
@@ -75,8 +77,11 @@ pub struct BlockQueue {
 	processing: RwLock<HashSet<H256>>,
 	// invalid blocks
 	invalid: RwLock<HashSet<H256>>,
+	// notifiers
+	notify: Mutex<Vec<QueueNotifyEntry>>,
 }
 
+#[derive(Debug)]
 pub enum TaskResult { Ok, Wait }
 
 pub struct BlockQueueSummary {
@@ -92,19 +97,63 @@ pub trait VerifyBlock {
 }
 
 pub trait InsertBlock {
-	fn insert(&self, block: &IndexedBlock) -> Result<(), ConsistencyError>;
+	fn insert(&self, block: &IndexedBlock) -> Result<BlockInsertedChain, ConsistencyError>;
 }
 
 impl<T> InsertBlock for T where T: BlockStapler {
-	fn insert(&self, block: &IndexedBlock) -> Result<(), ConsistencyError> {
+	fn insert(&self, block: &IndexedBlock) -> Result<BlockInsertedChain, ConsistencyError> {
 		match self.insert_indexed_block(block) {
-			Ok(_) => Ok(()),
+			Ok(route) => Ok(route),
 			Err(StorageError::Consistency(c_err)) => Err(c_err),
 			Err(e) => {
 				// unknown error (io/corruption) should fail fast
 				panic!("Unexpected error on block insertion: {:?}", e);
 			}
 		}
+	}
+}
+
+pub trait QueueNotify : Send + Sync {
+	fn verified(&self, _block: &IndexedBlock) {
+	}
+
+	fn block(&self, _block: &IndexedBlock, _route: BlockInsertedChain) {
+	}
+
+	fn transaction(&self, _transaction: &IndexedTransaction) {
+	}
+}
+
+pub struct QueueNotifyEntry {
+	subscriber: Weak<QueueNotify>,
+	notify_verified: bool,
+	notify_block: bool,
+	notify_transaction: bool,
+}
+
+impl QueueNotifyEntry {
+	pub fn new(subscriber: &Arc<QueueNotify>) -> Self {
+		QueueNotifyEntry {
+			subscriber: Arc::downgrade(subscriber),
+			notify_verified: false,
+			notify_block: false,
+			notify_transaction: false,
+		}
+	}
+
+	pub fn verified(mut self, notify: bool) -> Self {
+		self.notify_verified = notify;
+		self
+	}
+
+	pub fn block(mut self, notify: bool) -> Self {
+		self.notify_block = notify;
+		self
+	}
+
+	pub fn transaction(mut self, notify: bool) -> Self {
+		self.notify_transaction = notify;
+		self
 	}
 }
 
@@ -120,6 +169,7 @@ impl BlockQueue {
 			processing: Default::default(),
 			verified: Default::default(),
 			invalid: Default::default(),
+			notify: Default::default(),
 		}
 	}
 
@@ -288,8 +338,17 @@ impl BlockQueue {
 		}
 
 		match inserter.insert(&block.raw()) {
-			Ok(()) => {
-				// todo: chain notify
+			Ok(route) => {
+				// notify about block and transactions (both only if any subscribers)
+				for subscriber in self.notify_filtered(|e| e.notify_block) {
+					subscriber.block(&block.raw(), route.clone());
+				}
+
+				for subscriber in self.notify_filtered(|e| e.notify_transaction) {
+					for tx in block.raw().transactions.iter() {
+						subscriber.transaction(tx);
+					}
+				}
 			}
 			Err(_) => {
 				// todo: chain notify
@@ -306,17 +365,32 @@ impl BlockQueue {
 	pub fn has_invalid(&self, hash: &H256) -> bool {
 		self.invalid.read().contains(hash)
 	}
+
+	pub fn subscribe(&self, entry: QueueNotifyEntry) {
+		self.notify.lock().push(entry);
+	}
+
+	fn notify_filtered<F>(&self, f: F) -> Vec<Arc<QueueNotify>>
+		where F: Fn(&QueueNotifyEntry) -> bool
+	{
+		self.notify.lock().iter()
+			.filter(|entry| f(entry))
+			.filter_map(|entry| entry.subscriber.upgrade())
+			.collect()
+	}
 }
 
 #[cfg(test)]
 mod tests {
 
-	use super::{BlockQueue, VerifyBlock, InsertBlock};
+	use std::sync::Arc;
+	use parking_lot::RwLock;
+	use super::{BlockQueue, VerifyBlock, InsertBlock, QueueNotifyEntry, QueueNotify};
 	use storage::Storage;
 	use devtools::RandomTempPath;
 	use test_data;
 	use chain::IndexedBlock;
-	use block_stapler::BlockStapler;
+	use block_stapler::{BlockStapler, BlockInsertedChain};
 	use error::{VerificationError, ConsistencyError};
 
 	struct FacileVerifier;
@@ -330,8 +404,8 @@ mod tests {
 	struct FacileInserter;
 
 	impl InsertBlock for FacileInserter {
-		fn insert(&self, _block: &IndexedBlock) -> Result<(), ConsistencyError> {
-			Ok(())
+		fn insert(&self, _block: &IndexedBlock) -> Result<BlockInsertedChain, ConsistencyError> {
+			Ok(BlockInsertedChain::Main)
 		}
 	}
 
@@ -618,5 +692,37 @@ mod tests {
 				.depends_on
 				.contains(&test_hash_original)
 		);
+	}
+
+	#[test]
+	fn notification() {
+
+		#[derive(Default)]
+		struct NotificationRecorder {
+			count: RwLock<u32>,
+		}
+
+		impl QueueNotify for NotificationRecorder {
+			fn block(&self, _block: &IndexedBlock, _route: BlockInsertedChain) {
+				*self.count.write() += 1
+			}
+		}
+
+		let counter = Arc::new(NotificationRecorder::default());
+		let subscriber = counter.clone() as Arc<QueueNotify>;
+
+
+		let path = RandomTempPath::create_dir();
+		let store = Storage::new(path.as_path()).unwrap();
+		let queue = BlockQueue::new();
+		queue.subscribe(QueueNotifyEntry::new(&subscriber).block(true));
+
+		queue.push(test_data::block_h2().into());
+		queue.fetch(&store);
+		queue.verify(&FacileVerifier);
+		queue.insert_verified(&FacileInserter);
+
+		let count = *counter.count.read();
+		assert_eq!(1, count);
 	}
 }

@@ -31,13 +31,13 @@ pub trait ChainNotify {
 }
 
 pub struct ChainNotifyEntry {
-	subscriber: Weak<ChainNotify>,
+	subscriber: Weak<ChainNotify + Send + Sync>,
 	notify_blocks: bool,
 	notify_transactions: bool,
 }
 
 impl ChainNotifyEntry {
-	pub fn new(subscriber: Arc<ChainNotify>) -> ChainNotifyEntry {
+	pub fn new(subscriber: Arc<ChainNotify + Send + Sync>) -> ChainNotifyEntry {
 		ChainNotifyEntry {
 			subscriber: Arc::downgrade(&subscriber),
 			notify_blocks: false,
@@ -145,7 +145,7 @@ impl ChainClient {
 		&self.store
 	}
 
-	fn queue(&self) -> &BlockQueue {
+	pub fn queue(&self) -> &BlockQueue {
 		&self.queue
 	}
 
