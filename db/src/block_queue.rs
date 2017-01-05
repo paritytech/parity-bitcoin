@@ -114,13 +114,13 @@ impl<T> InsertBlock for T where T: BlockStapler {
 }
 
 pub trait QueueNotify : Send + Sync {
-	fn verified(&self, _block: &IndexedBlock) {
+	fn queue_verified(&self, _block: &IndexedBlock) {
 	}
 
-	fn block(&self, _block: &IndexedBlock, _route: BlockInsertedChain) {
+	fn queue_block(&self, _block: &IndexedBlock, _route: BlockInsertedChain) {
 	}
 
-	fn transaction(&self, _transaction: &IndexedTransaction) {
+	fn queue_transaction(&self, _transaction: &IndexedTransaction) {
 	}
 }
 
@@ -341,12 +341,12 @@ impl BlockQueue {
 			Ok(route) => {
 				// notify about block and transactions (both only if any subscribers)
 				for subscriber in self.notify_filtered(|e| e.notify_block) {
-					subscriber.block(&block.raw(), route.clone());
+					subscriber.queue_block(&block.raw(), route.clone());
 				}
 
 				for subscriber in self.notify_filtered(|e| e.notify_transaction) {
 					for tx in block.raw().transactions.iter() {
-						subscriber.transaction(tx);
+						subscriber.queue_transaction(tx);
 					}
 				}
 			}
@@ -703,7 +703,7 @@ mod tests {
 		}
 
 		impl QueueNotify for NotificationRecorder {
-			fn block(&self, _block: &IndexedBlock, _route: BlockInsertedChain) {
+			fn queue_block(&self, _block: &IndexedBlock, _route: BlockInsertedChain) {
 				*self.count.write() += 1
 			}
 		}

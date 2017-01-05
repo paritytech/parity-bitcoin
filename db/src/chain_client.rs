@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 
 use storage::{Store, Storage};
 use block_stapler::{BlockInsertedChain, BlockStapler};
-use block_queue::{BlockQueue, VerifyBlock, TaskResult};
+use block_queue::{BlockQueue, VerifyBlock, TaskResult, QueueNotify};
 use chain::{IndexedBlock, IndexedTransaction, Block};
 use error::Error as StorageError;
 
@@ -22,22 +22,22 @@ const FLUSH_THREADS: usize = 2;
 const FLUSH_INTERVAL: u64 = 200;
 const TASK_TIMEOUT_INTERVAL: u64 = 100;
 
-pub trait ChainNotify {
-	fn block(&self, _block: &IndexedBlock, _route: BlockInsertedChain) {
+pub trait ChainNotify : Send + Sync {
+	fn chain_block(&self, _block: &IndexedBlock, _route: BlockInsertedChain) {
 	}
 
-	fn transaction(&self, _transaction: &IndexedTransaction) {
+	fn chain_transaction(&self, _transaction: &IndexedTransaction) {
 	}
 }
 
 pub struct ChainNotifyEntry {
-	subscriber: Weak<ChainNotify + Send + Sync>,
+	subscriber: Weak<ChainNotify>,
 	notify_blocks: bool,
 	notify_transactions: bool,
 }
 
 impl ChainNotifyEntry {
-	pub fn new(subscriber: Arc<ChainNotify + Send + Sync>) -> ChainNotifyEntry {
+	pub fn new(subscriber: Arc<ChainNotify>) -> ChainNotifyEntry {
 		ChainNotifyEntry {
 			subscriber: Arc::downgrade(&subscriber),
 			notify_blocks: false,
@@ -68,7 +68,7 @@ pub struct ChainClient {
 	verifier_factory: Box<VerifierFactory>,
 }
 
-pub trait VerifierFactory {
+pub trait VerifierFactory : Send + Sync {
 	fn spawn(&self, db: Arc<Store>) -> Box<VerifyBlock + Send>;
 
 	fn genesis(&self) -> Option<Block>;
@@ -141,7 +141,7 @@ impl ChainClient {
 		self.notify.lock().push(notify);
 	}
 
-	fn store(&self) -> &Storage {
+	pub fn store(&self) -> &Storage {
 		&self.store
 	}
 
@@ -217,6 +217,23 @@ impl ChainClient {
 			summary.added != 0 || summary.verified != 0 || summary.unverified != 0 || summary.processing != 0
 		} {
 			thread::park_timeout(::std::time::Duration::from_millis(TASK_TIMEOUT_INTERVAL));
+		}
+	}
+
+	fn notify_filtered<F>(&self, f: F) -> Vec<Arc<ChainNotify>>
+		where F: Fn(&ChainNotifyEntry) -> bool
+	{
+		self.notify.lock().iter()
+			.filter(|entry| f(entry))
+			.filter_map(|entry| entry.subscriber.upgrade())
+			.collect()
+	}
+}
+
+impl QueueNotify for ChainClient {
+	fn queue_block(&self, block: &IndexedBlock, route: BlockInsertedChain) {
+		for subscriber in self.notify_filtered(|e| e.notify_blocks) {
+			subscriber.chain_block(block, route.clone());
 		}
 	}
 }
