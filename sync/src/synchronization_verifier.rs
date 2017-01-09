@@ -113,7 +113,7 @@ impl AsyncVerifier {
 						},
 						Ok(Chain::Orphan) => {
 							// this can happen for B1 if B0 verification has failed && we have already scheduled verification of B0
-							sink.on_block_verification_error(&format!("orphaned block because parent block verification has failed"), block.hash())
+							sink.on_block_verification_error("orphaned block because parent block verification has failed", block.hash())
 						},
 						Err(e) => {
 							sink.on_block_verification_error(&format!("{:?}", e), block.hash())
@@ -122,7 +122,7 @@ impl AsyncVerifier {
 				},
 				VerificationTask::VerifyTransaction(height, transaction) => {
 					// output provider must check previous outputs in both storage && memory pool
-					match MemoryPoolTransactionOutputProvider::for_transaction(storage.clone(), &memory_pool, &transaction.raw) {
+					match MemoryPoolTransactionOutputProvider::for_transaction(storage.clone(), memory_pool, &transaction.raw) {
 						Err(e) => {
 							sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash);
 							continue; // with new verification sub-task
