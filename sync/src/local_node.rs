@@ -49,6 +49,7 @@ struct TransactionAcceptSinkData {
 
 impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 	/// Create new synchronization node
+	#[cfg_attr(feature="cargo-clippy", allow(too_many_arguments))]
 	pub fn new(network: Magic, storage: StorageRef, memory_pool: MemoryPoolRef, peers: PeersRef,
 		state: SynchronizationStateRef, executor: ExecutorRef<T>, client: ClientRef<V>, server: ServerRef<U>) -> Self {
 		LocalNode {
@@ -130,7 +131,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 		}
 
 		trace!(target: "sync", "Got `getdata` message from peer#{}. Inventory len: {}", peer_index, message.inventory.len());
-		self.server.execute(ServerTask::ServeGetData(peer_index, message));
+		self.server.execute(ServerTask::GetData(peer_index, message));
 	}
 
 	/// When peer is requesting for known blocks hashes
@@ -141,7 +142,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 		}
 
 		trace!(target: "sync", "Got `getblocks` message from peer#{}", peer_index);
-		self.server.execute(ServerTask::ServeGetBlocks(peer_index, message));
+		self.server.execute(ServerTask::GetBlocks(peer_index, message));
 	}
 
 	/// When peer is requesting for known blocks headers
@@ -158,7 +159,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 		// and peer, which has just provided a new blocks to us, is asking for headers
 		// => do not serve getheaders until we have fully process his blocks + wait until headers are served before returning
 		let server = Arc::downgrade(&self.server);
-		let server_task = ServerTask::ServeGetHeaders(peer_index, message, id);
+		let server_task = ServerTask::GetHeaders(peer_index, message, id);
 		let lazy_server_task = lazy(move || {
 			server.upgrade().map(|s| s.execute(server_task));
 			finished::<(), ()>(())
@@ -174,7 +175,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 		}
 
 		trace!(target: "sync", "Got `mempool` message from peer#{}", peer_index);
-		self.server.execute(ServerTask::ServeMempool(peer_index));
+		self.server.execute(ServerTask::Mempool(peer_index));
 	}
 
 	/// When peer asks us from specific transactions from specific block
@@ -185,7 +186,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 		}
 
 		trace!(target: "sync", "Got `getblocktxn` message from peer#{}", peer_index);
-		self.server.execute(ServerTask::ServeGetBlockTxn(peer_index, message));
+		self.server.execute(ServerTask::GetBlockTxn(peer_index, message));
 	}
 
 	/// When peer sets bloom filter for connection
@@ -243,21 +244,21 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 	pub fn on_merkleblock(&self, peer_index: PeerIndex, _message: types::MerkleBlock) {
 		trace!(target: "sync", "Got `merkleblock` message from peer#{}", peer_index);
 		// we never setup filter on connections => misbehaving
-		self.peers.misbehaving(peer_index, &format!("Got unrequested 'merkleblock' message"));
+		self.peers.misbehaving(peer_index, "Got unrequested 'merkleblock' message");
 	}
 
 	/// When peer sents us a compact block
 	pub fn on_compact_block(&self, peer_index: PeerIndex, _message: types::CompactBlock) {
 		trace!(target: "sync", "Got `cmpctblock` message from peer#{}", peer_index);
 		// we never ask compact block from peers => misbehaving
-		self.peers.misbehaving(peer_index, &format!("Got unrequested 'cmpctblock' message"));
+		self.peers.misbehaving(peer_index, "Got unrequested 'cmpctblock' message");
 	}
 
 	/// When peer sents us specific transactions for specific block
 	pub fn on_block_txn(&self, peer_index: PeerIndex, _message: types::BlockTxn) {
 		trace!(target: "sync", "Got `blocktxn` message from peer#{}", peer_index);
 		// we never ask for this => misbehaving
-		self.peers.misbehaving(peer_index, &format!("Got unrequested 'blocktxn' message"));
+		self.peers.misbehaving(peer_index, "Got unrequested 'blocktxn' message");
 	}
 
 	pub fn accept_transaction(&self, transaction: Transaction) -> Result<H256, String> {
@@ -294,11 +295,11 @@ impl TransactionAcceptSinkData {
 	pub fn wait(&self) -> Result<H256, String> {
 		let mut lock = self.result.lock();
 		if lock.is_some() {
-			return lock.take().unwrap();
+			return lock.take().expect("checked line above");
 		}
 
 		self.waiter.wait(&mut lock);
-		return lock.take().unwrap();
+		lock.take().expect("waiter.wait returns only when result is set; lock.take() takes result from waiter.result; qed")
 	}
 }
 
@@ -398,7 +399,7 @@ pub mod tests {
 		});
 		// => `getdata` is served
 		let tasks = server.take_tasks();
-		assert_eq!(tasks, vec![ServerTask::ServeGetData(peer_index, types::GetData::with_inventory(inventory))]);
+		assert_eq!(tasks, vec![ServerTask::GetData(peer_index, types::GetData::with_inventory(inventory))]);
 	}
 
 	#[test]

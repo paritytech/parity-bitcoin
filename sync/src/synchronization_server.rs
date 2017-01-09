@@ -15,17 +15,17 @@ use utils::KnownHashType;
 #[derive(Debug, PartialEq)]
 pub enum ServerTask {
 	/// Serve 'getdata' request
-	ServeGetData(PeerIndex, types::GetData),
+	GetData(PeerIndex, types::GetData),
 	/// Serve reversed 'getdata' request
-	ServeReversedGetData(PeerIndex, types::GetData, types::NotFound),
+	ReversedGetData(PeerIndex, types::GetData, types::NotFound),
 	/// Serve 'getblocks' request
-	ServeGetBlocks(PeerIndex, types::GetBlocks),
+	GetBlocks(PeerIndex, types::GetBlocks),
 	/// Serve 'getheaders' request
-	ServeGetHeaders(PeerIndex, types::GetHeaders, RequestId),
+	GetHeaders(PeerIndex, types::GetHeaders, RequestId),
 	/// Serve 'mempool' request
-	ServeMempool(PeerIndex),
+	Mempool(PeerIndex),
 	/// Serve 'getblocktxn' request
-	ServeGetBlockTxn(PeerIndex, types::GetBlockTxn),
+	GetBlockTxn(PeerIndex, types::GetBlockTxn),
 }
 
 /// Synchronization server
@@ -76,12 +76,12 @@ impl Server for ServerImpl {
 impl ServerTask {
 	pub fn peer_index(&self) -> PeerIndex {
 		match *self {
-			ServerTask::ServeGetData(peer_index, _) => peer_index,
-			ServerTask::ServeReversedGetData(peer_index, _, _) => peer_index,
-			ServerTask::ServeGetBlocks(peer_index, _) => peer_index,
-			ServerTask::ServeGetHeaders(peer_index, _, _) => peer_index,
-			ServerTask::ServeMempool(peer_index) => peer_index,
-			ServerTask::ServeGetBlockTxn(peer_index, _) => peer_index,
+			ServerTask::GetData(peer_index, _)
+				| ServerTask::ReversedGetData(peer_index, _, _)
+				| ServerTask::GetBlocks(peer_index, _)
+				| ServerTask::GetHeaders(peer_index, _, _)
+				| ServerTask::Mempool(peer_index)
+				| ServerTask::GetBlockTxn(peer_index, _) => peer_index,
 		}
 	}
 }
@@ -229,12 +229,12 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 
 	pub fn execute(&self, task: ServerTask) -> Option<ServerTask> {
 		match task {
-			ServerTask::ServeGetData(peer_index, message) => return self.serve_get_data(peer_index, message),
-			ServerTask::ServeReversedGetData(peer_index, message, notfound) => return self.serve_reversed_get_data(peer_index, message, notfound),
-			ServerTask::ServeGetBlocks(peer_index, message) => self.serve_get_blocks(peer_index, message),
-			ServerTask::ServeGetHeaders(peer_index, message, request_id) => self.serve_get_headers(peer_index, message, request_id),
-			ServerTask::ServeMempool(peer_index) => self.serve_mempool(peer_index),
-			ServerTask::ServeGetBlockTxn(peer_index, message) => self.serve_get_block_txn(peer_index, message),
+			ServerTask::GetData(peer_index, message) => return self.serve_get_data(peer_index, message),
+			ServerTask::ReversedGetData(peer_index, message, notfound) => return self.serve_reversed_get_data(peer_index, message, notfound),
+			ServerTask::GetBlocks(peer_index, message) => self.serve_get_blocks(peer_index, message),
+			ServerTask::GetHeaders(peer_index, message, request_id) => self.serve_get_headers(peer_index, message, request_id),
+			ServerTask::Mempool(peer_index) => self.serve_mempool(peer_index),
+			ServerTask::GetBlockTxn(peer_index, message) => self.serve_get_block_txn(peer_index, message),
 		}
 
 		None
@@ -247,7 +247,7 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 		message.inventory.reverse();
 		// + while iterating by items, also accumulate unknown items to respond with notfound
 		let notfound = types::NotFound { inventory: Vec::new(), };
-		Some(ServerTask::ServeReversedGetData(peer_index, message, notfound))
+		Some(ServerTask::ReversedGetData(peer_index, message, notfound))
 	}
 
 	fn serve_reversed_get_data(&self, peer_index: PeerIndex, mut message: types::GetData, mut notfound: types::NotFound) -> Option<ServerTask> {
@@ -317,7 +317,7 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 			},
 		}
 
-		Some(ServerTask::ServeReversedGetData(peer_index, message, notfound))
+		Some(ServerTask::ReversedGetData(peer_index, message, notfound))
 	}
 
 	fn serve_get_blocks(&self, peer_index: PeerIndex, message: types::GetBlocks) {
@@ -337,7 +337,7 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 				trace!(target: "sync", "'getblocks' request from peer#{} is ignored as there are no new blocks for peer", peer_index);
 			}
 		} else {
-			self.peers.misbehaving(peer_index, &format!("Got 'getblocks' message without known blocks"));
+			self.peers.misbehaving(peer_index, "Got 'getblocks' message without known blocks");
 			return;
 		}
 	}
@@ -357,7 +357,7 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 			trace!(target: "sync", "'getheaders' response to peer#{} is ready with {} headers", peer_index, headers.len());
 			self.executor.execute(Task::Headers(peer_index, types::Headers::with_headers(headers), Some(request_id)));
 		} else {
-			self.peers.misbehaving(peer_index, &format!("Got 'headers' message without known blocks"));
+			self.peers.misbehaving(peer_index, "Got 'headers' message without known blocks");
 			return;
 		}
 	}
@@ -522,7 +522,7 @@ pub mod tests {
 				hash: H256::default(),
 			}
 		];
-		server.execute(ServerTask::ServeGetData(0, types::GetData::with_inventory(inventory.clone())));
+		server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
 		// => respond with notfound
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![Task::NotFound(0, types::NotFound::with_inventory(inventory))]);
@@ -538,7 +538,7 @@ pub mod tests {
 				hash: test_data::genesis().hash(),
 			}
 		];
-		server.execute(ServerTask::ServeGetData(0, types::GetData::with_inventory(inventory.clone())));
+		server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
 		// => respond with block
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![Task::Block(0, test_data::genesis().into())]);
@@ -549,7 +549,7 @@ pub mod tests {
 		let (_, _, executor, _, server) = create_synchronization_server();
 		// when asking for blocks hashes
 		let genesis_block_hash = test_data::genesis().hash();
-		server.execute(ServerTask::ServeGetBlocks(0, types::GetBlocks {
+		server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
 			version: 0,
 			block_locator_hashes: vec![genesis_block_hash.clone()],
 			hash_stop: H256::default(),
@@ -564,7 +564,7 @@ pub mod tests {
 		let (storage, _, executor, _, server) = create_synchronization_server();
 		storage.insert_block(&test_data::block_h1()).expect("Db write error");
 		// when asking for blocks hashes
-		server.execute(ServerTask::ServeGetBlocks(0, types::GetBlocks {
+		server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
 			version: 0,
 			block_locator_hashes: vec![test_data::genesis().hash()],
 			hash_stop: H256::default(),
@@ -584,7 +584,7 @@ pub mod tests {
 		// when asking for blocks hashes
 		let genesis_block_hash = test_data::genesis().hash();
 		let dummy_id = 6;
-		server.execute(ServerTask::ServeGetHeaders(0, types::GetHeaders {
+		server.execute(ServerTask::GetHeaders(0, types::GetHeaders {
 			version: 0,
 			block_locator_hashes: vec![genesis_block_hash.clone()],
 			hash_stop: H256::default(),
@@ -600,7 +600,7 @@ pub mod tests {
 		storage.insert_block(&test_data::block_h1()).expect("Db write error");
 		// when asking for blocks hashes
 		let dummy_id = 0;
-		server.execute(ServerTask::ServeGetHeaders(0, types::GetHeaders {
+		server.execute(ServerTask::GetHeaders(0, types::GetHeaders {
 			version: 0,
 			block_locator_hashes: vec![test_data::genesis().hash()],
 			hash_stop: H256::default(),
@@ -617,7 +617,7 @@ pub mod tests {
 	fn server_mempool_do_not_responds_inventory_when_empty_memory_pool() {
 		let (_, _, executor, _, server) = create_synchronization_server();
 		// when asking for memory pool transactions ids
-		server.execute(ServerTask::ServeMempool(0));
+		server.execute(ServerTask::Mempool(0));
 		// => no response
 		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
 		assert_eq!(tasks, vec![]);
@@ -631,7 +631,7 @@ pub mod tests {
 		let transaction_hash = transaction.hash();
 		memory_pool.write().insert_verified(transaction.into());
 		// when asking for memory pool transactions ids
-		server.execute(ServerTask::ServeMempool(0));
+		server.execute(ServerTask::Mempool(0));
 		// => respond with inventory
 		let inventory = vec![InventoryVector {
 			inv_type: InventoryType::MessageTx,
@@ -649,7 +649,7 @@ pub mod tests {
 		peers.hash_known_as(0, test_data::genesis().hash(), KnownHashType::CompactBlock);
 
 		// when asking for block_txns
-		server.execute(ServerTask::ServeGetBlockTxn(0, types::GetBlockTxn {
+		server.execute(ServerTask::GetBlockTxn(0, types::GetBlockTxn {
 			request: common::BlockTransactionsRequest {
 				blockhash: test_data::genesis().hash(),
 				indexes: vec![0],
@@ -674,7 +674,7 @@ pub mod tests {
 		assert!(peers.enumerate().contains(&0));
 
 		// when asking for block_txns
-		server.execute(ServerTask::ServeGetBlockTxn(0, types::GetBlockTxn {
+		server.execute(ServerTask::GetBlockTxn(0, types::GetBlockTxn {
 			request: common::BlockTransactionsRequest {
 				blockhash: test_data::genesis().hash(),
 				indexes: vec![1],
@@ -702,7 +702,7 @@ pub mod tests {
 				hash: test_data::genesis().transactions[0].hash(),
 			},
 		];
-		server.execute(ServerTask::ServeGetData(0, types::GetData::with_inventory(inventory.clone())));
+		server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
 		// => respond with notfound
 		let tasks = DummyTaskExecutor::wait_tasks(executor);
 		assert_eq!(tasks, vec![Task::NotFound(0, types::NotFound::with_inventory(inventory))]);
@@ -724,7 +724,7 @@ pub mod tests {
 				hash: tx_verified_hash,
 			},
 		];
-		server.execute(ServerTask::ServeGetData(0, types::GetData::with_inventory(inventory.clone())));
+		server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
 		// => respond with transaction
 		let mut tasks = DummyTaskExecutor::wait_tasks(executor.clone());
 		// 2 tasks => can be situation when single task is ready
@@ -743,7 +743,7 @@ pub mod tests {
 			storage.insert_block(&test_data::block_h1()).expect("no error");
 		}
 		// when asking with stop_hash
-		server.execute(ServerTask::ServeGetBlocks(0, types::GetBlocks {
+		server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
 			version: 0,
 			block_locator_hashes: vec![],
 			hash_stop: test_data::genesis().hash(),
@@ -765,7 +765,7 @@ pub mod tests {
 		}
 		// when asking with stop_hash
 		let dummy_id = 6;
-		server.execute(ServerTask::ServeGetHeaders(0, types::GetHeaders {
+		server.execute(ServerTask::GetHeaders(0, types::GetHeaders {
 			version: 0,
 			block_locator_hashes: vec![],
 			hash_stop: test_data::genesis().hash(),
@@ -807,7 +807,7 @@ pub mod tests {
 		// This peer won't get any blocks, because it has not set filter for the connection
 		let peer_index2 = 1; peers.insert(peer_index2, DummyOutboundSyncConnection::new());
 
-		let mut loop_task = ServerTask::ServeGetData(peer_index2, types::GetData {inventory: vec![
+		let mut loop_task = ServerTask::GetData(peer_index2, types::GetData {inventory: vec![
 			InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
 			InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
 		]});
@@ -840,7 +840,7 @@ pub mod tests {
 			}
 
 			// ask for data
-			let mut loop_task = ServerTask::ServeGetData(peer_index, types::GetData {inventory: vec![
+			let mut loop_task = ServerTask::GetData(peer_index, types::GetData {inventory: vec![
 				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
 				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
 			]});
@@ -901,7 +901,7 @@ pub mod tests {
 		let peer_index2 = 1; peers.insert(peer_index2, DummyOutboundSyncConnection::new());
 
 		// ask for data
-		let mut loop_task = ServerTask::ServeGetData(peer_index2, types::GetData {inventory: vec![
+		let mut loop_task = ServerTask::GetData(peer_index2, types::GetData {inventory: vec![
 			InventoryVector { inv_type: InventoryType::MessageCompactBlock, hash: b1_hash.clone() },
 		]});
 		while let Some(new_task) = executor.execute(loop_task) {

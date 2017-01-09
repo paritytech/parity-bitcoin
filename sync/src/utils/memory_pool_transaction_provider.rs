@@ -81,8 +81,8 @@ impl PreviousTransactionOutputProvider for MemoryPoolTransactionOutputProvider {
 		}
 
 		// check if this is output from memory pool transaction
-		if let Some(ref output) = self.mempool_inputs.get(&hashed_prevout) {
-			if let Some(ref output) = **output {
+		if let Some(output) = self.mempool_inputs.get(&hashed_prevout) {
+			if let Some(ref output) = *output {
 				return Some(output.clone());
 			}
 		}
