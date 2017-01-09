@@ -49,15 +49,6 @@ impl MemoryPoolTransactionOutputProvider {
 			}),
 		}
 	}
-
-	/// Create new provider for verifying given block
-	pub fn for_block(storage: StorageRef) -> Self {
-		MemoryPoolTransactionOutputProvider {
-			storage_provider: StorageTransactionOutputProvider::with_storage(storage),
-			mempool_inputs: HashMap::new(),
-			nonfinal_spends: None,
-		}
-	}
 }
 
 impl TransactionOutputObserver for MemoryPoolTransactionOutputProvider {

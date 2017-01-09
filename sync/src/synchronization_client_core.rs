@@ -297,6 +297,10 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 		// validate blocks headers before scheduling
 		let last_known_hash = if first_unknown_index > 0 { headers[first_unknown_index - 1].hash.clone() } else { header0.raw.previous_header_hash.clone() };
+		if self.config.close_connection_on_bad_block && self.chain.block_state(&last_known_hash) == BlockState::DeadEnd {
+			self.peers.misbehaving(peer_index, &format!("Provided after dead-end block {}", last_known_hash.to_reversed_str()));
+			return;
+		}
 		match self.verify_headers(peer_index, last_known_hash, &headers[first_unknown_index..num_headers]) {
 			BlocksHeadersVerificationResult::Error(error_index) => self.chain.mark_dead_end_block(&headers[first_unknown_index + error_index].hash),
 			BlocksHeadersVerificationResult::Skip => (),
@@ -814,6 +818,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			// check that we do not know all blocks in range [first_unknown_index..]
 			// if we know some block => there has been verification error => all headers should be ignored
 			// see when_previous_block_verification_failed_fork_is_not_requested for details
+println!("=== {:?}", self.chain.block_state(&header.hash));
 			match self.chain.block_state(&header.hash) {
 				BlockState::Unknown => (),
 				BlockState::DeadEnd if self.config.close_connection_on_bad_block => {
@@ -1213,17 +1218,22 @@ pub mod tests {
 			None => Arc::new(db::TestStorage::with_genesis_block()),
 		};
 		let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
-		let chain = Chain::new(storage.clone(), Arc::new(RwLock::new(MemoryPool::new())));
+		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
+		let chain = Chain::new(storage.clone(), memory_pool.clone());
 		let executor = DummyTaskExecutor::new();
 		let config = Config { network: Magic::Mainnet, threads_num: 1, close_connection_on_bad_block: true };
 
-		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Testnet));
-		let client_core = SynchronizationClientCore::new(config, &handle, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier);
+		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Unitest));
+		let client_core = SynchronizationClientCore::new(config, &handle, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier.clone());
 		{
 			client_core.lock().set_verify_headers(false);
 		}
 		let mut verifier = verifier.unwrap_or_default();
 		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
+		verifier.set_storage(storage);
+		verifier.set_memory_pool(memory_pool);
+		verifier.set_verifier(chain_verifier);
+
 		let client = SynchronizationClient::new(sync_state, client_core.clone(), verifier);
 		(event_loop, handle, executor, client_core, client)
 	}
@@ -2035,7 +2045,6 @@ pub mod tests {
 			chain.mark_dead_end_block(&b0.hash());
 		}
 
-		core.lock().set_verify_headers(true);
 		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 		
@@ -2154,5 +2163,108 @@ pub mod tests {
 	#[test]
 	fn when_transaction_replaces_locked_transaction() {
 		// TODO
+	}
+
+	#[test]
+	fn when_transaction_double_spends_during_reorg() {
+		let b0 = test_data::block_builder().header().build()
+			.transaction().coinbase()
+				.output().value(10).build()
+				.build()
+			.transaction()
+				.output().value(20).build()
+				.build()
+			.transaction()
+				.output().value(30).build()
+				.build()
+			.transaction()
+				.output().value(40).build()
+				.build()
+			.transaction()
+				.output().value(50).build()
+				.build()
+			.build();
+
+		// in-storage spends b0[1] && b0[2]
+		let b1 = test_data::block_builder()
+			.transaction().coinbase()
+				.output().value(50).build()
+				.build()
+			.transaction().version(10)
+				.input().hash(b0.transactions[1].hash()).index(0).build()
+				.output().value(10).build()
+				.build()
+			.transaction().version(40)
+				.input().hash(b0.transactions[2].hash()).index(0).build()
+				.output().value(10).build()
+				.build()
+			.merkled_header().parent(b0.hash()).build()
+			.build();
+		// in-memory spends b0[3]
+		// in-memory spends b0[4]
+		let future_block = test_data::block_builder().header().parent(b1.hash()).build()
+			.transaction().version(40)
+				.input().hash(b0.transactions[3].hash()).index(0).build()
+				.output().value(10).build()
+				.build()
+			.transaction().version(50)
+				.input().hash(b0.transactions[4].hash()).index(0).build()
+				.output().value(10).build()
+				.build()
+			.build();
+		let tx2: Transaction = future_block.transactions[0].clone();
+		let tx3: Transaction = future_block.transactions[1].clone();
+
+		// in-storage [side] spends b0[3]
+		let b2 = test_data::block_builder().header().parent(b0.hash()).build()
+			.transaction().coinbase()
+				.output().value(5555).build()
+				.build()
+			.transaction().version(20)
+				.input().hash(b0.transactions[3].hash()).index(0).build()
+				.build()
+			.merkled_header().parent(b0.hash()).build()
+			.build();
+		// in-storage [causes reorg to b2 + b3] spends b0[1]
+		let b3 = test_data::block_builder()
+			.transaction().coinbase().version(40)
+				.output().value(50).build()
+				.build()
+			.transaction().version(30)
+				.input().hash(b0.transactions[1].hash()).index(0).build()
+				.output().value(10).build()
+				.build()
+			.merkled_header().parent(b2.hash()).build()
+			.build();
+
+		let mut dummy_verifier = DummyVerifier::default();
+		dummy_verifier.actual_check_when_verifying(b3.hash());
+
+		let storage = create_disk_storage();
+		storage.insert_block(&b0).expect("no db error");
+
+		let (_, _, _, core, sync) = create_sync(Some(storage), Some(dummy_verifier));
+		sync.on_block(0, b1.clone().into());
+		sync.on_transaction(0, tx2.clone().into());
+		sync.on_transaction(0, tx3.clone().into());
+		assert_eq!(core.lock().information().chain.stored, 2); // b0 + b1
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 2); // tx2 + tx3
+
+		// insert b2, which will make tx2 invalid, but not yet
+		sync.on_block(0, b2.clone().into());
+		assert_eq!(core.lock().information().chain.stored, 2); // b0 + b1
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 2); // tx2 + tx3
+
+		// insert b3 => best chain is b0 + b2 + b3
+		// + transaction from b0 is reverified => ok
+		// + tx2 will be reverified => fail
+		// + tx3 will be reverified => ok
+		sync.on_block(0, b3.clone().into());
+		assert_eq!(core.lock().information().chain.stored, 3); // b0 + b2 + b3
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 2); // b1[0] + tx3
+
+		let mempool = core.lock().chain().memory_pool();
+		assert!(mempool.write().remove_by_hash(&b1.transactions[2].hash()).is_some());
+		assert!(mempool.write().remove_by_hash(&tx3.hash()).is_some());
 	}
 }
