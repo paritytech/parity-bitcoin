@@ -113,8 +113,8 @@ impl PeersTasks {
 	/// Sort peers for blocks request
 	pub fn sort_peers_for_blocks(&self, peers: &mut Vec<PeerIndex>) {
 		peers.sort_by(|left, right| {
-			let left_speed = self.stats.get(&left).map(|s| s.speed.speed()).unwrap_or(0f64);
-			let right_speed = self.stats.get(&right).map(|s| s.speed.speed()).unwrap_or(0f64);
+			let left_speed = self.stats.get(left).map(|s| s.speed.speed()).unwrap_or(0f64);
+			let right_speed = self.stats.get(right).map(|s| s.speed.speed()).unwrap_or(0f64);
 			// larger speed => better
 			right_speed.partial_cmp(&left_speed).unwrap_or(Ordering::Equal)
 		})
@@ -179,11 +179,11 @@ impl PeersTasks {
 	/// Block is received from peer.
 	pub fn on_block_received(&mut self, peer_index: PeerIndex, block_hash: &H256) {
 		// block received => reset failures
-		self.blocks_stats.remove(&block_hash);
+		self.blocks_stats.remove(block_hash);
 
 		let is_last_requested_block_received = if let Some(blocks_request) = self.blocks_requests.get_mut(&peer_index) {
 			// if block hasn't been requested => do nothing
-			if !blocks_request.blocks.remove(&block_hash) {
+			if !blocks_request.blocks.remove(block_hash) {
 				return;
 			}
 
@@ -260,7 +260,7 @@ impl PeersTasks {
 		let mut normal_blocks: Vec<H256> = Vec::with_capacity(hashes.len());
 		for hash in hashes {
 			let is_failed_block = {
-				let block_stats = self.blocks_stats.entry(hash.clone()).or_insert(BlockStats::default());
+				let block_stats = self.blocks_stats.entry(hash.clone()).or_insert_with(BlockStats::default);
 				block_stats.failures += 1;
 				block_stats.failures > MAX_BLOCKS_FAILURES
 			};

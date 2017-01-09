@@ -67,7 +67,7 @@ impl ConnectionFilter {
 			.map(|(idx, _)| idx)
 			.collect();
 		types::CompactBlock {
-			header: build_compact_block(&block, unknown_transaction_indexes),
+			header: build_compact_block(block, unknown_transaction_indexes),
 		}
 	}
 
@@ -93,7 +93,7 @@ impl ConnectionFilter {
 		// calculate hashes && match flags for all transactions
 		let (all_hashes, all_flags) = block.transactions.iter()
 			.fold((Vec::<H256>::with_capacity(all_len), BitVec::with_capacity(all_len)), |(mut all_hashes, mut all_flags), t| {
-				let flag = self.bloom_filter.filter_transaction(&t);
+				let flag = self.bloom_filter.filter_transaction(t);
 				all_flags.push(flag);
 				all_hashes.push(t.hash.clone());
 				if flag {

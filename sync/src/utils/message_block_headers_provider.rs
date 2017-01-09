@@ -43,7 +43,7 @@ impl<'a> BlockHeaderProvider for MessageBlockHeadersProvider<'a> {
 			.or_else(move || match block_ref {
 				BlockRef::Hash(h) => self.headers.get(&h).cloned(),
 				BlockRef::Number(n) => if n >= self.first_header_number && n - self.first_header_number < self.headers_order.len() as u32 {
-					let ref header_hash = self.headers_order[(n - self.first_header_number) as usize];
+					let header_hash = &self.headers_order[(n - self.first_header_number) as usize];
 					Some(self.headers[header_hash].clone())
 				} else {
 					None

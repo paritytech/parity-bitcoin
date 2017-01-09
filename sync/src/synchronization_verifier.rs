@@ -61,8 +61,8 @@ pub struct AsyncVerifier {
 impl VerificationTask {
 	/// Returns transaction reference if it is transaction verification task
 	pub fn transaction(&self) -> Option<&IndexedTransaction> {
-		match self {
-			&VerificationTask::VerifyTransaction(_, ref transaction) => Some(&transaction),
+		match *self {
+			VerificationTask::VerifyTransaction(_, ref transaction) => Some(transaction),
 			_ => None,
 		}
 	}
@@ -105,7 +105,7 @@ impl AsyncVerifier {
 							},
 							Ok(Chain::Orphan) => {
 								// this can happen for B1 if B0 verification has failed && we have already scheduled verification of B0
-								sink.on_block_verification_error(&format!("orphaned block because parent block verification has failed"), block.hash())
+								sink.on_block_verification_error("orphaned block because parent block verification has failed", block.hash())
 							},
 							Err(e) => {
 								sink.on_block_verification_error(&format!("{:?}", e), block.hash())
@@ -194,7 +194,7 @@ impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
 				// => we could ignore decanonized transactions
 				self.sink.on_block_verification_success(block);
 			},
-			Ok(Chain::Orphan) => self.sink.on_block_verification_error(&format!("orphaned block because parent block verification has failed"), block.hash()),
+			Ok(Chain::Orphan) => self.sink.on_block_verification_error("orphaned block because parent block verification has failed", block.hash()),
 			Err(e) => self.sink.on_block_verification_error(&format!("{:?}", e), block.hash()),
 		}
 	}

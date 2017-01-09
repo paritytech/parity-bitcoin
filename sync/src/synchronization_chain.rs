@@ -258,12 +258,10 @@ impl Chain {
 			Some(queue_index) => BlockState::from_queue_index(queue_index),
 			None => if self.storage.contains_block(db::BlockRef::Hash(hash.clone())) {
 				BlockState::Stored
+			} else if self.dead_end_blocks.contains(hash) {
+				BlockState::DeadEnd
 			} else {
-				if self.dead_end_blocks.contains(hash) {
-					BlockState::DeadEnd
-				} else {
-					BlockState::Unknown
-				}
+				BlockState::Unknown
 			},
 		}
 	}

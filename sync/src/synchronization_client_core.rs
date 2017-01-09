@@ -227,7 +227,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 						BlockState::DeadEnd if !self.config.close_connection_on_bad_block => true,
 						BlockState::DeadEnd if self.config.close_connection_on_bad_block => {
 							self.peers.misbehaving(peer_index, &format!("Provided dead-end block {:?}", item.hash.to_reversed_str()));
-							return false;
+							false
 						},
 						_ => false,
 					},
@@ -236,7 +236,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 					// unknown inventory type
 					InventoryType::Error => {
 						self.peers.misbehaving(peer_index, &format!("Provided unknown inventory type {:?}", item.hash.to_reversed_str()));
-						return false;
+						false
 					}
 				}
 			})
@@ -405,18 +405,18 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 						let blocks_hashes_to_forget: Vec<_> = blocks_to_verify.iter().map(|b| b.hash().clone()).collect();
 						self.chain.forget_blocks_leave_header(&blocks_hashes_to_forget);
 						// remember that we are verifying these blocks
-						let blocks_headers_to_verify: Vec<_> = blocks_to_verify.iter().map(|ref b| b.header.clone()).collect();
+						let blocks_headers_to_verify: Vec<_> = blocks_to_verify.iter().map(|b| b.header.clone()).collect();
 						self.chain.verify_blocks(blocks_headers_to_verify);
 						// remember that we are verifying block from this peer
-						for verifying_block_hash in blocks_to_verify.iter().map(|ref b| b.hash().clone()) {
+						for verifying_block_hash in blocks_to_verify.iter().map(|b| b.hash().clone()) {
 							self.verifying_blocks_by_peer.insert(verifying_block_hash, peer_index);
 						}
 						match self.verifying_blocks_futures.entry(peer_index) {
 							Entry::Occupied(mut entry) => {
-								entry.get_mut().0.extend(blocks_to_verify.iter().map(|ref b| b.hash().clone()));
+								entry.get_mut().0.extend(blocks_to_verify.iter().map(|b| b.hash().clone()));
 							},
 							Entry::Vacant(entry) => {
-								let block_hashes: HashSet<_> = blocks_to_verify.iter().map(|ref b| b.hash().clone()).collect();
+								let block_hashes: HashSet<_> = blocks_to_verify.iter().map(|b| b.hash().clone()).collect();
 								entry.insert((block_hashes, Vec::new()));
 							}
 						}
@@ -589,14 +589,12 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 							// => bad situation
 							0_f64
 						}
+					} else if verification_speed < 0.01_f64 {
+						// verification speed is too slow
+						60_f64
 					} else {
-						if verification_speed < 0.01_f64 {
-							// verification speed is too slow
-							60_f64
-						} else {
-							// blocks / (blocks / second) -> second
-							verifying_hashes_len as f64 / verification_speed
-						}
+						// blocks / (blocks / second) -> second
+						verifying_hashes_len as f64 / verification_speed
 					};
 					// estimate time when all synchronization requests will complete
 					let synchronization_queue_will_be_full_in = if synchronization_speed < 0.01_f64 {
@@ -879,7 +877,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		transactions.extend(self.orphaned_transactions_pool.remove_transactions_for_parent(&transaction.hash));
 		transactions.push_front(transaction);
 		// remember that we are verifying these transactions
-		for ref tx in &transactions {
+		for tx in &transactions {
 			if !relay {
 				self.do_not_relay.insert(tx.hash.clone());
 			}
@@ -922,7 +920,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 
 			// request blocks
 			let getdata = types::GetData {
-				inventory: chunk_hashes.into_iter().map(|h| InventoryVector::block(h)).collect(),
+				inventory: chunk_hashes.into_iter().map(InventoryVector::block).collect(),
 			};
 			tasks.push(Task::GetData(peer, getdata));
 		}
@@ -1018,12 +1016,10 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				self.execute_synchronization_tasks(None, None);
 
 				// relay block to our peers
-				if self.state.is_saturated() || self.state.is_nearly_saturated() {
-					if needs_relay {
-						for block_hash in insert_result.canonized_blocks_hashes {
-							if let Some(block) = self.chain.storage().block(block_hash.into()) {
-								self.executor.execute(Task::RelayNewBlock(block.into()));
-							}
+				if needs_relay && (self.state.is_saturated() || self.state.is_nearly_saturated()) {
+					for block_hash in insert_result.canonized_blocks_hashes {
+						if let Some(block) = self.chain.storage().block(block_hash.into()) {
+							self.executor.execute(Task::RelayNewBlock(block.into()));
 						}
 					}
 				}
@@ -1104,8 +1100,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		// call verification future, if any
-		if let Some(mut future_sink) = self.verifying_transactions_sinks.remove(&transaction.hash) {
-			(&mut future_sink).on_transaction_verification_success(transaction);
+		if let Some(future_sink) = self.verifying_transactions_sinks.remove(&transaction.hash) {
+			future_sink.on_transaction_verification_success(transaction);
 		}
 	}
 
@@ -1119,8 +1115,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		self.chain.forget_verifying_transaction_with_children(hash);
 
 		// call verification future, if any
-		if let Some(mut future_sink) = self.verifying_transactions_sinks.remove(hash) {
-			(&mut future_sink).on_transaction_verification_error(err, hash);
+		if let Some(future_sink) = self.verifying_transactions_sinks.remove(hash) {
+			future_sink.on_transaction_verification_error(err, hash);
 		}
 	}
 
