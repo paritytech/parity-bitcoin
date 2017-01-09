@@ -86,52 +86,61 @@ impl AsyncVerifier {
 	/// Thread procedure for handling verification tasks
 	fn verification_worker_proc<T: VerificationSink>(sink: Arc<T>, storage: StorageRef, memory_pool: MemoryPoolRef, verifier: Arc<ChainVerifier>, work_receiver: Receiver<VerificationTask>) {
 		while let Ok(task) = work_receiver.recv() {
-			// block verification && insertion can lead to reorganization
-			// => transactions from decanonized blocks should be put back to the MemoryPool
-			// => they must be verified again
-			// => here's sub-tasks queue
-			let mut tasks_queue: VecDeque<VerificationTask> = VecDeque::new();
-			tasks_queue.push_back(task);
-
-			while let Some(task) = tasks_queue.pop_front() {
-				match task {
-					VerificationTask::VerifyBlock(block) => {
-						// verify block
-						match verifier.verify(&block) {
-							Ok(Chain::Main) | Ok(Chain::Side) => {
-								if let Some(tasks) = sink.on_block_verification_success(block) {
-									tasks_queue.extend(tasks);
-								}
-							},
-							Ok(Chain::Orphan) => {
-								// this can happen for B1 if B0 verification has failed && we have already scheduled verification of B0
-								sink.on_block_verification_error(&format!("orphaned block because parent block verification has failed"), block.hash())
-							},
-							Err(e) => {
-								sink.on_block_verification_error(&format!("{:?}", e), block.hash())
-							}
-						}
-					},
-					VerificationTask::VerifyTransaction(height, transaction) => {
-						// output provider must check previous outputs in both storage && memory pool
-						match MemoryPoolTransactionOutputProvider::for_transaction(storage.clone(), &memory_pool, &transaction.raw) {
-							Err(e) => {
-								sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash);
-								continue; // with new verification sub-task
-							},
-							Ok(tx_output_provider) => {
-								let time: u32 = get_time().sec as u32;
-								match verifier.verify_mempool_transaction(&tx_output_provider, height, time, &transaction.raw) {
-									Ok(_) => sink.on_transaction_verification_success(transaction.into()),
-									Err(e) => sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash),
-								}
-							},
-						};
-					},
-					VerificationTask::Stop => break,
-				}
+			if !AsyncVerifier::execute_single_task(&sink, &storage, &memory_pool, &verifier, task) {
+				break;
 			}
 		}
+	}
+
+	/// Execute single verification task
+	pub fn execute_single_task<T: VerificationSink>(sink: &Arc<T>, storage: &StorageRef, memory_pool: &MemoryPoolRef, verifier: &Arc<ChainVerifier>, task: VerificationTask) -> bool {
+		// block verification && insertion can lead to reorganization
+		// => transactions from decanonized blocks should be put back to the MemoryPool
+		// => they must be verified again
+		// => here's sub-tasks queue
+		let mut tasks_queue: VecDeque<VerificationTask> = VecDeque::new();
+		tasks_queue.push_back(task);
+
+		while let Some(task) = tasks_queue.pop_front() {
+			match task {
+				VerificationTask::VerifyBlock(block) => {
+					// verify block
+					match verifier.verify(&block) {
+						Ok(Chain::Main) | Ok(Chain::Side) => {
+							if let Some(tasks) = sink.on_block_verification_success(block) {
+								tasks_queue.extend(tasks);
+							}
+						},
+						Ok(Chain::Orphan) => {
+							// this can happen for B1 if B0 verification has failed && we have already scheduled verification of B0
+							sink.on_block_verification_error(&format!("orphaned block because parent block verification has failed"), block.hash())
+						},
+						Err(e) => {
+							sink.on_block_verification_error(&format!("{:?}", e), block.hash())
+						}
+					}
+				},
+				VerificationTask::VerifyTransaction(height, transaction) => {
+					// output provider must check previous outputs in both storage && memory pool
+					match MemoryPoolTransactionOutputProvider::for_transaction(storage.clone(), &memory_pool, &transaction.raw) {
+						Err(e) => {
+							sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash);
+							continue; // with new verification sub-task
+						},
+						Ok(tx_output_provider) => {
+							let time: u32 = get_time().sec as u32;
+							match verifier.verify_mempool_transaction(&tx_output_provider, height, time, &transaction.raw) {
+								Ok(_) => sink.on_transaction_verification_success(transaction.into()),
+								Err(e) => sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash),
+							}
+						},
+					};
+				},
+				VerificationTask::Stop => return false,
+			}
+		}
+
+		true
 	}
 }
 
@@ -208,18 +217,23 @@ impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
 #[cfg(test)]
 pub mod tests {
 	use std::sync::Arc;
-	use std::collections::HashMap;
+	use std::collections::{HashSet, HashMap};
+	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 	use synchronization_client_core::CoreVerificationSink;
 	use synchronization_executor::tests::DummyTaskExecutor;
 	use primitives::hash::H256;
 	use chain::{IndexedBlock, IndexedTransaction};
-	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink};
-	use types::BlockHeight;
+	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink, AsyncVerifier, VerificationTask};
+	use types::{BlockHeight, StorageRef, MemoryPoolRef};
 
 	#[derive(Default)]
 	pub struct DummyVerifier {
 		sink: Option<Arc<CoreVerificationSink<DummyTaskExecutor>>>,
-		errors: HashMap<H256, String>
+		errors: HashMap<H256, String>,
+		actual_checks: HashSet<H256>,
+		storage: Option<StorageRef>,
+		memory_pool: Option<MemoryPoolRef>,
+		verifier: Option<Arc<ChainVerifier>>,
 	}
 
 	impl DummyVerifier {
@@ -227,8 +241,24 @@ pub mod tests {
 			self.sink = Some(sink);
 		}
 
+		pub fn set_storage(&mut self, storage: StorageRef) {
+			self.storage = Some(storage);
+		}
+
+		pub fn set_memory_pool(&mut self, memory_pool: MemoryPoolRef) {
+			self.memory_pool = Some(memory_pool);
+		}
+
+		pub fn set_verifier(&mut self, verifier: Arc<ChainVerifier>) {
+			self.verifier = Some(verifier);
+		}
+
 		pub fn error_when_verifying(&mut self, hash: H256, err: &str) {
 			self.errors.insert(hash, err.into());
+		}
+
+		pub fn actual_check_when_verifying(&mut self, hash: H256) {
+			self.actual_checks.insert(hash);
 		}
 	}
 
@@ -238,8 +268,11 @@ pub mod tests {
 				Some(ref sink) => match self.errors.get(&block.hash()) {
 					Some(err) => sink.on_block_verification_error(&err, &block.hash()),
 					None => {
-						sink.on_block_verification_success(block);
-						()
+						if self.actual_checks.contains(block.hash()) {
+							AsyncVerifier::execute_single_task(sink, self.storage.as_ref().unwrap(), self.memory_pool.as_ref().unwrap(), self.verifier.as_ref().unwrap(), VerificationTask::VerifyBlock(block));
+						} else {
+							sink.on_block_verification_success(block);
+						}
 					},
 				},
 				None => panic!("call set_sink"),
@@ -250,7 +283,14 @@ pub mod tests {
 			match self.sink {
 				Some(ref sink) => match self.errors.get(&transaction.hash) {
 					Some(err) => sink.on_transaction_verification_error(&err, &transaction.hash),
-					None => sink.on_transaction_verification_success(transaction.into()),
+					None => {
+						if self.actual_checks.contains(&transaction.hash) {
+							let next_block_height = self.storage.as_ref().unwrap().best_block().unwrap().number + 1;
+							AsyncVerifier::execute_single_task(sink, self.storage.as_ref().unwrap(), self.memory_pool.as_ref().unwrap(), self.verifier.as_ref().unwrap(), VerificationTask::VerifyTransaction(next_block_height, transaction));
+						} else {
+							sink.on_transaction_verification_success(transaction.into());
+						}
+					},
 				},
 				None => panic!("call set_sink"),
 			}

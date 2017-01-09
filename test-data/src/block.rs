@@ -293,6 +293,11 @@ impl<F> TransactionBuilder<F> where F: Invoke<chain::Transaction> {
 		self
 	}
 
+	pub fn version(mut self, version: i32) -> Self {
+		self.version = version;
+		self
+	}
+
 	pub fn input(self) -> TransactionInputBuilder<Self> {
 		TransactionInputBuilder::with_callback(self)
 	}
