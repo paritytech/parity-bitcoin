@@ -3,7 +3,7 @@ use std::sync::{Arc, Weak};
 use std::thread::JoinHandle;
 use std::path::Path;
 use std::thread;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, Condvar};
 
 use storage::{Store, Storage};
 use block_stapler::{BlockInsertedChain, BlockStapler};
@@ -66,6 +66,9 @@ pub struct ChainClient {
 	notify: Mutex<Vec<ChainNotifyEntry>>,
 	stop: Arc<AtomicBool>,
 	verifier_factory: Box<VerifierFactory>,
+	more_fetch: Arc<(Mutex<bool>, Condvar)>,
+	more_verify: Arc<(Mutex<bool>, Condvar)>,
+	more_insert: Arc<(Mutex<bool>, Condvar)>,
 }
 
 pub trait VerifierFactory : Send + Sync {
@@ -94,6 +97,9 @@ impl ChainClient {
 			notify: Default::default(),
 			stop: Arc::new(AtomicBool::new(false)),
 			verifier_factory: verifier_factory,
+			more_fetch: Default::default(),
+			more_insert: Default::default(),
+			more_verify: Default::default(),
 		};
 
 		if let Some(genesis) = chain.verifier_factory.genesis() {
@@ -134,6 +140,14 @@ impl ChainClient {
 
 		self.queue().push(block);
 
+		// kick fetch thread
+		{
+			let &(ref mutex, ref cvar) = &*self.more_fetch;
+			let mut kick = mutex.lock();
+			*kick = true;
+			cvar.notify_all();
+		}
+
 		Ok(())
 	}
 
@@ -164,14 +178,27 @@ impl ChainClient {
 		let thread_stop = self.stop.clone();
 		let thread_verifier = self.verifier_factory.spawn(self.store.clone());
 		let thread_queue = self.queue.clone();
+		let thread_more_verify = self.more_verify.clone();
+		let thread_more_insert = self.more_insert.clone();
 
 		thread::spawn(move || {
 			while !thread_stop.load(Ordering::SeqCst) {
 				match thread_queue.verify(&*thread_verifier) {
-					TaskResult::Ok => { } // continue with next block
+					TaskResult::Ok => {
+						// kick insert thread(s)
+						let &(ref mutex, ref cvar) = &*thread_more_insert;
+						let mut kick = mutex.lock();
+						*kick = true;
+						cvar.notify_all();
+					},
 					TaskResult::Wait => {
-						thread::park_timeout(::std::time::Duration::from_millis(TASK_TIMEOUT_INTERVAL));
-					}
+						// wait until kicked by fetch thread
+						let &(ref mutex, ref cvar) = &*thread_more_verify;
+						let mut kick = mutex.lock();
+						while !*kick {
+							cvar.wait(&mut kick);
+						}
+					},
 				}
 			}
 		})
@@ -181,14 +208,27 @@ impl ChainClient {
 		let thread_stop = self.stop.clone();
 		let thread_store = self.store.clone();
 		let thread_queue = self.queue.clone();
+		let thread_more_verify = self.more_verify.clone();
+		let thread_more_fetch = self.more_fetch.clone();
 
 		thread::spawn(move || {
 			while !thread_stop.load(Ordering::SeqCst) {
 				match thread_queue.fetch(&*thread_store) {
-					TaskResult::Ok => { } // continue with next block
+					TaskResult::Ok => {
+						// kick verification thread(s)
+						let &(ref mutex, ref cvar) = &*thread_more_verify;
+						let mut kick = mutex.lock();
+						*kick = true;
+						cvar.notify_all();
+					},
 					TaskResult::Wait => {
-						thread::park_timeout(::std::time::Duration::from_millis(TASK_TIMEOUT_INTERVAL));
-					}
+						// wait until kicked by block push
+						let &(ref mutex, ref cvar) = &*thread_more_fetch;
+						let mut kick = mutex.lock();
+						while !*kick {
+							cvar.wait(&mut kick);
+						}
+					},
 				}
 			}
 		})
@@ -198,13 +238,19 @@ impl ChainClient {
 		let thread_stop = self.stop.clone();
 		let thread_store = self.store.clone();
 		let thread_queue = self.queue.clone();
+		let thread_more_insert = self.more_insert.clone();
 
 		thread::spawn(move || {
 			while !thread_stop.load(Ordering::SeqCst) {
 				match thread_queue.insert_verified(&*thread_store) {
 					TaskResult::Ok => { } // continue with next block
 					TaskResult::Wait => {
-						thread::park_timeout(::std::time::Duration::from_millis(TASK_TIMEOUT_INTERVAL));
+						// wait until kicked by verification thread
+						let &(ref mutex, ref cvar) = &*thread_more_insert;
+						let mut kick = mutex.lock();
+						while !*kick {
+							cvar.wait(&mut kick);
+						}
 					}
 				}
 			}
