@@ -322,6 +322,7 @@ impl BlockQueue {
 	/// This is supposed to be quick and synchronous
 	/// Since all dependencies are fetched (and flushes are in another thread)
 	pub fn insert_verified<I>(&self, inserter: &I) -> TaskResult where I: InsertBlock {
+		let mut verified_txes = self.verified_transactions.write();
 		let mut verified = self.verified.write();
 
 		// check head block if it is exists and ready for insertion
@@ -331,7 +332,6 @@ impl BlockQueue {
 		};
 		let (hash, block) = verified.pop_front().expect("We just checked above that front item exists; So pop should produce existing item; qed");
 
-		let mut verified_txes = self.verified_transactions.write();
 		// remove transactions from verified list
 		for tx in block.raw().transactions.iter() {
 			verified_txes.remove(&tx.hash);
@@ -710,7 +710,6 @@ mod tests {
 
 		let counter = Arc::new(NotificationRecorder::default());
 		let subscriber = counter.clone() as Arc<QueueNotify>;
-
 
 		let path = RandomTempPath::create_dir();
 		let store = Storage::new(path.as_path()).unwrap();
