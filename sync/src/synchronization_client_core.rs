@@ -816,7 +816,6 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			// check that we do not know all blocks in range [first_unknown_index..]
 			// if we know some block => there has been verification error => all headers should be ignored
 			// see when_previous_block_verification_failed_fork_is_not_requested for details
-println!("=== {:?}", self.chain.block_state(&header.hash));
 			match self.chain.block_state(&header.hash) {
 				BlockState::Unknown => (),
 				BlockState::DeadEnd if self.config.close_connection_on_bad_block => {
