@@ -112,15 +112,15 @@ impl ChainClient {
 		}
 		for _ in 0..VERIFICATION_THREADS {
 			let thread = chain.verification_thread();
-			chain.fetch_threads.push(thread);
+			chain.verification_threads.push(thread);
 		}
 		for _ in 0..FLUSH_THREADS {
 			let thread = chain.flush_thread();
-			chain.fetch_threads.push(thread);
+			chain.insert_threads.push(thread);
 		}
 		for _ in 0..INSERT_THREADS {
 			let thread = chain.insert_thread();
-			chain.fetch_threads.push(thread);
+			chain.flush_threads.push(thread);
 		}
 
 		Ok(chain)
@@ -184,6 +184,7 @@ impl ChainClient {
 					TaskResult::Ok => {
 						// kick insert thread(s)
 						ChainClient::kick(&thread_more_insert);
+						println!("Kicked insert thread...");
 					},
 					TaskResult::Wait => {
 						println!("Waiting for verify...");
@@ -301,13 +302,18 @@ impl Drop for ChainClient {
 		self.stop.store(true, Ordering::SeqCst);
 
 		ChainClient::kick(&self.more_fetch);
-		ChainClient::kick(&self.more_verify);
-		ChainClient::kick(&self.more_insert);
-
-		for thread in self.insert_threads.drain(..) { thread.join().expect("Failed to join insert thread"); }
-		for thread in self.flush_threads.drain(..) { thread.join().expect("Failed to join flush thread"); }
-		for thread in self.verification_threads.drain(..) { thread.join().expect("Failed to join verification thread"); }
 		for thread in self.fetch_threads.drain(..) { thread.join().expect("Failed to join fetch thread"); }
+		println!("Finalized fetch threads");
+
+		ChainClient::kick(&self.more_verify);
+		for thread in self.verification_threads.drain(..) { thread.join().expect("Failed to join verification thread"); }
+		println!("Finalized verification threads");
+
+		ChainClient::kick(&self.more_insert);
+		for thread in self.insert_threads.drain(..) { thread.join().expect("Failed to join insert thread"); }
+		println!("Finalized insert threads");
+
+		for thread in self.flush_threads.drain(..) { thread.join().expect("Failed to join flush thread"); }
 		self.store.flush();
 	}
 }
