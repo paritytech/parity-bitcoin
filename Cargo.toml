@@ -9,6 +9,7 @@ description = "Parity bitcoin client."
 log = "0.3"
 env_logger = "0.3"
 app_dirs = "^1.1.1"
+libc = "0.2"
 clap = { version = "2", features = ["yaml"] }
 chain = { path = "chain" }
 keys = { path = "keys" }
@@ -24,6 +25,7 @@ import = { path = "import" }
 bencher = { path = "bencher" }
 logs = { path = "logs" }
 rpc = { path = "rpc" }
+primitives = { path = "primitives" }
 
 [[bin]]
 path = "pbtc/main.rs"

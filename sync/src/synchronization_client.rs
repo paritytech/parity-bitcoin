@@ -5,7 +5,7 @@ use message::types;
 use synchronization_executor::TaskExecutor;
 use synchronization_verifier::{Verifier, TransactionVerificationSink};
 use synchronization_client_core::{ClientCore, SynchronizationClientCore};
-use types::{PeerIndex, ClientCoreRef, SynchronizationStateRef, EmptyBoxFuture};
+use types::{PeerIndex, ClientCoreRef, SynchronizationStateRef, EmptyBoxFuture, SyncListenerRef};
 
 #[cfg_attr(feature="cargo-clippy", allow(doc_markdown))]
 ///! TODO: update with headers-first corrections
@@ -130,6 +130,7 @@ pub trait Client : Send + Sync + 'static {
 	fn on_notfound(&self, peer_index: PeerIndex, message: types::NotFound);
 	fn after_peer_nearly_blocks_verified(&self, peer_index: PeerIndex, future: EmptyBoxFuture);
 	fn accept_transaction(&self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<(), String>;
+	fn install_sync_listener(&self, listener: SyncListenerRef);
 }
 
 /// Synchronization client facade
@@ -221,6 +222,10 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 			self.verifier.verify_transaction(next_block_height, tx);
 		}
 		Ok(())
+	}
+
+	fn install_sync_listener(&self, listener: SyncListenerRef) {
+		self.core.lock().install_sync_listener(listener);
 	}
 }
 

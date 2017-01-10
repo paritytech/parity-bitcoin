@@ -14,7 +14,7 @@ use primitives::hash::H256;
 use miner::BlockTemplate;
 use synchronization_peers::{TransactionAnnouncementType, BlockAnnouncementType};
 use types::{PeerIndex, RequestId, StorageRef, MemoryPoolRef, PeersRef, ExecutorRef,
-	ClientRef, ServerRef, SynchronizationStateRef};
+	ClientRef, ServerRef, SynchronizationStateRef, SyncListenerRef};
 
 /// Local synchronization node
 pub struct LocalNode<T: TaskExecutor, U: Server, V: Client> {
@@ -261,6 +261,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 		self.peers.misbehaving(peer_index, "Got unrequested 'blocktxn' message");
 	}
 
+	/// Verify and then schedule new transaction
 	pub fn accept_transaction(&self, transaction: Transaction) -> Result<H256, String> {
 		let sink_data = Arc::new(TransactionAcceptSinkData::default());
 		let sink = TransactionAcceptSink::new(sink_data.clone()).boxed();
@@ -272,10 +273,16 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 		sink_data.wait()
 	}
 
+	/// Get block template for mining
 	pub fn get_block_template(&self) -> BlockTemplate {
 		let block_assembler = BlockAssembler::default();
 		let memory_pool = &*self.memory_pool.read();
 		block_assembler.create_new_block(&self.storage, memory_pool, time::get_time().sec as u32, self.network)
+	}
+
+	/// Install synchronization events listener
+	pub fn install_sync_listener(&self, listener: SyncListenerRef) {
+		self.client.install_sync_listener(listener);
 	}
 }
 

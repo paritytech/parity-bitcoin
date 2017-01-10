@@ -4,6 +4,7 @@ use parking_lot::{Mutex, RwLock};
 use db;
 use local_node::LocalNode;
 use miner::MemoryPool;
+use super::SyncListener;
 use synchronization_client::SynchronizationClient;
 use synchronization_executor::LocalSynchronizationTaskExecutor;
 use synchronization_peers::Peers;
@@ -48,3 +49,6 @@ pub type ServerRef<T> = Arc<T>;
 
 /// Reference to local node
 pub type LocalNodeRef = Arc<LocalNode<LocalSynchronizationTaskExecutor, ServerImpl, SynchronizationClient<LocalSynchronizationTaskExecutor, AsyncVerifier>>>;
+
+/// Synchronization events listener reference
+pub type SyncListenerRef = Box<SyncListener>;

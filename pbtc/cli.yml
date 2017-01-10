@@ -71,6 +71,11 @@ args:
         help: List of allowed Host header values
         takes_value: true
         value_name: HOSTS
+    - blocknotify:
+        long: blocknotify
+        help: Execute command when the best block changes (%s in cmd is replaced by block hash)
+        takes_value: true
+        value_name: command
 subcommands:
     - import:
         about: Import blocks from bitcoin core database

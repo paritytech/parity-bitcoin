@@ -6,6 +6,7 @@ extern crate clap;
 extern crate log;
 extern crate env_logger;
 extern crate app_dirs;
+extern crate libc;
 
 extern crate db;
 extern crate chain;
@@ -18,6 +19,7 @@ extern crate p2p;
 extern crate sync;
 extern crate import;
 extern crate rpc as ethcore_rpc;
+extern crate primitives;
 
 mod commands;
 mod config;
