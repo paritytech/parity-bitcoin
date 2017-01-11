@@ -1,11 +1,17 @@
 use std::collections::HashSet;
+use std::sync::{Arc, Weak};
+use std::thread;
+use std::time::Duration;
+use parking_lot::{Mutex, Condvar};
 use time::precise_time_s;
 use primitives::hash::H256;
+use synchronization_client_core::{ClientCore, SynchronizationClientCore};
+use synchronization_executor::TaskExecutor;
 use synchronization_peers_tasks::PeersTasks;
 use utils::{OrphanBlocksPool, OrphanTransactionsPool};
 
 /// Management interval (in ms)
-pub const MANAGEMENT_INTERVAL_MS: u64 = 10 * 1000;
+const MANAGEMENT_INTERVAL_MS: u64 = 10 * 1000;
 /// Response time before getting block to decrease peer score
 const DEFAULT_PEER_BLOCK_FAILURE_INTERVAL_MS: u32 = 60 * 1000;
 /// Response time before getting headers to decrease peer score
@@ -18,6 +24,94 @@ const DEFAULT_UNKNOWN_BLOCKS_MAX_LEN: usize = 16;
 const DEFAULT_ORPHAN_TRANSACTION_REMOVAL_TIME_MS: u32 = 10 * 60 * 1000;
 /// Maximal number of orphaned transactions
 const DEFAULT_ORPHAN_TRANSACTIONS_MAX_LEN: usize = 10000;
+
+/// Synchronization management worker
+pub struct ManagementWorker {
+	/// Stop flag.
+	is_stopping: Arc<Mutex<bool>>,
+	/// Stop event.
+	stopping_event: Arc<Condvar>,
+	/// Verification thread.
+	thread: Option<thread::JoinHandle<()>>,
+}
+
+impl ManagementWorker {
+	pub fn new<T: TaskExecutor>(core: Weak<Mutex<SynchronizationClientCore<T>>>) -> Self {
+		let is_stopping = Arc::new(Mutex::new(false));
+		let stopping_event = Arc::new(Condvar::new());
+		ManagementWorker {
+			is_stopping: is_stopping.clone(),
+			stopping_event: stopping_event.clone(),
+			thread: Some(thread::Builder::new()
+				.name("Sync management thread".to_string())
+				.spawn(move || ManagementWorker::worker_proc(is_stopping, stopping_event, core))
+				.expect("Error creating management thread"))
+		}
+	}
+
+	fn worker_proc<T: TaskExecutor>(is_stopping: Arc<Mutex<bool>>, stopping_event: Arc<Condvar>, core: Weak<Mutex<SynchronizationClientCore<T>>>) {
+		let peers_config = ManagePeersConfig::default();
+		let unknown_config = ManageUnknownBlocksConfig::default();
+		let orphan_config = ManageOrphanTransactionsConfig::default();
+
+		loop {
+			let mut lock = is_stopping.lock();
+			if *lock {
+				break;
+			}
+
+			if !stopping_event.wait_for(&mut lock, Duration::from_millis(MANAGEMENT_INTERVAL_MS)).timed_out() {
+				if *lock {
+					break;
+				}
+
+				// spurious wakeup?
+				continue;
+			}
+			drop(lock);
+
+			// if core is dropped => stop thread
+			let core = match core.upgrade() {
+				None => break,
+				Some(core) => core,
+			};
+
+			let mut core = core.lock();
+			// trace synchronization state
+			core.print_synchronization_information();
+			// execute management tasks if not saturated
+			if core.state().is_synchronizing() || core.state().is_nearly_saturated() {
+				let (blocks_to_request, blocks_to_forget) = manage_synchronization_peers_blocks(&peers_config, core.peers_tasks());
+				core.forget_failed_blocks(&blocks_to_forget);
+				core.execute_synchronization_tasks(
+					if blocks_to_request.is_empty() { None } else { Some(blocks_to_request) },
+					if blocks_to_forget.is_empty() { None } else { Some(blocks_to_forget) },
+				);
+
+				manage_synchronization_peers_headers(&peers_config, core.peers_tasks());
+				manage_orphaned_transactions(&orphan_config, core.orphaned_transactions_pool());
+				if let Some(orphans_to_remove) = manage_unknown_orphaned_blocks(&unknown_config, core.orphaned_blocks_pool()) {
+					for orphan_to_remove in orphans_to_remove {
+						core.chain().forget_block(&orphan_to_remove);
+					}
+				}
+			}
+		}
+
+		trace!(target: "sync", "Stopping sync management thread");
+	}
+}
+
+impl Drop for ManagementWorker {
+	fn drop(&mut self) {
+		if let Some(join_handle) = self.thread.take() {
+			*self.is_stopping.lock() = true;
+			self.stopping_event.notify_all();
+			join_handle.join().expect("Clean shutdown.");
+		}
+	}
+}
+
 
 /// Peers management configuration
 pub struct ManagePeersConfig {

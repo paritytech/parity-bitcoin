@@ -331,7 +331,6 @@ pub mod tests {
 	use synchronization_client::SynchronizationClient;
 	use synchronization_client_core::{Config, SynchronizationClientCore, CoreVerificationSink};
 	use synchronization_chain::Chain;
-	use p2p::event_loop;
 	use message::types;
 	use message::common::{InventoryVector, InventoryType};
 	use network::Magic;
@@ -343,7 +342,6 @@ pub mod tests {
 	use synchronization_server::ServerTask;
 	use synchronization_server::tests::DummyServer;
 	use synchronization_verifier::tests::DummyVerifier;
-	use tokio_core::reactor::{Core, Handle};
 	use primitives::bytes::Bytes;
 	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 	use std::iter::repeat;
@@ -366,9 +364,7 @@ pub mod tests {
 		}
 	}
 
-	fn create_local_node(verifier: Option<DummyVerifier>) -> (Core, Handle, Arc<DummyTaskExecutor>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
-		let event_loop = event_loop();
-		let handle = event_loop.handle();
+	fn create_local_node(verifier: Option<DummyVerifier>) -> (Arc<DummyTaskExecutor>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
 		let storage = Arc::new(db::TestStorage::with_genesis_block());
 		let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
@@ -376,9 +372,9 @@ pub mod tests {
 		let sync_peers = Arc::new(PeersImpl::default());
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
-		let config = Config { network: Magic::Mainnet, threads_num: 1, close_connection_on_bad_block: true };
+		let config = Config { network: Magic::Mainnet, close_connection_on_bad_block: true };
 		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Mainnet));
-		let client_core = SynchronizationClientCore::new(config, &handle, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier);
+		let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier);
 		let mut verifier = match verifier {
 			Some(verifier) => verifier,
 			None => DummyVerifier::default(),
@@ -386,12 +382,12 @@ pub mod tests {
 		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
 		let client = SynchronizationClient::new(sync_state.clone(), client_core, verifier);
 		let local_node = LocalNode::new(Magic::Mainnet, storage, memory_pool, sync_peers, sync_state, executor.clone(), client, server.clone());
-		(event_loop, handle, executor, server, local_node)
+		(executor, server, local_node)
 	}
 
 	#[test]
 	fn local_node_serves_block() {
-		let (_, _, _, server, local_node) = create_local_node(None);
+		let (_, server, local_node) = create_local_node(None);
 		let peer_index = 0; local_node.on_connect(peer_index, types::Version::default());
 		// peer requests genesis block
 		let genesis_block_hash = test_data::genesis().hash();
@@ -411,7 +407,7 @@ pub mod tests {
 
 	#[test]
 	fn local_node_accepts_local_transaction() {
-		let (_, _, executor, _, local_node) = create_local_node(None);
+		let (executor, _, local_node) = create_local_node(None);
 
 		// transaction will be relayed to this peer
 		let peer_index1 = 0; local_node.on_connect(peer_index1, types::Version::default());
@@ -437,7 +433,7 @@ pub mod tests {
 		let mut verifier = DummyVerifier::default();
 		verifier.error_when_verifying(transaction_hash.clone(), "simulated");
 
-		let (_, _, executor, _, local_node) = create_local_node(Some(verifier));
+		let (executor, _, local_node) = create_local_node(Some(verifier));
 
 		let peer_index1 = 0; local_node.on_connect(peer_index1, types::Version::default());
 		executor.take_tasks();

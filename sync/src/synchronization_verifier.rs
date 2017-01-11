@@ -79,7 +79,7 @@ impl AsyncVerifier {
 				.spawn(move || {
 					AsyncVerifier::verification_worker_proc(sink, storage, memory_pool, verifier, verification_work_receiver)
 				})
-				.expect("Error creating verification thread"))
+				.expect("Error creating sync verification thread"))
 		}
 	}
 
@@ -90,6 +90,8 @@ impl AsyncVerifier {
 				break;
 			}
 		}
+
+		trace!(target: "sync", "Stopping sync verification thread");
 	}
 
 	/// Execute single verification task
