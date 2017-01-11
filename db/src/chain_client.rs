@@ -245,6 +245,7 @@ impl ChainClient {
 		let thread_store = self.store.clone();
 		let thread_queue = self.queue.clone();
 		let thread_more_insert = self.more_insert.clone();
+		let thread_more_verify = self.more_verify.clone();
 
 		thread::Builder::new().name("Insert thread".to_owned()).spawn(move || {
 			while !thread_stop.load(Ordering::SeqCst) {
@@ -253,6 +254,9 @@ impl ChainClient {
 					TaskResult::Ok => {
 						// continue with next block
 						trace!(target: "verification_queue", "Inserted block");
+
+						// could be stalled since blocks was in 'processing' list
+						ChainClient::kick(&thread_more_verify);
 					}
 					TaskResult::Wait => {
 						trace!(target: "verification_queue", "Waiting for insert...");

@@ -73,13 +73,14 @@ pub struct BlockQueue {
 	unverified: RwLock<LinkedHashMap<H256, PreparedBlock>>,
 	// verified blocks
 	verified: RwLock<LinkedHashMap<H256, PreparedBlock>>,
-	// in process
-	processing: RwLock<HashSet<H256>>,
+	// on verification
+	verifying: RwLock<HashSet<H256>>,
+	// on fetching
+	fetching: RwLock<HashSet<H256>>,
 	// invalid blocks
 	invalid: RwLock<HashSet<H256>>,
 	// notifiers
 	notify: Mutex<Vec<QueueNotifyEntry>>,
-	//
 }
 
 #[derive(Debug)]
@@ -167,10 +168,11 @@ impl BlockQueue {
 			verified_transactions: Default::default(),
 			added: Default::default(),
 			unverified: Default::default(),
-			processing: Default::default(),
 			verified: Default::default(),
 			invalid: Default::default(),
 			notify: Default::default(),
+			verifying: Default::default(),
+			fetching: Default::default(),
 		}
 	}
 
@@ -184,20 +186,20 @@ impl BlockQueue {
 			unverified: self.unverified.read().len(),
 			verified: self.verified.read().len(),
 			invalid: self.invalid.read().len(),
-			processing: self.processing.read().len(),
+			processing: self.verifying.read().len() + self.fetching.read().len(),
 		}
 	}
 
 	// converts added indexed block into block prepared for verification
 	pub fn fetch(&self, dependencies: &DependencyDenote) -> TaskResult {
 		let mut block: PreparedBlock = {
-			let mut added_lock = self.added.write();
-			let mut processing_lock = self.processing.write();
-			let (hash, block) = match added_lock.pop_front() {
+			let mut added = self.added.write();
+			let mut fetching = self.fetching.write();
+			let (hash, block) = match added.pop_front() {
 				None => { return TaskResult::Wait },
 				Some(b) => b,
 			};
-			processing_lock.insert(hash);
+			fetching.insert(hash);
 			block
 		}.into();
 
@@ -230,13 +232,13 @@ impl BlockQueue {
 		{
 			let mut pending_txes = self.pending_transactions.write();
 			let mut unverified = self.unverified.write();
-			let mut processing = self.processing.write();
+			let mut fetching = self.fetching.write();
 
 			for tx in block.raw().transactions.iter() {
 				pending_txes.insert(tx.hash.clone(), block.raw().hash().clone());
 			}
 
-			processing.remove(block.raw().hash());
+			fetching.remove(block.raw().hash());
 			unverified.insert(block.raw().hash().clone(), block);
 		}
 
@@ -247,7 +249,8 @@ impl BlockQueue {
 		// will return first block that is ready to verify
 		let block = {
 			let mut unverified = self.unverified.write();
-			let mut processing = self.processing.write();
+			let mut verifying = self.verifying.write();
+			let fetching = self.fetching.read();
 
 			let mut ready_hash: Option<H256> = None;
 			for (hash, block) in unverified.iter() {
@@ -258,7 +261,7 @@ impl BlockQueue {
 				// (that ensures that no block will go to verification until its
 				//  parent does)
 				if block.ready() &&
-					!processing.contains(&block.raw().header.raw.previous_header_hash) &&
+					!fetching.contains(&block.raw().header.raw.previous_header_hash) &&
 					!unverified.contains_key(&block.raw().header.raw.previous_header_hash)
 				{
 					ready_hash = Some(hash.clone());
@@ -269,7 +272,7 @@ impl BlockQueue {
 				None => { return TaskResult::Wait; }
 				Some(hash) => {
 					let block = unverified.remove(&hash).expect("We just located it above with lock is still on");
-					processing.insert(hash);
+					verifying.insert(hash);
 					block
 				}
 			}
@@ -285,7 +288,7 @@ impl BlockQueue {
 					let mut verified_txes = self.verified_transactions.write();
 					let mut unverified = self.unverified.write();
 					let mut verified = self.verified.write();
-					let mut processing = self.processing.write();
+					let mut verifying = self.verifying.write();
 
 					// kick pending blocks to proceed
 					for (_, mut block) in unverified.iter_mut() {
@@ -301,7 +304,7 @@ impl BlockQueue {
 							verified_txes.insert(key, val);
 						}
 					}
-					processing.remove(&verified_hash);
+					verifying.remove(&verified_hash);
 
 					verified.insert(verified_hash, block);
 				}
@@ -310,7 +313,7 @@ impl BlockQueue {
 				// todo: chain notify
 
 				let mut pending_txes = self.pending_transactions.write();
-				let mut processing = self.processing.write();
+				let mut verifying = self.verifying.write();
 				let mut invalid = self.invalid.write();
 
 				// remove transactions from pending
@@ -318,7 +321,7 @@ impl BlockQueue {
 					pending_txes.remove(&tx.hash);
 				}
 
-				processing.remove(block.raw().hash());
+				verifying.remove(block.raw().hash());
 
 				invalid.insert(block.raw().hash().clone());
 			}
