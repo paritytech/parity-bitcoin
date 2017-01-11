@@ -48,6 +48,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tokio_core::reactor::Handle;
 use network::Magic;
+use primitives::hash::H256;
 use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 
 /// Sync errors.
@@ -59,6 +60,14 @@ pub enum Error {
 	Database(db::Error),
 	/// Block verification error.
 	Verification(String),
+}
+
+/// Synchronization events listener
+pub trait SyncListener: Send + 'static {
+	/// Called when node switches to synchronization state
+	fn synchronization_state_switched(&self, is_synchronizing: bool);
+	/// Called when new best storage block is inserted
+	fn best_storage_block_inserted(&self, block_hash: &H256);
 }
 
 /// Create blocks writer.

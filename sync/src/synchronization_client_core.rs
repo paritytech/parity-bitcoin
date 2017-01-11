@@ -24,7 +24,7 @@ use synchronization_manager::{manage_synchronization_peers_blocks, manage_synchr
 	ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig};
 use synchronization_peers_tasks::PeersTasks;
 use synchronization_verifier::{VerificationSink, BlockVerificationSink, TransactionVerificationSink, VerificationTask};
-use types::{BlockHeight, ClientCoreRef, PeersRef, PeerIndex, SynchronizationStateRef, EmptyBoxFuture};
+use types::{BlockHeight, ClientCoreRef, PeersRef, PeerIndex, SynchronizationStateRef, EmptyBoxFuture, SyncListenerRef};
 use utils::{AverageSpeedMeter, MessageBlockHeadersProvider, OrphanBlocksPool, OrphanTransactionsPool, HashPosition};
 #[cfg(test)] use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers_tasks::{Information as PeersTasksInformation};
@@ -76,6 +76,7 @@ pub trait ClientCore {
 	fn on_notfound(&mut self, peer_index: PeerIndex, message: types::NotFound);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: PeerIndex, future: EmptyBoxFuture);
 	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String>;
+	fn install_sync_listener(&mut self, listener: SyncListenerRef);
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>, final_blocks_requests: Option<Vec<H256>>);
 	fn try_switch_to_saturated_state(&mut self) -> bool;
 }
@@ -131,6 +132,8 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	sync_speed_meter: AverageSpeedMeter,
 	/// Configuration
 	config: Config,
+	/// Synchronization events listener
+	listener: Option<SyncListenerRef>,
 }
 
 /// Verification sink for synchronization client core
@@ -511,6 +514,12 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 	}
 
+	fn install_sync_listener(&mut self, listener: SyncListenerRef) {
+		// currently single, single-setup listener is supported
+		assert!(self.listener.is_none());
+		self.listener = Some(listener);
+	}
+
 	/// Schedule new synchronization tasks, if any.
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>, final_blocks_requests: Option<Vec<H256>>) {
 		let mut tasks: Vec<Task> = Vec::new();
@@ -726,6 +735,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				block_speed_meter: AverageSpeedMeter::with_inspect_items(SYNC_SPEED_BLOCKS_TO_INSPECT),
 				sync_speed_meter: AverageSpeedMeter::with_inspect_items(BLOCKS_SPEED_BLOCKS_TO_INSPECT),
 				config: config,
+				listener: None,
 			}
 		));
 
@@ -939,6 +949,10 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			return;
 		}
 
+		if let Some(ref listener) = self.listener {
+			listener.synchronization_state_switched(true);
+		}
+
 		self.shared_state.update_synchronizing(true);
 		self.state = State::Synchronizing(time::precise_time_s(), self.chain.best_storage_block().number);
 	}
@@ -949,6 +963,10 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			return;
 		}
 
+		if let Some(ref listener) = self.listener {
+			listener.synchronization_state_switched(false);
+		}
+
 		self.shared_state.update_synchronizing(false);
 		self.state = State::NearlySaturated;
 	}
@@ -957,6 +975,10 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	fn switch_to_saturated_state(&mut self) {
 		if self.state.is_saturated() {
 			return;
+		}
+
+		if let Some(ref listener) = self.listener {
+			listener.synchronization_state_switched(false);
 		}
 
 		self.shared_state.update_synchronizing(false);
@@ -1012,6 +1034,13 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			Ok(insert_result) => {
 				// update shared state
 				self.shared_state.update_best_storage_block_height(self.chain.best_storage_block().number);
+
+				// notify listener
+				if let Some(best_block_hash) = insert_result.canonized_blocks_hashes.last() {
+					if let Some(ref listener) = self.listener {
+						listener.best_storage_block_inserted(best_block_hash);
+					}
+				}
 
 				// awake threads, waiting for this block insertion
 				self.awake_waiting_threads(block.hash());
@@ -1175,7 +1204,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 #[cfg(test)]
 pub mod tests {
 	use std::sync::Arc;
-	use parking_lot::RwLock;
+	use parking_lot::{Mutex, RwLock};
 	use tokio_core::reactor::{Core, Handle};
 	use chain::{Block, Transaction};
 	use db;
@@ -1198,6 +1227,35 @@ pub mod tests {
 	use utils::SynchronizationState;
 	use types::{PeerIndex, StorageRef, SynchronizationStateRef, ClientCoreRef};
 	use super::{Config, SynchronizationClientCore, ClientCore, CoreVerificationSink};
+	use super::super::SyncListener;
+
+	#[derive(Default)]
+	struct DummySyncListenerData {
+		pub is_synchronizing: bool,
+		pub best_blocks: Vec<H256>,
+	}
+
+	struct DummySyncListener {
+		data: Arc<Mutex<DummySyncListenerData>>,
+	}
+
+	impl DummySyncListener {
+		pub fn new(data: Arc<Mutex<DummySyncListenerData>>) -> Self {
+			DummySyncListener {
+				data: data,
+			}
+		}
+	}
+
+	impl SyncListener for DummySyncListener {
+		fn synchronization_state_switched(&self, is_synchronizing: bool) {
+			self.data.lock().is_synchronizing = is_synchronizing;
+		}
+
+		fn best_storage_block_inserted(&self, block_hash: &H256) {
+			self.data.lock().best_blocks.push(block_hash.clone());
+		}
+	}
 
 	fn create_disk_storage() -> StorageRef {
 		let path = RandomTempPath::create_dir();
@@ -2261,5 +2319,43 @@ pub mod tests {
 		let mempool = core.lock().chain().memory_pool();
 		assert!(mempool.write().remove_by_hash(&b1.transactions[2].hash()).is_some());
 		assert!(mempool.write().remove_by_hash(&tx3.hash()).is_some());
+	}
+
+	#[test]
+	fn sync_listener_calls() {
+		let (_, _, _, _, sync) = create_sync(None, None);
+
+		// install sync listener
+		let data = Arc::new(Mutex::new(DummySyncListenerData::default()));
+		sync.install_sync_listener(Box::new(DummySyncListener::new(data.clone())));
+
+		// at the beginning, is_synchronizing must be equal to false
+		assert_eq!(data.lock().is_synchronizing, false);
+		assert_eq!(data.lock().best_blocks.len(), 0);
+
+		// supply with new block header => is_synchronizing is still false
+		sync.on_headers(0, types::Headers::with_headers(vec![test_data::block_h1().block_header]));
+		assert_eq!(data.lock().is_synchronizing, false);
+		assert_eq!(data.lock().best_blocks.len(), 0);
+
+		// supply with 2 new blocks headers => is_synchronizing is true
+		sync.on_headers(0, types::Headers::with_headers(vec![test_data::block_h2().block_header, test_data::block_h3().block_header]));
+		assert_eq!(data.lock().is_synchronizing, true);
+		assert_eq!(data.lock().best_blocks.len(), 0);
+
+		// supply with block 3 => no new best block is informed
+		sync.on_block(0, test_data::block_h3().into());
+		assert_eq!(data.lock().is_synchronizing, true);
+		assert_eq!(data.lock().best_blocks.len(), 0);
+
+		// supply with block 1 => new best block is informed
+		sync.on_block(0, test_data::block_h1().into());
+		assert_eq!(data.lock().is_synchronizing, true);
+		assert_eq!(data.lock().best_blocks.len(), 1);
+
+		// supply with block 2 => 2 new best block is informed
+		sync.on_block(0, test_data::block_h2().into());
+		assert_eq!(data.lock().is_synchronizing, false);
+		assert_eq!(data.lock().best_blocks.len(), 3);
 	}
 }
