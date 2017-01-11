@@ -1,6 +1,6 @@
 use std::io;
 use std::time::Duration;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, Shutdown};
 use futures::{Future, Poll, Async};
 use tokio_core::reactor::Handle;
 use tokio_core::net::{TcpStream, TcpStreamNew};
@@ -10,7 +10,8 @@ use message::types::Version;
 use io::{handshake, Handshake, Deadline, deadline};
 use net::{Config, Connection};
 
-pub fn connect(address: &SocketAddr, handle: &Handle, config: &Config) -> Deadline<Connect> {
+//pub fn connect(address: &SocketAddr, handle: &Handle, config: &Config) -> Deadline<Connect> {
+pub fn connect(address: &SocketAddr, handle: &Handle, config: &Config) -> Connect {
 	let connect = Connect {
 		state: ConnectState::TcpConnect {
 			future: TcpStream::connect(address, handle),
@@ -21,7 +22,8 @@ pub fn connect(address: &SocketAddr, handle: &Handle, config: &Config) -> Deadli
 		protocol_minimum: config.protocol_minimum,
 	};
 
-	deadline(Duration::new(5, 0), handle, connect).expect("Failed to create timeout")
+	connect
+	//deadline(Duration::new(5, 0), handle, connect).expect("Failed to create timeout")
 }
 
 enum ConnectState {
@@ -56,7 +58,11 @@ impl Future for Connect {
 				let (stream, result) = try_ready!(future.poll());
 				let result = match result {
 					Ok(result) => result,
-					Err(err) => return Ok(Async::Ready(Err(err))),
+					Err(err) => {
+						// TODO: this should be moved elsewhere
+						stream.shutdown(Shutdown::Both);
+						return Ok(Async::Ready(Err(err)))
+					},
 				};
 				let connection = Connection {
 					stream: stream.into(),
