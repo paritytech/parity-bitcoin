@@ -5,8 +5,6 @@ extern crate db;
 #[macro_use]
 extern crate log;
 extern crate futures;
-extern crate futures_cpupool;
-extern crate tokio_core;
 extern crate message;
 extern crate p2p;
 extern crate parking_lot;
