@@ -98,8 +98,6 @@ pub fn create_local_sync_node(network: Magic, db: db::SharedStore, peers: PeersR
 		network: network,
 		// during regtests, peer is providing us with bad blocks => we shouldn't close connection because of this
 		close_connection_on_bad_block: network != Magic::Regtest,
-		// TODO: remove me
-		threads_num: 4,
 	};
 
 	let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));

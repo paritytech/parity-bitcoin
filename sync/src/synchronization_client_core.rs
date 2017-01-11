@@ -82,8 +82,6 @@ pub struct Config {
 	pub network: Magic,
 	/// If true, connection to peer who has provided us with bad block is closed
 	pub close_connection_on_bad_block: bool,
-	/// Number of threads to allocate in synchronization CpuPool.
-	pub threads_num: usize,
 }
 
 /// Synchronization client.
@@ -1248,7 +1246,7 @@ pub mod tests {
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
 		let chain = Chain::new(storage.clone(), memory_pool.clone());
 		let executor = DummyTaskExecutor::new();
-		let config = Config { network: Magic::Mainnet, threads_num: 1, close_connection_on_bad_block: true };
+		let config = Config { network: Magic::Mainnet, close_connection_on_bad_block: true };
 
 		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Unitest));
 		let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier.clone());

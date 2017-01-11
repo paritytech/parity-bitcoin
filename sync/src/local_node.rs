@@ -372,7 +372,7 @@ pub mod tests {
 		let sync_peers = Arc::new(PeersImpl::default());
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
-		let config = Config { network: Magic::Mainnet, threads_num: 1, close_connection_on_bad_block: true };
+		let config = Config { network: Magic::Mainnet, close_connection_on_bad_block: true };
 		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Mainnet));
 		let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier);
 		let mut verifier = match verifier {
