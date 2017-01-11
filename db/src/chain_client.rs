@@ -13,7 +13,7 @@ use error::Error as StorageError;
 
 const MAX_BLOCK_QUEUE: usize = 256;
 
-const FETCH_THREADS: usize = 4;
+const FETCH_THREADS: usize = 2;
 // transaction parallelisation allows to use only 1 verification threads
 const VERIFICATION_THREADS: usize = 1;
 const INSERT_THREADS: usize = 1;
@@ -377,7 +377,7 @@ mod tests {
 		let genesis = test_data::genesis();
 		let mut rolling_hash = genesis.hash();
 
-		for x in 0..100000 {
+		for x in 0..10000 {
 			let mut coinbase_nonce = [0u8;8];
 			LittleEndian::write_u64(&mut coinbase_nonce[..], x as u64);
 			let next_block = test_data::block_builder()
