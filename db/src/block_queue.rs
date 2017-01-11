@@ -79,6 +79,7 @@ pub struct BlockQueue {
 	invalid: RwLock<HashSet<H256>>,
 	// notifiers
 	notify: Mutex<Vec<QueueNotifyEntry>>,
+	//
 }
 
 #[derive(Debug)]
@@ -250,9 +251,16 @@ impl BlockQueue {
 
 			let mut ready_hash: Option<H256> = None;
 			for (hash, block) in unverified.iter() {
-				// check if block dependencies are fetched and if it has
-				// verified or known parent
-				if block.ready() {
+				// see if we have a candidate for verification
+				// it should on unverfied(fetched) list
+				// it's dependencies should be verified
+				// and parent should not be in the processing/unverified list
+				// (that ensures that no block will go to verification until its
+				//  parent does)
+				if block.ready() &&
+					!processing.contains(&block.raw().header.raw.previous_header_hash) &&
+					!unverified.contains_key(&block.raw().header.raw.previous_header_hash)
+				{
 					ready_hash = Some(hash.clone());
 				}
 			}
@@ -556,7 +564,6 @@ mod tests {
 		store.insert_block(&genesis).unwrap();
 		let genesis_hash = genesis.hash();
 		let genesis_coinbase = genesis.transactions()[0].hash();
-
 
 		let b1: IndexedBlock = test_data::block_builder()
 			.transaction()
