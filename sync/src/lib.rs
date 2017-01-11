@@ -46,7 +46,6 @@ pub use types::PeersRef;
 
 use std::sync::Arc;
 use parking_lot::RwLock;
-use tokio_core::reactor::Handle;
 use network::Magic;
 use primitives::hash::H256;
 use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
@@ -83,7 +82,7 @@ pub fn create_sync_peers() -> PeersRef {
 }
 
 /// Creates local sync node for given `db`
-pub fn create_local_sync_node(handle: &Handle, network: Magic, db: db::SharedStore, peers: PeersRef) -> LocalNodeRef {
+pub fn create_local_sync_node(network: Magic, db: db::SharedStore, peers: PeersRef) -> LocalNodeRef {
 	use miner::MemoryPool;
 	use synchronization_chain::Chain as SyncChain;
 	use synchronization_executor::LocalSynchronizationTaskExecutor as SyncExecutor;
@@ -109,7 +108,7 @@ pub fn create_local_sync_node(handle: &Handle, network: Magic, db: db::SharedSto
 	let chain_verifier = Arc::new(ChainVerifier::new(db.clone(), network));
 	let sync_executor = SyncExecutor::new(peers.clone());
 	let sync_server = Arc::new(ServerImpl::new(peers.clone(), db.clone(), memory_pool.clone(), sync_executor.clone()));
-	let sync_client_core = SynchronizationClientCore::new(sync_client_config, handle, sync_state.clone(), peers.clone(), sync_executor.clone(), sync_chain, chain_verifier.clone());
+	let sync_client_core = SynchronizationClientCore::new(sync_client_config, sync_state.clone(), peers.clone(), sync_executor.clone(), sync_chain, chain_verifier.clone());
 	let verifier_sink = Arc::new(CoreVerificationSink::new(sync_client_core.clone()));
 	let verifier = AsyncVerifier::new(chain_verifier, db.clone(), memory_pool.clone(), verifier_sink);
 	let sync_client = SynchronizationClient::new(sync_state.clone(), sync_client_core, verifier);
