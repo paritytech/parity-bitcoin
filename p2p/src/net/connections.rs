@@ -55,6 +55,7 @@ impl Connections {
 			address: connection.address,
 			direction: direction,
 			version: connection.version,
+			version_message: connection.version_message,
 			magic: connection.magic,
 		};
 
