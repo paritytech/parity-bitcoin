@@ -27,6 +27,10 @@ logs = { path = "logs" }
 rpc = { path = "rpc" }
 primitives = { path = "primitives" }
 
+# remove me after new version of tokio-core is released + run cargo update
+[replace]
+"tokio-core:0.1.3" = { git = "https://github.com/tokio-rs/tokio-core.git", rev = "d0833074d6c47970b69baf69702c92a497c93fc2" }
+
 [[bin]]
 path = "pbtc/main.rs"
 name = "pbtc"
