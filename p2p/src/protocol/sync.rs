@@ -181,20 +181,7 @@ impl SyncProtocol {
 
 impl Protocol for SyncProtocol {
 	fn initialize(&mut self) {
-		// TODO
-		use message::common;
-		let version = types::Version::V0(types::version::V0 {
-			version: self.context.info().version,
-			services: common::Services::default(),
-			timestamp: 0,
-			receiver: common::NetAddress {
-				services: common::Services::default(),
-				address: common::IpAddress::from("127.0.0.1"),
-				port: common::Port::from(0),
-			},
-		});
-
-		self.inbound_connection.start_sync_session(version);
+		self.inbound_connection.start_sync_session(self.context.info().version_message.clone());
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes) -> Result<(), Error> {
