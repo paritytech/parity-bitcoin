@@ -5,7 +5,7 @@ use chain::constants::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
 use sign::{SignatureVersion, Sighash};
 use {
-	script, Script, Num, VerificationFlags, Opcode, Error, SignatureChecker, Stack
+	script, Builder, Script, Num, VerificationFlags, Opcode, Error, SignatureChecker, Stack
 };
 
 /// Helper function.
@@ -773,7 +773,8 @@ pub fn eval_script(
 				let signature = try!(stack.pop());
 				let mut subscript = script.subscript(begincode);
 				if version == SignatureVersion::Base {
-					subscript = subscript.find_and_delete(&signature);
+					let signature_script = Builder::default().push_data(&*signature).into_script();
+					subscript = subscript.find_and_delete(&*signature_script);
 				}
 
 				try!(check_signature_encoding(&signature, flags));
@@ -801,7 +802,7 @@ pub fn eval_script(
 				}
 
 				let keys_count: usize = keys_count.into();
-				let keys: Vec<_> = try!((0..keys_count).into_iter().map(|_| stack.pop()).rev().collect());
+				let keys: Vec<_> = try!((0..keys_count).into_iter().map(|_| stack.pop()).collect());
 
 				let sigs_count = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
 				if sigs_count < 0.into() || sigs_count > keys_count.into() {
@@ -809,13 +810,14 @@ pub fn eval_script(
 				}
 
 				let sigs_count: usize = sigs_count.into();
-				let sigs: Vec<_> = try!((0..sigs_count).into_iter().map(|_| stack.pop()).rev().collect());
+				let sigs: Vec<_> = try!((0..sigs_count).into_iter().map(|_| stack.pop()).collect());
 
 				let mut subscript = script.subscript(begincode);
 
 				if version == SignatureVersion::Base {
 					for signature in &sigs {
-						subscript = subscript.find_and_delete(signature);
+						let signature_script = Builder::default().push_data(&*signature).into_script();
+						subscript = subscript.find_and_delete(&*signature_script);
 					}
 				}
 
@@ -1966,6 +1968,23 @@ mod tests {
 			.into_script();
 		let result = Ok(true);
 		basic_test(&script, result, vec![vec![1].into()].into());
+	}
+
+	// https://webbtc.com/tx/5df1375ffe61ac35ca178ebb0cab9ea26dedbd0e96005dfcee7e379fa513232f
+	#[test]
+	fn test_transaction_find_and_delete() {
+		let tx: Transaction = "0100000002f9cbafc519425637ba4227f8d0a0b7160b4e65168193d5af39747891de98b5b5000000006b4830450221008dd619c563e527c47d9bd53534a770b102e40faa87f61433580e04e271ef2f960220029886434e18122b53d5decd25f1f4acb2480659fea20aabd856987ba3c3907e0121022b78b756e2258af13779c1a1f37ea6800259716ca4b7f0b87610e0bf3ab52a01ffffffff42e7988254800876b69f24676b3e0205b77be476512ca4d970707dd5c60598ab00000000fd260100483045022015bd0139bcccf990a6af6ec5c1c52ed8222e03a0d51c334df139968525d2fcd20221009f9efe325476eb64c3958e4713e9eefe49bf1d820ed58d2112721b134e2a1a53034930460221008431bdfa72bc67f9d41fe72e94c88fb8f359ffa30b33c72c121c5a877d922e1002210089ef5fc22dd8bfc6bf9ffdb01a9862d27687d424d1fefbab9e9c7176844a187a014c9052483045022015bd0139bcccf990a6af6ec5c1c52ed8222e03a0d51c334df139968525d2fcd20221009f9efe325476eb64c3958e4713e9eefe49bf1d820ed58d2112721b134e2a1a5303210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c7153aeffffffff01a08601000000000017a914d8dacdadb7462ae15cd906f1878706d0da8660e68700000000".into();
+		let signer: TransactionInputSigner = tx.into();
+		let checker = TransactionSignatureChecker {
+			signer: signer,
+			input_index: 1,
+		};
+		let input: Script = "00483045022015BD0139BCCCF990A6AF6EC5C1C52ED8222E03A0D51C334DF139968525D2FCD20221009F9EFE325476EB64C3958E4713E9EEFE49BF1D820ED58D2112721B134E2A1A53034930460221008431BDFA72BC67F9D41FE72E94C88FB8F359FFA30B33C72C121C5A877D922E1002210089EF5FC22DD8BFC6BF9FFDB01A9862D27687D424D1FEFBAB9E9C7176844A187A014C9052483045022015BD0139BCCCF990A6AF6EC5C1C52ED8222E03A0D51C334DF139968525D2FCD20221009F9EFE325476EB64C3958E4713E9EEFE49BF1D820ED58D2112721B134E2A1A5303210378D430274F8C5EC1321338151E9F27F4C676A008BDF8638D07C0B6BE9AB35C71210378D430274F8C5EC1321338151E9F27F4C676A008BDF8638D07C0B6BE9AB35C7153AE".into();
+		let output: Script = "A914D8DACDADB7462AE15CD906F1878706D0DA8660E687".into();
+
+		let flags = VerificationFlags::default()
+			.verify_p2sh(true);
+		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
 	}
 }
 
