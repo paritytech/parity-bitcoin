@@ -54,6 +54,12 @@ impl Session {
 		}
 	}
 
+	pub fn maintain(&self) {
+		for protocol in self.protocols.lock().iter_mut() {
+			protocol.maintain();
+		}
+	}
+
 	pub fn on_message(&self, command: Command, payload: Bytes) -> Result<(), Error> {
 		self.stats().lock().report_recv(command.clone(), payload.len());
 

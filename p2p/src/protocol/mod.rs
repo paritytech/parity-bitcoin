@@ -14,6 +14,9 @@ pub trait Protocol: Send {
 	/// Initialize the protocol.
 	fn initialize(&mut self) {}
 
+	/// Maintain the protocol.
+	fn maintain(&mut self) {}
+
 	/// Handle the message.
 	fn on_message(&mut self, command: &Command, payload: &Bytes) -> Result<(), Error>;
 

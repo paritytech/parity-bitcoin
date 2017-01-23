@@ -114,6 +114,10 @@ impl Context {
 				info!("Inbound connections: ({}/{})", ic.0, ic.1);
 				info!("Outbound connections: ({}/{})", oc.0, oc.1);
 
+				for channel in context.connections.channels().values() {
+					channel.session().maintain();
+				}
+
 				let used_addresses = context.connections.addresses();
 				let max = (ic.1 + oc.1) as usize;
 				let needed = context.connection_counter.outbound_connections_needed() as usize;
