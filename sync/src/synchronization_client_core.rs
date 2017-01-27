@@ -37,7 +37,7 @@ const MAX_BLOCKS_IN_REQUEST: BlockHeight = 128;
 /// Maximum number of blocks to request from peer
 const MAX_BLOCKS_IN_REQUEST_WHEN_STARVING: BlockHeight = 16;
 /// Number of blocks to receive since synchronization start to begin duplicating blocks requests
-const STRONG_STARVATION_THRESHOLD_BLOCKS: usize = 4;
+const STRONG_STARVATION_THRESHOLD_BLOCKS: u32 = 4;
 /// Number of blocks to receive since synchronization start to begin duplicating blocks requests
 const NEAR_EMPTY_VERIFICATION_QUEUE_THRESHOLD_BLOCKS: usize = 20;
 /// Number of seconds left before verification queue will be empty to count it as 'near empty queue'
