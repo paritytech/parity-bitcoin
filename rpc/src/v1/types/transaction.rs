@@ -1,5 +1,6 @@
+use std::fmt;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
-
+use serde::ser::SerializeMap;
 use super::address::Address;
 use super::bytes::Bytes;
 use super::hash::H256;
@@ -145,7 +146,7 @@ pub enum GetRawTransactionResponse {
 }
 
 impl Serialize for GetRawTransactionResponse {
-	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: Serializer {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
 		match *self {
 			GetRawTransactionResponse::Raw(ref raw_transaction) => raw_transaction.serialize(serializer),
 			GetRawTransactionResponse::Verbose(ref verbose_transaction) => verbose_transaction.serialize(serializer),
@@ -160,26 +161,24 @@ impl TransactionOutputs {
 }
 
 impl Serialize for TransactionOutputs {
-	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: Serializer {
-		let mut state = try!(serializer.serialize_map(Some(self.len())));
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+		let mut state = serializer.serialize_map(Some(self.len()))?;
 		for output in &self.outputs {
 			match output {
 				&TransactionOutput::Address(ref address_output) => {
-					try!(serializer.serialize_map_key(&mut state, &address_output.address));
-					try!(serializer.serialize_map_value(&mut state, &address_output.amount));
+					state.serialize_entry(&address_output.address, &address_output.amount)?;
 				},
 				&TransactionOutput::ScriptData(ref script_output) => {
-					try!(serializer.serialize_map_key(&mut state, "data"));
-					try!(serializer.serialize_map_value(&mut state, &script_output.script_data));
+					state.serialize_entry("data", &script_output.script_data)?;
 				},
 			}
 		}
-		serializer.serialize_map_end(state)
+		state.end()
 	}
 }
 
 impl Deserialize for TransactionOutputs {
-	fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error> where D: Deserializer {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer {
 		use serde::de::{Visitor, MapVisitor};
 
 		struct TransactionOutputsVisitor;
@@ -187,7 +186,11 @@ impl Deserialize for TransactionOutputs {
 		impl Visitor for TransactionOutputsVisitor {
 			type Value = TransactionOutputs;
 
-			fn visit_map<V>(&mut self, mut visitor: V) -> Result<TransactionOutputs, V::Error> where V: MapVisitor {
+			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+				formatter.write_str("a transaction output object")
+			}
+
+			fn visit_map<V>(self, mut visitor: V) -> Result<TransactionOutputs, V::Error> where V: MapVisitor {
 				let mut outputs: Vec<TransactionOutput> = Vec::with_capacity(visitor.size_hint().0);
 
 				while let Some(key) = try!(visitor.visit_key::<String>()) {
@@ -197,7 +200,7 @@ impl Deserialize for TransactionOutputs {
 							script_data: value,
 						}));
 					} else {
-						let address = try!(Address::deserialize_from_string(&key));
+						let address = try!(Address::deserialize_from_string(&key, &"an address"));
 						let amount: f64 = try!(visitor.visit_value());
 						outputs.push(TransactionOutput::Address(TransactionOutputWithAddress {
 							address: address,
@@ -206,7 +209,6 @@ impl Deserialize for TransactionOutputs {
 					}
 				}
 
-				try!(visitor.end());
 				Ok(TransactionOutputs {
 					outputs: outputs,
 				})
