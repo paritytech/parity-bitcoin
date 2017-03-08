@@ -1,4 +1,6 @@
+use std::fmt;
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use serde::de::Unexpected;
 use global_script::ScriptType as GlobalScriptType;
 
 #[derive(Debug, PartialEq)]
@@ -29,7 +31,7 @@ impl From<GlobalScriptType> for ScriptType {
 }
 
 impl Serialize for ScriptType {
-	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: Serializer {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
 		match *self {
 			ScriptType::NonStandard => "nonstandard".serialize(serializer),
 			ScriptType::PubKey => "pubkey".serialize(serializer),
@@ -44,7 +46,7 @@ impl Serialize for ScriptType {
 }
 
 impl Deserialize for ScriptType {
-	fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error> where D: Deserializer {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer {
 		use serde::de::Visitor;
 
 		struct ScriptTypeVisitor;
@@ -52,7 +54,11 @@ impl Deserialize for ScriptType {
 		impl Visitor for ScriptTypeVisitor {
 			type Value = ScriptType;
 
-			fn visit_str<E>(&mut self, value: &str) -> Result<ScriptType, E> where E: ::serde::de::Error {
+			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+				formatter.write_str("script type")
+			}
+
+			fn visit_str<E>(self, value: &str) -> Result<ScriptType, E> where E: ::serde::de::Error {
 				match value {
 					"nonstandard" => Ok(ScriptType::NonStandard),
 					"pubkey" => Ok(ScriptType::PubKey),
@@ -62,7 +68,7 @@ impl Deserialize for ScriptType {
 					"nulldata" => Ok(ScriptType::NullData),
 					"witness_v0_scripthash" => Ok(ScriptType::WitnessScript),
 					"witness_v0_keyhash" => Ok(ScriptType::WitnessKey),
-					_ => Err(E::invalid_value(&format!("unknown ScriptType variant: {}", value))),
+					_ => Err(E::invalid_value(Unexpected::Str(value), &self)),
 				}
 			}
 		}

@@ -1,8 +1,8 @@
 ///! Serializable wrapper around vector of bytes
-use std::ops;
+use std::{ops, fmt};
 use rustc_serialize::hex::{ToHex, FromHex};
-use serde::{Serialize, Serializer, Deserialize, Deserializer, Error};
-use serde::de::Visitor;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::de::{Visitor, Error};
 use primitives::bytes::Bytes as GlobalBytes;
 
 /// Wrapper structure around vector of bytes.
@@ -34,7 +34,7 @@ impl Into<Vec<u8>> for Bytes {
 }
 
 impl Serialize for Bytes {
-	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error>
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
 	where S: Serializer {
 		let mut serialized = String::new();
 		serialized.push_str(self.0.to_hex().as_ref());
@@ -43,7 +43,7 @@ impl Serialize for Bytes {
 }
 
 impl Deserialize for Bytes {
-	fn deserialize<D>(deserializer: &mut D) -> Result<Bytes, D::Error>
+	fn deserialize<D>(deserializer: D) -> Result<Bytes, D::Error>
 	where D: Deserializer {
 		deserializer.deserialize(BytesVisitor)
 	}
@@ -54,7 +54,11 @@ struct BytesVisitor;
 impl Visitor for BytesVisitor {
 	type Value = Bytes;
 
-	fn visit_str<E>(&mut self, value: &str) -> Result<Self::Value, E> where E: Error {
+	fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+		formatter.write_str("a bytes")
+	}
+
+	fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> where E: Error {
 		if value.len() > 0 && value.len() & 1 == 0 {
 			Ok(Bytes::new(try!(FromHex::from_hex(&value).map_err(|_| Error::custom("invalid hex")))))
 		} else {
@@ -62,7 +66,7 @@ impl Visitor for BytesVisitor {
 		}
 	}
 
-	fn visit_string<E>(&mut self, value: String) -> Result<Self::Value, E> where E: Error {
+	fn visit_string<E>(self, value: String) -> Result<Self::Value, E> where E: Error {
 		self.visit_str(value.as_ref())
 	}
 }

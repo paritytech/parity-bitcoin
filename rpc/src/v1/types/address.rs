@@ -1,6 +1,7 @@
-use std::ops;
+use std::{ops, fmt};
 use std::str::FromStr;
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use serde::de::{Visitor, Unexpected, Expected};
 use global_script::ScriptAddress;
 use keys::Address as GlobalAddress;
 use keys::Network as KeysNetwork;
@@ -24,30 +25,32 @@ impl Address {
 		})
 	}
 
-	pub fn deserialize_from_string<E>(value: &str) -> Result<Address, E> where E: ::serde::de::Error {
-		GlobalAddress::from_str(value)
-			.map_err(|err| E::invalid_value(&format!("error {} parsing address {}", err, value)))
-			.map(|address| Address(address))
+	pub fn deserialize_from_string<E>(value: &str, expected: &Expected) -> Result<Address, E> where E: ::serde::de::Error {
+ 		GlobalAddress::from_str(value)
+			.map(Address)
+			.map_err(|_| E::invalid_value(Unexpected::Str(value), expected))
 	}
 }
 
 impl Serialize for Address {
-	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: Serializer {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
 		serializer.serialize_str(&self.0.to_string())
 	}
 }
 
 impl Deserialize for Address {
-	fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error> where D: Deserializer {
-		use serde::de::Visitor;
-
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer {
 		struct AddressVisitor;
 
 		impl Visitor for AddressVisitor {
 			type Value = Address;
 
-			fn visit_str<E>(&mut self, value: &str) -> Result<Address, E> where E: ::serde::de::Error {
-				Address::deserialize_from_string(value)
+			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+				formatter.write_str("an address")
+			}
+
+			fn visit_str<E>(self, value: &str) -> Result<Address, E> where E: ::serde::de::Error {
+				Address::deserialize_from_string(value, &self)
 			}
 		}
 

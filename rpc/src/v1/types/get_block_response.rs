@@ -57,7 +57,7 @@ pub struct VerboseBlock {
 }
 
 impl Serialize for GetBlockResponse {
-	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: Serializer {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
 		match *self {
 			GetBlockResponse::Raw(ref raw_block) => raw_block.serialize(serializer),
 			GetBlockResponse::Verbose(ref verbose_block) => verbose_block.serialize(serializer),

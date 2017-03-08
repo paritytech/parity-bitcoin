@@ -1,4 +1,6 @@
+use std::fmt;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::de::Unexpected;
 use p2p::{Direction, PeerInfo};
 
 #[derive(Debug, PartialEq)]
@@ -9,7 +11,7 @@ pub enum AddNodeOperation {
 }
 
 impl Deserialize for AddNodeOperation {
-	fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error> where D: Deserializer {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer {
 		use serde::de::Visitor;
 
 		struct DummyVisitor;
@@ -17,12 +19,16 @@ impl Deserialize for AddNodeOperation {
 		impl Visitor for DummyVisitor {
 			type Value = AddNodeOperation;
 
-			fn visit_str<E>(&mut self, value: &str) -> Result<AddNodeOperation, E> where E: ::serde::de::Error {
+			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+				formatter.write_str("a node operation string")
+			}
+
+			fn visit_str<E>(self, value: &str) -> Result<AddNodeOperation, E> where E: ::serde::de::Error {
 				match value {
 					"add" => Ok(AddNodeOperation::Add),
 					"remove" => Ok(AddNodeOperation::Remove),
 					"onetry" => Ok(AddNodeOperation::OneTry),
-					_ => Err(E::invalid_value(&format!("unknown ScriptType variant: {}", value))),
+					_ => Err(E::invalid_value(Unexpected::Str(value), &self)),
 				}
 			}
 		}
@@ -62,7 +68,7 @@ pub enum NodeInfoAddressConnectionType {
 }
 
 impl Serialize for NodeInfoAddressConnectionType {
-	fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: Serializer {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
 		match *self {
 			NodeInfoAddressConnectionType::Inbound => "inbound".serialize(serializer),
 			NodeInfoAddressConnectionType::Outbound => "outbound".serialize(serializer),

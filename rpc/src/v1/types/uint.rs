@@ -1,5 +1,7 @@
+use std::fmt;
 use std::str::FromStr;
 use serde;
+use serde::de::Unexpected;
 use primitives::bigint::{U256 as GlobalU256, Uint};
 
 macro_rules! impl_uint {
@@ -31,28 +33,32 @@ macro_rules! impl_uint {
 		}
 
 		impl serde::Serialize for $name {
-			fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error> where S: serde::Serializer {
+			fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
 				let as_hex = format!("{}", self.0.to_hex());
 				serializer.serialize_str(&as_hex)
 			}
 		}
 
 		impl serde::Deserialize for $name {
-			fn deserialize<D>(deserializer: &mut D) -> Result<$name, D::Error> where D: serde::Deserializer {
+			fn deserialize<D>(deserializer: D) -> Result<$name, D::Error> where D: serde::Deserializer {
 				struct UintVisitor;
 
 				impl serde::de::Visitor for UintVisitor {
 					type Value = $name;
 
-					fn visit_str<E>(&mut self, value: &str) -> Result<Self::Value, E> where E: serde::Error {
-						if value.len() > $size * 16 {
-							return Err(serde::Error::custom("Invalid length."));
-						}
-
-						$other::from_str(value).map($name).map_err(|_| serde::Error::custom("Invalid hex value."))
+					fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+						formatter.write_str("an integer represented in hex string")
 					}
 
-					fn visit_string<E>(&mut self, value: String) -> Result<Self::Value, E> where E: serde::Error {
+					fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> where E: serde::de::Error {
+						if value.len() > $size * 16 {
+							return Err(E::invalid_value(Unexpected::Str(value), &self))
+						}
+
+						$other::from_str(value).map($name).map_err(|_| E::invalid_value(Unexpected::Str(value), &self))
+					}
+
+					fn visit_string<E>(self, value: String) -> Result<Self::Value, E> where E: serde::de::Error {
 						self.visit_str(&value)
 					}
 				}
