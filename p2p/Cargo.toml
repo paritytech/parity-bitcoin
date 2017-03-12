@@ -13,7 +13,7 @@ rand = "0.3"
 log = "0.3"
 abstract-ns = "0.2.1"
 ns-dns-tokio = "0.1"
-csv = "0.14.7"
+csv = "0.15"
 
 primitives = { path = "../primitives" }
 bitcrypto = { path = "../crypto" }

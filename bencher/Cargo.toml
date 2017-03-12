@@ -14,7 +14,7 @@ primitives = { path = "../primitives" }
 ethcore-devtools = { path = "../devtools" }
 test-data = { path = "../test-data" }
 time = "*"
-byteorder = "0.5"
+byteorder = "1.0"
 
 [[bin]]
 path = "src/main.rs"
