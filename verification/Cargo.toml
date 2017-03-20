@@ -6,7 +6,7 @@ authors = ["Nikolay Volf <nikvolf@gmail.com>"]
 [dependencies]
 time = "0.1"
 log = "0.3"
-rayon = "0.5"
+rayon = "0.6"
 
 ethcore-devtools = { path = "../devtools" }
 primitives = { path = "../primitives" }
