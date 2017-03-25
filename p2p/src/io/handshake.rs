@@ -1,11 +1,12 @@
 use std::{io, cmp};
 use futures::{Future, Poll, Async};
+use tokio_io::AsyncRead;
 use message::{Message, MessageResult, Error};
 use message::types::{Version, Verack};
 use network::Magic;
 use io::{write_message, WriteMessage, ReadMessage, read_message};
 
-pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> Handshake<A> where A: io::Write + io::Read {
+pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> Handshake<A> where A: io::Write + AsyncRead {
 	Handshake {
 		version: version.version(),
 		state: HandshakeState::SendVersion(write_message(a, version_message(magic, version))),
@@ -14,7 +15,7 @@ pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> H
 	}
 }
 
-pub fn accept_handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> AcceptHandshake<A> where A: io::Write + io::Read {
+pub fn accept_handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> AcceptHandshake<A> where A: io::Write + AsyncRead {
 	AcceptHandshake {
 		version: version.version(),
 		state: AcceptHandshakeState::ReceiveVersion {
@@ -84,7 +85,7 @@ pub struct AcceptHandshake<A> {
 	min_version: u32,
 }
 
-impl<A> Future for Handshake<A> where A: io::Read + io::Write {
+impl<A> Future for Handshake<A> where A: AsyncRead + io::Write {
 	type Item = (A, MessageResult<HandshakeResult>);
 	type Error = io::Error;
 
@@ -135,7 +136,7 @@ impl<A> Future for Handshake<A> where A: io::Read + io::Write {
 	}
 }
 
-impl<A> Future for AcceptHandshake<A> where A: io::Read + io::Write {
+impl<A> Future for AcceptHandshake<A> where A: AsyncRead + io::Write {
 	type Item = (A, MessageResult<HandshakeResult>);
 	type Error = io::Error;
 

@@ -4,6 +4,7 @@ extern crate futures_cpupool;
 extern crate rand;
 extern crate time;
 extern crate tokio_core;
+extern crate tokio_io;
 extern crate parking_lot;
 #[macro_use]
 extern crate log;
