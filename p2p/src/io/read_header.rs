@@ -1,6 +1,5 @@
 use std::io;
 use futures::{Future, Poll, Async};
-//use tokio_core::io::{ReadExact, read_exact};
 use tokio_io::AsyncRead;
 use tokio_io::io::{ReadExact, read_exact};
 use message::{MessageHeader, MessageResult};

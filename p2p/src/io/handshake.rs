@@ -1,12 +1,12 @@
 use std::{io, cmp};
 use futures::{Future, Poll, Async};
-use tokio_io::AsyncRead;
+use tokio_io::{AsyncRead, AsyncWrite};
 use message::{Message, MessageResult, Error};
 use message::types::{Version, Verack};
 use network::Magic;
 use io::{write_message, WriteMessage, ReadMessage, read_message};
 
-pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> Handshake<A> where A: io::Write + AsyncRead {
+pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> Handshake<A> where A: AsyncWrite + AsyncRead {
 	Handshake {
 		version: version.version(),
 		state: HandshakeState::SendVersion(write_message(a, version_message(magic, version))),
@@ -15,7 +15,7 @@ pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> H
 	}
 }
 
-pub fn accept_handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> AcceptHandshake<A> where A: io::Write + AsyncRead {
+pub fn accept_handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> AcceptHandshake<A> where A: AsyncWrite + AsyncRead {
 	AcceptHandshake {
 		version: version.version(),
 		state: AcceptHandshakeState::ReceiveVersion {
@@ -85,7 +85,7 @@ pub struct AcceptHandshake<A> {
 	min_version: u32,
 }
 
-impl<A> Future for Handshake<A> where A: AsyncRead + io::Write {
+impl<A> Future for Handshake<A> where A: AsyncRead + AsyncWrite {
 	type Item = (A, MessageResult<HandshakeResult>);
 	type Error = io::Error;
 
@@ -136,7 +136,7 @@ impl<A> Future for Handshake<A> where A: AsyncRead + io::Write {
 	}
 }
 
-impl<A> Future for AcceptHandshake<A> where A: AsyncRead + io::Write {
+impl<A> Future for AcceptHandshake<A> where A: AsyncRead + AsyncWrite {
 	type Item = (A, MessageResult<HandshakeResult>);
 	type Error = io::Error;
 
@@ -197,7 +197,8 @@ impl<A> Future for AcceptHandshake<A> where A: AsyncRead + io::Write {
 #[cfg(test)]
 mod tests {
 	use std::io;
-	use futures::Future;
+	use futures::{Future, Poll};
+	use tokio_io::{AsyncRead, AsyncWrite};
 	use bytes::Bytes;
 	use ser::Stream;
 	use network::Magic;
@@ -217,6 +218,8 @@ mod tests {
 		}
 	}
 
+	impl AsyncRead for TestIo {}
+
 	impl io::Write for TestIo {
 		fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
 			io::Write::write(&mut self.write, buf)
@@ -224,6 +227,12 @@ mod tests {
 
 		fn flush(&mut self) -> io::Result<()> {
 			io::Write::flush(&mut self.write)
+		}
+	}
+
+	impl AsyncWrite for TestIo {
+		fn shutdown(&mut self) -> Poll<(), io::Error> {
+			Ok(().into())
 		}
 	}
 

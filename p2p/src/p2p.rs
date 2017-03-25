@@ -5,7 +5,7 @@ use parking_lot::RwLock;
 use futures::{Future, finished, failed, BoxFuture};
 use futures::stream::Stream;
 use futures_cpupool::CpuPool;
-use tokio_core::io::IoFuture;
+use tokio_io::IoFuture;
 use tokio_core::net::{TcpListener, TcpStream};
 use tokio_core::reactor::{Handle, Remote, Timeout, Interval};
 use abstract_ns::Resolver;
