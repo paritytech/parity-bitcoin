@@ -1,7 +1,6 @@
 //! Key-Value store abstraction with `RocksDB` backend.
 
 use std::collections::HashMap;
-use parking_lot::RwLock;
 use rocksdb::{
 	DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
 	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column, ReadOptions
@@ -114,7 +113,7 @@ struct DBAndColumns {
 
 /// Key-Value database.
 pub struct Database {
-	db: RwLock<DBAndColumns>,
+	db: DBAndColumns,
 	write_opts: WriteOptions,
 	read_opts: ReadOptions,
 }
@@ -231,7 +230,7 @@ impl Database {
 			Err(s) => { return Err(s); }
 		};
 		Ok(Database {
-			db: RwLock::new(DBAndColumns{ db: db, cfs: cfs }),
+			db: DBAndColumns{ db: db, cfs: cfs },
 			write_opts: write_opts,
 			read_opts: read_opts,
 		})
@@ -239,8 +238,7 @@ impl Database {
 
 	/// Commit transaction to database.
 	pub fn write(&self, tx: Transaction) -> Result<(), String> {
-		let read_db = self.db.read();
-		let DBAndColumns { ref db, ref cfs } = *read_db;
+		let DBAndColumns { ref db, ref cfs } = self.db;
 		let batch = WriteBatch::new();
 		for op in tx.operations.into_iter() {
 			match op {
@@ -259,9 +257,7 @@ impl Database {
 
 	/// Get value by key.
 	pub fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
-		let db_read = self.db.read();
-		let DBAndColumns { ref db, ref cfs } = *db_read;
-
+		let DBAndColumns { ref db, ref cfs } = self.db;
 		match location {
 			Location::DB => {
 				let value = db.get_opt(key, &self.read_opts)?;
@@ -278,8 +274,7 @@ impl Database {
 	pub fn close(self) {}
 
 	pub fn iter(&self, location: Location) -> DatabaseIterator {
-		let read_db = self.db.read();
-		let DBAndColumns { ref db, ref cfs } = *read_db;
+		let DBAndColumns { ref db, ref cfs } = self.db;
 		match location {
 			Location::DB => DatabaseIterator {
 				iter: db.iterator_opt(IteratorMode::Start, &self.read_opts)
