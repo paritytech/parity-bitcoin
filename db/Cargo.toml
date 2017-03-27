@@ -11,7 +11,7 @@ primitives = { path = "../primitives" }
 byteorder = "1.0"
 chain = { path = "../chain"  }
 serialization = { path = "../serialization" }
-parking_lot = "0.3"
+parking_lot = "0.4"
 test-data = { path = "../test-data" }
 bit-vec = "0.4"
 log = "0.3"

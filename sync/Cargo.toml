@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Ethcore <admin@ethcore.io>"]
 
 [dependencies]
-parking_lot = "0.3"
+parking_lot = "0.4"
 log = "0.3"
 time = "0.1"
 futures = "0.1"

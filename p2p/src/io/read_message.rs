@@ -1,12 +1,13 @@
 use std::io;
 use std::marker::PhantomData;
 use futures::{Poll, Future, Async};
+use tokio_io::AsyncRead;
 use network::Magic;
 use message::{MessageResult, Error, Payload};
 use io::{read_header, ReadHeader, read_payload, ReadPayload};
 
 pub fn read_message<M, A>(a: A, magic: Magic, version: u32) -> ReadMessage<M, A>
-	where A: io::Read, M: Payload {
+	where A: AsyncRead, M: Payload {
 	ReadMessage {
 		state: ReadMessageState::ReadHeader {
 			version: version,
@@ -32,7 +33,7 @@ pub struct ReadMessage<M, A> {
 	message_type: PhantomData<M>,
 }
 
-impl<M, A> Future for ReadMessage<M, A> where A: io::Read, M: Payload {
+impl<M, A> Future for ReadMessage<M, A> where A: AsyncRead, M: Payload {
 	type Item = (A, MessageResult<M>);
 	type Error = io::Error;
 
