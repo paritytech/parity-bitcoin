@@ -6,3 +6,4 @@ extern crate parking_lot;
 extern crate log;
 
 pub mod kv;
+mod blockchaindb;

@@ -14,9 +14,9 @@ impl Default for MemoryDatabase {
 	}
 }
 
-impl From<MemoryDatabase> for Transaction {
-	fn from(memory_db: MemoryDatabase) -> Self {
-		let mut db = memory_db.db.write();
+impl MemoryDatabase {
+	pub fn drain_transaction(&self) -> Transaction {
+		let mut db = self.db.write();
 		let operations = db.drain()
 			.flat_map(|(location, action)| {
 				action.into_iter().map(|(key, state)| match state {

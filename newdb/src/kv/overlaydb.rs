@@ -14,10 +14,8 @@ impl<'a, T> OverlayDatabase<'a, T> where T: 'a + KeyValueDatabase {
 		}
 	}
 
-	pub fn flush(&mut self) -> Result<(), String> {
-		let mut overlay = MemoryDatabase::default();
-		mem::swap(&mut self.overlay, &mut overlay);
-		self.db.write(overlay.into())
+	pub fn flush(&self) -> Result<(), String> {
+		self.db.write(self.overlay.drain_transaction())
 	}
 }
 
