@@ -3,7 +3,7 @@ use elastic_array::{ElasticArray32, ElasticArray128};
 pub type Key = ElasticArray32<u8>;
 pub type Value = ElasticArray128<u8>;
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum Location {
 	DB,
 	Column(u32),
@@ -25,6 +25,11 @@ pub enum Operation {
 		location: Location,
 		key: Key,
 	}
+}
+
+pub enum KeyState {
+	Insert(Value),
+	Delete,
 }
 
 pub struct Transaction {

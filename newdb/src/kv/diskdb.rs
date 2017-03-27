@@ -1,23 +1,15 @@
 //! Key-Value store abstraction with `RocksDB` backend.
 
-use std::mem;
 use std::collections::HashMap;
-use parking_lot::{Mutex, MutexGuard, RwLock};
-use elastic_array::{ElasticArray32, ElasticArray128};
+use parking_lot::RwLock;
 use rocksdb::{
 	DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
 	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column, ReadOptions
 };
-use byteorder::{LittleEndian, ByteOrder};
-use transaction::{Transaction, Operation, Location, Key, Value};
+use kv::{Transaction, Operation, Location, Value, KeyValueDatabase};
 
 const DB_BACKGROUND_FLUSHES: i32 = 2;
 const DB_BACKGROUND_COMPACTIONS: i32 = 2;
-
-enum KeyState {
-	Insert(Value),
-	Delete,
-}
 
 /// Compaction profile for the database settings
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -38,7 +30,6 @@ impl Default for CompactionProfile {
 }
 
 impl CompactionProfile {
-
 	/// Default profile suitable for SSD storage
 	pub fn ssd() -> CompactionProfile {
 		CompactionProfile {
@@ -123,26 +114,29 @@ struct DBAndColumns {
 
 /// Key-Value database.
 pub struct Database {
-	db: RwLock<Option<DBAndColumns>>,
+	db: RwLock<DBAndColumns>,
 	write_opts: WriteOptions,
 	read_opts: ReadOptions,
-	/// Dirty values added with `write_buffered`. Cleaned on `flush`.
-	overlay: RwLock<HashMap<Location, HashMap<Key, KeyState>>>,
-	/// Values currently being flushed. Cleared when `flush` completes.
-	flushing: RwLock<HashMap<Location, HashMap<Key, KeyState>>>,
-	/// Prevents concurrent flushes.
-	/// Value indicates if a flush is in progress.
-	flushing_lock: Mutex<bool>,
+}
+
+impl KeyValueDatabase for Database {
+	fn write(&self, tx: Transaction) -> Result<(), String> {
+		Database::write(self, tx)
+	}
+
+	fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
+		Database::get(self, location, key)
+	}
 }
 
 impl Database {
 	/// Open database with default settings.
 	pub fn open_default(path: &str) -> Result<Database, String> {
-		Database::open(&DatabaseConfig::default(), path)
+		Database::open(DatabaseConfig::default(), path)
 	}
 
 	/// Open database file. Creates if it does not exist.
-	pub fn open(config: &DatabaseConfig, path: &str) -> Result<Database, String> {
+	pub fn open(config: DatabaseConfig, path: &str) -> Result<Database, String> {
 		// default cache size for columns not specified.
 		const DEFAULT_CACHE: usize = 2;
 
@@ -236,189 +230,65 @@ impl Database {
 			},
 			Err(s) => { return Err(s); }
 		};
-		let num_cols = cfs.len();
 		Ok(Database {
-			db: RwLock::new(Some(DBAndColumns{ db: db, cfs: cfs })),
+			db: RwLock::new(DBAndColumns{ db: db, cfs: cfs }),
 			write_opts: write_opts,
-			overlay: RwLock::default(),
-			flushing: RwLock::default(),
-			flushing_lock: Mutex::new((false)),
 			read_opts: read_opts,
 		})
 	}
 
 	/// Commit transaction to database.
-	pub fn write_buffered(&self, tx: Transaction) {
-		let mut overlay = self.overlay.write();
+	pub fn write(&self, tx: Transaction) -> Result<(), String> {
+		let read_db = self.db.read();
+		let DBAndColumns { ref db, ref cfs } = *read_db;
+		let batch = WriteBatch::new();
 		for op in tx.operations.into_iter() {
 			match op {
-				Operation::Insert { location, key, value } => {
-					let overlay = overlay.entry(location).or_insert_with(HashMap::default);
-					overlay.insert(key, KeyState::Insert(value));
+				Operation::Insert { location, key, value } => match location {
+					Location::DB => batch.put(&key, &value)?,
+					Location::Column(col) => batch.put_cf(cfs[col as usize], &key, &value)?,
 				},
-				Operation::Delete { location, key } => {
-					let overlay = overlay.entry(location).or_insert_with(HashMap::default);
-					overlay.insert(key, KeyState::Delete);
+				Operation::Delete { location, key } => match location {
+					Location::DB => batch.delete(&key)?,
+					Location::Column(col) => batch.delete_cf(cfs[col as usize], &key)?,
 				},
 			}
-		};
-	}
-
-	/// Commit buffered changes to database. Must be called under `flush_lock`
-	fn write_flushing_with_lock(&self, _lock: &mut MutexGuard<bool>) -> Result<(), String> {
-		match *self.db.read() {
-			Some(DBAndColumns { ref db, ref cfs }) => {
-				let batch = WriteBatch::new();
-				mem::swap(&mut *self.overlay.write(), &mut *self.flushing.write());
-				{
-					for (location, keypairs) in self.flushing.read().iter() {
-						for (ref key, ref state) in keypairs {
-							match **state {
-								KeyState::Delete => match *location {
-									Location::DB => {
-										batch.delete(key)?;
-									},
-									Location::Column(column) => {
-										batch.delete_cf(cfs[column as usize], key)?;
-									},
-								},
-								KeyState::Insert(ref value) => match *location {
-									Location::DB => {
-										batch.put(key, value)?;
-									},
-									Location::Column(column) => {
-										batch.put_cf(cfs[column as usize], key, value)?;
-									}
-								},
-							}
-						}
-					}
-				}
-				try!(db.write_opt(batch, &self.write_opts));
-				let mut flushing = self.flushing.write();
-				flushing.clear();
-				flushing.shrink_to_fit();
-				Ok(())
-			},
-			None => Err("Database is closed".to_owned())
 		}
-	}
-
-	/// Commit buffered changes to database.
-	pub fn flush(&self) -> Result<(), String> {
-		let mut lock = self.flushing_lock.lock();
-		// If RocksDB batch allocation fails the thread gets terminated and the lock is released.
-		// The value inside the lock is used to detect that.
-		if *lock {
-			// This can only happen if another flushing thread is terminated unexpectedly.
-			return Err("Database write failure. Running low on memory perhaps?".to_owned());
-		}
-		*lock = true;
-		let result = self.write_flushing_with_lock(&mut lock);
-		*lock = false;
-		result
-	}
-
-	/// Commit transaction to database.
-	pub fn write(&self, tx: Transaction) -> Result<(), String> {
-		match *self.db.read() {
-			Some(DBAndColumns { ref db, ref cfs }) => {
-				let batch = WriteBatch::new();
-				for op in tx.operations.into_iter() {
-					match op {
-						Operation::Insert { location, key, value } => {
-							match location {
-								Location::DB => {
-									batch.put(&key, &value)?;
-								},
-								Location::Column(col) => {
-									batch.put_cf(cfs[col as usize], &key, &value)?;
-								}
-							}
-						},
-						Operation::Delete { location, key } => {
-							match location {
-								Location::DB => {
-									batch.delete(&key)?;
-								},
-								Location::Column(col) => {
-									batch.delete_cf(cfs[col as usize], &key)?;
-								}
-							}
-						},
-					}
-				}
-				db.write_opt(batch, &self.write_opts)
-			},
-			None => Err("Database is closed".to_owned())
-		}
+		db.write_opt(batch, &self.write_opts)
 	}
 
 	/// Get value by key.
 	pub fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
-		match *self.db.read() {
-			Some(DBAndColumns { ref db, ref cfs }) => {
-				match self.overlay.read().get(&location).and_then(|overlay| overlay.get(key)) {
-					Some(&KeyState::Insert(ref value)) => Ok(Some(value.clone())),
-					Some(&KeyState::Delete) => Ok(None),
-					None => {
-						match self.flushing.read().get(&location).and_then(|flushing| flushing.get(key)) {
-							Some(&KeyState::Insert(ref value)) => Ok(Some(value.clone())),
-							Some(&KeyState::Delete) => Ok(None),
-							None => {
-								match location {
-									Location::DB => {
-										let value = db.get_opt(key, &self.read_opts)?;
-										Ok(value.map(|v| Value::from_slice(&v)))
-									},
-									Location::Column(col) => {
-										let value = db.get_cf_opt(cfs[col as usize], key, &self.read_opts)?;
-										Ok(value.map(|v| Value::from_slice(&v)))
-									}
-								}
-							},
-						}
-					},
-				}
+		let db_read = self.db.read();
+		let DBAndColumns { ref db, ref cfs } = *db_read;
+
+		match location {
+			Location::DB => {
+				let value = db.get_opt(key, &self.read_opts)?;
+				Ok(value.map(|v| Value::from_slice(&v)))
 			},
-			None => Ok(None),
+			Location::Column(col) => {
+				let value = db.get_cf_opt(cfs[col as usize], key, &self.read_opts)?;
+				Ok(value.map(|v| Value::from_slice(&v)))
+			}
 		}
 	}
 
 	/// Close the database
-	pub fn close(&self) {
-		*self.db.write() = None;
-		self.overlay.write().clear();
-		self.flushing.write().clear();
-	}
+	pub fn close(self) {}
 
 	pub fn iter(&self, location: Location) -> DatabaseIterator {
-		//TODO: iterate over overlay
-		match *self.db.read() {
-			Some(DBAndColumns { ref db, ref cfs }) => {
-				match location {
-					Location::DB => {
-						DatabaseIterator {
-							iter: db.iterator_opt(IteratorMode::Start, &self.read_opts)
-						}
-					},
-					Location::Column(column) => {
-						DatabaseIterator {
-							iter: db.iterator_cf_opt(cfs[column as usize], IteratorMode::Start, &self.read_opts)
-								.expect("iterator params are valid; qed")
-						}
-					}
-				}
+		let read_db = self.db.read();
+		let DBAndColumns { ref db, ref cfs } = *read_db;
+		match location {
+			Location::DB => DatabaseIterator {
+				iter: db.iterator_opt(IteratorMode::Start, &self.read_opts)
 			},
-			None => panic!("Not supported yet") //TODO: return an empty iterator or change return type
+			Location::Column(column) => DatabaseIterator {
+				iter: db.iterator_cf_opt(cfs[column as usize], IteratorMode::Start, &self.read_opts)
+					.expect("iterator params are valid; qed")
+			}
 		}
-	}
-}
-
-impl Drop for Database {
-	fn drop(&mut self) {
-		// write all buffered changes if we can.
-		let _ = self.flush();
 	}
 }
 
@@ -426,11 +296,11 @@ impl Drop for Database {
 mod tests {
 	extern crate ethcore_devtools as devtools;
 
-	use transaction::{Transaction, Location};
+	use kv::{Transaction, Location};
 	use super::*;
 	use self::devtools::*;
 
-	fn test_db(config: &DatabaseConfig) {
+	fn test_db(config: DatabaseConfig) {
 		let path = RandomTempPath::create_dir();
 		let db = Database::open(config, path.as_path().to_str().unwrap()).unwrap();
 
@@ -473,6 +343,6 @@ mod tests {
 	fn kvdb() {
 		let path = RandomTempPath::create_dir();
 		let _ = Database::open_default(path.as_path().to_str().unwrap()).unwrap();
-		test_db(&DatabaseConfig::default());
+		test_db(DatabaseConfig::default());
 	}
 }
