@@ -19,6 +19,7 @@ miner = { path = "miner" }
 p2p = { path = "p2p" }
 script = { path = "script" }
 db = { path = "db" }
+newdb = { path = "newdb" }
 verification = { path = "verification" }
 sync = { path = "sync" }
 import = { path = "import" }
