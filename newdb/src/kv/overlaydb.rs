@@ -1,4 +1,3 @@
-use std::mem;
 use kv::{Transaction, Location, Value, KeyValueDatabase, MemoryDatabase};
 
 pub struct OverlayDatabase<'a, T> where T: 'a + KeyValueDatabase {

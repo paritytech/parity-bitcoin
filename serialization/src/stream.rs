@@ -4,9 +4,15 @@ use std::borrow::Borrow;
 use compact_integer::CompactInteger;
 use bytes::Bytes;
 
-pub fn serialize(t: &Serializable) -> Bytes {
+pub fn serialize<T>(t: &T) -> Bytes where T: Serializable{
 	let mut stream = Stream::default();
 	stream.append(t);
+	stream.out()
+}
+
+pub fn serialize_list<T, K>(t: &[K]) -> Bytes where T: Serializable, K: Borrow<T> {
+	let mut stream = Stream::default();
+	stream.append_list(t);
 	stream.out()
 }
 
@@ -39,7 +45,7 @@ impl Stream {
 	}
 
 	/// Serializes the struct and appends it to the end of stream.
-	pub fn append(&mut self, t: &Serializable) -> &mut Self {
+	pub fn append<T>(&mut self, t: &T) -> &mut Self where T: Serializable {
 		t.serialize(self);
 		self
 	}

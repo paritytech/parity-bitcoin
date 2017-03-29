@@ -1,4 +1,5 @@
 use elastic_array::{ElasticArray32, ElasticArray128};
+use ser::{Serializable, serialize};
 
 pub type Key = ElasticArray32<u8>;
 pub type Value = ElasticArray128<u8>;
@@ -39,7 +40,7 @@ pub struct Transaction {
 impl Default for Transaction {
 	fn default() -> Self {
 		Transaction {
-			operations: Vec::with_capacity(256),
+			operations: Vec::with_capacity(32),
 		}
 	}
 }
@@ -49,7 +50,7 @@ impl Transaction {
 		Transaction::default()
 	}
 
-	pub fn insert(&mut self, location: Location, key: &[u8], value: &[u8]) {
+	pub fn insert_raw(&mut self, location: Location, key: &[u8], value: &[u8]) {
 		let operation = Operation::Insert {
 			location: location,
 			key: Key::from_slice(key),
@@ -58,11 +59,19 @@ impl Transaction {
 		self.operations.push(operation);
 	}
 
-	pub fn delete(&mut self, location: Location, key: &[u8]) {
+	pub fn insert<K, V>(&mut self, location: Location, key: &K, value: &V) where K: Serializable, V: Serializable {
+		self.insert_raw(location, &serialize(key), &serialize(value))
+	}
+
+	pub fn delete_raw(&mut self, location: Location, key: &[u8]) {
 		let operation = Operation::Delete {
 			location: location,
 			key: Key::from_slice(key),
 		};
 		self.operations.push(operation);
+	}
+
+	pub fn delete<K>(&mut self, location: Location, key: &K) where K: Serializable {
+		self.delete_raw(location, &serialize(key))
 	}
 }
