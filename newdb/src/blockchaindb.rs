@@ -1,11 +1,9 @@
-use std::io;
 use parking_lot::RwLock;
-use byteorder::LittleEndian;
 use hash::H256;
 use bytes::Bytes;
 use chain::{IndexedBlock, IndexedBlockHeader, BlockHeader, Block, Transaction};
 use ser::{
-	deserialize, serialize, serialize_list, Serializable, Deserializable, Reader, Error as ReaderError,
+	deserialize, serialize, serialize_list, Serializable, Deserializable,
 	DeserializableList
 };
 use kv::{KeyValueDatabase, OverlayDatabase, Transaction as DBTransaction, Location, Value};
@@ -74,7 +72,7 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 
 	pub fn block_origin(&self, header: &IndexedBlockHeader) -> Result<BlockOrigin, Error> {
 		let best_block = self.best_block.read();
-		if self.contains_block(header.hash().clone().into()) {
+		if self.contains_block(header.hash.clone().into()) {
 			// it does not matter if it's canon chain or side chain block
 			return Ok(BlockOrigin::KnownBlock)
 		}
@@ -92,14 +90,14 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		for fork_len in 0..MAX_FORK_ROUTE_PRESET {
 			match self.block_number(&next_hash) {
 				Some(number) => {
-					if number + fork_len >= best_block.number {
+					if number + fork_len as u32 >= best_block.number {
 						return Ok(BlockOrigin::SideChainBecomingCanonChain)
 					} else {
 						return Ok(BlockOrigin::SideChain)
 					}
 				},
 				None => {
-					next_hash = self.block_header(&next_hash)
+					next_hash = self.block_header(next_hash.into())
 						.expect("not to find orphaned side chain in database; qed")
 						.previous_header_hash;
 				}
