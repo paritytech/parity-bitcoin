@@ -1,13 +1,22 @@
-use std::{io, cmp};
+use std::{io, cmp, fmt};
 use hash::H256;
 use ser::{Deserializable, Reader, Error as ReaderError};
 use block_header::BlockHeader;
 use read_and_hash::ReadAndHash;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct IndexedBlockHeader {
 	pub hash: H256,
 	pub raw: BlockHeader,
+}
+
+impl fmt::Debug for IndexedBlockHeader {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		f.debug_struct("IndexedBlockHeader")
+			.field("hash", &self.hash.reversed())
+			.field("raw", &self.raw)
+			.finish()
+	}
 }
 
 impl From<BlockHeader> for IndexedBlockHeader {

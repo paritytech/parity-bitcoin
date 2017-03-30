@@ -89,6 +89,10 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		}
 	}
 
+	pub fn best_block(&self) -> BestBlock {
+		self.best_block.read().clone()
+	}
+
 	pub fn fork(&self) -> ForkChainDatabase<T> {
 		ForkChainDatabase {
 			blockchain: BlockChainDatabase::open(OverlayDatabase::new(&self.db))
@@ -144,10 +148,9 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		}
 
 		let parent_hash = &block.header.raw.previous_header_hash;
-		let block_number = match self.block_number(&parent_hash) {
-			Some(number) => number + 1,
-			None => return Err(Error::UnknownParent),
-		};
+		if !self.contains_block(parent_hash.clone().into()) && !parent_hash.is_zero() {
+			return Err(Error::UnknownParent);
+		}
 
 		let mut update = DBTransaction::new();
 		update.insert(COL_BLOCK_HEADERS.into(), block.hash(), &block.header.raw);
@@ -157,7 +160,6 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 
 		let tx_hashes = serialize_list::<H256, &H256>(&block.transactions.iter().map(|tx| &tx.hash).collect::<Vec<_>>());
 		update.insert_raw(COL_BLOCK_TRANSACTIONS.into(), &**block.hash(), &tx_hashes);
-		update.insert(COL_BLOCK_NUMBERS.into(), block.hash(), &block_number);
 		self.db.write(update).map_err(Error::DatabaseError)
 	}
 
@@ -176,10 +178,13 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		}
 
 		best_block.hash = hash.clone();
-		best_block.number = best_block.number + 1;
+		if !block.header.raw.previous_header_hash.is_zero() {
+			best_block.number += 1;
+		}
 
 		let mut update = DBTransaction::new();
 		update.insert(COL_BLOCK_HASHES.into(), &best_block.number, &best_block.hash);
+		update.insert(COL_BLOCK_NUMBERS.into(), &best_block.hash, &best_block.number);
 		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_HASH, &serialize(&best_block.hash));
 		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_NUMBER, &serialize(&best_block.number));
 
@@ -223,17 +228,22 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			Some(block) => block,
 			None => return Err(Error::CannotCanonize),
 		};
+		let block_number = best_block.number;
+		let block_hash = best_block.hash.clone();
 
 		best_block.hash = block.header.raw.previous_header_hash;
-		best_block.number = best_block.number - 1;
+		if best_block.number > 0 {
+			best_block.number -= 1;
+		}
 
 		let mut update = DBTransaction::new();
-		update.delete(COL_BLOCK_HASHES.into(), &(best_block.number + 1));
+		update.delete(COL_BLOCK_HASHES.into(), &block_number);
+		update.delete(COL_BLOCK_NUMBERS.into(), &block_hash);
 		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_HASH, &serialize(&best_block.hash));
 		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_NUMBER, &serialize(&best_block.number));
 
 		let mut modified_meta: HashMap<H256, TransactionMeta> = HashMap::new();
-		for tx in &block.transactions {
+		for tx in block.transactions.iter().skip(1) {
 			for input in &tx.raw.inputs {
 				use std::collections::hash_map::Entry;
 
@@ -313,10 +323,9 @@ impl<T> BlockProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
 	}
 
 	fn contains_block(&self, block_ref: BlockRef) -> bool {
-		match block_ref {
-			BlockRef::Hash(ref hash) => self.block_number(hash).is_some(),
-			BlockRef::Number(number) => self.block_hash(number).is_some(),
-		}
+		self.resolve_hash(block_ref)
+			.and_then(|block_hash| self.get_raw(COL_BLOCK_HEADERS.into(), &block_hash))
+			.is_some()
 	}
 
 	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256> {

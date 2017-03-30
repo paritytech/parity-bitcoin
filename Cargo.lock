@@ -637,6 +637,7 @@ dependencies = [
  "primitives 0.1.0",
  "rocksdb 0.4.5 (git+https://github.com/ethcore/rust-rocksdb)",
  "serialization 0.1.0",
+ "test-data 0.1.0",
 ]
 
 [[package]]

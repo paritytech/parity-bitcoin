@@ -15,3 +15,4 @@ chain = { path = "../chain" }
 
 [dev-dependencies]
 ethcore-devtools = { path = "../devtools" }
+test-data = { path = "../test-data" }
