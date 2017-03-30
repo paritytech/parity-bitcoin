@@ -4,7 +4,10 @@ use std::path::Path;
 use parking_lot::RwLock;
 use hash::H256;
 use bytes::Bytes;
-use chain::{IndexedBlock, IndexedBlockHeader, IndexedTransaction, BlockHeader, Block, Transaction};
+use chain::{
+	IndexedBlock, IndexedBlockHeader, IndexedTransaction, BlockHeader, Block, Transaction,
+	OutPoint, TransactionOutput
+};
 use ser::{
 	deserialize, serialize, serialize_list, Serializable, Deserializable,
 	DeserializableList
@@ -16,7 +19,7 @@ use kv::{
 use best_block::BestBlock;
 use {
 	BlockRef, Error, BlockHeaderProvider, BlockProvider, BlockOrigin, TransactionMeta, IndexedBlockProvider,
-	TransactionMetaProvider
+	TransactionMetaProvider, TransactionProvider, PreviousTransactionOutputProvider
 };
 
 const COL_COUNT: u32 = 10;
@@ -377,5 +380,23 @@ impl<T> IndexedBlockProvider for BlockChainDatabase<T> where T: KeyValueDatabase
 impl<T> TransactionMetaProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
 	fn transaction_meta(&self, hash: &H256) -> Option<TransactionMeta> {
 		self.get(COL_TRANSACTIONS_META.into(), hash)
+	}
+}
+
+impl<T> TransactionProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
+	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
+		self.get_raw(COL_TRANSACTIONS.into(), hash)
+			.map(|raw| (&*raw).into())
+	}
+
+	fn transaction(&self, hash: &H256) -> Option<Transaction> {
+		self.get(COL_TRANSACTIONS.into(), hash)
+	}
+}
+
+impl<T> PreviousTransactionOutputProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
+	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
+		self.transaction(&prevout.hash)
+			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
 	}
 }

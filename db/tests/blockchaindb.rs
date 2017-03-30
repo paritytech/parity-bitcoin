@@ -1,10 +1,10 @@
 extern crate chain;
-extern crate newdb;
+extern crate db;
 extern crate test_data;
 
 use chain::IndexedBlock;
-use newdb::kv::{MemoryDatabase, SharedMemoryDatabase};
-use newdb::{BlockChainDatabase, BlockProvider};
+use db::kv::{MemoryDatabase, SharedMemoryDatabase};
+use db::{BlockChainDatabase, BlockProvider};
 
 #[test]
 fn insert_block() {

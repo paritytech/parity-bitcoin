@@ -15,4 +15,5 @@ serialization = { path = "../serialization" }
 test-data = { path = "../test-data" }
 script = { path = "../script" }
 network = { path = "../network" }
-db = { path = "../db", features = ["dev"] }
+#db = { path = "../db", features = ["dev"] }
+db = { path = "../db" }
