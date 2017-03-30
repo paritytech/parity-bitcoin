@@ -28,6 +28,7 @@ pub enum Operation {
 	}
 }
 
+#[derive(Debug)]
 pub enum KeyState {
 	Insert(Value),
 	Delete,

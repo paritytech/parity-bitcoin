@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use parking_lot::RwLock;
 use kv::{Transaction, Key, KeyState, Location, Operation, Value, KeyValueDatabase};
 
+#[derive(Debug)]
 pub struct MemoryDatabase {
 	db: RwLock<HashMap<Location, HashMap<Key, KeyState>>>,
 }
@@ -62,5 +64,36 @@ impl KeyValueDatabase for MemoryDatabase {
 			Some(&KeyState::Insert(ref value)) => Ok(Some(value.clone())),
 			Some(&KeyState::Delete) | None => Ok(None),
 		}
+	}
+}
+
+#[derive(Debug)]
+pub struct SharedMemoryDatabase {
+	db: Arc<MemoryDatabase>,
+}
+
+impl Default for SharedMemoryDatabase {
+	fn default() -> Self {
+		SharedMemoryDatabase {
+			db: Arc::default(),
+		}
+	}
+}
+
+impl Clone for SharedMemoryDatabase {
+	fn clone(&self) -> Self {
+		SharedMemoryDatabase {
+			db: self.db.clone(),
+		}
+	}
+}
+
+impl KeyValueDatabase for SharedMemoryDatabase {
+	fn write(&self, tx: Transaction) -> Result<(), String> {
+		self.db.write(tx)
+	}
+
+	fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
+		self.db.get(location, key)
 	}
 }
