@@ -1,6 +1,7 @@
 //! Key-Value store abstraction with `RocksDB` backend.
 
 use std::collections::HashMap;
+use std::path::Path;
 use rocksdb::{
 	DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
 	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column, ReadOptions
@@ -130,12 +131,13 @@ impl KeyValueDatabase for Database {
 
 impl Database {
 	/// Open database with default settings.
-	pub fn open_default(path: &str) -> Result<Database, String> {
+	pub fn open_default<P>(path: P) -> Result<Database, String> where P: AsRef<Path> {
 		Database::open(DatabaseConfig::default(), path)
 	}
 
 	/// Open database file. Creates if it does not exist.
-	pub fn open(config: DatabaseConfig, path: &str) -> Result<Database, String> {
+	pub fn open<P>(config: DatabaseConfig, path: P) -> Result<Database, String> where P: AsRef<Path>{
+		let path = path.as_ref().to_string_lossy();
 		// default cache size for columns not specified.
 		const DEFAULT_CACHE: usize = 2;
 
@@ -193,7 +195,7 @@ impl Database {
 		let mut cfs: Vec<Column> = Vec::new();
 		let db = match config.columns {
 			Some(columns) => {
-				match DB::open_cf(&opts, path, &cfnames, &cf_options) {
+				match DB::open_cf(&opts, &path, &cfnames, &cf_options) {
 					Ok(db) => {
 						cfs = cfnames.iter().map(|n| db.cf_handle(n)
 							.expect("rocksdb opens a cf_handle for each cfname; qed")).collect();
@@ -202,7 +204,7 @@ impl Database {
 					}
 					Err(_) => {
 						// retry and create CFs
-						match DB::open_cf(&opts, path, &[], &[]) {
+						match DB::open_cf(&opts, &path, &[], &[]) {
 							Ok(mut db) => {
 								cfs = try!(cfnames.iter().enumerate().map(|(i, n)| db.create_cf(n, &cf_options[i])).collect());
 								Ok(db)
@@ -212,7 +214,7 @@ impl Database {
 					}
 				}
 			},
-			None => DB::open(&opts, path)
+			None => DB::open(&opts, &path)
 		};
 
 		let db = match db {
@@ -220,11 +222,11 @@ impl Database {
 			Err(ref s) if s.starts_with("Corruption:") => {
 				info!("{}", s);
 				info!("Attempting DB repair for {}", path);
-				try!(DB::repair(&opts, path));
+				try!(DB::repair(&opts, &path));
 
 				match cfnames.is_empty() {
-					true => try!(DB::open(&opts, path)),
-					false => try!(DB::open_cf(&opts, path, &cfnames, &cf_options))
+					true => try!(DB::open(&opts, &path)),
+					false => try!(DB::open_cf(&opts, &path, &cfnames, &cf_options))
 				}
 			},
 			Err(s) => { return Err(s); }
@@ -304,8 +306,8 @@ mod tests {
 		let key3 = b"key3";
 
 		let mut batch = Transaction::default();
-		batch.insert(Location::DB, key1, b"cat");
-		batch.insert(Location::DB, key2, b"dog");
+		batch.insert_raw(Location::DB, key1, b"cat");
+		batch.insert_raw(Location::DB, key2, b"dog");
 		db.write(batch).unwrap();
 
 		assert_eq!(&*db.get(Location::DB, key1).unwrap().unwrap(), b"cat");
@@ -318,18 +320,18 @@ mod tests {
 		assert_eq!(&*contents[1].1, b"dog");
 
 		let mut batch = Transaction::default();
-		batch.delete(Location::DB, key1);
+		batch.delete_raw(Location::DB, key1);
 		db.write(batch).unwrap();
 
 		assert_eq!(db.get(Location::DB, key1).unwrap(), None);
 
 		let mut batch = Transaction::default();
-		batch.insert(Location::DB, key1, b"cat");
+		batch.insert_raw(Location::DB, key1, b"cat");
 		db.write(batch).unwrap();
 
 		let mut transaction = Transaction::default();
-		transaction.insert(Location::DB, key3, b"elephant");
-		transaction.delete(Location::DB, key1);
+		transaction.insert_raw(Location::DB, key3, b"elephant");
+		transaction.delete_raw(Location::DB, key1);
 		db.write(transaction).unwrap();
 		assert_eq!(&*db.get(Location::DB, key3).unwrap().unwrap(), b"elephant");
 	}

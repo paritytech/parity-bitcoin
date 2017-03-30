@@ -1,6 +1,6 @@
 use hash::H256;
 use bytes::Bytes;
-use chain::{BlockHeader, Transaction, Block};
+use chain::{BlockHeader, Transaction, Block, IndexedBlock, IndexedBlockHeader, IndexedTransaction};
 use {BlockRef};
 
 pub trait BlockHeaderProvider {
@@ -32,4 +32,12 @@ pub trait BlockProvider: BlockHeaderProvider {
 
 	/// returns all transactions in the block by block reference (number/hash)
 	fn block_transactions(&self, block_ref: BlockRef) -> Vec<Transaction>;
+}
+
+pub trait IndexedBlockProvider: BlockProvider {
+	fn indexed_block_header(&self, block_ref: BlockRef) -> Option<IndexedBlockHeader>;
+
+	fn indexed_block(&self, block_ref: BlockRef) -> Option<IndexedBlock>;
+
+	fn indexed_block_transactions(&self, block_ref: BlockRef) -> Vec<IndexedTransaction>;
 }
