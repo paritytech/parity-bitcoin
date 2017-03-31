@@ -9,7 +9,7 @@ use db::{
 use network::Magic;
 use error::{Error, TransactionError};
 use canon::{CanonBlock, CanonTransaction};
-use duplex_store::{DuplexTransactionOutputProvider, NoopStore};
+use duplex_store::{DuplexTransactionOutputObserver, DuplexTransactionOutputProvider, NoopStore};
 use verify_chain::ChainVerifier;
 use verify_header::HeaderVerifier;
 use verify_transaction::MemoryPoolTransactionVerifier;
@@ -95,10 +95,11 @@ impl BackwardsCompatibleChainVerifier {
 		// now let's do full verification
 		let noop = NoopStore;
 		let prevouts = DuplexTransactionOutputProvider::new(prevout_provider, &noop);
+		let spents = DuplexTransactionOutputObserver::new(prevout_provider, &noop);
 		let tx_acceptor = MemoryPoolTransactionAcceptor::new(
 			self.store.as_transaction_meta_provider(),
 			prevouts,
-			prevout_provider,
+			spents,
 			self.network,
 			canon_tx,
 			height,

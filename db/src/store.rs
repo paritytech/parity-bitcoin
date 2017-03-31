@@ -2,7 +2,7 @@ use std::sync::Arc;
 use chain::BlockHeader;
 use {
 	BestBlock, BlockProvider, BlockHeaderProvider, TransactionProvider, TransactionMetaProvider,
-	PreviousTransactionOutputProvider, BlockChain, IndexedBlockProvider
+	PreviousTransactionOutputProvider, BlockChain, IndexedBlockProvider, TransactionOutputObserver
 };
 
 /// Blockchain storage interface
@@ -18,7 +18,7 @@ pub trait Store: AsSubstore {
 }
 
 /// Allows casting Arc<Store> to reference to any substore type
-pub trait AsSubstore: BlockChain + IndexedBlockProvider + TransactionProvider + TransactionMetaProvider + PreviousTransactionOutputProvider {
+pub trait AsSubstore: BlockChain + IndexedBlockProvider + TransactionProvider + TransactionMetaProvider + PreviousTransactionOutputProvider + TransactionOutputObserver {
 	fn as_block_provider(&self) -> &BlockProvider;
 
 	fn as_block_header_provider(&self) -> &BlockHeaderProvider;
@@ -30,9 +30,11 @@ pub trait AsSubstore: BlockChain + IndexedBlockProvider + TransactionProvider + 
 	fn as_previous_transaction_output_provider(&self) -> &PreviousTransactionOutputProvider;
 
 	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider;
+
+	fn as_transaction_output_observer(&self) -> &TransactionOutputObserver;
 }
 
-impl<T> AsSubstore for T where T: BlockChain + IndexedBlockProvider + TransactionProvider + TransactionMetaProvider + PreviousTransactionOutputProvider {
+impl<T> AsSubstore for T where T: BlockChain + IndexedBlockProvider + TransactionProvider + TransactionMetaProvider + PreviousTransactionOutputProvider + TransactionOutputObserver {
 	fn as_block_provider(&self) -> &BlockProvider {
 		&*self
 	}
@@ -54,6 +56,10 @@ impl<T> AsSubstore for T where T: BlockChain + IndexedBlockProvider + Transactio
 	}
 
 	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider {
+		&*self
+	}
+
+	fn as_transaction_output_observer(&self) -> &TransactionOutputObserver {
 		&*self
 	}
 }

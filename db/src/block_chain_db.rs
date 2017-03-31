@@ -20,7 +20,7 @@ use best_block::BestBlock;
 use {
 	BlockRef, Error, BlockHeaderProvider, BlockProvider, BlockOrigin, TransactionMeta, IndexedBlockProvider,
 	TransactionMetaProvider, TransactionProvider, PreviousTransactionOutputProvider, BlockChain, Store,
-	SideChainOrigin, ForkChain
+	SideChainOrigin, ForkChain, TransactionOutputObserver
 };
 
 const COL_COUNT: u32 = 10;
@@ -439,6 +439,13 @@ impl<T> PreviousTransactionOutputProvider for BlockChainDatabase<T> where T: Key
 	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
 		self.transaction(&prevout.hash)
 			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
+	}
+}
+
+impl<T> TransactionOutputObserver for BlockChainDatabase<T> where T: KeyValueDatabase {
+	fn is_spent(&self, prevout: &OutPoint) -> Option<bool> {
+		self.transaction_meta(&prevout.hash)
+			.and_then(|meta| meta.is_spent(prevout.index as usize))
 	}
 }
 

@@ -2,7 +2,7 @@ use primitives::hash::H256;
 use db::{TransactionMetaProvider, PreviousTransactionOutputProvider, TransactionOutputObserver};
 use network::{Magic, ConsensusParams};
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner};
-use duplex_store::{DuplexTransactionOutputProvider};
+use duplex_store::{DuplexTransactionOutputProvider, DuplexTransactionOutputObserver};
 use sigops::transaction_sigops;
 use canon::CanonTransaction;
 use constants::{COINBASE_MATURITY, MAX_BLOCK_SIGOPS};
@@ -25,7 +25,8 @@ impl<'a> TransactionAcceptor<'a> {
 		// in case of block validation, that's database and currently processed block
 		prevout_store: DuplexTransactionOutputProvider<'a>,
 		// in case of block validation, that's database and currently processed block
-		spent_store: &'a TransactionOutputObserver,
+		//spent_store: &'a TransactionOutputObserver,
+		spent_store: DuplexTransactionOutputObserver<'a>,
 		network: Magic,
 		transaction: CanonTransaction<'a>,
 		block_hash: &'a H256,
@@ -72,7 +73,8 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		// in case of memory pool it should be db and memory pool
 		prevout_store: DuplexTransactionOutputProvider<'a>,
 		// in case of memory pool it should be db and memory pool
-		spent_store: &'a TransactionOutputObserver,
+		//spent_store: &'a TransactionOutputObserver,
+		spent_store: DuplexTransactionOutputObserver<'a>,
 		network: Magic,
 		transaction: CanonTransaction<'a>,
 		height: u32,
@@ -351,11 +353,13 @@ impl<'a> TransactionRule for TransactionEval<'a> {
 
 pub struct TransactionDoubleSpend<'a> {
 	transaction: CanonTransaction<'a>,
-	store: &'a TransactionOutputObserver,
+	//store: &'a TransactionOutputObserver,
+	store: DuplexTransactionOutputObserver<'a>,
 }
 
 impl<'a> TransactionDoubleSpend<'a> {
-	fn new(transaction: CanonTransaction<'a>, store: &'a TransactionOutputObserver) -> Self {
+	//fn new(transaction: CanonTransaction<'a>, store: &'a TransactionOutputObserver) -> Self {
+	fn new(transaction: CanonTransaction<'a>, store: DuplexTransactionOutputObserver<'a>) -> Self {
 		TransactionDoubleSpend {
 			transaction: transaction,
 			store: store,
