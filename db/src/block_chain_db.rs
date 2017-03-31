@@ -20,7 +20,7 @@ use best_block::BestBlock;
 use {
 	BlockRef, Error, BlockHeaderProvider, BlockProvider, BlockOrigin, TransactionMeta, IndexedBlockProvider,
 	TransactionMetaProvider, TransactionProvider, PreviousTransactionOutputProvider, BlockChain, Store,
-	SideChainOrigin, ForkChain, TransactionOutputObserver
+	SideChainOrigin, ForkChain, TransactionOutputObserver, Forkable, CanonStore
 };
 
 const COL_COUNT: u32 = 10;
@@ -465,7 +465,9 @@ impl<T> BlockChain for BlockChainDatabase<T> where T: KeyValueDatabase {
 	fn block_origin(&self, header: &IndexedBlockHeader) -> Result<BlockOrigin, Error> {
 		BlockChainDatabase::block_origin(self, header)
 	}
+}
 
+impl<T> Forkable for BlockChainDatabase<T> where T: KeyValueDatabase {
 	fn fork<'a>(&'a self, side_chain: SideChainOrigin) -> Result<Box<ForkChain + 'a>, Error> {
 		BlockChainDatabase::fork(self, side_chain)
 			.map(|fork_chain| {
@@ -478,6 +480,12 @@ impl<T> BlockChain for BlockChainDatabase<T> where T: KeyValueDatabase {
 		let mut best_block = self.best_block.write();
 		*best_block = fork.store().best_block();
 		fork.flush()
+	}
+}
+
+impl<T> CanonStore for BlockChainDatabase<T> where T: KeyValueDatabase {
+	fn as_store(&self) -> &Store {
+		&*self
 	}
 }
 

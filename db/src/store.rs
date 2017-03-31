@@ -2,8 +2,13 @@ use std::sync::Arc;
 use chain::BlockHeader;
 use {
 	BestBlock, BlockProvider, BlockHeaderProvider, TransactionProvider, TransactionMetaProvider,
-	PreviousTransactionOutputProvider, BlockChain, IndexedBlockProvider, TransactionOutputObserver
+	PreviousTransactionOutputProvider, BlockChain, IndexedBlockProvider, TransactionOutputObserver,
+	Forkable
 };
+
+pub trait CanonStore: Store + Forkable {
+	fn as_store(&self) -> &Store;
+}
 
 /// Blockchain storage interface
 pub trait Store: AsSubstore {
@@ -23,7 +28,7 @@ pub trait AsSubstore: BlockChain + IndexedBlockProvider + TransactionProvider + 
 
 	fn as_block_header_provider(&self) -> &BlockHeaderProvider;
 
-	fn as_block_chain(&self) -> &BlockChain;
+	//fn as_block_chain(&self) -> &BlockChain;
 
 	fn as_transaction_provider(&self) -> &TransactionProvider;
 
@@ -43,9 +48,9 @@ impl<T> AsSubstore for T where T: BlockChain + IndexedBlockProvider + Transactio
 		&*self
 	}
 
-	fn as_block_chain(&self) -> &BlockChain {
-		&*self
-	}
+	//fn as_block_chain(&self) -> &BlockChain {
+		//&*self
+	//}
 
 	fn as_transaction_provider(&self) -> &TransactionProvider {
 		&*self
@@ -64,4 +69,4 @@ impl<T> AsSubstore for T where T: BlockChain + IndexedBlockProvider + Transactio
 	}
 }
 
-pub type SharedStore = Arc<Store + Send + Sync>;
+pub type SharedStore = Arc<CanonStore + Send + Sync>;

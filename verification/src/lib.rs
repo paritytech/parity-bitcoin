@@ -63,11 +63,6 @@ extern crate primitives;
 extern crate serialization;
 extern crate script;
 
-#[cfg(test)]
-extern crate ethcore_devtools as devtools;
-#[cfg(test)]
-extern crate test_data;
-
 pub mod constants;
 mod canon;
 mod duplex_store;

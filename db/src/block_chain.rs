@@ -23,7 +23,9 @@ pub trait BlockChain {
 
 	/// Checks block origin
 	fn block_origin(&self, header: &IndexedBlockHeader) -> Result<BlockOrigin, Error>;
+}
 
+pub trait Forkable {
 	/// Forks current blockchain.
 	/// Lifetime guarantees fork relationship with canon chain.
 	fn fork<'a>(&'a self, side_chain: SideChainOrigin) -> Result<Box<ForkChain + 'a>, Error>;
