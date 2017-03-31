@@ -1,3 +1,4 @@
+use hash::H256;
 use chain::{IndexedBlock, IndexedBlockHeader};
 use {Error, BlockOrigin, Store, SideChainOrigin};
 
@@ -13,6 +14,12 @@ pub trait ForkChain {
 pub trait BlockChain {
 	/// Inserts new block into blockchain
 	fn insert(&self, block: &IndexedBlock) -> Result<(), Error>;
+
+	/// Canonizes block with given hash
+	fn canonize(&self, block_hash: &H256) -> Result<(), Error>;
+
+	/// Decanonizes best block
+	fn decanonize(&self) -> Result<(), Error>;
 
 	/// Checks block origin
 	fn block_origin(&self, header: &IndexedBlockHeader) -> Result<BlockOrigin, Error>;

@@ -117,7 +117,7 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			overlay.decanonize()?;
 		}
 
-		for block_hash in &side_chain.route {
+		for block_hash in &side_chain.canonized_route {
 			overlay.canonize(block_hash)?;
 		}
 
@@ -158,12 +158,17 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			match self.block_number(&next_hash) {
 				Some(number) => {
 					let block_number = number + fork_len as u32;
-					let origin = SideChainOrigin {
+					let mut origin = SideChainOrigin {
 						ancestor: number,
-						route: sidechain_route.into_iter().rev().collect(),
+						canonized_route: sidechain_route.into_iter().rev().collect(),
+						decanonized_route: Vec::new(),
 						block_number: block_number,
 					};
 					if block_number >= best_block.number {
+						let decanonized_route = (number..best_block.number).into_iter()
+							.filter_map(|block_number| self.block_hash(block_number + 1))
+							.collect();
+						origin.decanonized_route = decanonized_route;
 						return Ok(BlockOrigin::SideChainBecomingCanonChain(origin))
 					} else {
 						return Ok(BlockOrigin::SideChain(origin))
@@ -440,6 +445,14 @@ impl<T> PreviousTransactionOutputProvider for BlockChainDatabase<T> where T: Key
 impl<T> BlockChain for BlockChainDatabase<T> where T: KeyValueDatabase {
 	fn insert(&self, block: &IndexedBlock) -> Result<(), Error> {
 		BlockChainDatabase::insert(self, block)
+	}
+
+	fn canonize(&self, block_hash: &H256) -> Result<(), Error> {
+		BlockChainDatabase::canonize(self, block_hash)
+	}
+
+	fn decanonize(&self) -> Result<(), Error> {
+		BlockChainDatabase::decanonize(self)
 	}
 
 	fn block_origin(&self, header: &IndexedBlockHeader) -> Result<BlockOrigin, Error> {

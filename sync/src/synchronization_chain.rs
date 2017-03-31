@@ -325,43 +325,156 @@ impl Chain {
 
 	/// Insert new best block to storage
 	pub fn insert_best_block(&mut self, block: &IndexedBlock) -> Result<BlockInsertionResult, db::Error> {
-		let is_appending_to_main_branch = self.best_storage_block.hash == block.header.raw.previous_header_hash;
+		match self.storage.block_origin(&block.header)? {
+			db::BlockOrigin::KnownBlock => {
+				// there should be no known blocks at this point
+				unreachable!();
+			},
+			// case 1: block has been added to the main branch
+			db::BlockOrigin::CanonChain { .. } => {
+				self.storage.insert(block)?;
+				self.storage.canonize(block.hash())?;
+
+				// remember new best block hash
+				self.best_storage_block = self.storage.best_block();
+
+				// remove inserted block + handle possible reorganization in headers chain
+				// TODO: mk, not sure if we need both of those params
+				self.headers_chain.block_inserted_to_storage(block.hash(), &self.best_storage_block.hash);
+
+				// double check
+				assert_eq!(self.best_storage_block.hash, block.hash().clone());
+
+				// all transactions from this block were accepted
+				// => delete accepted transactions from verification queue and from the memory pool
+				// + also remove transactions which spent outputs which have been spent by transactions from the block
+				let mut memory_pool = self.memory_pool.write();
+				for tx in &block.transactions {
+					memory_pool.remove_by_hash(&tx.hash);
+					self.verifying_transactions.remove(&tx.hash);
+					for tx_input in &tx.raw.inputs {
+						memory_pool.remove_by_prevout(&tx_input.previous_output);
+					}
+				}
+				// no transactions to reverify, because we have just appended new transactions to the blockchain
+
+				Ok(BlockInsertionResult {
+					canonized_blocks_hashes: vec![block.hash().clone()],
+					transactions_to_reverify: Vec::new(),
+				})
+			},
+			// case 2: block has been added to the side branch with reorganization to this branch
+			db::BlockOrigin::SideChainBecomingCanonChain(origin) => {
+				let fork = self.storage.fork(origin.clone())?;
+				fork.store().insert(block)?;
+				fork.store().canonize(block.hash())?;
+				self.storage.switch_to_fork(fork)?;
+
+				// remember new best block hash
+				self.best_storage_block = self.storage.best_block();
+
+				// remove inserted block + handle possible reorganization in headers chain
+				// TODO: mk, not sure if we need both of those params
+				self.headers_chain.block_inserted_to_storage(block.hash(), &self.best_storage_block.hash);
+
+				// all transactions from this block were accepted
+				// + all transactions from previous blocks of this fork were accepted
+				// => delete accepted transactions from verification queue and from the memory pool
+				let this_block_transactions_hashes = block.transactions.iter().map(|tx| tx.hash.clone()).collect::<Vec<_>>();
+				let mut canonized_blocks_hashes = origin.canonized_route.clone();
+				let new_main_blocks_transactions_hashes = origin.canonized_route.into_iter()
+					.flat_map(|block_hash| self.storage.block_transaction_hashes(block_hash.into()))
+					.collect::<Vec<_>>();
+
+				let mut memory_pool = self.memory_pool.write();
+				for transaction_accepted in this_block_transactions_hashes.into_iter().chain(new_main_blocks_transactions_hashes.into_iter()) {
+					memory_pool.remove_by_hash(&transaction_accepted);
+					self.verifying_transactions.remove(&transaction_accepted);
+				}
+
+				// reverify all transactions from old main branch' blocks
+				let old_main_blocks_transactions = origin.decanonized_route.into_iter()
+					.flat_map(|block_hash| self.storage.indexed_block_transactions(block_hash.into()))
+					.collect::<Vec<_>>();
+
+				// reverify memory pool transactions, sorted by timestamp
+				let memory_pool_transactions_count = memory_pool.information().transactions_count;
+				let memory_pool_transactions: Vec<IndexedTransaction> = memory_pool
+					.remove_n_with_strategy(memory_pool_transactions_count, MemoryPoolOrderingStrategy::ByTimestamp)
+					.into_iter()
+					.map(|t| t.into())
+					.collect();
+
+				// reverify verifying transactions
+				let verifying_transactions: Vec<IndexedTransaction> = self.verifying_transactions
+					.iter()
+					.map(|(_, t)| t.clone())
+					.collect();
+				self.verifying_transactions.clear();
+
+				canonized_blocks_hashes.push(block.hash().clone());
+
+				Ok(BlockInsertionResult {
+					canonized_blocks_hashes: canonized_blocks_hashes,
+					// order matters: db transactions, then ordered mempool transactions, then ordered verifying transactions
+					transactions_to_reverify: old_main_blocks_transactions.into_iter()
+						.chain(memory_pool_transactions.into_iter())
+						.chain(verifying_transactions.into_iter())
+						.collect(),
+				})
+			},
+			// case 3: block has been added to the side branch without reorganization to this branch
+			db::BlockOrigin::SideChain(_origin) => {
+				self.storage.insert(block)?;
+
+				// remove inserted block + handle possible reorganization in headers chain
+				// TODO: mk, not sure if it's needed here at all
+				self.headers_chain.block_inserted_to_storage(block.hash(), &self.best_storage_block.hash);
+
+				// no transactions were accepted
+				// no transactions to reverify
+				Ok(BlockInsertionResult::default())
+			},
+		}
+	}
+
+		//let is_appending_to_main_branch = self.best_storage_block.hash == block.header.raw.previous_header_hash;
 
 		// insert to storage
-		let storage_insertion = try!(self.storage.insert(&block));
+		//let storage_insertion = try!(self.storage.insert(&block));
 
 		// remember new best block hash
-		self.best_storage_block = self.storage.best_block();
+		//self.best_storage_block = self.storage.best_block();
 
 		// remove inserted block + handle possible reorganization in headers chain
-		self.headers_chain.block_inserted_to_storage(block.hash(), &self.best_storage_block.hash);
+		//self.headers_chain.block_inserted_to_storage(block.hash(), &self.best_storage_block.hash);
 
 		// case 1: block has been added to the main branch
-		if is_appending_to_main_branch {
-			// double check
-			assert_eq!(self.best_storage_block.hash, block.hash().clone());
+		//if is_appending_to_main_branch {
+			//// double check
+			//assert_eq!(self.best_storage_block.hash, block.hash().clone());
 
-			// all transactions from this block were accepted
-			// => delete accepted transactions from verification queue and from the memory pool
-			// + also remove transactions which spent outputs which have been spent by transactions from the block
-			let mut memory_pool = self.memory_pool.write();
-			for tx in &block.transactions {
-				memory_pool.remove_by_hash(&tx.hash);
-				self.verifying_transactions.remove(&tx.hash);
-				for tx_input in &tx.raw.inputs {
-					memory_pool.remove_by_prevout(&tx_input.previous_output);
-				}
-			}
-			// no transactions to reverify, because we have just appended new transactions to the blockchain
+			//// all transactions from this block were accepted
+			//// => delete accepted transactions from verification queue and from the memory pool
+			//// + also remove transactions which spent outputs which have been spent by transactions from the block
+			//let mut memory_pool = self.memory_pool.write();
+			//for tx in &block.transactions {
+				//memory_pool.remove_by_hash(&tx.hash);
+				//self.verifying_transactions.remove(&tx.hash);
+				//for tx_input in &tx.raw.inputs {
+					//memory_pool.remove_by_prevout(&tx_input.previous_output);
+				//}
+			//}
+			//// no transactions to reverify, because we have just appended new transactions to the blockchain
 
-			Ok(BlockInsertionResult {
-				canonized_blocks_hashes: vec![block.hash().clone()],
-				transactions_to_reverify: Vec::new(),
-			})
-		}
+			//Ok(BlockInsertionResult {
+				//canonized_blocks_hashes: vec![block.hash().clone()],
+				//transactions_to_reverify: Vec::new(),
+			//})
+		//}
 		// case 2: block has been added to the side branch with reorganization to this branch
-		else if &self.best_storage_block.hash == block.hash() {
-			unimplemented!();
+		//else if &self.best_storage_block.hash == block.hash() {
+			//unimplemented!();
 			// TODO: db refactor
 			//let mut reorganization = match storage_insertion {
 				//db::BlockInsertedChain::Reorganized(reorganization) => reorganization,
@@ -424,14 +537,14 @@ impl Chain {
 					//.chain(verifying_transactions.into_iter())
 					//.collect(),
 			//})
-		}
+		//}
 		// case 3: block has been added to the side branch without reorganization to this branch
-		else {
-			// no transactions were accepted
-			// no transactions to reverify
-			Ok(BlockInsertionResult::default())
-		}
-	}
+		//else {
+			//// no transactions were accepted
+			//// no transactions to reverify
+			//Ok(BlockInsertionResult::default())
+		//}
+	//}
 
 	/// Forget in-memory block
 	pub fn forget_block(&mut self, hash: &H256) -> HashPosition {

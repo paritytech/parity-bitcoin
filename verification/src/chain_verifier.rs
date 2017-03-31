@@ -17,20 +17,6 @@ use accept_chain::ChainAcceptor;
 use accept_transaction::MemoryPoolTransactionAcceptor;
 use Verify;
 
-#[derive(PartialEq, Debug)]
-/// Block verification chain
-pub enum Chain {
-	/// Main chain
-	Main,
-	/// Side chain
-	Side,
-	/// Orphan (no known parent)
-	Orphan,
-}
-
-/// Verification result
-pub type VerificationResult = Result<Chain, Error>;
-
 pub struct BackwardsCompatibleChainVerifier {
 	store: SharedStore,
 	network: Magic,
@@ -44,7 +30,7 @@ impl BackwardsCompatibleChainVerifier {
 		}
 	}
 
-	fn verify_block(&self, block: &IndexedBlock) -> VerificationResult {
+	fn verify_block(&self, block: &IndexedBlock) -> Result<(), Error> {
 		let current_time = ::time::get_time().sec as u32;
 		// first run pre-verification
 		let chain_verifier = ChainVerifier::new(block, self.network, current_time);
@@ -123,7 +109,7 @@ impl BackwardsCompatibleChainVerifier {
 }
 
 impl Verify for BackwardsCompatibleChainVerifier {
-	fn verify(&self, block: &IndexedBlock) -> VerificationResult {
+	fn verify(&self, block: &IndexedBlock) -> Result<(), Error> {
 		let result = self.verify_block(block);
 		trace!(
 			target: "verification", "Block {} (transactions: {}) verification finished. Result {:?}",

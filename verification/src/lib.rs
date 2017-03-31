@@ -100,11 +100,11 @@ pub use accept_header::HeaderAcceptor;
 pub use accept_transaction::{TransactionAcceptor, MemoryPoolTransactionAcceptor};
 
 pub use verify_block::BlockVerifier;
-pub use verify_chain::ChainVerifier as ChainVerifier;
+pub use verify_chain::ChainVerifier;
 pub use verify_header::HeaderVerifier;
 pub use verify_transaction::{TransactionVerifier, MemoryPoolTransactionVerifier};
 
-pub use chain_verifier::{Chain, BackwardsCompatibleChainVerifier, VerificationResult};
+pub use chain_verifier::BackwardsCompatibleChainVerifier;
 pub use error::{Error, TransactionError};
 pub use sigops::transaction_sigops;
 pub use timestamp::median_timestamp;
@@ -112,5 +112,5 @@ pub use work::{work_required, is_valid_proof_of_work, is_valid_proof_of_work_has
 
 /// Interface for block verification
 pub trait Verify : Send + Sync {
-	fn verify(&self, block: &chain::IndexedBlock) -> VerificationResult;
+	fn verify(&self, block: &chain::IndexedBlock) -> Result<(), Error>;
 }

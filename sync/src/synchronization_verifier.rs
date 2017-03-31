@@ -7,7 +7,7 @@ use time::get_time;
 use chain::{IndexedBlock, IndexedTransaction};
 use network::Magic;
 use primitives::hash::H256;
-use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify, Chain};
+use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify};
 use types::{BlockHeight, StorageRef, MemoryPoolRef};
 use utils::MemoryPoolTransactionOutputProvider;
 
@@ -108,15 +108,20 @@ impl AsyncVerifier {
 				VerificationTask::VerifyBlock(block) => {
 					// verify block
 					match verifier.verify(&block) {
-						Ok(Chain::Main) | Ok(Chain::Side) => {
+						Ok(_) => {
 							if let Some(tasks) = sink.on_block_verification_success(block) {
 								tasks_queue.extend(tasks);
 							}
 						},
-						Ok(Chain::Orphan) => {
-							// this can happen for B1 if B0 verification has failed && we have already scheduled verification of B0
-							sink.on_block_verification_error("orphaned block because parent block verification has failed", block.hash())
-						},
+						//Ok(Chain::Main) | Ok(Chain::Side) => {
+							//if let Some(tasks) = sink.on_block_verification_success(block) {
+								//tasks_queue.extend(tasks);
+							//}
+						//},
+						//Ok(Chain::Orphan) => {
+							//// this can happen for B1 if B0 verification has failed && we have already scheduled verification of B0
+							//sink.on_block_verification_error("orphaned block because parent block verification has failed", block.hash())
+						//},
 						Err(e) => {
 							sink.on_block_verification_error(&format!("{:?}", e), block.hash())
 						}
@@ -199,13 +204,14 @@ impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
 	/// Verify block
 	fn verify_block(&self, block: IndexedBlock) {
 		match self.verifier.verify(&block) {
-			Ok(Chain::Main) | Ok(Chain::Side) => {
+			Ok(_) => {
+			//Ok(Chain::Main) | Ok(Chain::Side) => {
 				// SyncVerifier is used for bulk blocks import only
 				// => there are no memory pool
 				// => we could ignore decanonized transactions
 				self.sink.on_block_verification_success(block);
 			},
-			Ok(Chain::Orphan) => self.sink.on_block_verification_error("orphaned block because parent block verification has failed", block.hash()),
+			//Ok(Chain::Orphan) => self.sink.on_block_verification_error("orphaned block because parent block verification has failed", block.hash()),
 			Err(e) => self.sink.on_block_verification_error(&format!("{:?}", e), block.hash()),
 		}
 	}
