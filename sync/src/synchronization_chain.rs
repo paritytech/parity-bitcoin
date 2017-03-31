@@ -133,8 +133,7 @@ impl Chain {
 		// we only work with storages with genesis block
 		let genesis_block_hash = storage.block_hash(0)
 			.expect("storage with genesis block is required");
-		let best_storage_block = storage.best_block()
-			.expect("non-empty storage is required");
+		let best_storage_block = storage.best_block();
 		let best_storage_block_hash = best_storage_block.hash.clone();
 
 		Chain {
@@ -329,10 +328,10 @@ impl Chain {
 		let is_appending_to_main_branch = self.best_storage_block.hash == block.header.raw.previous_header_hash;
 
 		// insert to storage
-		let storage_insertion = try!(self.storage.insert_indexed_block(&block));
+		let storage_insertion = try!(self.storage.insert(&block));
 
 		// remember new best block hash
-		self.best_storage_block = self.storage.best_block().expect("Inserted block above");
+		self.best_storage_block = self.storage.best_block();
 
 		// remove inserted block + handle possible reorganization in headers chain
 		self.headers_chain.block_inserted_to_storage(block.hash(), &self.best_storage_block.hash);
@@ -362,66 +361,69 @@ impl Chain {
 		}
 		// case 2: block has been added to the side branch with reorganization to this branch
 		else if &self.best_storage_block.hash == block.hash() {
-			let mut reorganization = match storage_insertion {
-				db::BlockInsertedChain::Reorganized(reorganization) => reorganization,
-				// we have just inserted block to side chain (!is_appending_to_main_branch)
-				// && it became best block (self.best_storage_block.hash == hash)
-				// => we expect db::BlockInsertedChain::Reorganized here
-				_ => unreachable!(),
-			};
+			unimplemented!();
+			// TODO: db refactor
+			//let mut reorganization = match storage_insertion {
+				//db::BlockInsertedChain::Reorganized(reorganization) => reorganization,
+				//// we have just inserted block to side chain (!is_appending_to_main_branch)
+				//// && it became best block (self.best_storage_block.hash == hash)
+				//// => we expect db::BlockInsertedChain::Reorganized here
+				//_ => unreachable!(),
+			//};
 
 			// all transactions from this block were accepted
 			// + all transactions from previous blocks of this fork were accepted
 			// => delete accepted transactions from verification queue and from the memory pool
-			let this_block_transactions_hashes = block.transactions.iter().map(|tx| tx.hash.clone()).collect::<Vec<_>>();
-			let mut canonized_blocks_hashes: Vec<H256> = Vec::new();
-			let mut new_main_blocks_transactions_hashes: Vec<H256> = Vec::new();
-			while let Some(canonized_block_hash) = reorganization.pop_canonized() {
-				let canonized_transactions_hashes = self.storage.block_transaction_hashes(db::BlockRef::Hash(canonized_block_hash.clone()));
-				new_main_blocks_transactions_hashes.extend(canonized_transactions_hashes);
-				canonized_blocks_hashes.push(canonized_block_hash);
-			}
+			// TODO: db refactor
+			//let this_block_transactions_hashes = block.transactions.iter().map(|tx| tx.hash.clone()).collect::<Vec<_>>();
+			//let mut canonized_blocks_hashes: Vec<H256> = Vec::new();
+			//let mut new_main_blocks_transactions_hashes: Vec<H256> = Vec::new();
+			//while let Some(canonized_block_hash) = reorganization.pop_canonized() {
+				//let canonized_transactions_hashes = self.storage.block_transaction_hashes(db::BlockRef::Hash(canonized_block_hash.clone()));
+				//new_main_blocks_transactions_hashes.extend(canonized_transactions_hashes);
+				//canonized_blocks_hashes.push(canonized_block_hash);
+			//}
 
-			let mut memory_pool = self.memory_pool.write();
-			for transaction_accepted in this_block_transactions_hashes.into_iter().chain(new_main_blocks_transactions_hashes.into_iter()) {
-				memory_pool.remove_by_hash(&transaction_accepted);
-				self.verifying_transactions.remove(&transaction_accepted);
-			}
-			canonized_blocks_hashes.reverse();
+			//let mut memory_pool = self.memory_pool.write();
+			//for transaction_accepted in this_block_transactions_hashes.into_iter().chain(new_main_blocks_transactions_hashes.into_iter()) {
+				//memory_pool.remove_by_hash(&transaction_accepted);
+				//self.verifying_transactions.remove(&transaction_accepted);
+			//}
+			//canonized_blocks_hashes.reverse();
 
-			// reverify all transactions from old main branch' blocks
-			let mut old_main_blocks_transactions_hashes: Vec<H256> = Vec::new();
-			while let Some(decanonized_block_hash) = reorganization.pop_decanonized() {
-				let decanonized_transactions_hashes = self.storage.block_transaction_hashes(db::BlockRef::Hash(decanonized_block_hash));
-				old_main_blocks_transactions_hashes.extend(decanonized_transactions_hashes);
-			}
-			let old_main_blocks_transactions: Vec<IndexedTransaction> = old_main_blocks_transactions_hashes.into_iter()
-				.map(|h| self.storage.transaction(&h).expect("block in storage => block transaction in storage").into())
-				.collect();
+			//// reverify all transactions from old main branch' blocks
+			//let mut old_main_blocks_transactions_hashes: Vec<H256> = Vec::new();
+			//while let Some(decanonized_block_hash) = reorganization.pop_decanonized() {
+				//let decanonized_transactions_hashes = self.storage.block_transaction_hashes(db::BlockRef::Hash(decanonized_block_hash));
+				//old_main_blocks_transactions_hashes.extend(decanonized_transactions_hashes);
+			//}
+			//let old_main_blocks_transactions: Vec<IndexedTransaction> = old_main_blocks_transactions_hashes.into_iter()
+				//.map(|h| self.storage.transaction(&h).expect("block in storage => block transaction in storage").into())
+				//.collect();
 
-			// reverify memory pool transactions, sorted by timestamp
-			let memory_pool_transactions_count = memory_pool.information().transactions_count;
-			let memory_pool_transactions: Vec<IndexedTransaction> = memory_pool
-				.remove_n_with_strategy(memory_pool_transactions_count, MemoryPoolOrderingStrategy::ByTimestamp)
-				.into_iter()
-				.map(|t| t.into())
-				.collect();
+			//// reverify memory pool transactions, sorted by timestamp
+			//let memory_pool_transactions_count = memory_pool.information().transactions_count;
+			//let memory_pool_transactions: Vec<IndexedTransaction> = memory_pool
+				//.remove_n_with_strategy(memory_pool_transactions_count, MemoryPoolOrderingStrategy::ByTimestamp)
+				//.into_iter()
+				//.map(|t| t.into())
+				//.collect();
 
-			// reverify verifying transactions
-			let verifying_transactions: Vec<IndexedTransaction> = self.verifying_transactions
-				.iter()
-				.map(|(_, t)| t.clone())
-				.collect();
-			self.verifying_transactions.clear();
+			//// reverify verifying transactions
+			//let verifying_transactions: Vec<IndexedTransaction> = self.verifying_transactions
+				//.iter()
+				//.map(|(_, t)| t.clone())
+				//.collect();
+			//self.verifying_transactions.clear();
 
-			Ok(BlockInsertionResult {
-				canonized_blocks_hashes: canonized_blocks_hashes,
-				// order matters: db transactions, then ordered mempool transactions, then ordered verifying transactions
-				transactions_to_reverify: old_main_blocks_transactions.into_iter()
-					.chain(memory_pool_transactions.into_iter())
-					.chain(verifying_transactions.into_iter())
-					.collect(),
-			})
+			//Ok(BlockInsertionResult {
+				//canonized_blocks_hashes: canonized_blocks_hashes,
+				//// order matters: db transactions, then ordered mempool transactions, then ordered verifying transactions
+				//transactions_to_reverify: old_main_blocks_transactions.into_iter()
+					//.chain(memory_pool_transactions.into_iter())
+					//.chain(verifying_transactions.into_iter())
+					//.collect(),
+			//})
 		}
 		// case 3: block has been added to the side branch without reorganization to this branch
 		else {
@@ -1067,12 +1069,12 @@ mod tests {
 	#[test]
 	fn update_memory_pool_transaction() {
 		use test_data::{ChainBuilder, TransactionBuilder};
-		
+
 		let data_chain = &mut ChainBuilder::new();
 		TransactionBuilder::with_output(10).add_output(10).add_output(10).store(data_chain)		// transaction0
 			.reset().set_input(&data_chain.at(0), 0).add_output(20).lock().store(data_chain)	// transaction0 -> transaction1
 			.reset().set_input(&data_chain.at(0), 0).add_output(30).store(data_chain);			// transaction0 -> transaction2
-		
+
 		let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
 		chain.insert_verified_transaction(data_chain.at(1).into());
 		assert_eq!(chain.information().transactions.transactions_count, 1);

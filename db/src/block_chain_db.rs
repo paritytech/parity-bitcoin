@@ -19,7 +19,8 @@ use kv::{
 use best_block::BestBlock;
 use {
 	BlockRef, Error, BlockHeaderProvider, BlockProvider, BlockOrigin, TransactionMeta, IndexedBlockProvider,
-	TransactionMetaProvider, TransactionProvider, PreviousTransactionOutputProvider
+	TransactionMetaProvider, TransactionProvider, PreviousTransactionOutputProvider, BlockChain, Store,
+	SideChainOrigin, ForkChain
 };
 
 const COL_COUNT: u32 = 10;
@@ -45,6 +46,16 @@ pub struct BlockChainDatabase<T> where T: KeyValueDatabase {
 
 pub struct ForkChainDatabase<'a, T> where T: 'a + KeyValueDatabase {
 	blockchain: BlockChainDatabase<OverlayDatabase<'a, T>>,
+}
+
+impl<'a, T> ForkChain for ForkChainDatabase<'a, T> where T: KeyValueDatabase {
+	fn store(&self) -> &Store {
+		&self.blockchain
+	}
+
+	fn flush(&self) -> Result<(), Error> {
+		self.blockchain.db.flush().map_err(Error::DatabaseError)
+	}
 }
 
 impl BlockChainDatabase<DiskDatabase> {
@@ -96,10 +107,25 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		self.best_block.read().clone()
 	}
 
-	pub fn fork(&self) -> ForkChainDatabase<T> {
-		ForkChainDatabase {
-			blockchain: BlockChainDatabase::open(OverlayDatabase::new(&self.db))
+	pub fn fork(&self, side_chain: SideChainOrigin) -> Result<ForkChainDatabase<T>, Error> {
+		let current_block_number = self.best_block().number;
+		assert!(current_block_number >= side_chain.ancestor);
+
+		let overlay = BlockChainDatabase::open(OverlayDatabase::new(&self.db));
+
+		for _ in 0..current_block_number - side_chain.ancestor {
+			overlay.decanonize()?;
 		}
+
+		for block_hash in &side_chain.route {
+			overlay.canonize(block_hash)?;
+		}
+
+		let fork = ForkChainDatabase {
+			blockchain: overlay,
+		};
+
+		Ok(fork)
 	}
 
 	pub fn switch_to_fork(&self, fork: ForkChainDatabase<T>) -> Result<(), Error> {
@@ -116,25 +142,35 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		}
 
 		if best_block.hash == header.raw.previous_header_hash {
-			return Ok(BlockOrigin::CanonChain)
+			return Ok(BlockOrigin::CanonChain {
+				block_number: best_block.number + 1
+			})
 		}
 
 		if !self.contains_block(header.raw.previous_header_hash.clone().into()) {
 			return Err(Error::UnknownParent)
 		}
 
+		let mut sidechain_route = Vec::new();
 		let mut next_hash = header.raw.previous_header_hash.clone();
 
 		for fork_len in 0..MAX_FORK_ROUTE_PRESET {
 			match self.block_number(&next_hash) {
 				Some(number) => {
-					if number + fork_len as u32 >= best_block.number {
-						return Ok(BlockOrigin::SideChainBecomingCanonChain)
+					let block_number = number + fork_len as u32;
+					let origin = SideChainOrigin {
+						ancestor: number,
+						route: sidechain_route.into_iter().rev().collect(),
+						block_number: block_number,
+					};
+					if block_number >= best_block.number {
+						return Ok(BlockOrigin::SideChainBecomingCanonChain(origin))
 					} else {
-						return Ok(BlockOrigin::SideChain)
+						return Ok(BlockOrigin::SideChain(origin))
 					}
 				},
 				None => {
+					sidechain_route.push(next_hash.clone());
 					next_hash = self.block_header(next_hash.into())
 						.expect("not to find orphaned side chain in database; qed")
 						.previous_header_hash;
@@ -398,5 +434,45 @@ impl<T> PreviousTransactionOutputProvider for BlockChainDatabase<T> where T: Key
 	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
 		self.transaction(&prevout.hash)
 			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
+	}
+}
+
+impl<T> BlockChain for BlockChainDatabase<T> where T: KeyValueDatabase {
+	fn insert(&self, block: &IndexedBlock) -> Result<(), Error> {
+		BlockChainDatabase::insert(self, block)
+	}
+
+	fn block_origin(&self, header: &IndexedBlockHeader) -> Result<BlockOrigin, Error> {
+		BlockChainDatabase::block_origin(self, header)
+	}
+
+	fn fork<'a>(&'a self, side_chain: SideChainOrigin) -> Result<Box<ForkChain + 'a>, Error> {
+		BlockChainDatabase::fork(self, side_chain)
+			.map(|fork_chain| {
+				let boxed: Box<ForkChain> = Box::new(fork_chain);
+				boxed
+			})
+	}
+
+	fn switch_to_fork<'a>(&self, fork: Box<ForkChain + 'a>) -> Result<(), Error> {
+		let mut best_block = self.best_block.write();
+		*best_block = fork.store().best_block();
+		fork.flush()
+	}
+}
+
+impl<T> Store for BlockChainDatabase<T> where T: KeyValueDatabase {
+	fn best_block(&self) -> BestBlock {
+		BlockChainDatabase::best_block(self)
+	}
+
+	/// get best header
+	fn best_header(&self) -> BlockHeader {
+		self.block_header(self.best_block().hash.into()).expect("best block header should be in db; qed")
+	}
+
+	/// get blockchain difficulty
+	fn difficulty(&self) -> f64 {
+		self.best_header().bits.to_f64()
 	}
 }

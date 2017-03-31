@@ -14,20 +14,26 @@ mod best_block;
 mod block_origin;
 mod block_provider;
 mod block_ref;
-mod blockchaindb;
+mod block_chain;
+mod block_chain_db;
 mod error;
+mod impls;
+mod store;
 mod transaction_meta;
 mod transaction_meta_provider;
 mod transaction_provider;
 
 pub use primitives::{hash, bytes};
-pub use block_origin::BlockOrigin;
+
+pub use best_block::BestBlock;
+pub use block_origin::{BlockOrigin, SideChainOrigin};
 pub use block_provider::{BlockHeaderProvider, BlockProvider, IndexedBlockProvider};
 pub use block_ref::BlockRef;
-pub use blockchaindb::{BlockChainDatabase, ForkChainDatabase};
+pub use block_chain::{BlockChain, ForkChain};
+pub use block_chain_db::{BlockChainDatabase, ForkChainDatabase};
 pub use error::Error;
+pub use store::{AsSubstore, Store, SharedStore};
 pub use transaction_meta::TransactionMeta;
 pub use transaction_meta_provider::{TransactionMetaProvider, TransactionOutputObserver};
 pub use transaction_provider::{TransactionProvider, PreviousTransactionOutputProvider};
-
 

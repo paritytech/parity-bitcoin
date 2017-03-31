@@ -1064,11 +1064,11 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				}
 				Some(verification_tasks)
 			},
-			Err(db::Error::Consistency(e)) => {
-				// process as verification error
-				self.on_block_verification_error(&format!("{:?}", db::Error::Consistency(e)), block.hash());
-				None
-			},
+			//Err(db::Error::Consistency(e)) => {
+				//// process as verification error
+				//self.on_block_verification_error(&format!("{:?}", db::Error::Consistency(e)), block.hash());
+				//None
+			//},
 			Err(e) => {
 				// process as irrecoverable failure
 				panic!("Block {} insertion failed with error {:?}", block.hash().to_reversed_str(), e);
@@ -1811,7 +1811,7 @@ pub mod tests {
 	#[test]
 	fn transaction_is_requested_when_not_synchronizing() {
 		let (executor, core, sync) = create_sync(None, None);
-		
+
 		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
 
 		{
@@ -2072,9 +2072,9 @@ pub mod tests {
 
 		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
-		
+
 		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
-		
+
 		assert!(!core.lock().peers.enumerate().contains(&0));
 	}
 
@@ -2094,7 +2094,7 @@ pub mod tests {
 		core.lock().set_verify_headers(true);
 		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
-		
+
 		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
 
 		assert!(!core.lock().peers.enumerate().contains(&0));

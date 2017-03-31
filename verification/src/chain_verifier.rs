@@ -2,7 +2,10 @@
 
 use hash::H256;
 use chain::{IndexedBlock, IndexedBlockHeader, BlockHeader, Transaction};
-use db::{BlockLocation, SharedStore, PreviousTransactionOutputProvider, BlockHeaderProvider, TransactionOutputObserver};
+use db::{
+	SharedStore, PreviousTransactionOutputProvider, BlockHeaderProvider, TransactionOutputObserver,
+	BlockOrigin
+};
 use network::Magic;
 use error::{Error, TransactionError};
 use canon::{CanonBlock, CanonTransaction};
@@ -47,23 +50,33 @@ impl BackwardsCompatibleChainVerifier {
 		let chain_verifier = ChainVerifier::new(block, self.network, current_time);
 		try!(chain_verifier.check());
 
-		// check pre-verified header location
-		// TODO: now this function allows full verification for sidechain block
-		// it should allow full verification only for canon blocks
-		let location = match self.store.accepted_location(&block.header.raw) {
-			Some(location) => location,
-			None => return Ok(Chain::Orphan),
-		};
-
-		// now do full verification
-		let canon_block = CanonBlock::new(block);
-		let chain_acceptor = ChainAcceptor::new(&self.store, self.network, canon_block, location.height());
-		try!(chain_acceptor.check());
-
-		match location {
-			BlockLocation::Main(_) => Ok(Chain::Main),
-			BlockLocation::Side(_) => Ok(Chain::Side),
+		match self.store.block_origin(&block.header)? {
+			BlockOrigin::KnownBlock => {
+				// there should be no known blocks at this point
+				unreachable!();
+			},
+			BlockOrigin::CanonChain { block_number } => {
+				let canon_block = CanonBlock::new(block);
+				let chain_acceptor = ChainAcceptor::new(&*self.store, self.network, canon_block, block_number);
+				chain_acceptor.check()?;
+			},
+			BlockOrigin::SideChain(origin) => {
+				let block_number = origin.block_number;
+				let fork = self.store.fork(origin)?;
+				let canon_block = CanonBlock::new(block);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number);
+				chain_acceptor.check()?;
+			},
+			BlockOrigin::SideChainBecomingCanonChain(origin) => {
+				let block_number = origin.block_number;
+				let fork = self.store.fork(origin)?;
+				let canon_block = CanonBlock::new(block);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number);
+				chain_acceptor.check()?;
+			},
 		}
+
+		unimplemented!();
 	}
 
 	pub fn verify_block_header(

@@ -1,5 +1,5 @@
 use rayon::prelude::{IntoParallelRefIterator, IndexedParallelIterator, ParallelIterator};
-use db::SharedStore;
+use db::Store;
 use network::Magic;
 use error::Error;
 use canon::CanonBlock;
@@ -15,7 +15,7 @@ pub struct ChainAcceptor<'a> {
 }
 
 impl<'a> ChainAcceptor<'a> {
-	pub fn new(store: &'a SharedStore, network: Magic, block: CanonBlock<'a>, height: u32) -> Self {
+	pub fn new(store: &'a Store, network: Magic, block: CanonBlock<'a>, height: u32) -> Self {
 		trace!(target: "verification", "Block verification {}", block.hash().to_reversed_str());
 		let prevouts = DuplexTransactionOutputProvider::new(store.as_previous_transaction_output_provider(), block.raw());
 		ChainAcceptor {

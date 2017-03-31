@@ -85,7 +85,7 @@ impl BlocksWriter {
 					return Err(err);
 				}
 			} else {
-				try!(self.storage.insert_indexed_block(&block).map_err(Error::Database));
+				try!(self.storage.insert(&block).map_err(Error::Database));
 			}
 		}
 
@@ -122,7 +122,7 @@ impl VerificationSink for BlocksWriterSink {
 
 impl BlockVerificationSink for BlocksWriterSink {
 	fn on_block_verification_success(&self, block: chain::IndexedBlock) -> Option<Vec<VerificationTask>> {
-		if let Err(err) = self.data.storage.insert_indexed_block(&block) {
+		if let Err(err) = self.data.storage.insert(&block) {
 			*self.data.err.lock() = Some(Error::Database(err));
 		}
 		None

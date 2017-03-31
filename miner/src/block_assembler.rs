@@ -242,7 +242,7 @@ impl BlockAssembler {
 	pub fn create_new_block(&self, store: &SharedStore, mempool: &MemoryPool, time: u32, network: Magic) -> BlockTemplate {
 		// get best block
 		// take it's hash && height
-		let best_block = store.best_block().expect("Cannot assemble new block without genesis block");
+		let best_block = store.best_block();
 		let previous_header_hash = best_block.hash;
 		let height = best_block.number + 1;
 		let bits = work_required(previous_header_hash.clone(), time, height, store.as_block_header_provider(), network);
