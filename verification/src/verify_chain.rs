@@ -1,10 +1,10 @@
 use rayon::prelude::{IntoParallelRefIterator, IndexedParallelIterator, ParallelIterator};
 use chain::IndexedBlock;
 use network::Magic;
-use error::Error;
 use verify_block::BlockVerifier;
 use verify_header::HeaderVerifier;
 use verify_transaction::TransactionVerifier;
+use db::VerificationError;
 
 pub struct ChainVerifier<'a> {
 	pub block: BlockVerifier<'a>,
@@ -22,17 +22,17 @@ impl<'a> ChainVerifier<'a> {
 		}
 	}
 
-	pub fn check(&self) -> Result<(), Error> {
+	pub fn check(&self) -> Result<(), VerificationError> {
 		try!(self.block.check());
 		try!(self.header.check());
 		try!(self.check_transactions());
 		Ok(())
 	}
 
-	fn check_transactions(&self) -> Result<(), Error> {
+	fn check_transactions(&self) -> Result<(), VerificationError> {
 		self.transactions.par_iter()
 			.enumerate()
-			.fold(|| Ok(()), |result, (index, tx)| result.and_then(|_| tx.check().map_err(|err| Error::Transaction(index, err))))
+			.fold(|| Ok(()), |result, (index, tx)| result.and_then(|_| tx.check().map_err(|err| VerificationError::Transaction(index, err))))
 			.reduce(|| Ok(()), |acc, check| acc.and(check))
 	}
 }

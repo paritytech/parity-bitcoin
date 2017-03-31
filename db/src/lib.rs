@@ -10,6 +10,7 @@ extern crate serialization;
 extern crate bit_vec;
 #[macro_use] extern crate log;
 extern crate lru_cache;
+extern crate linked_hash_map;
 
 #[cfg(test)]
 extern crate ethcore_devtools as devtools;
@@ -29,6 +30,8 @@ mod transaction_meta_provider;
 mod error;
 mod update_context;
 mod impls;
+mod block_queue;
+mod chain_client;
 
 #[derive(Debug, Clone)]
 pub enum BlockRef {
@@ -66,13 +69,14 @@ pub type SharedStore = std::sync::Arc<Store + Send + Sync>;
 
 pub use best_block::BestBlock;
 pub use storage::{Storage, Store, AsSubstore};
-pub use error::{Error, ConsistencyError};
+pub use error::{Error, ConsistencyError, VerificationError, TransactionError};
 pub use kvdb::Database;
 pub use transaction_provider::{TransactionProvider, PreviousTransactionOutputProvider};
 pub use transaction_meta_provider::{TransactionMetaProvider, TransactionOutputObserver};
 pub use transaction_meta::TransactionMeta;
 pub use block_stapler::{BlockStapler, BlockInsertedChain};
 pub use block_provider::{BlockProvider, BlockHeaderProvider};
+pub use chain_client::ChainClient;
 
 #[cfg(feature="dev")]
 pub use test_storage::TestStorage;

@@ -3,7 +3,7 @@ use chain::{self, IndexedBlock};
 use error::Error;
 use super::BlockLocation;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Reorganization {
 	pub height: u32,
 	canonized: Vec<H256>,
@@ -32,7 +32,7 @@ impl Reorganization {
 	}
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum BlockInsertedChain {
 	Disconnected,
 	Main,

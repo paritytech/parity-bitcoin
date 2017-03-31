@@ -1,8 +1,7 @@
 use network::Magic;
-use db::BlockHeaderProvider;
+use db::{BlockHeaderProvider, VerificationError};
 use canon::CanonHeader;
 use constants::MIN_BLOCK_VERSION;
-use error::Error;
 use work::work_required;
 use timestamp::median_timestamp;
 
@@ -22,7 +21,7 @@ impl<'a> HeaderAcceptor<'a> {
 		}
 	}
 
-	pub fn check(&self) -> Result<(), Error> {
+	pub fn check(&self) -> Result<(), VerificationError> {
 		try!(self.version.check());
 		try!(self.work.check());
 		try!(self.median_timestamp.check());
@@ -31,7 +30,7 @@ impl<'a> HeaderAcceptor<'a> {
 }
 
 pub trait HeaderRule {
-	fn check(&self) -> Result<(), Error>;
+	fn check(&self) -> Result<(), VerificationError>;
 }
 
 pub struct HeaderVersion<'a> {
@@ -49,9 +48,9 @@ impl<'a> HeaderVersion<'a> {
 }
 
 impl<'a> HeaderRule for HeaderVersion<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		if self.header.raw.version < self.min_version {
-			Err(Error::OldVersionBlock)
+			Err(VerificationError::OldVersionBlock)
 		} else {
 			Ok(())
 		}
@@ -77,14 +76,14 @@ impl<'a> HeaderWork<'a> {
 }
 
 impl<'a> HeaderRule for HeaderWork<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		let previous_header_hash = self.header.raw.previous_header_hash.clone();
 		let time = self.header.raw.time;
 		let work = work_required(previous_header_hash, time, self.height, self.store, self.network);
 		if work == self.header.raw.bits {
 			Ok(())
 		} else {
-			Err(Error::Difficulty { expected: work, actual: self.header.raw.bits })
+			Err(VerificationError::Difficulty { expected: work, actual: self.header.raw.bits })
 		}
 	}
 }
@@ -106,10 +105,10 @@ impl<'a> HeaderMedianTimestamp<'a> {
 }
 
 impl<'a> HeaderRule for HeaderMedianTimestamp<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		let median = median_timestamp(&self.header.raw, self.store, self.network);
 		if self.header.raw.time <= median {
-			Err(Error::Timestamp)
+			Err(VerificationError::Timestamp)
 		} else {
 			Ok(())
 		}

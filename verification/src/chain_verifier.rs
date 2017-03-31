@@ -4,7 +4,7 @@ use hash::H256;
 use chain::{IndexedBlock, IndexedBlockHeader, BlockHeader, Transaction};
 use db::{BlockLocation, SharedStore, PreviousTransactionOutputProvider, BlockHeaderProvider, TransactionOutputObserver};
 use network::Magic;
-use error::{Error, TransactionError};
+use db::{VerificationError, TransactionError};
 use canon::{CanonBlock, CanonTransaction};
 use duplex_store::{DuplexTransactionOutputProvider, NoopStore};
 use verify_chain::ChainVerifier;
@@ -26,7 +26,7 @@ pub enum Chain {
 }
 
 /// Verification result
-pub type VerificationResult = Result<Chain, Error>;
+pub type VerificationResult = Result<Chain, VerificationError>;
 
 pub struct BackwardsCompatibleChainVerifier {
 	store: SharedStore,
@@ -71,7 +71,7 @@ impl BackwardsCompatibleChainVerifier {
 		_block_header_provider: &BlockHeaderProvider,
 		hash: &H256,
 		header: &BlockHeader
-	) -> Result<(), Error> {
+	) -> Result<(), VerificationError> {
 		// let's do only preverifcation
 		// TODO: full verification
 		let current_time = ::time::get_time().sec as u32;
@@ -126,12 +126,12 @@ impl Verify for BackwardsCompatibleChainVerifier {
 mod tests {
 	use std::sync::Arc;
 	use chain::IndexedBlock;
-	use db::{TestStorage, Storage, Store, BlockStapler};
+	use db::{TestStorage, Storage, Store, BlockStapler, VerificationError, TransactionError};
 	use network::Magic;
 	use devtools::RandomTempPath;
 	use {script, test_data};
 	use super::BackwardsCompatibleChainVerifier as ChainVerifier;
-	use super::super::{Verify, Chain, Error, TransactionError};
+	use super::super::{Verify, Chain};
 
 	#[test]
 	fn verify_orphan() {
@@ -194,7 +194,7 @@ mod tests {
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
-		let expected = Err(Error::Transaction(
+		let expected = Err(VerificationError::Transaction(
 			1,
 			TransactionError::Maturity,
 		));
@@ -321,7 +321,7 @@ mod tests {
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
-		let expected = Err(Error::Transaction(2, TransactionError::Overspend));
+		let expected = Err(VerificationError::Transaction(2, TransactionError::Overspend));
 		assert_eq!(expected, verifier.verify(&block.into()));
 	}
 
@@ -418,7 +418,7 @@ mod tests {
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
-		let expected = Err(Error::MaximumSigops);
+		let expected = Err(VerificationError::MaximumSigops);
 		assert_eq!(expected, verifier.verify(&block.into()));
 	}
 
@@ -445,7 +445,7 @@ mod tests {
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
-		let expected = Err(Error::CoinbaseOverspend {
+		let expected = Err(VerificationError::CoinbaseOverspend {
 			expected_max: 5000000000,
 			actual: 5000000001
 		});

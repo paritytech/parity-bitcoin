@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use chain::{Transaction, TransactionOutput, OutPoint};
-use db::{PreviousTransactionOutputProvider, TransactionOutputObserver};
+use db::{PreviousTransactionOutputProvider, TransactionOutputObserver, TransactionError};
 use miner::{DoubleSpendCheckResult, HashedOutPoint, NonFinalDoubleSpendSet};
-use verification::TransactionError;
 use super::super::types::{MemoryPoolRef, StorageRef};
 use super::StorageTransactionOutputProvider;
 

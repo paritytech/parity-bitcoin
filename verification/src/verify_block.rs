@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use chain::IndexedBlock;
 use sigops::transaction_sigops;
 use duplex_store::NoopStore;
-use error::{Error, TransactionError};
 use constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
+use db::{VerificationError, TransactionError};
 
 pub struct BlockVerifier<'a> {
 	pub empty: BlockEmpty<'a>,
@@ -28,7 +28,7 @@ impl<'a> BlockVerifier<'a> {
 		}
 	}
 
-	pub fn check(&self) -> Result<(), Error> {
+	pub fn check(&self) -> Result<(), VerificationError> {
 		try!(self.empty.check());
 		try!(self.coinbase.check());
 		try!(self.serialized_size.check());
@@ -41,7 +41,7 @@ impl<'a> BlockVerifier<'a> {
 }
 
 trait BlockRule {
-	fn check(&self) -> Result<(), Error>;
+	fn check(&self) -> Result<(), VerificationError>;
 }
 
 pub struct BlockEmpty<'a> {
@@ -57,9 +57,9 @@ impl<'a> BlockEmpty<'a> {
 }
 
 impl<'a> BlockRule for BlockEmpty<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		if self.block.transactions.is_empty() {
-			Err(Error::Empty)
+			Err(VerificationError::Empty)
 		} else {
 			Ok(())
 		}
@@ -81,10 +81,10 @@ impl<'a> BlockSerializedSize<'a> {
 }
 
 impl<'a> BlockRule for BlockSerializedSize<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		let size = self.block.size();
 		if size > self.max_size {
-			Err(Error::Size(size))
+			Err(VerificationError::Size(size))
 		} else {
 			Ok(())
 		}
@@ -104,11 +104,11 @@ impl<'a> BlockCoinbase<'a> {
 }
 
 impl<'a> BlockRule for BlockCoinbase<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		if self.block.transactions.first().map(|tx| tx.raw.is_coinbase()).unwrap_or(false) {
 			Ok(())
 		} else {
-			Err(Error::Coinbase)
+			Err(VerificationError::Coinbase)
 		}
 	}
 }
@@ -126,13 +126,13 @@ impl<'a> BlockExtraCoinbases<'a> {
 }
 
 impl<'a> BlockRule for BlockExtraCoinbases<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		let misplaced = self.block.transactions.iter()
 			.skip(1)
 			.position(|tx| tx.raw.is_coinbase());
 
 		match misplaced {
-			Some(index) => Err(Error::Transaction(index + 1, TransactionError::MisplacedCoinbase)),
+			Some(index) => Err(VerificationError::Transaction(index + 1, TransactionError::MisplacedCoinbase)),
 			None => Ok(()),
 		}
 	}
@@ -151,12 +151,12 @@ impl<'a> BlockTransactionsUniqueness<'a> {
 }
 
 impl<'a> BlockRule for BlockTransactionsUniqueness<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		let hashes = self.block.transactions.iter().map(|tx| tx.hash.clone()).collect::<HashSet<_>>();
 		if hashes.len() == self.block.transactions.len() {
 			Ok(())
 		} else {
-			Err(Error::DuplicatedTransactions)
+			Err(VerificationError::DuplicatedTransactions)
 		}
 	}
 }
@@ -176,14 +176,14 @@ impl<'a> BlockSigops<'a> {
 }
 
 impl<'a> BlockRule for BlockSigops<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		// We cannot know if bip16 is enabled at this point so we disable it.
 		let sigops = self.block.transactions.iter()
 			.map(|tx| transaction_sigops(&tx.raw, &NoopStore, false))
 			.sum::<usize>();
 
 		if sigops > self.max_sigops {
-			Err(Error::MaximumSigops)
+			Err(VerificationError::MaximumSigops)
 		} else {
 			Ok(())
 		}
@@ -203,11 +203,11 @@ impl<'a> BlockMerkleRoot<'a> {
 }
 
 impl<'a> BlockRule for BlockMerkleRoot<'a> {
-	fn check(&self) -> Result<(), Error> {
+	fn check(&self) -> Result<(), VerificationError> {
 		if self.block.merkle_root() == self.block.header.raw.merkle_root_hash {
 			Ok(())
 		} else {
-			Err(Error::MerkleRoot)
+			Err(VerificationError::MerkleRoot)
 		}
 	}
 }
