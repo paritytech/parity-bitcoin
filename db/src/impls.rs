@@ -5,8 +5,9 @@ use transaction_meta_provider::TransactionOutputObserver;
 
 impl<'a, T> PreviousTransactionOutputProvider for IndexedTransactionsRef<'a, T>
 	where T: Borrow<IndexedTransaction> + Send + Sync {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
+	fn previous_transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
 		self.transactions.iter()
+			.take(transaction_index)
 			.map(Borrow::borrow)
 			.find(|tx| tx.hash == prevout.hash)
 			.and_then(|tx| tx.raw.outputs.get(prevout.index as usize))
@@ -15,9 +16,9 @@ impl<'a, T> PreviousTransactionOutputProvider for IndexedTransactionsRef<'a, T>
 }
 
 impl PreviousTransactionOutputProvider for IndexedBlock {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
+	fn previous_transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
 		let txs = IndexedTransactionsRef::new(&self.transactions);
-		txs.previous_transaction_output(prevout)
+		txs.previous_transaction_output(prevout, transaction_index)
 	}
 }
 

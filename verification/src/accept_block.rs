@@ -122,7 +122,7 @@ impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 			let mut incoming: u64 = 0;
 			for input in tx.raw.inputs.iter() {
 				let (sum, overflow) = incoming.overflowing_add(
-					store.previous_transaction_output(&input.previous_output).map(|o| o.value).unwrap_or(0));
+					store.previous_transaction_output(&input.previous_output, usize::max_value()).map(|o| o.value).unwrap_or(0));
 				if overflow {
 					return Err(Error::ReferencedInputsSumOverflow);
 				}

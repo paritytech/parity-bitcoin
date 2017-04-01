@@ -19,7 +19,7 @@ pub trait BlockChain {
 	fn canonize(&self, block_hash: &H256) -> Result<(), Error>;
 
 	/// Decanonizes best block
-	fn decanonize(&self) -> Result<(), Error>;
+	fn decanonize(&self) -> Result<H256, Error>;
 
 	/// Checks block origin
 	fn block_origin(&self, header: &IndexedBlockHeader) -> Result<BlockOrigin, Error>;

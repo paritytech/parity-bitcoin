@@ -20,9 +20,9 @@ impl<'a> DuplexTransactionOutputProvider<'a> {
 }
 
 impl<'a> PreviousTransactionOutputProvider for DuplexTransactionOutputProvider<'a> {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		self.first.previous_transaction_output(prevout)
-			.or_else(|| self.second.previous_transaction_output(prevout))
+	fn previous_transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
+		self.first.previous_transaction_output(prevout, transaction_index)
+			.or_else(|| self.second.previous_transaction_output(prevout, transaction_index))
 	}
 }
 
@@ -54,7 +54,7 @@ impl<'a> TransactionOutputObserver for DuplexTransactionOutputObserver<'a> {
 pub struct NoopStore;
 
 impl PreviousTransactionOutputProvider for NoopStore {
-	fn previous_transaction_output(&self, _prevout: &OutPoint) -> Option<TransactionOutput> {
+	fn previous_transaction_output(&self, _prevout: &OutPoint, _transaction_index: usize) -> Option<TransactionOutput> {
 		None
 	}
 }

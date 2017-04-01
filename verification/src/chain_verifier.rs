@@ -36,7 +36,10 @@ impl BackwardsCompatibleChainVerifier {
 		let chain_verifier = ChainVerifier::new(block, self.network, current_time);
 		chain_verifier.check()?;
 
-		match self.store.block_origin(&block.header)? {
+		assert_eq!(Some(self.store.best_block().hash), self.store.block_hash(self.store.best_block().number));
+		let block_origin = self.store.block_origin(&block.header)?;
+		trace!(target: "verification", "verify_block: {:?} best_block: {:?} block_origin: {:?}", block.hash().reversed(), self.store.best_block(), block_origin);
+		match block_origin {
 			BlockOrigin::KnownBlock => {
 				// there should be no known blocks at this point
 				unreachable!();
@@ -62,6 +65,7 @@ impl BackwardsCompatibleChainVerifier {
 			},
 		}
 
+		assert_eq!(Some(self.store.best_block().hash), self.store.block_hash(self.store.best_block().number));
 		Ok(())
 	}
 

@@ -32,12 +32,13 @@ impl<'a> TransactionAcceptor<'a> {
 		block_hash: &'a H256,
 		height: u32,
 		time: u32,
+		transaction_index: usize,
 	) -> Self {
 		trace!(target: "verification", "Tx verification {}", transaction.hash.to_reversed_str());
 		let params = network.consensus_params();
 		TransactionAcceptor {
 			bip30: TransactionBip30::new_for_sync(transaction, meta_store, params.clone(), block_hash, height),
-			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store),
+			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, prevout_store),
 			double_spent: TransactionDoubleSpend::new(transaction, spent_store),
@@ -82,9 +83,10 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 	) -> Self {
 		trace!(target: "verification", "Mempool-Tx verification {}", transaction.hash.to_reversed_str());
 		let params = network.consensus_params();
+		let transaction_index = 0;
 		MemoryPoolTransactionAcceptor {
 			bip30: TransactionBip30::new_for_mempool(transaction, meta_store),
-			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store),
+			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, prevout_store),
 			sigops: TransactionSigops::new(transaction, prevout_store, params.clone(), MAX_BLOCK_SIGOPS, time),
@@ -165,13 +167,15 @@ impl<'a> TransactionRule for TransactionBip30<'a> {
 pub struct TransactionMissingInputs<'a> {
 	transaction: CanonTransaction<'a>,
 	store: DuplexTransactionOutputProvider<'a>,
+	transaction_index: usize,
 }
 
 impl<'a> TransactionMissingInputs<'a> {
-	fn new(transaction: CanonTransaction<'a>, store: DuplexTransactionOutputProvider<'a>) -> Self {
+	fn new(transaction: CanonTransaction<'a>, store: DuplexTransactionOutputProvider<'a>, transaction_index: usize) -> Self {
 		TransactionMissingInputs {
 			transaction: transaction,
 			store: store,
+			transaction_index: transaction_index,
 		}
 	}
 }
@@ -181,7 +185,7 @@ impl<'a> TransactionRule for TransactionMissingInputs<'a> {
 		let missing_index = self.transaction.raw.inputs.iter()
 			.position(|input| {
 				let is_not_null = !input.previous_output.is_null();
-				let is_missing = self.store.previous_transaction_output(&input.previous_output).is_none();
+				let is_missing = self.store.previous_transaction_output(&input.previous_output, self.transaction_index).is_none();
 				is_not_null && is_missing
 			});
 
@@ -246,7 +250,7 @@ impl<'a> TransactionRule for TransactionOverspent<'a> {
 		}
 
 		let available = self.transaction.raw.inputs.iter()
-			.map(|input| self.store.previous_transaction_output(&input.previous_output).map(|o| o.value).unwrap_or(0))
+			.map(|input| self.store.previous_transaction_output(&input.previous_output, usize::max_value()).map(|o| o.value).unwrap_or(0))
 			.sum::<u64>();
 
 		let spends = self.transaction.raw.total_spends();
@@ -332,7 +336,7 @@ impl<'a> TransactionRule for TransactionEval<'a> {
 		};
 
 		for (index, input) in self.transaction.raw.inputs.iter().enumerate() {
-			let output = self.store.previous_transaction_output(&input.previous_output)
+			let output = self.store.previous_transaction_output(&input.previous_output, usize::max_value())
 				.ok_or_else(|| TransactionError::UnknownReference(input.previous_output.hash.clone()))?;
 
 			checker.input_index = index;

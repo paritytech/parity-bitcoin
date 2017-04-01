@@ -27,7 +27,7 @@ pub fn transaction_sigops(
 		let input_script: Script = input.script_sig.clone().into();
 		input_sigops += input_script.sigops_count(false);
 		if bip16_active {
-			let previous_output = match store.previous_transaction_output(&input.previous_output) {
+			let previous_output = match store.previous_transaction_output(&input.previous_output, usize::max_value()) {
 				Some(output) => output,
 				None => continue,
 			};

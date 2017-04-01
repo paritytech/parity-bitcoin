@@ -108,13 +108,11 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 	}
 
 	pub fn fork(&self, side_chain: SideChainOrigin) -> Result<ForkChainDatabase<T>, Error> {
-		let current_block_number = self.best_block().number;
-		assert!(current_block_number >= side_chain.ancestor);
-
 		let overlay = BlockChainDatabase::open(OverlayDatabase::new(&self.db));
 
-		for _ in 0..current_block_number - side_chain.ancestor {
-			overlay.decanonize()?;
+		for hash in side_chain.decanonized_route.into_iter().rev() {
+			let decanonized_hash = overlay.decanonize()?;
+			assert_eq!(hash, decanonized_hash);
 		}
 
 		for block_hash in &side_chain.canonized_route {
@@ -136,6 +134,7 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 
 	pub fn block_origin(&self, header: &IndexedBlockHeader) -> Result<BlockOrigin, Error> {
 		let best_block = self.best_block.read();
+		assert_eq!(Some(best_block.hash.clone()), self.block_hash(best_block.number));
 		if self.contains_block(header.hash.clone().into()) {
 			// it does not matter if it's canon chain or side chain block
 			return Ok(BlockOrigin::KnownBlock)
@@ -157,18 +156,17 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		for fork_len in 0..MAX_FORK_ROUTE_PRESET {
 			match self.block_number(&next_hash) {
 				Some(number) => {
-					let block_number = number + fork_len as u32;
-					let mut origin = SideChainOrigin {
+					let block_number = number + fork_len as u32 + 1;
+					let origin = SideChainOrigin {
 						ancestor: number,
 						canonized_route: sidechain_route.into_iter().rev().collect(),
-						decanonized_route: Vec::new(),
+						decanonized_route: (number + 1..best_block.number + 1).into_iter()
+							//.map(|decanonized_bn| self.block_hash(decanonized_bn + 1).expect("to find block hashes of canon chain blocks; qed"))
+							.filter_map(|decanonized_bn| self.block_hash(decanonized_bn))
+							.collect(),
 						block_number: block_number,
 					};
-					if block_number >= best_block.number {
-						let decanonized_route = (number..best_block.number).into_iter()
-							.filter_map(|block_number| self.block_hash(block_number + 1))
-							.collect();
-						origin.decanonized_route = decanonized_route;
+					if block_number > best_block.number {
 						return Ok(BlockOrigin::SideChainBecomingCanonChain(origin))
 					} else {
 						return Ok(BlockOrigin::SideChain(origin))
@@ -221,25 +219,32 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			return Err(Error::CannotCanonize);
 		}
 
-		best_block.hash = hash.clone();
-		if !block.header.raw.previous_header_hash.is_zero() {
-			best_block.number += 1;
-		}
+		let new_best_block = BestBlock {
+			hash: hash.clone(),
+			number: if block.header.raw.previous_header_hash.is_zero() {
+				assert_eq!(best_block.number, 0);
+				0
+			} else {
+				best_block.number + 1
+			}
+		};
+
+		trace!(target: "db", "canonize {:?}", new_best_block);
 
 		let mut update = DBTransaction::new();
-		update.insert(COL_BLOCK_HASHES.into(), &best_block.number, &best_block.hash);
-		update.insert(COL_BLOCK_NUMBERS.into(), &best_block.hash, &best_block.number);
-		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_HASH, &serialize(&best_block.hash));
-		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_NUMBER, &serialize(&best_block.number));
+		update.insert(COL_BLOCK_HASHES.into(), &new_best_block.number, &new_best_block.hash);
+		update.insert(COL_BLOCK_NUMBERS.into(), &new_best_block.hash, &new_best_block.number);
+		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_HASH, &serialize(&new_best_block.hash));
+		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_NUMBER, &serialize(&new_best_block.number));
 
 		let mut modified_meta: HashMap<H256, TransactionMeta> = HashMap::new();
 		if let Some(tx) = block.transactions.first() {
-			let meta = TransactionMeta::new_coinbase(best_block.number, tx.raw.outputs.len());
+			let meta = TransactionMeta::new_coinbase(new_best_block.number, tx.raw.outputs.len());
 			modified_meta.insert(tx.hash.clone(), meta);
 		}
 
 		for tx in block.transactions.iter().skip(1) {
-			modified_meta.insert(tx.hash.clone(), TransactionMeta::new(best_block.number, tx.raw.outputs.len()));
+			modified_meta.insert(tx.hash.clone(), TransactionMeta::new(new_best_block.number, tx.raw.outputs.len()));
 
 			for input in &tx.raw.inputs {
 				use std::collections::hash_map::Entry;
@@ -263,10 +268,12 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			update.insert(COL_TRANSACTIONS_META.into(), hash, meta);
 		}
 
-		self.db.write(update).map_err(Error::DatabaseError)
+		self.db.write(update).map_err(Error::DatabaseError)?;
+		*best_block = new_best_block;
+		Ok(())
 	}
 
-	pub fn decanonize(&self) -> Result<(), Error> {
+	pub fn decanonize(&self) -> Result<H256, Error> {
 		let mut best_block = self.best_block.write();
 		let block = match self.indexed_block(best_block.hash.clone().into()) {
 			Some(block) => block,
@@ -275,16 +282,23 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		let block_number = best_block.number;
 		let block_hash = best_block.hash.clone();
 
-		best_block.hash = block.header.raw.previous_header_hash;
-		if best_block.number > 0 {
-			best_block.number -= 1;
-		}
+		let new_best_block = BestBlock {
+			hash: block.header.raw.previous_header_hash.clone(),
+			number: if best_block.number > 0 {
+				best_block.number - 1
+			} else {
+				assert!(block.header.raw.previous_header_hash.is_zero());
+				0
+			}
+		};
+
+		trace!(target: "db", "decanonize, new best: {:?}", new_best_block);
 
 		let mut update = DBTransaction::new();
 		update.delete(COL_BLOCK_HASHES.into(), &block_number);
 		update.delete(COL_BLOCK_NUMBERS.into(), &block_hash);
-		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_HASH, &serialize(&best_block.hash));
-		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_NUMBER, &serialize(&best_block.number));
+		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_HASH, &serialize(&new_best_block.hash));
+		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_NUMBER, &serialize(&new_best_block.number));
 
 		let mut modified_meta: HashMap<H256, TransactionMeta> = HashMap::new();
 		for tx in block.transactions.iter().skip(1) {
@@ -314,7 +328,9 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			update.delete(COL_TRANSACTIONS_META.into(), &tx.hash);
 		}
 
-		self.db.write(update).map_err(Error::DatabaseError)
+		self.db.write(update).map_err(Error::DatabaseError)?;
+		*best_block = new_best_block;
+		Ok(block_hash)
 	}
 
 	fn get_raw<K>(&self, location: Location, key: &K) -> Option<Value> where K: Serializable {
@@ -436,8 +452,10 @@ impl<T> TransactionProvider for BlockChainDatabase<T> where T: KeyValueDatabase 
 }
 
 impl<T> PreviousTransactionOutputProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		self.transaction(&prevout.hash)
+	fn previous_transaction_output(&self, prevout: &OutPoint, _transaction_index: usize) -> Option<TransactionOutput> {
+		// return previous transaction outputs only for canon chain transactions
+		self.transaction_meta(&prevout.hash)
+			.and_then(|_| self.transaction(&prevout.hash))
 			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
 	}
 }
@@ -458,7 +476,7 @@ impl<T> BlockChain for BlockChainDatabase<T> where T: KeyValueDatabase {
 		BlockChainDatabase::canonize(self, block_hash)
 	}
 
-	fn decanonize(&self) -> Result<(), Error> {
+	fn decanonize(&self) -> Result<H256, Error> {
 		BlockChainDatabase::decanonize(self)
 	}
 

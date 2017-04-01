@@ -32,6 +32,7 @@ pub fn init_db(cfg: &Config, db: &db::SharedStore) -> Result<(), String> {
 		Some(_) => Ok(()),
 		None => {
 			db.insert(&genesis_block).expect("Failed to insert genesis block to the database");
+			db.canonize(genesis_block.hash()).expect("Failed to canonize genesis block");
 			Ok(())
 		}
 	}

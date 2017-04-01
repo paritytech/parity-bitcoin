@@ -39,6 +39,10 @@ impl MemoryDatabase {
 			operations: operations,
 		}
 	}
+
+	pub fn is_known(&self, location: Location, key: &[u8]) -> bool {
+		self.db.read().get(&location).and_then(|db| db.get(key)).is_some()
+	}
 }
 
 impl KeyValueDatabase for MemoryDatabase {

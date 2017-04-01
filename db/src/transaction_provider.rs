@@ -19,5 +19,5 @@ pub trait TransactionProvider {
 /// Structures like `IndexedBlock` or `MemoryPool` already have it in memory, so it would be
 /// a shame to clone the whole transaction just to get single output.
 pub trait PreviousTransactionOutputProvider: Send + Sync {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput>;
+	fn previous_transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput>;
 }

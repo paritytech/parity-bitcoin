@@ -86,7 +86,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 	let mut el = p2p::event_loop();
 
 	let db = open_db(&cfg);
-	try!(init_db(&cfg, &db));
+	init_db(&cfg, &db)?;
 
 	let nodes_path = node_table_path(&cfg);
 

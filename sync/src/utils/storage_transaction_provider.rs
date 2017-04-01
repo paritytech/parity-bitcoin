@@ -25,7 +25,7 @@ impl TransactionOutputObserver for StorageTransactionOutputProvider {
 }
 
 impl PreviousTransactionOutputProvider for StorageTransactionOutputProvider {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		self.storage.as_previous_transaction_output_provider().previous_transaction_output(prevout)
+	fn previous_transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
+		self.storage.as_previous_transaction_output_provider().previous_transaction_output(prevout, transaction_index)
 	}
 }

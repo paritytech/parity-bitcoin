@@ -24,17 +24,10 @@ impl<'a, T> KeyValueDatabase for OverlayDatabase<'a, T> where T: 'a + KeyValueDa
 	}
 
 	fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
-		if let Ok(Some(value)) = self.overlay.get(location, key) {
-			return Ok(Some(value));
+		if self.overlay.is_known(location, key) {
+			self.overlay.get(location, key)
+		} else {
+			self.db.get(location, key)
 		}
-
-		self.db.get(location, key)
-	}
-}
-
-impl<'a, T> Drop for OverlayDatabase<'a, T> where T: 'a + KeyValueDatabase {
-	fn drop(&mut self) {
-		// write all buffered changes if we can.
-		let _ = self.flush();
 	}
 }

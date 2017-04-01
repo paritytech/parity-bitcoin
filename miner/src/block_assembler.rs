@@ -170,8 +170,8 @@ impl<'a, T> FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entr
 }
 
 impl<'a, T> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a, T> where T: Send + Sync {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		self.store.previous_transaction_output(prevout)
+	fn previous_transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
+		self.store.previous_transaction_output(prevout, transaction_index)
 			.or_else(|| {
 				self.previous_entries.iter()
 					.find(|e| e.hash == prevout.hash)
