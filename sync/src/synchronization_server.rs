@@ -457,462 +457,469 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 	}
 }
 
-//#[cfg(test)]
-//pub mod tests {
-	//use std::mem::replace;
-	//use std::sync::Arc;
-	//use parking_lot::{Mutex, RwLock};
-	//use db::{self, BlockStapler};
-	//use message::types;
-	//use message::common::{self, InventoryVector, InventoryType};
-	//use primitives::hash::H256;
-	//use test_data;
-	//use chain::Transaction;
-	//use inbound_connection::tests::DummyOutboundSyncConnection;
-	//use miner::MemoryPool;
-	//use local_node::tests::{default_filterload, make_filteradd};
-	//use synchronization_executor::Task;
-	//use synchronization_executor::tests::DummyTaskExecutor;
-	//use synchronization_peers::{PeersContainer, PeersFilters, PeersImpl};
-	//use types::{PeerIndex, StorageRef, MemoryPoolRef, PeersRef, ExecutorRef};
-	//use utils::KnownHashType;
-	//use super::{Server, ServerTask, ServerImpl, ServerTaskExecutor};
+#[cfg(test)]
+pub mod tests {
+	use std::mem::replace;
+	use std::sync::Arc;
+	use parking_lot::{Mutex, RwLock};
+	use db::{BlockChainDatabase};
+	use message::types;
+	use message::common::{self, InventoryVector, InventoryType};
+	use primitives::hash::H256;
+	use test_data;
+	use chain::Transaction;
+	use inbound_connection::tests::DummyOutboundSyncConnection;
+	use miner::MemoryPool;
+	use local_node::tests::{default_filterload, make_filteradd};
+	use synchronization_executor::Task;
+	use synchronization_executor::tests::DummyTaskExecutor;
+	use synchronization_peers::{PeersContainer, PeersFilters, PeersImpl};
+	use types::{PeerIndex, StorageRef, MemoryPoolRef, PeersRef, ExecutorRef};
+	use utils::KnownHashType;
+	use super::{Server, ServerTask, ServerImpl, ServerTaskExecutor};
 
-	//pub struct DummyServer {
-		//tasks: Mutex<Vec<ServerTask>>,
-	//}
+	pub struct DummyServer {
+		tasks: Mutex<Vec<ServerTask>>,
+	}
 
-	//impl DummyServer {
-		//pub fn new() -> Self {
-			//DummyServer {
-				//tasks: Mutex::new(Vec::new()),
-			//}
-		//}
+	impl DummyServer {
+		pub fn new() -> Self {
+			DummyServer {
+				tasks: Mutex::new(Vec::new()),
+			}
+		}
 
-		//pub fn take_tasks(&self) -> Vec<ServerTask> {
-			//replace(&mut *self.tasks.lock(), Vec::new())
-		//}
-	//}
+		pub fn take_tasks(&self) -> Vec<ServerTask> {
+			replace(&mut *self.tasks.lock(), Vec::new())
+		}
+	}
 
-	//impl Server for DummyServer {
-		//fn execute(&self, task: ServerTask) {
-			//self.tasks.lock().push(task);
-		//}
+	impl Server for DummyServer {
+		fn execute(&self, task: ServerTask) {
+			self.tasks.lock().push(task);
+		}
 
-		//fn on_disconnect(&self, _peer_index: PeerIndex) {
-		//}
-	//}
+		fn on_disconnect(&self, _peer_index: PeerIndex) {
+		}
+	}
 
-	//fn create_synchronization_server() -> (StorageRef, MemoryPoolRef, ExecutorRef<DummyTaskExecutor>, PeersRef, ServerImpl) {
-		//let peers = Arc::new(PeersImpl::default());
-		//let storage = Arc::new(db::TestStorage::with_genesis_block());
-		//let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
-		//let executor = DummyTaskExecutor::new();
-		//let server = ServerImpl::new(peers.clone(), storage.clone(), memory_pool.clone(), executor.clone());
-		//(storage, memory_pool, executor, peers, server)
-	//}
+	fn create_synchronization_server() -> (StorageRef, MemoryPoolRef, ExecutorRef<DummyTaskExecutor>, PeersRef, ServerImpl) {
+		let peers = Arc::new(PeersImpl::default());
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
+		let executor = DummyTaskExecutor::new();
+		let server = ServerImpl::new(peers.clone(), storage.clone(), memory_pool.clone(), executor.clone());
+		(storage, memory_pool, executor, peers, server)
+	}
 
-	//#[test]
-	//fn server_getdata_responds_notfound_when_block_not_found() {
-		//let (_, _, executor, _, server) = create_synchronization_server();
-		//// when asking for unknown block
-		//let inventory = vec![
-			//InventoryVector {
-				//inv_type: InventoryType::MessageBlock,
-				//hash: H256::default(),
-			//}
-		//];
-		//server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
-		//// => respond with notfound
-		//let tasks = DummyTaskExecutor::wait_tasks(executor);
-		//assert_eq!(tasks, vec![Task::NotFound(0, types::NotFound::with_inventory(inventory))]);
-	//}
+	#[test]
+	fn server_getdata_responds_notfound_when_block_not_found() {
+		let (_, _, executor, _, server) = create_synchronization_server();
+		// when asking for unknown block
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageBlock,
+				hash: H256::default(),
+			}
+		];
+		server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
+		// => respond with notfound
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::NotFound(0, types::NotFound::with_inventory(inventory))]);
+	}
 
-	//#[test]
-	//fn server_getdata_responds_block_when_block_is_found() {
-		//let (_, _, executor, _, server) = create_synchronization_server();
-		//// when asking for known block
-		//let inventory = vec![
-			//InventoryVector {
-				//inv_type: InventoryType::MessageBlock,
-				//hash: test_data::genesis().hash(),
-			//}
-		//];
-		//server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
-		//// => respond with block
-		//let tasks = DummyTaskExecutor::wait_tasks(executor);
-		//assert_eq!(tasks, vec![Task::Block(0, test_data::genesis().into())]);
-	//}
+	#[test]
+	fn server_getdata_responds_block_when_block_is_found() {
+		let (_, _, executor, _, server) = create_synchronization_server();
+		// when asking for known block
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageBlock,
+				hash: test_data::genesis().hash(),
+			}
+		];
+		server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
+		// => respond with block
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::Block(0, test_data::genesis().into())]);
+	}
 
-	//#[test]
-	//fn server_getblocks_do_not_responds_inventory_when_synchronized() {
-		//let (_, _, executor, _, server) = create_synchronization_server();
-		//// when asking for blocks hashes
-		//let genesis_block_hash = test_data::genesis().hash();
-		//server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
-			//version: 0,
-			//block_locator_hashes: vec![genesis_block_hash.clone()],
-			//hash_stop: H256::default(),
-		//}));
-		//// => empty response
-		//let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
-		//assert_eq!(tasks, vec![]);
-	//}
+	#[test]
+	fn server_getblocks_do_not_responds_inventory_when_synchronized() {
+		let (_, _, executor, _, server) = create_synchronization_server();
+		// when asking for blocks hashes
+		let genesis_block_hash = test_data::genesis().hash();
+		server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
+			version: 0,
+			block_locator_hashes: vec![genesis_block_hash.clone()],
+			hash_stop: H256::default(),
+		}));
+		// => empty response
+		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
+		assert_eq!(tasks, vec![]);
+	}
 
-	//#[test]
-	//fn server_getblocks_responds_inventory_when_have_unknown_blocks() {
-		//let (storage, _, executor, _, server) = create_synchronization_server();
-		//storage.insert_block(&test_data::block_h1()).expect("Db write error");
-		//// when asking for blocks hashes
-		//server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
-			//version: 0,
-			//block_locator_hashes: vec![test_data::genesis().hash()],
-			//hash_stop: H256::default(),
-		//}));
-		//// => responds with inventory
-		//let inventory = vec![InventoryVector {
-			//inv_type: InventoryType::MessageBlock,
-			//hash: test_data::block_h1().hash(),
-		//}];
-		//let tasks = DummyTaskExecutor::wait_tasks(executor);
-		//assert_eq!(tasks, vec![Task::Inventory(0, types::Inv::with_inventory(inventory))]);
-	//}
+	#[test]
+	fn server_getblocks_responds_inventory_when_have_unknown_blocks() {
+		let (storage, _, executor, _, server) = create_synchronization_server();
+		storage.insert(&test_data::block_h1().into()).expect("Db write error");
+		storage.canonize(&test_data::block_h1().hash()).unwrap();
+		// when asking for blocks hashes
+		server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
+			version: 0,
+			block_locator_hashes: vec![test_data::genesis().hash()],
+			hash_stop: H256::default(),
+		}));
+		// => responds with inventory
+		let inventory = vec![InventoryVector {
+			inv_type: InventoryType::MessageBlock,
+			hash: test_data::block_h1().hash(),
+		}];
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::Inventory(0, types::Inv::with_inventory(inventory))]);
+	}
 
-	//#[test]
-	//fn server_getheaders_do_not_responds_headers_when_synchronized() {
-		//let (_, _, executor, _, server) = create_synchronization_server();
-		//// when asking for blocks hashes
-		//let genesis_block_hash = test_data::genesis().hash();
-		//let dummy_id = 6;
-		//server.execute(ServerTask::GetHeaders(0, types::GetHeaders {
-			//version: 0,
-			//block_locator_hashes: vec![genesis_block_hash.clone()],
-			//hash_stop: H256::default(),
-		//}, dummy_id));
-		//// => no response
-		//let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
-		//assert_eq!(tasks, vec![Task::Headers(0, types::Headers::with_headers(vec![]), Some(dummy_id))]);
-	//}
+	#[test]
+	fn server_getheaders_do_not_responds_headers_when_synchronized() {
+		let (_, _, executor, _, server) = create_synchronization_server();
+		// when asking for blocks hashes
+		let genesis_block_hash = test_data::genesis().hash();
+		let dummy_id = 6;
+		server.execute(ServerTask::GetHeaders(0, types::GetHeaders {
+			version: 0,
+			block_locator_hashes: vec![genesis_block_hash.clone()],
+			hash_stop: H256::default(),
+		}, dummy_id));
+		// => no response
+		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
+		assert_eq!(tasks, vec![Task::Headers(0, types::Headers::with_headers(vec![]), Some(dummy_id))]);
+	}
 
-	//#[test]
-	//fn server_getheaders_responds_headers_when_have_unknown_blocks() {
-		//let (storage, _, executor, _, server) = create_synchronization_server();
-		//storage.insert_block(&test_data::block_h1()).expect("Db write error");
-		//// when asking for blocks hashes
-		//let dummy_id = 0;
-		//server.execute(ServerTask::GetHeaders(0, types::GetHeaders {
-			//version: 0,
-			//block_locator_hashes: vec![test_data::genesis().hash()],
-			//hash_stop: H256::default(),
-		//}, dummy_id));
-		//// => responds with headers
-		//let headers = vec![
-			//test_data::block_h1().block_header,
-		//];
-		//let tasks = DummyTaskExecutor::wait_tasks(executor);
-		//assert_eq!(tasks, vec![Task::Headers(0, types::Headers::with_headers(headers), Some(dummy_id))]);
-	//}
+	#[test]
+	fn server_getheaders_responds_headers_when_have_unknown_blocks() {
+		let (storage, _, executor, _, server) = create_synchronization_server();
+		storage.insert(&test_data::block_h1().into()).expect("Db write error");
+		storage.canonize(&test_data::block_h1().hash()).unwrap();
+		// when asking for blocks hashes
+		let dummy_id = 0;
+		server.execute(ServerTask::GetHeaders(0, types::GetHeaders {
+			version: 0,
+			block_locator_hashes: vec![test_data::genesis().hash()],
+			hash_stop: H256::default(),
+		}, dummy_id));
+		// => responds with headers
+		let headers = vec![
+			test_data::block_h1().block_header,
+		];
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::Headers(0, types::Headers::with_headers(headers), Some(dummy_id))]);
+	}
 
-	//#[test]
-	//fn server_mempool_do_not_responds_inventory_when_empty_memory_pool() {
-		//let (_, _, executor, _, server) = create_synchronization_server();
-		//// when asking for memory pool transactions ids
-		//server.execute(ServerTask::Mempool(0));
-		//// => no response
-		//let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
-		//assert_eq!(tasks, vec![]);
-	//}
+	#[test]
+	fn server_mempool_do_not_responds_inventory_when_empty_memory_pool() {
+		let (_, _, executor, _, server) = create_synchronization_server();
+		// when asking for memory pool transactions ids
+		server.execute(ServerTask::Mempool(0));
+		// => no response
+		let tasks = DummyTaskExecutor::wait_tasks_for(executor, 100); // TODO: get rid of explicit timeout
+		assert_eq!(tasks, vec![]);
+	}
 
-	//#[test]
-	//fn server_mempool_responds_inventory_when_non_empty_memory_pool() {
-		//let (_, memory_pool, executor, _, server) = create_synchronization_server();
-		//// when memory pool is non-empty
-		//let transaction = Transaction::default();
-		//let transaction_hash = transaction.hash();
-		//memory_pool.write().insert_verified(transaction.into());
-		//// when asking for memory pool transactions ids
-		//server.execute(ServerTask::Mempool(0));
-		//// => respond with inventory
-		//let inventory = vec![InventoryVector {
-			//inv_type: InventoryType::MessageTx,
-			//hash: transaction_hash,
-		//}];
-		//let tasks = DummyTaskExecutor::wait_tasks(executor);
-		//assert_eq!(tasks, vec![Task::Inventory(0, types::Inv::with_inventory(inventory))]);
-	//}
+	#[test]
+	fn server_mempool_responds_inventory_when_non_empty_memory_pool() {
+		let (_, memory_pool, executor, _, server) = create_synchronization_server();
+		// when memory pool is non-empty
+		let transaction = Transaction::default();
+		let transaction_hash = transaction.hash();
+		memory_pool.write().insert_verified(transaction.into());
+		// when asking for memory pool transactions ids
+		server.execute(ServerTask::Mempool(0));
+		// => respond with inventory
+		let inventory = vec![InventoryVector {
+			inv_type: InventoryType::MessageTx,
+			hash: transaction_hash,
+		}];
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::Inventory(0, types::Inv::with_inventory(inventory))]);
+	}
 
-	//#[test]
-	//fn server_get_block_txn_responds_when_good_request() {
-		//let (_, _, executor, peers, server) = create_synchronization_server();
+	#[test]
+	fn server_get_block_txn_responds_when_good_request() {
+		let (_, _, executor, peers, server) = create_synchronization_server();
 
-		//peers.insert(0, DummyOutboundSyncConnection::new());
-		//peers.hash_known_as(0, test_data::genesis().hash(), KnownHashType::CompactBlock);
+		peers.insert(0, DummyOutboundSyncConnection::new());
+		peers.hash_known_as(0, test_data::genesis().hash(), KnownHashType::CompactBlock);
 
-		//// when asking for block_txns
-		//server.execute(ServerTask::GetBlockTxn(0, types::GetBlockTxn {
-			//request: common::BlockTransactionsRequest {
-				//blockhash: test_data::genesis().hash(),
-				//indexes: vec![0],
-			//}
-		//}));
+		// when asking for block_txns
+		server.execute(ServerTask::GetBlockTxn(0, types::GetBlockTxn {
+			request: common::BlockTransactionsRequest {
+				blockhash: test_data::genesis().hash(),
+				indexes: vec![0],
+			}
+		}));
 
-		//// server responds with transactions
-		//let tasks = DummyTaskExecutor::wait_tasks(executor);
-		//assert_eq!(tasks, vec![Task::BlockTxn(0, types::BlockTxn {
-			//request: common::BlockTransactions {
-				//blockhash: test_data::genesis().hash(),
-				//transactions: vec![test_data::genesis().transactions[0].clone()],
-			//}
-		//})]);
-	//}
+		// server responds with transactions
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::BlockTxn(0, types::BlockTxn {
+			request: common::BlockTransactions {
+				blockhash: test_data::genesis().hash(),
+				transactions: vec![test_data::genesis().transactions[0].clone()],
+			}
+		})]);
+	}
 
-	//#[test]
-	//fn server_get_block_txn_do_not_responds_when_bad_request() {
-		//let (_, _, _, peers, server) = create_synchronization_server();
+	#[test]
+	fn server_get_block_txn_do_not_responds_when_bad_request() {
+		let (_, _, _, peers, server) = create_synchronization_server();
 
-		//peers.insert(0, DummyOutboundSyncConnection::new());
-		//assert!(peers.enumerate().contains(&0));
+		peers.insert(0, DummyOutboundSyncConnection::new());
+		assert!(peers.enumerate().contains(&0));
 
-		//// when asking for block_txns
-		//server.execute(ServerTask::GetBlockTxn(0, types::GetBlockTxn {
-			//request: common::BlockTransactionsRequest {
-				//blockhash: test_data::genesis().hash(),
-				//indexes: vec![1],
-			//}
-		//}));
+		// when asking for block_txns
+		server.execute(ServerTask::GetBlockTxn(0, types::GetBlockTxn {
+			request: common::BlockTransactionsRequest {
+				blockhash: test_data::genesis().hash(),
+				indexes: vec![1],
+			}
+		}));
 
-		//// server closes connection
-		//use std::thread;
-		//use std::time::Duration;
-		//thread::park_timeout(Duration::from_millis(100)); // TODO: get rid of timeout
-		//assert!(!peers.enumerate().contains(&0));
-	//}
+		// server closes connection
+		use std::thread;
+		use std::time::Duration;
+		thread::park_timeout(Duration::from_millis(100)); // TODO: get rid of timeout
+		assert!(!peers.enumerate().contains(&0));
+	}
 
-	//#[test]
-	//fn server_getdata_responds_notfound_when_transaction_is_inaccessible() {
-		//let (_, _, executor, _, server) = create_synchronization_server();
-		//// when asking for unknown transaction or transaction that is already in the storage
-		//let inventory = vec![
-			//InventoryVector {
-				//inv_type: InventoryType::MessageTx,
-				//hash: H256::default(),
-			//},
-			//InventoryVector {
-				//inv_type: InventoryType::MessageTx,
-				//hash: test_data::genesis().transactions[0].hash(),
-			//},
-		//];
-		//server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
-		//// => respond with notfound
-		//let tasks = DummyTaskExecutor::wait_tasks(executor);
-		//assert_eq!(tasks, vec![Task::NotFound(0, types::NotFound::with_inventory(inventory))]);
-	//}
+	#[test]
+	fn server_getdata_responds_notfound_when_transaction_is_inaccessible() {
+		let (_, _, executor, _, server) = create_synchronization_server();
+		// when asking for unknown transaction or transaction that is already in the storage
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageTx,
+				hash: H256::default(),
+			},
+			InventoryVector {
+				inv_type: InventoryType::MessageTx,
+				hash: test_data::genesis().transactions[0].hash(),
+			},
+		];
+		server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
+		// => respond with notfound
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::NotFound(0, types::NotFound::with_inventory(inventory))]);
+	}
 
-	//#[test]
-	//fn server_getdata_responds_transaction_when_transaction_is_in_memory() {
-		//let (_, memory_pool, executor, _, server) = create_synchronization_server();
-		//let tx_verified: Transaction = test_data::TransactionBuilder::with_output(20).into();
-		//let tx_verified_hash = tx_verified.hash();
-		//// given in-memory transaction
-		//{
-			//memory_pool.write().insert_verified(tx_verified.clone().into());
-		//}
-		//// when asking for known in-memory transaction
-		//let inventory = vec![
-			//InventoryVector {
-				//inv_type: InventoryType::MessageTx,
-				//hash: tx_verified_hash,
-			//},
-		//];
-		//server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
-		//// => respond with transaction
-		//let mut tasks = DummyTaskExecutor::wait_tasks(executor.clone());
-		//// 2 tasks => can be situation when single task is ready
-		//if tasks.len() != 2 {
-			//tasks.extend(DummyTaskExecutor::wait_tasks_for(executor, 100));
-		//}
-		//assert_eq!(tasks, vec![
-			//Task::Transaction(0, tx_verified.into()),
-		//]);
-	//}
+	#[test]
+	fn server_getdata_responds_transaction_when_transaction_is_in_memory() {
+		let (_, memory_pool, executor, _, server) = create_synchronization_server();
+		let tx_verified: Transaction = test_data::TransactionBuilder::with_output(20).into();
+		let tx_verified_hash = tx_verified.hash();
+		// given in-memory transaction
+		{
+			memory_pool.write().insert_verified(tx_verified.clone().into());
+		}
+		// when asking for known in-memory transaction
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageTx,
+				hash: tx_verified_hash,
+			},
+		];
+		server.execute(ServerTask::GetData(0, types::GetData::with_inventory(inventory.clone())));
+		// => respond with transaction
+		let mut tasks = DummyTaskExecutor::wait_tasks(executor.clone());
+		// 2 tasks => can be situation when single task is ready
+		if tasks.len() != 2 {
+			tasks.extend(DummyTaskExecutor::wait_tasks_for(executor, 100));
+		}
+		assert_eq!(tasks, vec![
+			Task::Transaction(0, tx_verified.into()),
+		]);
+	}
 
-	//#[test]
-	//fn server_responds_with_nonempty_inventory_when_getdata_stop_hash_filled() {
-		//let (storage, _, executor, _, server) = create_synchronization_server();
-		//{
-			//storage.insert_block(&test_data::block_h1()).expect("no error");
-		//}
-		//// when asking with stop_hash
-		//server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
-			//version: 0,
-			//block_locator_hashes: vec![],
-			//hash_stop: test_data::genesis().hash(),
-		//}));
-		//// => respond with next block
-		//let inventory = vec![InventoryVector {
-			//inv_type: InventoryType::MessageBlock,
-			//hash: test_data::block_h1().hash(),
-		//}];
-		//let tasks = DummyTaskExecutor::wait_tasks(executor);
-		//assert_eq!(tasks, vec![Task::Inventory(0, types::Inv::with_inventory(inventory))]);
-	//}
+	#[test]
+	fn server_responds_with_nonempty_inventory_when_getdata_stop_hash_filled() {
+		let (storage, _, executor, _, server) = create_synchronization_server();
+		{
+			storage.insert(&test_data::block_h1().into()).expect("no error");
+			storage.canonize(&test_data::block_h1().hash()).unwrap();
+		}
+		// when asking with stop_hash
+		server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
+			version: 0,
+			block_locator_hashes: vec![],
+			hash_stop: test_data::genesis().hash(),
+		}));
+		// => respond with next block
+		let inventory = vec![InventoryVector {
+			inv_type: InventoryType::MessageBlock,
+			hash: test_data::block_h1().hash(),
+		}];
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::Inventory(0, types::Inv::with_inventory(inventory))]);
+	}
 
-	//#[test]
-	//fn server_responds_with_nonempty_headers_when_getdata_stop_hash_filled() {
-		//let (storage, _, executor, _, server) = create_synchronization_server();
-		//{
-			//storage.insert_block(&test_data::block_h1()).expect("no error");
-		//}
-		//// when asking with stop_hash
-		//let dummy_id = 6;
-		//server.execute(ServerTask::GetHeaders(0, types::GetHeaders {
-			//version: 0,
-			//block_locator_hashes: vec![],
-			//hash_stop: test_data::genesis().hash(),
-		//}, dummy_id));
-		//// => respond with next block
-		//let headers = vec![
-			//test_data::block_h1().block_header,
-		//];
-		//let tasks = DummyTaskExecutor::wait_tasks(executor);
-		//assert_eq!(tasks, vec![Task::Headers(0, types::Headers::with_headers(headers), Some(dummy_id))]);
-	//}
+	#[test]
+	fn server_responds_with_nonempty_headers_when_getdata_stop_hash_filled() {
+		let (storage, _, executor, _, server) = create_synchronization_server();
+		{
+			storage.insert(&test_data::block_h1().into()).expect("no error");
+			storage.canonize(&test_data::block_h1().hash()).unwrap();
+		}
+		// when asking with stop_hash
+		let dummy_id = 6;
+		server.execute(ServerTask::GetHeaders(0, types::GetHeaders {
+			version: 0,
+			block_locator_hashes: vec![],
+			hash_stop: test_data::genesis().hash(),
+		}, dummy_id));
+		// => respond with next block
+		let headers = vec![
+			test_data::block_h1().block_header,
+		];
+		let tasks = DummyTaskExecutor::wait_tasks(executor);
+		assert_eq!(tasks, vec![Task::Headers(0, types::Headers::with_headers(headers), Some(dummy_id))]);
+	}
 
-	//#[test]
-	//fn server_serves_merkleblock() {
-		//let peers = Arc::new(PeersImpl::default());
-		//let storage = Arc::new(db::TestStorage::with_genesis_block());
-		//let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
-		//let sync_executor = DummyTaskExecutor::new();
-		//let executor = ServerTaskExecutor::new(peers.clone(), storage.clone(), memory_pool.clone(), sync_executor.clone());
+	#[test]
+	fn server_serves_merkleblock() {
+		let peers = Arc::new(PeersImpl::default());
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
+		let sync_executor = DummyTaskExecutor::new();
+		let executor = ServerTaskExecutor::new(peers.clone(), storage.clone(), memory_pool.clone(), sync_executor.clone());
 
-		//let genesis = test_data::genesis();
-		//let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
-			//.transaction().output().value(10).build().build()
-			//.build(); // genesis -> b1
-		//let b2 = test_data::block_builder().header().parent(b1.hash()).build()
-			//.transaction().output().value(20).build().build()
-			//.build(); // genesis -> b1 -> b2
-		//let tx1 = b1.transactions[0].clone();
-		//let tx2 = b2.transactions[0].clone();
-		//let tx1_hash = tx1.hash();
-		//let tx2_hash = tx2.hash();
-		//let b1_hash = b1.hash();
-		//let b2_hash = b2.hash();
+		let genesis = test_data::genesis();
+		let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
+			.transaction().output().value(10).build().build()
+			.build(); // genesis -> b1
+		let b2 = test_data::block_builder().header().parent(b1.hash()).build()
+			.transaction().output().value(20).build().build()
+			.build(); // genesis -> b1 -> b2
+		let tx1 = b1.transactions[0].clone();
+		let tx2 = b2.transactions[0].clone();
+		let tx1_hash = tx1.hash();
+		let tx2_hash = tx2.hash();
+		let b1_hash = b1.hash();
+		let b2_hash = b2.hash();
 
-		//// This peer will provide blocks
-		//storage.insert_block(&b1.clone()).expect("no error");
-		//storage.insert_block(&b2.clone()).expect("no error");
+		// This peer will provide blocks
+		storage.insert(&b1.clone().into()).expect("no error");
+		storage.insert(&b2.clone().into()).expect("no error");
+		storage.canonize(&b1.hash()).unwrap();
+		storage.canonize(&b2.hash()).unwrap();
 
-		//// This peer won't get any blocks, because it has not set filter for the connection
-		//let peer_index2 = 1; peers.insert(peer_index2, DummyOutboundSyncConnection::new());
+		// This peer won't get any blocks, because it has not set filter for the connection
+		let peer_index2 = 1; peers.insert(peer_index2, DummyOutboundSyncConnection::new());
 
-		//let mut loop_task = ServerTask::GetData(peer_index2, types::GetData {inventory: vec![
-			//InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
-			//InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
-		//]});
-		//while let Some(new_task) = executor.execute(loop_task) {
-			//loop_task = new_task;
-		//}
-		//assert_eq!(sync_executor.take_tasks(), vec![Task::NotFound(peer_index2, types::NotFound::with_inventory(vec![
-				//InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
-				//InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
-		//]))]);
+		let mut loop_task = ServerTask::GetData(peer_index2, types::GetData {inventory: vec![
+			InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
+			InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
+		]});
+		while let Some(new_task) = executor.execute(loop_task) {
+			loop_task = new_task;
+		}
+		assert_eq!(sync_executor.take_tasks(), vec![Task::NotFound(peer_index2, types::NotFound::with_inventory(vec![
+				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
+				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
+		]))]);
 
-		//let peers_config = vec![
-			//(true, false), // will get tx1
-			//(false, true), // will get tx2
-			//(true, true), // will get both tx
-			//(false, false), // won't get any tx
-		//];
+		let peers_config = vec![
+			(true, false), // will get tx1
+			(false, true), // will get tx2
+			(true, true), // will get both tx
+			(false, false), // won't get any tx
+		];
 
-		//let mut counter = 2;
-		//for (get_tx1, get_tx2) in peers_config {
-			//let peer_index = counter; peers.insert(peer_index, DummyOutboundSyncConnection::new());
-			//counter += 1;
-			//// setup filter
-			//peers.set_bloom_filter(peer_index, default_filterload());
-			//if get_tx1 {
-				//peers.update_bloom_filter(peer_index, make_filteradd(&*tx1_hash));
-			//}
-			//if get_tx2 {
-				//peers.update_bloom_filter(peer_index, make_filteradd(&*tx2_hash));
-			//}
+		let mut counter = 2;
+		for (get_tx1, get_tx2) in peers_config {
+			let peer_index = counter; peers.insert(peer_index, DummyOutboundSyncConnection::new());
+			counter += 1;
+			// setup filter
+			peers.set_bloom_filter(peer_index, default_filterload());
+			if get_tx1 {
+				peers.update_bloom_filter(peer_index, make_filteradd(&*tx1_hash));
+			}
+			if get_tx2 {
+				peers.update_bloom_filter(peer_index, make_filteradd(&*tx2_hash));
+			}
 
-			//// ask for data
-			//let mut loop_task = ServerTask::GetData(peer_index, types::GetData {inventory: vec![
-				//InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
-				//InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
-			//]});
-			//while let Some(new_task) = executor.execute(loop_task) {
-				//loop_task = new_task;
-			//}
+			// ask for data
+			let mut loop_task = ServerTask::GetData(peer_index, types::GetData {inventory: vec![
+				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
+				InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b2_hash.clone() },
+			]});
+			while let Some(new_task) = executor.execute(loop_task) {
+				loop_task = new_task;
+			}
 
-			//// get server tasks
-			//let mut index = 0;
-			//let tasks = sync_executor.take_tasks();
-			//match tasks[index] {
-				//Task::MerkleBlock(_, _) => {
-					//if get_tx1 {
-						//index += 1;
-						//match tasks[index] {
-							//Task::Transaction(_, _) => (),
-							//_ => panic!("unexpected"),
-						//}
-					//}
-				//},
-				//_ => panic!("unexpected"),
-			//}
-			//index += 1;
+			// get server tasks
+			let mut index = 0;
+			let tasks = sync_executor.take_tasks();
+			match tasks[index] {
+				Task::MerkleBlock(_, _) => {
+					if get_tx1 {
+						index += 1;
+						match tasks[index] {
+							Task::Transaction(_, _) => (),
+							_ => panic!("unexpected"),
+						}
+					}
+				},
+				_ => panic!("unexpected"),
+			}
+			index += 1;
 
-			//match tasks[index] {
-				//Task::MerkleBlock(_, _) => {
-					//if get_tx2 {
-						//index += 1;
-						//match tasks[index] {
-							//Task::Transaction(_, _) => (),
-							//_ => panic!("unexpected"),
-						//}
-					//}
-				//},
-				//_ => panic!("unexpected"),
-			//}
-		//}
-	//}
+			match tasks[index] {
+				Task::MerkleBlock(_, _) => {
+					if get_tx2 {
+						index += 1;
+						match tasks[index] {
+							Task::Transaction(_, _) => (),
+							_ => panic!("unexpected"),
+						}
+					}
+				},
+				_ => panic!("unexpected"),
+			}
+		}
+	}
 
-	//#[test]
-	//fn server_serves_compactblock() {
-		//let peers = Arc::new(PeersImpl::default());
-		//let storage = Arc::new(db::TestStorage::with_genesis_block());
-		//let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
-		//let sync_executor = DummyTaskExecutor::new();
-		//let executor = ServerTaskExecutor::new(peers.clone(), storage.clone(), memory_pool.clone(), sync_executor.clone());
+	#[test]
+	fn server_serves_compactblock() {
+		let peers = Arc::new(PeersImpl::default());
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
+		let sync_executor = DummyTaskExecutor::new();
+		let executor = ServerTaskExecutor::new(peers.clone(), storage.clone(), memory_pool.clone(), sync_executor.clone());
 
-		//let genesis = test_data::genesis();
-		//let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
-			//.transaction().output().value(10).build().build()
-			//.build(); // genesis -> b1
-		//let b1_hash = b1.hash();
+		let genesis = test_data::genesis();
+		let b1 = test_data::block_builder().header().parent(genesis.hash()).build()
+			.transaction().output().value(10).build().build()
+			.build(); // genesis -> b1
+		let b1_hash = b1.hash();
 
-		//// This peer will provide blocks
-		//storage.insert_block(&b1.clone()).expect("no error");
+		// This peer will provide blocks
+		storage.insert(&b1.clone().into()).expect("no error");
+		storage.canonize(&b1.hash()).unwrap();
 
-		//// This peer will receive compact block
-		//let peer_index2 = 1; peers.insert(peer_index2, DummyOutboundSyncConnection::new());
+		// This peer will receive compact block
+		let peer_index2 = 1; peers.insert(peer_index2, DummyOutboundSyncConnection::new());
 
-		//// ask for data
-		//let mut loop_task = ServerTask::GetData(peer_index2, types::GetData {inventory: vec![
-			//InventoryVector { inv_type: InventoryType::MessageCompactBlock, hash: b1_hash.clone() },
-		//]});
-		//while let Some(new_task) = executor.execute(loop_task) {
-			//loop_task = new_task;
-		//}
+		// ask for data
+		let mut loop_task = ServerTask::GetData(peer_index2, types::GetData {inventory: vec![
+			InventoryVector { inv_type: InventoryType::MessageCompactBlock, hash: b1_hash.clone() },
+		]});
+		while let Some(new_task) = executor.execute(loop_task) {
+			loop_task = new_task;
+		}
 
-		//let tasks = sync_executor.take_tasks();
-		//assert_eq!(tasks.len(), 1);
-		//match tasks[0] {
-			//Task::CompactBlock(_, _) => (),
-			//_ => panic!("unexpected"),
-		//}
-	//}
-//}
+		let tasks = sync_executor.take_tasks();
+		assert_eq!(tasks.len(), 1);
+		match tasks[0] {
+			Task::CompactBlock(_, _) => (),
+			_ => panic!("unexpected"),
+		}
+	}
+}

@@ -213,165 +213,165 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 	}
 }
 
-//#[cfg(test)]
-//pub mod tests {
-	//use super::*;
-	//use std::sync::Arc;
-	//use std::time;
-	//use parking_lot::{Mutex, Condvar};
-	//use chain::Transaction;
-	//use message::types;
-	//use test_data;
-	//use inbound_connection::tests::DummyOutboundSyncConnection;
-	//use local_node::tests::{default_filterload, make_filteradd};
-	//use synchronization_peers::{PeersImpl, PeersContainer, PeersFilters, PeersOptions, BlockAnnouncementType};
+#[cfg(test)]
+pub mod tests {
+	use super::*;
+	use std::sync::Arc;
+	use std::time;
+	use parking_lot::{Mutex, Condvar};
+	use chain::Transaction;
+	use message::types;
+	use test_data;
+	use inbound_connection::tests::DummyOutboundSyncConnection;
+	use local_node::tests::{default_filterload, make_filteradd};
+	use synchronization_peers::{PeersImpl, PeersContainer, PeersFilters, PeersOptions, BlockAnnouncementType};
 
-	//pub struct DummyTaskExecutor {
-		//tasks: Mutex<Vec<Task>>,
-		//waiter: Arc<Condvar>,
-	//}
+	pub struct DummyTaskExecutor {
+		tasks: Mutex<Vec<Task>>,
+		waiter: Arc<Condvar>,
+	}
 
-	//impl DummyTaskExecutor {
-		//pub fn new() -> Arc<Self> {
-			//Arc::new(DummyTaskExecutor {
-				//tasks: Mutex::new(Vec::new()),
-				//waiter: Arc::new(Condvar::new()),
-			//})
-		//}
+	impl DummyTaskExecutor {
+		pub fn new() -> Arc<Self> {
+			Arc::new(DummyTaskExecutor {
+				tasks: Mutex::new(Vec::new()),
+				waiter: Arc::new(Condvar::new()),
+			})
+		}
 
-		//pub fn wait_tasks_for(executor: Arc<Self>, timeout_ms: u64) -> Vec<Task> {
-			//{
-				//let mut tasks = executor.tasks.lock();
-				//if tasks.is_empty() {
-					//let waiter = executor.waiter.clone();
-					//waiter.wait_for(&mut tasks, time::Duration::from_millis(timeout_ms)).timed_out();
-				//}
-			//}
-			//executor.take_tasks()
-		//}
+		pub fn wait_tasks_for(executor: Arc<Self>, timeout_ms: u64) -> Vec<Task> {
+			{
+				let mut tasks = executor.tasks.lock();
+				if tasks.is_empty() {
+					let waiter = executor.waiter.clone();
+					waiter.wait_for(&mut tasks, time::Duration::from_millis(timeout_ms)).timed_out();
+				}
+			}
+			executor.take_tasks()
+		}
 
-		//pub fn wait_tasks(executor: Arc<Self>) -> Vec<Task> {
-			//DummyTaskExecutor::wait_tasks_for(executor, 1000)
-		//}
+		pub fn wait_tasks(executor: Arc<Self>) -> Vec<Task> {
+			DummyTaskExecutor::wait_tasks_for(executor, 1000)
+		}
 
-		//pub fn take_tasks(&self) -> Vec<Task> {
-			//let mut tasks = self.tasks.lock();
-			//let tasks = tasks.drain(..).collect();
-			//tasks
-		//}
-	//}
+		pub fn take_tasks(&self) -> Vec<Task> {
+			let mut tasks = self.tasks.lock();
+			let tasks = tasks.drain(..).collect();
+			tasks
+		}
+	}
 
-	//impl TaskExecutor for DummyTaskExecutor {
-		//fn execute(&self, task: Task) {
-			//self.tasks.lock().push(task);
-			//self.waiter.notify_one();
-		//}
-	//}
+	impl TaskExecutor for DummyTaskExecutor {
+		fn execute(&self, task: Task) {
+			self.tasks.lock().push(task);
+			self.waiter.notify_one();
+		}
+	}
 
-	//#[test]
-	//fn relay_new_block_after_sendcmpct() {
-		//let peers = Arc::new(PeersImpl::default());
-		//let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
+	#[test]
+	fn relay_new_block_after_sendcmpct() {
+		let peers = Arc::new(PeersImpl::default());
+		let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
 
-		//let c1 = DummyOutboundSyncConnection::new();
-		//peers.insert(1, c1.clone());
-		//let c2 = DummyOutboundSyncConnection::new();
-		//peers.insert(2, c2.clone());
-		//peers.set_block_announcement_type(2, BlockAnnouncementType::SendCompactBlock);
+		let c1 = DummyOutboundSyncConnection::new();
+		peers.insert(1, c1.clone());
+		let c2 = DummyOutboundSyncConnection::new();
+		peers.insert(2, c2.clone());
+		peers.set_block_announcement_type(2, BlockAnnouncementType::SendCompactBlock);
 
-		//executor.execute(Task::RelayNewBlock(test_data::genesis().into()));
-		//assert_eq!(*c1.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
-		//assert_eq!(*c2.messages.lock().entry("cmpctblock".to_owned()).or_insert(0), 1);
-	//}
+		executor.execute(Task::RelayNewBlock(test_data::genesis().into()));
+		assert_eq!(*c1.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
+		assert_eq!(*c2.messages.lock().entry("cmpctblock".to_owned()).or_insert(0), 1);
+	}
 
-	//#[test]
-	//fn relay_new_block_after_sendheaders() {
-		//let peers = Arc::new(PeersImpl::default());
-		//let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
+	#[test]
+	fn relay_new_block_after_sendheaders() {
+		let peers = Arc::new(PeersImpl::default());
+		let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
 
-		//let c1 = DummyOutboundSyncConnection::new();
-		//peers.insert(1, c1.clone());
-		//let c2 = DummyOutboundSyncConnection::new();
-		//peers.insert(2, c2.clone());
-		//peers.set_block_announcement_type(2, BlockAnnouncementType::SendHeaders);
+		let c1 = DummyOutboundSyncConnection::new();
+		peers.insert(1, c1.clone());
+		let c2 = DummyOutboundSyncConnection::new();
+		peers.insert(2, c2.clone());
+		peers.set_block_announcement_type(2, BlockAnnouncementType::SendHeaders);
 
-		//executor.execute(Task::RelayNewBlock(test_data::genesis().into()));
-		//assert_eq!(*c1.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
-		//assert_eq!(*c2.messages.lock().entry("headers".to_owned()).or_insert(0), 1);
-	//}
+		executor.execute(Task::RelayNewBlock(test_data::genesis().into()));
+		assert_eq!(*c1.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
+		assert_eq!(*c2.messages.lock().entry("headers".to_owned()).or_insert(0), 1);
+	}
 
-	//#[test]
-	//fn relay_new_transaction_with_bloom_filter() {
-		//let peers = Arc::new(PeersImpl::default());
-		//let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
+	#[test]
+	fn relay_new_transaction_with_bloom_filter() {
+		let peers = Arc::new(PeersImpl::default());
+		let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
 
-		//let tx1: Transaction = test_data::TransactionBuilder::with_output(10).into();
-		//let tx2: Transaction = test_data::TransactionBuilder::with_output(20).into();
-		//let tx3: Transaction = test_data::TransactionBuilder::with_output(30).into();
-		//let tx1_hash = tx1.hash();
-		//let tx2_hash = tx2.hash();
-		//let tx3_hash = tx3.hash();
+		let tx1: Transaction = test_data::TransactionBuilder::with_output(10).into();
+		let tx2: Transaction = test_data::TransactionBuilder::with_output(20).into();
+		let tx3: Transaction = test_data::TransactionBuilder::with_output(30).into();
+		let tx1_hash = tx1.hash();
+		let tx2_hash = tx2.hash();
+		let tx3_hash = tx3.hash();
 
-		//// peer#1 wants tx1
-		//let c1 = DummyOutboundSyncConnection::new();
-		//peers.insert(1, c1.clone());
-		//peers.set_bloom_filter(1, default_filterload());
-		//peers.update_bloom_filter(1, make_filteradd(&*tx1_hash));
-		//// peer#2 wants tx2
-		//let c2 = DummyOutboundSyncConnection::new();
-		//peers.insert(2, c2.clone());
-		//peers.set_bloom_filter(2, default_filterload());
-		//peers.update_bloom_filter(2, make_filteradd(&*tx2_hash));
-		//// peer#3 wants tx1 + tx2 transactions
-		//let c3 = DummyOutboundSyncConnection::new();
-		//peers.insert(3, c3.clone());
-		//peers.set_bloom_filter(3, default_filterload());
-		//peers.update_bloom_filter(3, make_filteradd(&*tx1_hash));
-		//peers.update_bloom_filter(3, make_filteradd(&*tx2_hash));
-		//// peer#4 has default behaviour (no filter)
-		//let c4 = DummyOutboundSyncConnection::new();
-		//peers.insert(4, c4.clone());
-		//// peer#5 wants some other transactions
-		//let c5 = DummyOutboundSyncConnection::new();
-		//peers.insert(5, c5.clone());
-		//peers.set_bloom_filter(5, default_filterload());
-		//peers.update_bloom_filter(5, make_filteradd(&*tx3_hash));
+		// peer#1 wants tx1
+		let c1 = DummyOutboundSyncConnection::new();
+		peers.insert(1, c1.clone());
+		peers.set_bloom_filter(1, default_filterload());
+		peers.update_bloom_filter(1, make_filteradd(&*tx1_hash));
+		// peer#2 wants tx2
+		let c2 = DummyOutboundSyncConnection::new();
+		peers.insert(2, c2.clone());
+		peers.set_bloom_filter(2, default_filterload());
+		peers.update_bloom_filter(2, make_filteradd(&*tx2_hash));
+		// peer#3 wants tx1 + tx2 transactions
+		let c3 = DummyOutboundSyncConnection::new();
+		peers.insert(3, c3.clone());
+		peers.set_bloom_filter(3, default_filterload());
+		peers.update_bloom_filter(3, make_filteradd(&*tx1_hash));
+		peers.update_bloom_filter(3, make_filteradd(&*tx2_hash));
+		// peer#4 has default behaviour (no filter)
+		let c4 = DummyOutboundSyncConnection::new();
+		peers.insert(4, c4.clone());
+		// peer#5 wants some other transactions
+		let c5 = DummyOutboundSyncConnection::new();
+		peers.insert(5, c5.clone());
+		peers.set_bloom_filter(5, default_filterload());
+		peers.update_bloom_filter(5, make_filteradd(&*tx3_hash));
 
-		//// tx1 is relayed to peers: 1, 3, 4
-		//executor.execute(Task::RelayNewTransaction(tx1.into(), 0));
+		// tx1 is relayed to peers: 1, 3, 4
+		executor.execute(Task::RelayNewTransaction(tx1.into(), 0));
 
-		//assert_eq!(*c1.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
-		//assert_eq!(*c2.messages.lock().entry("inventory".to_owned()).or_insert(0), 0);
-		//assert_eq!(*c3.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
-		//assert_eq!(*c4.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
+		assert_eq!(*c1.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
+		assert_eq!(*c2.messages.lock().entry("inventory".to_owned()).or_insert(0), 0);
+		assert_eq!(*c3.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
+		assert_eq!(*c4.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
 
-		//// tx2 is relayed to peers: 2, 3, 4
-		//executor.execute(Task::RelayNewTransaction(tx2.into(), 0));
+		// tx2 is relayed to peers: 2, 3, 4
+		executor.execute(Task::RelayNewTransaction(tx2.into(), 0));
 
-		//assert_eq!(*c1.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
-		//assert_eq!(*c2.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
-		//assert_eq!(*c3.messages.lock().entry("inventory".to_owned()).or_insert(0), 2);
-		//assert_eq!(*c4.messages.lock().entry("inventory".to_owned()).or_insert(0), 2);
-	//}
+		assert_eq!(*c1.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
+		assert_eq!(*c2.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
+		assert_eq!(*c3.messages.lock().entry("inventory".to_owned()).or_insert(0), 2);
+		assert_eq!(*c4.messages.lock().entry("inventory".to_owned()).or_insert(0), 2);
+	}
 
-	//#[test]
-	//fn relay_new_transaction_with_feefilter() {
-		//let peers = Arc::new(PeersImpl::default());
-		//let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
+	#[test]
+	fn relay_new_transaction_with_feefilter() {
+		let peers = Arc::new(PeersImpl::default());
+		let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
 
-		//let c2 = DummyOutboundSyncConnection::new();
-		//peers.insert(2, c2.clone());
-		//peers.set_fee_filter(2, types::FeeFilter::with_fee_rate(3000));
-		//let c3 = DummyOutboundSyncConnection::new();
-		//peers.insert(3, c3.clone());
-		//peers.set_fee_filter(3, types::FeeFilter::with_fee_rate(4000));
-		//let c4 = DummyOutboundSyncConnection::new();
-		//peers.insert(4, c4.clone());
+		let c2 = DummyOutboundSyncConnection::new();
+		peers.insert(2, c2.clone());
+		peers.set_fee_filter(2, types::FeeFilter::with_fee_rate(3000));
+		let c3 = DummyOutboundSyncConnection::new();
+		peers.insert(3, c3.clone());
+		peers.set_fee_filter(3, types::FeeFilter::with_fee_rate(4000));
+		let c4 = DummyOutboundSyncConnection::new();
+		peers.insert(4, c4.clone());
 
-		//executor.execute(Task::RelayNewTransaction(test_data::genesis().transactions[0].clone().into(), 3500));
+		executor.execute(Task::RelayNewTransaction(test_data::genesis().transactions[0].clone().into(), 3500));
 
-		//assert_eq!(*c2.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
-		//assert_eq!(*c3.messages.lock().entry("inventory".to_owned()).or_insert(0), 0);
-		//assert_eq!(*c4.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
-	//}
-//}
+		assert_eq!(*c2.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
+		assert_eq!(*c3.messages.lock().entry("inventory".to_owned()).or_insert(0), 0);
+		assert_eq!(*c4.messages.lock().entry("inventory".to_owned()).or_insert(0), 1);
+	}
+}

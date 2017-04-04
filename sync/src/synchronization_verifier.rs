@@ -222,86 +222,86 @@ impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
 	}
 }
 
-//#[cfg(test)]
-//pub mod tests {
-	//use std::sync::Arc;
-	//use std::collections::{HashSet, HashMap};
-	//use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
-	//use synchronization_client_core::CoreVerificationSink;
-	//use synchronization_executor::tests::DummyTaskExecutor;
-	//use primitives::hash::H256;
-	//use chain::{IndexedBlock, IndexedTransaction};
-	//use super::{Verifier, BlockVerificationSink, TransactionVerificationSink, AsyncVerifier, VerificationTask};
-	//use types::{BlockHeight, StorageRef, MemoryPoolRef};
+#[cfg(test)]
+pub mod tests {
+	use std::sync::Arc;
+	use std::collections::{HashSet, HashMap};
+	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
+	use synchronization_client_core::CoreVerificationSink;
+	use synchronization_executor::tests::DummyTaskExecutor;
+	use primitives::hash::H256;
+	use chain::{IndexedBlock, IndexedTransaction};
+	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink, AsyncVerifier, VerificationTask};
+	use types::{BlockHeight, StorageRef, MemoryPoolRef};
 
-	//#[derive(Default)]
-	//pub struct DummyVerifier {
-		//sink: Option<Arc<CoreVerificationSink<DummyTaskExecutor>>>,
-		//errors: HashMap<H256, String>,
-		//actual_checks: HashSet<H256>,
-		//storage: Option<StorageRef>,
-		//memory_pool: Option<MemoryPoolRef>,
-		//verifier: Option<Arc<ChainVerifier>>,
-	//}
+	#[derive(Default)]
+	pub struct DummyVerifier {
+		sink: Option<Arc<CoreVerificationSink<DummyTaskExecutor>>>,
+		errors: HashMap<H256, String>,
+		actual_checks: HashSet<H256>,
+		storage: Option<StorageRef>,
+		memory_pool: Option<MemoryPoolRef>,
+		verifier: Option<Arc<ChainVerifier>>,
+	}
 
-	//impl DummyVerifier {
-		//pub fn set_sink(&mut self, sink: Arc<CoreVerificationSink<DummyTaskExecutor>>) {
-			//self.sink = Some(sink);
-		//}
+	impl DummyVerifier {
+		pub fn set_sink(&mut self, sink: Arc<CoreVerificationSink<DummyTaskExecutor>>) {
+			self.sink = Some(sink);
+		}
 
-		//pub fn set_storage(&mut self, storage: StorageRef) {
-			//self.storage = Some(storage);
-		//}
+		pub fn set_storage(&mut self, storage: StorageRef) {
+			self.storage = Some(storage);
+		}
 
-		//pub fn set_memory_pool(&mut self, memory_pool: MemoryPoolRef) {
-			//self.memory_pool = Some(memory_pool);
-		//}
+		pub fn set_memory_pool(&mut self, memory_pool: MemoryPoolRef) {
+			self.memory_pool = Some(memory_pool);
+		}
 
-		//pub fn set_verifier(&mut self, verifier: Arc<ChainVerifier>) {
-			//self.verifier = Some(verifier);
-		//}
+		pub fn set_verifier(&mut self, verifier: Arc<ChainVerifier>) {
+			self.verifier = Some(verifier);
+		}
 
-		//pub fn error_when_verifying(&mut self, hash: H256, err: &str) {
-			//self.errors.insert(hash, err.into());
-		//}
+		pub fn error_when_verifying(&mut self, hash: H256, err: &str) {
+			self.errors.insert(hash, err.into());
+		}
 
-		//pub fn actual_check_when_verifying(&mut self, hash: H256) {
-			//self.actual_checks.insert(hash);
-		//}
-	//}
+		pub fn actual_check_when_verifying(&mut self, hash: H256) {
+			self.actual_checks.insert(hash);
+		}
+	}
 
-	//impl Verifier for DummyVerifier {
-		//fn verify_block(&self, block: IndexedBlock) {
-			//match self.sink {
-				//Some(ref sink) => match self.errors.get(&block.hash()) {
-					//Some(err) => sink.on_block_verification_error(&err, &block.hash()),
-					//None => {
-						//if self.actual_checks.contains(block.hash()) {
-							//AsyncVerifier::execute_single_task(sink, self.storage.as_ref().unwrap(), self.memory_pool.as_ref().unwrap(), self.verifier.as_ref().unwrap(), VerificationTask::VerifyBlock(block));
-						//} else {
-							//sink.on_block_verification_success(block);
-						//}
-					//},
-				//},
-				//None => panic!("call set_sink"),
-			//}
-		//}
+	impl Verifier for DummyVerifier {
+		fn verify_block(&self, block: IndexedBlock) {
+			match self.sink {
+				Some(ref sink) => match self.errors.get(&block.hash()) {
+					Some(err) => sink.on_block_verification_error(&err, &block.hash()),
+					None => {
+						if self.actual_checks.contains(block.hash()) {
+							AsyncVerifier::execute_single_task(sink, self.storage.as_ref().unwrap(), self.memory_pool.as_ref().unwrap(), self.verifier.as_ref().unwrap(), VerificationTask::VerifyBlock(block));
+						} else {
+							sink.on_block_verification_success(block);
+						}
+					},
+				},
+				None => panic!("call set_sink"),
+			}
+		}
 
-		//fn verify_transaction(&self, _height: BlockHeight, transaction: IndexedTransaction) {
-			//match self.sink {
-				//Some(ref sink) => match self.errors.get(&transaction.hash) {
-					//Some(err) => sink.on_transaction_verification_error(&err, &transaction.hash),
-					//None => {
-						//if self.actual_checks.contains(&transaction.hash) {
-							//let next_block_height = self.storage.as_ref().unwrap().best_block().unwrap().number + 1;
-							//AsyncVerifier::execute_single_task(sink, self.storage.as_ref().unwrap(), self.memory_pool.as_ref().unwrap(), self.verifier.as_ref().unwrap(), VerificationTask::VerifyTransaction(next_block_height, transaction));
-						//} else {
-							//sink.on_transaction_verification_success(transaction.into());
-						//}
-					//},
-				//},
-				//None => panic!("call set_sink"),
-			//}
-		//}
-	//}
-//}
+		fn verify_transaction(&self, _height: BlockHeight, transaction: IndexedTransaction) {
+			match self.sink {
+				Some(ref sink) => match self.errors.get(&transaction.hash) {
+					Some(err) => sink.on_transaction_verification_error(&err, &transaction.hash),
+					None => {
+						if self.actual_checks.contains(&transaction.hash) {
+							let next_block_height = self.storage.as_ref().unwrap().best_block().number + 1;
+							AsyncVerifier::execute_single_task(sink, self.storage.as_ref().unwrap(), self.memory_pool.as_ref().unwrap(), self.verifier.as_ref().unwrap(), VerificationTask::VerifyTransaction(next_block_height, transaction));
+						} else {
+							sink.on_transaction_verification_success(transaction.into());
+						}
+					},
+				},
+				None => panic!("call set_sink"),
+			}
+		}
+	}
+}

@@ -322,125 +322,125 @@ impl TransactionVerificationSink for TransactionAcceptSink {
 	}
 }
 
-//#[cfg(test)]
-//pub mod tests {
-	//use std::sync::Arc;
-	//use parking_lot::RwLock;
-	//use synchronization_executor::Task;
-	//use synchronization_executor::tests::DummyTaskExecutor;
-	//use synchronization_client::SynchronizationClient;
-	//use synchronization_client_core::{Config, SynchronizationClientCore, CoreVerificationSink};
-	//use synchronization_chain::Chain;
-	//use message::types;
-	//use message::common::{InventoryVector, InventoryType};
-	//use network::Magic;
-	//use chain::Transaction;
-	//use db;
-	//use miner::MemoryPool;
-	//use super::LocalNode;
-	//use test_data;
-	//use synchronization_server::ServerTask;
-	//use synchronization_server::tests::DummyServer;
-	//use synchronization_verifier::tests::DummyVerifier;
-	//use primitives::bytes::Bytes;
-	//use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
-	//use std::iter::repeat;
-	//use synchronization_peers::PeersImpl;
-	//use utils::SynchronizationState;
-	//use types::SynchronizationStateRef;
+#[cfg(test)]
+pub mod tests {
+	use std::sync::Arc;
+	use parking_lot::RwLock;
+	use synchronization_executor::Task;
+	use synchronization_executor::tests::DummyTaskExecutor;
+	use synchronization_client::SynchronizationClient;
+	use synchronization_client_core::{Config, SynchronizationClientCore, CoreVerificationSink};
+	use synchronization_chain::Chain;
+	use message::types;
+	use message::common::{InventoryVector, InventoryType};
+	use network::Magic;
+	use chain::Transaction;
+	use db::{BlockChainDatabase};
+	use miner::MemoryPool;
+	use super::LocalNode;
+	use test_data;
+	use synchronization_server::ServerTask;
+	use synchronization_server::tests::DummyServer;
+	use synchronization_verifier::tests::DummyVerifier;
+	use primitives::bytes::Bytes;
+	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
+	use std::iter::repeat;
+	use synchronization_peers::PeersImpl;
+	use utils::SynchronizationState;
+	use types::SynchronizationStateRef;
 
-	//pub fn default_filterload() -> types::FilterLoad {
-		//types::FilterLoad {
-			//filter: Bytes::from(repeat(0u8).take(1024).collect::<Vec<_>>()),
-			//hash_functions: 10,
-			//tweak: 5,
-			//flags: types::FilterFlags::None,
-		//}
-	//}
+	pub fn default_filterload() -> types::FilterLoad {
+		types::FilterLoad {
+			filter: Bytes::from(repeat(0u8).take(1024).collect::<Vec<_>>()),
+			hash_functions: 10,
+			tweak: 5,
+			flags: types::FilterFlags::None,
+		}
+	}
 
-	//pub fn make_filteradd(data: &[u8]) -> types::FilterAdd {
-		//types::FilterAdd {
-			//data: data.into(),
-		//}
-	//}
+	pub fn make_filteradd(data: &[u8]) -> types::FilterAdd {
+		types::FilterAdd {
+			data: data.into(),
+		}
+	}
 
-	//fn create_local_node(verifier: Option<DummyVerifier>) -> (Arc<DummyTaskExecutor>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
-		//let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
-		//let storage = Arc::new(db::TestStorage::with_genesis_block());
-		//let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
-		//let chain = Chain::new(storage.clone(), memory_pool.clone());
-		//let sync_peers = Arc::new(PeersImpl::default());
-		//let executor = DummyTaskExecutor::new();
-		//let server = Arc::new(DummyServer::new());
-		//let config = Config { network: Magic::Mainnet, close_connection_on_bad_block: true };
-		//let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Mainnet));
-		//let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier);
-		//let mut verifier = match verifier {
-			//Some(verifier) => verifier,
-			//None => DummyVerifier::default(),
-		//};
-		//verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
-		//let client = SynchronizationClient::new(sync_state.clone(), client_core, verifier);
-		//let local_node = LocalNode::new(Magic::Mainnet, storage, memory_pool, sync_peers, sync_state, executor.clone(), client, server.clone());
-		//(executor, server, local_node)
-	//}
+	fn create_local_node(verifier: Option<DummyVerifier>) -> (Arc<DummyTaskExecutor>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
+		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
+		let chain = Chain::new(storage.clone(), memory_pool.clone());
+		let sync_peers = Arc::new(PeersImpl::default());
+		let executor = DummyTaskExecutor::new();
+		let server = Arc::new(DummyServer::new());
+		let config = Config { network: Magic::Mainnet, close_connection_on_bad_block: true };
+		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Mainnet));
+		let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier);
+		let mut verifier = match verifier {
+			Some(verifier) => verifier,
+			None => DummyVerifier::default(),
+		};
+		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
+		let client = SynchronizationClient::new(sync_state.clone(), client_core, verifier);
+		let local_node = LocalNode::new(Magic::Mainnet, storage, memory_pool, sync_peers, sync_state, executor.clone(), client, server.clone());
+		(executor, server, local_node)
+	}
 
-	//#[test]
-	//fn local_node_serves_block() {
-		//let (_, server, local_node) = create_local_node(None);
-		//let peer_index = 0; local_node.on_connect(peer_index, types::Version::default());
-		//// peer requests genesis block
-		//let genesis_block_hash = test_data::genesis().hash();
-		//let inventory = vec![
-			//InventoryVector {
-				//inv_type: InventoryType::MessageBlock,
-				//hash: genesis_block_hash.clone(),
-			//}
-		//];
-		//local_node.on_getdata(peer_index, types::GetData {
-			//inventory: inventory.clone()
-		//});
-		//// => `getdata` is served
-		//let tasks = server.take_tasks();
-		//assert_eq!(tasks, vec![ServerTask::GetData(peer_index, types::GetData::with_inventory(inventory))]);
-	//}
+	#[test]
+	fn local_node_serves_block() {
+		let (_, server, local_node) = create_local_node(None);
+		let peer_index = 0; local_node.on_connect(peer_index, types::Version::default());
+		// peer requests genesis block
+		let genesis_block_hash = test_data::genesis().hash();
+		let inventory = vec![
+			InventoryVector {
+				inv_type: InventoryType::MessageBlock,
+				hash: genesis_block_hash.clone(),
+			}
+		];
+		local_node.on_getdata(peer_index, types::GetData {
+			inventory: inventory.clone()
+		});
+		// => `getdata` is served
+		let tasks = server.take_tasks();
+		assert_eq!(tasks, vec![ServerTask::GetData(peer_index, types::GetData::with_inventory(inventory))]);
+	}
 
-	//#[test]
-	//fn local_node_accepts_local_transaction() {
-		//let (executor, _, local_node) = create_local_node(None);
+	#[test]
+	fn local_node_accepts_local_transaction() {
+		let (executor, _, local_node) = create_local_node(None);
 
-		//// transaction will be relayed to this peer
-		//let peer_index1 = 0; local_node.on_connect(peer_index1, types::Version::default());
-		//executor.take_tasks();
+		// transaction will be relayed to this peer
+		let peer_index1 = 0; local_node.on_connect(peer_index1, types::Version::default());
+		executor.take_tasks();
 
-		//let genesis = test_data::genesis();
-		//let transaction: Transaction = test_data::TransactionBuilder::with_output(1).add_input(&genesis.transactions[0], 0).into();
-		//let transaction_hash = transaction.hash();
+		let genesis = test_data::genesis();
+		let transaction: Transaction = test_data::TransactionBuilder::with_output(1).add_input(&genesis.transactions[0], 0).into();
+		let transaction_hash = transaction.hash();
 
-		//let result = local_node.accept_transaction(transaction.clone());
-		//assert_eq!(result, Ok(transaction_hash.clone()));
+		let result = local_node.accept_transaction(transaction.clone());
+		assert_eq!(result, Ok(transaction_hash.clone()));
 
-		//assert_eq!(executor.take_tasks(), vec![Task::RelayNewTransaction(transaction.into(), 83333333)]);
-	//}
+		assert_eq!(executor.take_tasks(), vec![Task::RelayNewTransaction(transaction.into(), 83333333)]);
+	}
 
-	//#[test]
-	//fn local_node_discards_local_transaction() {
-		//let genesis = test_data::genesis();
-		//let transaction: Transaction = test_data::TransactionBuilder::with_output(1).add_input(&genesis.transactions[0], 0).into();
-		//let transaction_hash = transaction.hash();
+	#[test]
+	fn local_node_discards_local_transaction() {
+		let genesis = test_data::genesis();
+		let transaction: Transaction = test_data::TransactionBuilder::with_output(1).add_input(&genesis.transactions[0], 0).into();
+		let transaction_hash = transaction.hash();
 
-		//// simulate transaction verification fail
-		//let mut verifier = DummyVerifier::default();
-		//verifier.error_when_verifying(transaction_hash.clone(), "simulated");
+		// simulate transaction verification fail
+		let mut verifier = DummyVerifier::default();
+		verifier.error_when_verifying(transaction_hash.clone(), "simulated");
 
-		//let (executor, _, local_node) = create_local_node(Some(verifier));
+		let (executor, _, local_node) = create_local_node(Some(verifier));
 
-		//let peer_index1 = 0; local_node.on_connect(peer_index1, types::Version::default());
-		//executor.take_tasks();
+		let peer_index1 = 0; local_node.on_connect(peer_index1, types::Version::default());
+		executor.take_tasks();
 
-		//let result = local_node.accept_transaction(transaction);
-		//assert_eq!(result, Err("simulated".to_owned()));
+		let result = local_node.accept_transaction(transaction);
+		assert_eq!(result, Err("simulated".to_owned()));
 
-		//assert_eq!(executor.take_tasks(), vec![]);
-	//}
-//}
+		assert_eq!(executor.take_tasks(), vec![]);
+	}
+}

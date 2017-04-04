@@ -401,6 +401,9 @@ impl Chain {
 					.flat_map(|block_hash| self.storage.indexed_block_transactions(block_hash.into()))
 					.collect::<Vec<_>>();
 
+				trace!(target: "sync", "insert_best_block, old_main_blocks_transactions: {:?}",
+					   old_main_blocks_transactions.iter().map(|tx| tx.hash.reversed()).collect::<Vec<H256>>());
+
 				// reverify memory pool transactions, sorted by timestamp
 				let memory_pool_transactions_count = memory_pool.information().transactions_count;
 				let memory_pool_transactions: Vec<IndexedTransaction> = memory_pool
@@ -808,395 +811,398 @@ impl fmt::Debug for Chain {
 
 #[cfg(test)]
 mod tests {
+	use std::sync::Arc;
+	use parking_lot::RwLock;
+	use chain::{Transaction, IndexedBlockHeader};
+	use db::BlockChainDatabase;
+	use miner::MemoryPool;
+	use primitives::hash::H256;
+	use test_data;
+	use super::{Chain, BlockState, TransactionState, BlockInsertionResult};
+	use utils::HashPosition;
+
+	#[test]
+	fn chain_empty() {
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let db_best_block = db.best_block();
+		let chain = Chain::new(db.clone(), Arc::new(RwLock::new(MemoryPool::new())));
+		assert_eq!(chain.information().scheduled, 0);
+		assert_eq!(chain.information().requested, 0);
+		assert_eq!(chain.information().verifying, 0);
+		assert_eq!(chain.information().stored, 1);
+		assert_eq!(chain.length_of_blocks_state(BlockState::Scheduled), 0);
+		assert_eq!(chain.length_of_blocks_state(BlockState::Requested), 0);
+		assert_eq!(chain.length_of_blocks_state(BlockState::Verifying), 0);
+		assert_eq!(chain.length_of_blocks_state(BlockState::Stored), 1);
+		assert_eq!(&chain.best_block(), &db_best_block);
+		assert_eq!(chain.block_state(&db_best_block.hash), BlockState::Stored);
+		assert_eq!(chain.block_state(&H256::from(0)), BlockState::Unknown);
+	}
+
+	#[test]
+	fn chain_block_path() {
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let mut chain = Chain::new(db.clone(), Arc::new(RwLock::new(MemoryPool::new())));
+
+		// add 6 blocks to scheduled queue
+		let blocks = test_data::build_n_empty_blocks_from_genesis(6, 0);
+		let headers: Vec<IndexedBlockHeader> = blocks.into_iter().map(|b| b.block_header.into()).collect();
+		let hashes: Vec<_> = headers.iter().map(|h| h.hash.clone()).collect();
+		chain.schedule_blocks_headers(headers.clone());
+		assert!(chain.information().scheduled == 6 && chain.information().requested == 0
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+
+		// move 2 best blocks to requested queue
+		chain.request_blocks_hashes(2);
+		assert!(chain.information().scheduled == 4 && chain.information().requested == 2
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+		// move 0 best blocks to requested queue
+		chain.request_blocks_hashes(0);
+		assert!(chain.information().scheduled == 4 && chain.information().requested == 2
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+		// move 1 best blocks to requested queue
+		chain.request_blocks_hashes(1);
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 3
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+
+		// try to remove block 0 from scheduled queue => missing
+		assert_eq!(chain.forget_block_with_state(&hashes[0], BlockState::Scheduled), HashPosition::Missing);
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 3
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+		// remove blocks 0 & 1 from requested queue
+		assert_eq!(chain.forget_block_with_state(&hashes[1], BlockState::Requested), HashPosition::Inside(1));
+		assert_eq!(chain.forget_block_with_state(&hashes[0], BlockState::Requested), HashPosition::Front);
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
+			&& chain.information().verifying == 0 && chain.information().stored == 1);
+		// mark 0 & 1 as verifying
+		chain.verify_block(headers[0].clone().into());
+		chain.verify_block(headers[1].clone().into());
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
+			&& chain.information().verifying == 2 && chain.information().stored == 1);
+
+		// mark block 0 as verified
+		assert_eq!(chain.forget_block_with_state(&hashes[0], BlockState::Verifying), HashPosition::Front);
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
+			&& chain.information().verifying == 1 && chain.information().stored == 1);
+		// insert new best block to the chain
+		chain.insert_best_block(&test_data::block_h1().into()).expect("Db error");
+		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
+			&& chain.information().verifying == 1 && chain.information().stored == 2);
+		assert_eq!(db.best_block().number, 1);
+	}
+
+	#[test]
+	fn chain_block_locator_hashes() {
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let mut chain = Chain::new(db, Arc::new(RwLock::new(MemoryPool::new())));
+		let genesis_hash = chain.best_block().hash;
+		assert_eq!(chain.block_locator_hashes(), vec![genesis_hash.clone()]);
+
+		let block1 = test_data::block_h1();
+		let block1_hash = block1.hash();
+
+		chain.insert_best_block(&block1.into()).expect("Error inserting new block");
+		assert_eq!(chain.block_locator_hashes(), vec![block1_hash.clone(), genesis_hash.clone()]);
+
+		let block2 = test_data::block_h2();
+		let block2_hash = block2.hash();
+
+		chain.insert_best_block(&block2.into()).expect("Error inserting new block");
+		assert_eq!(chain.block_locator_hashes(), vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
+
+		let blocks0 = test_data::build_n_empty_blocks_from_genesis(11, 0);
+		let headers0: Vec<IndexedBlockHeader> = blocks0.into_iter().map(|b| b.block_header.into()).collect();
+		let hashes0: Vec<_> = headers0.iter().map(|h| h.hash.clone()).collect();
+		chain.schedule_blocks_headers(headers0.clone());
+		chain.request_blocks_hashes(10);
+		chain.verify_blocks_hashes(10);
+
+		assert_eq!(chain.block_locator_hashes(), vec![
+			hashes0[10].clone(),
+			hashes0[9].clone(),
+			hashes0[8].clone(),
+			hashes0[7].clone(),
+			hashes0[6].clone(),
+			hashes0[5].clone(),
+			hashes0[4].clone(),
+			hashes0[3].clone(),
+			hashes0[2].clone(),
+			hashes0[1].clone(),
+			block2_hash.clone(),
+			genesis_hash.clone(),
+		]);
+
+		let blocks1 = test_data::build_n_empty_blocks_from(6, 0, &headers0[10].raw);
+		let headers1: Vec<IndexedBlockHeader> = blocks1.into_iter().map(|b| b.block_header.into()).collect();
+		let hashes1: Vec<_> = headers1.iter().map(|h| h.hash.clone()).collect();
+		chain.schedule_blocks_headers(headers1.clone());
+		chain.request_blocks_hashes(10);
+
+		assert_eq!(chain.block_locator_hashes(), vec![
+			hashes1[5].clone(),
+			hashes1[4].clone(),
+			hashes1[3].clone(),
+			hashes1[2].clone(),
+			hashes1[1].clone(),
+			hashes1[0].clone(),
+			hashes0[10].clone(),
+			hashes0[9].clone(),
+			hashes0[8].clone(),
+			hashes0[7].clone(),
+			hashes0[5].clone(),
+			hashes0[1].clone(),
+			genesis_hash.clone(),
+		]);
+
+		let blocks2 = test_data::build_n_empty_blocks_from(3, 0, &headers1[5].raw);
+		let headers2: Vec<IndexedBlockHeader> = blocks2.into_iter().map(|b| b.block_header.into()).collect();
+		let hashes2: Vec<_> = headers2.iter().map(|h| h.hash.clone()).collect();
+		chain.schedule_blocks_headers(headers2);
+
+		assert_eq!(chain.block_locator_hashes(), vec![
+			hashes2[2].clone(),
+			hashes2[1].clone(),
+			hashes2[0].clone(),
+			hashes1[5].clone(),
+			hashes1[4].clone(),
+			hashes1[3].clone(),
+			hashes1[2].clone(),
+			hashes1[1].clone(),
+			hashes1[0].clone(),
+			hashes0[10].clone(),
+			hashes0[8].clone(),
+			hashes0[4].clone(),
+			genesis_hash.clone(),
+		]);
+	}
+
+	#[test]
+	fn chain_transaction_state() {
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let mut chain = Chain::new(db, Arc::new(RwLock::new(MemoryPool::new())));
+		let genesis_block = test_data::genesis();
+		let block1 = test_data::block_h1();
+		let tx1: Transaction = test_data::TransactionBuilder::with_version(1).into();
+		let tx2: Transaction = test_data::TransactionBuilder::with_version(2).into();
+		let tx1_hash = tx1.hash();
+		let tx2_hash = tx2.hash();
+		chain.verify_transaction(tx1.into());
+		chain.insert_verified_transaction(tx2.into());
+
+		assert_eq!(chain.transaction_state(&genesis_block.transactions[0].hash()), TransactionState::Stored);
+		assert_eq!(chain.transaction_state(&block1.transactions[0].hash()), TransactionState::Unknown);
+		assert_eq!(chain.transaction_state(&tx1_hash), TransactionState::Verifying);
+		assert_eq!(chain.transaction_state(&tx2_hash), TransactionState::InMemory);
+	}
+
+	#[test]
+	fn chain_block_transaction_is_removed_from_on_block_insert() {
+		let b0 = test_data::block_builder().header().build()
+			.transaction().coinbase()
+				.output().value(10).build()
+				.build()
+			.build();
+		let b1 = test_data::block_builder().header().parent(b0.hash()).build()
+			.transaction().coinbase()
+				.output().value(10).build()
+				.build()
+			.transaction()
+				.input().hash(b0.transactions[0].hash()).index(0).build()
+				.build()
+			.build();
+		let tx1 = b1.transactions[0].clone();
+		let tx1_hash = tx1.hash();
+		let tx2 = b1.transactions[1].clone();
+		let tx2_hash = tx2.hash();
+
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![b0.into()]));
+		let mut chain = Chain::new(db, Arc::new(RwLock::new(MemoryPool::new())));
+		chain.verify_transaction(tx1.into());
+		chain.insert_verified_transaction(tx2.into());
+
+		// only one transaction is in the memory pool
+		assert_eq!(chain.information().transactions.transactions_count, 1);
+
+		// when block is inserted to the database => all accepted transactions are removed from mempool && verifying queue
+		chain.insert_best_block(&b1.into()).expect("block accepted");
+
+		assert_eq!(chain.information().transactions.transactions_count, 0);
+		assert!(!chain.forget_verifying_transaction(&tx1_hash));
+		assert!(!chain.forget_verifying_transaction(&tx2_hash));
+	}
+
+	#[test]
+	fn chain_forget_verifying_transaction_with_children() {
+		let test_chain = &mut test_data::ChainBuilder::new();
+		test_data::TransactionBuilder::with_output(100).store(test_chain)	// t1
+			.into_input(0).add_output(200).store(test_chain)				// t1 -> t2
+			.into_input(0).add_output(300).store(test_chain)				// t1 -> t2 -> t3
+			.set_default_input(0).set_output(400).store(test_chain);		// t4
+
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let mut chain = Chain::new(db, Arc::new(RwLock::new(MemoryPool::new())));
+		chain.verify_transaction(test_chain.at(0).into());
+		chain.verify_transaction(test_chain.at(1).into());
+		chain.verify_transaction(test_chain.at(2).into());
+		chain.verify_transaction(test_chain.at(3).into());
+
+		chain.forget_verifying_transaction_with_children(&test_chain.at(0).hash());
+		assert!(!chain.forget_verifying_transaction(&test_chain.at(0).hash()));
+		assert!(!chain.forget_verifying_transaction(&test_chain.at(1).hash()));
+		assert!(!chain.forget_verifying_transaction(&test_chain.at(2).hash()));
+		assert!(chain.forget_verifying_transaction(&test_chain.at(3).hash()));
+	}
+
+	#[test]
+	fn chain_transactions_hashes_with_state() {
+		let test_chain = &mut test_data::ChainBuilder::new();
+		test_data::TransactionBuilder::with_output(100).store(test_chain)	// t1
+			.into_input(0).add_output(200).store(test_chain)				// t1 -> t2
+			.into_input(0).add_output(300).store(test_chain)				// t1 -> t2 -> t3
+			.set_default_input(0).set_output(400).store(test_chain);		// t4
+
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let mut chain = Chain::new(db, Arc::new(RwLock::new(MemoryPool::new())));
+		chain.insert_verified_transaction(test_chain.at(0).into());
+		chain.insert_verified_transaction(test_chain.at(1).into());
+		chain.insert_verified_transaction(test_chain.at(2).into());
+		chain.insert_verified_transaction(test_chain.at(3).into());
+
+		let chain_transactions = chain.transactions_hashes_with_state(TransactionState::InMemory);
+		assert!(chain_transactions.contains(&test_chain.at(0).hash()));
+		assert!(chain_transactions.contains(&test_chain.at(1).hash()));
+		assert!(chain_transactions.contains(&test_chain.at(2).hash()));
+		assert!(chain_transactions.contains(&test_chain.at(3).hash()));
+	}
+
+	#[test]
+	fn memory_pool_transactions_are_reverified_after_reorganization() {
+		let b0 = test_data::block_builder().header().build().build();
+		let b1 = test_data::block_builder().header().nonce(1).parent(b0.hash()).build().build();
+		let b2 = test_data::block_builder().header().nonce(2).parent(b0.hash()).build().build();
+		let b3 = test_data::block_builder().header().parent(b2.hash()).build().build();
+
+		let tx1: Transaction = test_data::TransactionBuilder::with_version(1).into();
+		let tx1_hash = tx1.hash();
+		let tx2: Transaction = test_data::TransactionBuilder::with_version(2).into();
+		let tx2_hash = tx2.hash();
+
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![b0.into()]));
+		let mut chain = Chain::new(db, Arc::new(RwLock::new(MemoryPool::new())));
+		chain.verify_transaction(tx1.into());
+		chain.insert_verified_transaction(tx2.into());
+
+		// no reorg
+		let result = chain.insert_best_block(&b1.into()).expect("no error");
+		assert_eq!(result.transactions_to_reverify.len(), 0);
+
+		// no reorg
+		let result = chain.insert_best_block(&b2.into()).expect("no error");
+		assert_eq!(result.transactions_to_reverify.len(), 0);
+
+		// reorg
+		let result = chain.insert_best_block(&b3.into()).expect("no error");
+		assert_eq!(result.transactions_to_reverify.len(), 2);
+		assert!(result.transactions_to_reverify.iter().any(|ref tx| &tx.hash == &tx1_hash));
+		assert!(result.transactions_to_reverify.iter().any(|ref tx| &tx.hash == &tx2_hash));
+	}
+
+	#[test]
+	fn fork_chain_block_transaction_is_removed_from_on_block_insert() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build(); // genesis -> b0
+		let b1 = test_data::block_builder().header().nonce(1).parent(b0.hash()).build()
+			.transaction().output().value(10).build().build()
+			.build(); // genesis -> b0 -> b1[tx1]
+		let b2 = test_data::block_builder().header().parent(b1.hash()).build()
+			.transaction().output().value(20).build().build()
+			.build(); // genesis -> b0 -> b1[tx1] -> b2[tx2]
+		let b3 = test_data::block_builder().header().nonce(2).parent(b0.hash()).build()
+			.transaction().output().value(30).build().build()
+			.build(); // genesis -> b0 -> b3[tx3]
+		let b4 = test_data::block_builder().header().parent(b3.hash()).build()
+			.transaction().output().value(40).build().build()
+			.build(); // genesis -> b0 -> b3[tx3] -> b4[tx4]
+		let b5 = test_data::block_builder().header().parent(b4.hash()).build()
+			.transaction().output().value(50).build().build()
+			.build(); // genesis -> b0 -> b3[tx3] -> b4[tx4] -> b5[tx5]
+
+		let tx1 = b1.transactions[0].clone();
+		let tx1_hash = tx1.hash();
+		let tx2 = b2.transactions[0].clone();
+		let tx2_hash = tx2.hash();
+		let tx3 = b3.transactions[0].clone();
+		let tx4 = b4.transactions[0].clone();
+		let tx5 = b5.transactions[0].clone();
+
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![genesis.into()]));
+		let mut chain = Chain::new(db, Arc::new(RwLock::new(MemoryPool::new())));
+
+		chain.insert_verified_transaction(tx3.into());
+		chain.insert_verified_transaction(tx4.into());
+		chain.insert_verified_transaction(tx5.into());
+
+		assert_eq!(chain.insert_best_block(&b0.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b0.hash()]));
+		assert_eq!(chain.information().transactions.transactions_count, 3);
+		assert_eq!(chain.insert_best_block(&b1.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b1.hash()]));
+		assert_eq!(chain.information().transactions.transactions_count, 3);
+		assert_eq!(chain.insert_best_block(&b2.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b2.hash()]));
+		assert_eq!(chain.information().transactions.transactions_count, 3);
+		assert_eq!(chain.insert_best_block(&b3.clone().into()).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.information().transactions.transactions_count, 3);
+		assert_eq!(chain.insert_best_block(&b4.clone().into()).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.information().transactions.transactions_count, 3);
+		// order matters
+		let insert_result = chain.insert_best_block(&b5.clone().into()).expect("block accepted");
+		let transactions_to_reverify_hashes: Vec<_> = insert_result
+			.transactions_to_reverify
+			.into_iter()
+			.map(|tx| tx.hash)
+			.collect();
+		assert_eq!(transactions_to_reverify_hashes, vec![tx1_hash, tx2_hash]);
+		assert_eq!(insert_result.canonized_blocks_hashes, vec![b3.hash(), b4.hash(), b5.hash()]);
+		assert_eq!(chain.information().transactions.transactions_count, 0); // tx3, tx4, tx5 are added to the database
+	}
+
+	#[test]
+	fn double_spend_transaction_is_removed_from_memory_pool_when_output_is_spent_in_block_transaction() {
+		let genesis = test_data::genesis();
+		let tx0 = genesis.transactions[0].clone();
+		let b0 = test_data::block_builder().header().nonce(1).parent(genesis.hash()).build()
+			.transaction()
+				.lock_time(1)
+				.input().hash(tx0.hash()).index(0).build()
+				.build()
+			.build(); // genesis -> b0[tx1]
+		// tx1 && tx2 are spending same output
+		let tx2: Transaction = test_data::TransactionBuilder::with_output(20).add_input(&tx0, 0).into();
+		let tx3: Transaction = test_data::TransactionBuilder::with_output(20).add_input(&tx0, 1).into();
+
+		// insert tx2 to memory pool
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let mut chain = Chain::new(db, Arc::new(RwLock::new(MemoryPool::new())));
+		chain.insert_verified_transaction(tx2.clone().into());
+		chain.insert_verified_transaction(tx3.clone().into());
+		// insert verified block with tx1
+		chain.insert_best_block(&b0.into()).expect("no error");
+		// => tx2 is removed from memory pool, but tx3 remains
+		assert_eq!(chain.information().transactions.transactions_count, 1);
+	}
+
+	#[test]
+	fn update_memory_pool_transaction() {
+		use test_data::{ChainBuilder, TransactionBuilder};
+
+		let data_chain = &mut ChainBuilder::new();
+		TransactionBuilder::with_output(10).add_output(10).add_output(10).store(data_chain)		// transaction0
+			.reset().set_input(&data_chain.at(0), 0).add_output(20).lock().store(data_chain)	// transaction0 -> transaction1
+			.reset().set_input(&data_chain.at(0), 0).add_output(30).store(data_chain);			// transaction0 -> transaction2
+
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let mut chain = Chain::new(db, Arc::new(RwLock::new(MemoryPool::new())));
+		chain.insert_verified_transaction(data_chain.at(1).into());
+		assert_eq!(chain.information().transactions.transactions_count, 1);
+		chain.insert_verified_transaction(data_chain.at(2).into());
+		assert_eq!(chain.information().transactions.transactions_count, 1); // tx was replaces
+	}
 }
-	//use std::sync::Arc;
-	//use parking_lot::RwLock;
-	//use chain::{Transaction, IndexedBlockHeader};
-	//use devtools::RandomTempPath;
-	//use db::{self, Store, BestBlock, BlockStapler};
-	//use miner::MemoryPool;
-	//use primitives::hash::H256;
-	//use test_data;
-	//use super::{Chain, BlockState, TransactionState, BlockInsertionResult};
-	//use utils::HashPosition;
-
-	//#[test]
-	//fn chain_empty() {
-		//let db = Arc::new(db::TestStorage::with_genesis_block());
-		//let db_best_block = BestBlock { number: 0, hash: db.best_block().expect("storage with genesis block is required").hash };
-		//let chain = Chain::new(db.clone(), Arc::new(RwLock::new(MemoryPool::new())));
-		//assert_eq!(chain.information().scheduled, 0);
-		//assert_eq!(chain.information().requested, 0);
-		//assert_eq!(chain.information().verifying, 0);
-		//assert_eq!(chain.information().stored, 1);
-		//assert_eq!(chain.length_of_blocks_state(BlockState::Scheduled), 0);
-		//assert_eq!(chain.length_of_blocks_state(BlockState::Requested), 0);
-		//assert_eq!(chain.length_of_blocks_state(BlockState::Verifying), 0);
-		//assert_eq!(chain.length_of_blocks_state(BlockState::Stored), 1);
-		//assert_eq!(&chain.best_block(), &db_best_block);
-		//assert_eq!(chain.block_state(&db_best_block.hash), BlockState::Stored);
-		//assert_eq!(chain.block_state(&H256::from(0)), BlockState::Unknown);
-	//}
-
-	//#[test]
-	//fn chain_block_path() {
-		//let db = Arc::new(db::TestStorage::with_genesis_block());
-		//let mut chain = Chain::new(db.clone(), Arc::new(RwLock::new(MemoryPool::new())));
-
-		//// add 6 blocks to scheduled queue
-		//let blocks = test_data::build_n_empty_blocks_from_genesis(6, 0);
-		//let headers: Vec<IndexedBlockHeader> = blocks.into_iter().map(|b| b.block_header.into()).collect();
-		//let hashes: Vec<_> = headers.iter().map(|h| h.hash.clone()).collect();
-		//chain.schedule_blocks_headers(headers.clone());
-		//assert!(chain.information().scheduled == 6 && chain.information().requested == 0
-			//&& chain.information().verifying == 0 && chain.information().stored == 1);
-
-		//// move 2 best blocks to requested queue
-		//chain.request_blocks_hashes(2);
-		//assert!(chain.information().scheduled == 4 && chain.information().requested == 2
-			//&& chain.information().verifying == 0 && chain.information().stored == 1);
-		//// move 0 best blocks to requested queue
-		//chain.request_blocks_hashes(0);
-		//assert!(chain.information().scheduled == 4 && chain.information().requested == 2
-			//&& chain.information().verifying == 0 && chain.information().stored == 1);
-		//// move 1 best blocks to requested queue
-		//chain.request_blocks_hashes(1);
-		//assert!(chain.information().scheduled == 3 && chain.information().requested == 3
-			//&& chain.information().verifying == 0 && chain.information().stored == 1);
-
-		//// try to remove block 0 from scheduled queue => missing
-		//assert_eq!(chain.forget_block_with_state(&hashes[0], BlockState::Scheduled), HashPosition::Missing);
-		//assert!(chain.information().scheduled == 3 && chain.information().requested == 3
-			//&& chain.information().verifying == 0 && chain.information().stored == 1);
-		//// remove blocks 0 & 1 from requested queue
-		//assert_eq!(chain.forget_block_with_state(&hashes[1], BlockState::Requested), HashPosition::Inside(1));
-		//assert_eq!(chain.forget_block_with_state(&hashes[0], BlockState::Requested), HashPosition::Front);
-		//assert!(chain.information().scheduled == 3 && chain.information().requested == 1
-			//&& chain.information().verifying == 0 && chain.information().stored == 1);
-		//// mark 0 & 1 as verifying
-		//chain.verify_block(headers[0].clone().into());
-		//chain.verify_block(headers[1].clone().into());
-		//assert!(chain.information().scheduled == 3 && chain.information().requested == 1
-			//&& chain.information().verifying == 2 && chain.information().stored == 1);
-
-		//// mark block 0 as verified
-		//assert_eq!(chain.forget_block_with_state(&hashes[0], BlockState::Verifying), HashPosition::Front);
-		//assert!(chain.information().scheduled == 3 && chain.information().requested == 1
-			//&& chain.information().verifying == 1 && chain.information().stored == 1);
-		//// insert new best block to the chain
-		//chain.insert_best_block(&test_data::block_h1().into()).expect("Db error");
-		//assert!(chain.information().scheduled == 3 && chain.information().requested == 1
-			//&& chain.information().verifying == 1 && chain.information().stored == 2);
-		//assert_eq!(db.best_block().expect("storage with genesis block is required").number, 1);
-	//}
-
-	//#[test]
-	//fn chain_block_locator_hashes() {
-		//let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
-		//let genesis_hash = chain.best_block().hash;
-		//assert_eq!(chain.block_locator_hashes(), vec![genesis_hash.clone()]);
-
-		//let block1 = test_data::block_h1();
-		//let block1_hash = block1.hash();
-
-		//chain.insert_best_block(&block1.into()).expect("Error inserting new block");
-		//assert_eq!(chain.block_locator_hashes(), vec![block1_hash.clone(), genesis_hash.clone()]);
-
-		//let block2 = test_data::block_h2();
-		//let block2_hash = block2.hash();
-
-		//chain.insert_best_block(&block2.into()).expect("Error inserting new block");
-		//assert_eq!(chain.block_locator_hashes(), vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
-
-		//let blocks0 = test_data::build_n_empty_blocks_from_genesis(11, 0);
-		//let headers0: Vec<IndexedBlockHeader> = blocks0.into_iter().map(|b| b.block_header.into()).collect();
-		//let hashes0: Vec<_> = headers0.iter().map(|h| h.hash.clone()).collect();
-		//chain.schedule_blocks_headers(headers0.clone());
-		//chain.request_blocks_hashes(10);
-		//chain.verify_blocks_hashes(10);
-
-		//assert_eq!(chain.block_locator_hashes(), vec![
-			//hashes0[10].clone(),
-			//hashes0[9].clone(),
-			//hashes0[8].clone(),
-			//hashes0[7].clone(),
-			//hashes0[6].clone(),
-			//hashes0[5].clone(),
-			//hashes0[4].clone(),
-			//hashes0[3].clone(),
-			//hashes0[2].clone(),
-			//hashes0[1].clone(),
-			//block2_hash.clone(),
-			//genesis_hash.clone(),
-		//]);
-
-		//let blocks1 = test_data::build_n_empty_blocks_from(6, 0, &headers0[10].raw);
-		//let headers1: Vec<IndexedBlockHeader> = blocks1.into_iter().map(|b| b.block_header.into()).collect();
-		//let hashes1: Vec<_> = headers1.iter().map(|h| h.hash.clone()).collect();
-		//chain.schedule_blocks_headers(headers1.clone());
-		//chain.request_blocks_hashes(10);
-
-		//assert_eq!(chain.block_locator_hashes(), vec![
-			//hashes1[5].clone(),
-			//hashes1[4].clone(),
-			//hashes1[3].clone(),
-			//hashes1[2].clone(),
-			//hashes1[1].clone(),
-			//hashes1[0].clone(),
-			//hashes0[10].clone(),
-			//hashes0[9].clone(),
-			//hashes0[8].clone(),
-			//hashes0[7].clone(),
-			//hashes0[5].clone(),
-			//hashes0[1].clone(),
-			//genesis_hash.clone(),
-		//]);
-
-		//let blocks2 = test_data::build_n_empty_blocks_from(3, 0, &headers1[5].raw);
-		//let headers2: Vec<IndexedBlockHeader> = blocks2.into_iter().map(|b| b.block_header.into()).collect();
-		//let hashes2: Vec<_> = headers2.iter().map(|h| h.hash.clone()).collect();
-		//chain.schedule_blocks_headers(headers2);
-
-		//assert_eq!(chain.block_locator_hashes(), vec![
-			//hashes2[2].clone(),
-			//hashes2[1].clone(),
-			//hashes2[0].clone(),
-			//hashes1[5].clone(),
-			//hashes1[4].clone(),
-			//hashes1[3].clone(),
-			//hashes1[2].clone(),
-			//hashes1[1].clone(),
-			//hashes1[0].clone(),
-			//hashes0[10].clone(),
-			//hashes0[8].clone(),
-			//hashes0[4].clone(),
-			//genesis_hash.clone(),
-		//]);
-	//}
-
-	//#[test]
-	//fn chain_transaction_state() {
-		//let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
-		//let genesis_block = test_data::genesis();
-		//let block1 = test_data::block_h1();
-		//let tx1: Transaction = test_data::TransactionBuilder::with_version(1).into();
-		//let tx2: Transaction = test_data::TransactionBuilder::with_version(2).into();
-		//let tx1_hash = tx1.hash();
-		//let tx2_hash = tx2.hash();
-		//chain.verify_transaction(tx1.into());
-		//chain.insert_verified_transaction(tx2.into());
-
-		//assert_eq!(chain.transaction_state(&genesis_block.transactions[0].hash()), TransactionState::Stored);
-		//assert_eq!(chain.transaction_state(&block1.transactions[0].hash()), TransactionState::Unknown);
-		//assert_eq!(chain.transaction_state(&tx1_hash), TransactionState::Verifying);
-		//assert_eq!(chain.transaction_state(&tx2_hash), TransactionState::InMemory);
-	//}
-
-	//#[test]
-	//fn chain_block_transaction_is_removed_from_on_block_insert() {
-		//let b0 = test_data::block_builder().header().build().build();
-		//let b1 = test_data::block_builder().header().parent(b0.hash()).build()
-			//.transaction().coinbase()
-				//.output().value(10).build()
-				//.build()
-			//.transaction()
-				//.input().hash(H256::from(1)).index(1).build()
-				//.build()
-			//.build();
-		//let tx1 = b1.transactions[0].clone();
-		//let tx1_hash = tx1.hash();
-		//let tx2 = b1.transactions[1].clone();
-		//let tx2_hash = tx2.hash();
-
-		//let mut chain = Chain::new(Arc::new(db::TestStorage::with_blocks(&vec![b0])), Arc::new(RwLock::new(MemoryPool::new())));
-		//chain.verify_transaction(tx1.into());
-		//chain.insert_verified_transaction(tx2.into());
-
-		//// only one transaction is in the memory pool
-		//assert_eq!(chain.information().transactions.transactions_count, 1);
-
-		//// when block is inserted to the database => all accepted transactions are removed from mempool && verifying queue
-		//chain.insert_best_block(&b1.into()).expect("block accepted");
-
-		//assert_eq!(chain.information().transactions.transactions_count, 0);
-		//assert!(!chain.forget_verifying_transaction(&tx1_hash));
-		//assert!(!chain.forget_verifying_transaction(&tx2_hash));
-	//}
-
-	//#[test]
-	//fn chain_forget_verifying_transaction_with_children() {
-		//let test_chain = &mut test_data::ChainBuilder::new();
-		//test_data::TransactionBuilder::with_output(100).store(test_chain)	// t1
-			//.into_input(0).add_output(200).store(test_chain)				// t1 -> t2
-			//.into_input(0).add_output(300).store(test_chain)				// t1 -> t2 -> t3
-			//.set_default_input(0).set_output(400).store(test_chain);		// t4
-
-		//let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
-		//chain.verify_transaction(test_chain.at(0).into());
-		//chain.verify_transaction(test_chain.at(1).into());
-		//chain.verify_transaction(test_chain.at(2).into());
-		//chain.verify_transaction(test_chain.at(3).into());
-
-		//chain.forget_verifying_transaction_with_children(&test_chain.at(0).hash());
-		//assert!(!chain.forget_verifying_transaction(&test_chain.at(0).hash()));
-		//assert!(!chain.forget_verifying_transaction(&test_chain.at(1).hash()));
-		//assert!(!chain.forget_verifying_transaction(&test_chain.at(2).hash()));
-		//assert!(chain.forget_verifying_transaction(&test_chain.at(3).hash()));
-	//}
-
-	//#[test]
-	//fn chain_transactions_hashes_with_state() {
-		//let test_chain = &mut test_data::ChainBuilder::new();
-		//test_data::TransactionBuilder::with_output(100).store(test_chain)	// t1
-			//.into_input(0).add_output(200).store(test_chain)				// t1 -> t2
-			//.into_input(0).add_output(300).store(test_chain)				// t1 -> t2 -> t3
-			//.set_default_input(0).set_output(400).store(test_chain);		// t4
-
-		//let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
-		//chain.insert_verified_transaction(test_chain.at(0).into());
-		//chain.insert_verified_transaction(test_chain.at(1).into());
-		//chain.insert_verified_transaction(test_chain.at(2).into());
-		//chain.insert_verified_transaction(test_chain.at(3).into());
-
-		//let chain_transactions = chain.transactions_hashes_with_state(TransactionState::InMemory);
-		//assert!(chain_transactions.contains(&test_chain.at(0).hash()));
-		//assert!(chain_transactions.contains(&test_chain.at(1).hash()));
-		//assert!(chain_transactions.contains(&test_chain.at(2).hash()));
-		//assert!(chain_transactions.contains(&test_chain.at(3).hash()));
-	//}
-
-	//#[test]
-	//fn memory_pool_transactions_are_reverified_after_reorganization() {
-		//let b0 = test_data::block_builder().header().build().build();
-		//let b1 = test_data::block_builder().header().nonce(1).parent(b0.hash()).build().build();
-		//let b2 = test_data::block_builder().header().nonce(2).parent(b0.hash()).build().build();
-		//let b3 = test_data::block_builder().header().parent(b2.hash()).build().build();
-
-		//let tx1: Transaction = test_data::TransactionBuilder::with_version(1).into();
-		//let tx1_hash = tx1.hash();
-		//let tx2: Transaction = test_data::TransactionBuilder::with_version(2).into();
-		//let tx2_hash = tx2.hash();
-
-		//let path = RandomTempPath::create_dir();
-		//let storage = Arc::new(db::Storage::new(path.as_path()).unwrap());
-		//storage.insert_block(&b0).expect("no db error");
-
-		//let mut chain = Chain::new(storage, Arc::new(RwLock::new(MemoryPool::new())));
-		//chain.verify_transaction(tx1.into());
-		//chain.insert_verified_transaction(tx2.into());
-
-		//// no reorg
-		//let result = chain.insert_best_block(&b1.into()).expect("no error");
-		//assert_eq!(result.transactions_to_reverify.len(), 0);
-
-		//// no reorg
-		//let result = chain.insert_best_block(&b2.into()).expect("no error");
-		//assert_eq!(result.transactions_to_reverify.len(), 0);
-
-		//// reorg
-		//let result = chain.insert_best_block(&b3.into()).expect("no error");
-		//assert_eq!(result.transactions_to_reverify.len(), 2);
-		//assert!(result.transactions_to_reverify.iter().any(|ref tx| &tx.hash == &tx1_hash));
-		//assert!(result.transactions_to_reverify.iter().any(|ref tx| &tx.hash == &tx2_hash));
-	//}
-
-	//#[test]
-	//fn fork_chain_block_transaction_is_removed_from_on_block_insert() {
-		//let genesis = test_data::genesis();
-		//let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build(); // genesis -> b0
-		//let b1 = test_data::block_builder().header().nonce(1).parent(b0.hash()).build()
-			//.transaction().output().value(10).build().build()
-			//.build(); // genesis -> b0 -> b1[tx1]
-		//let b2 = test_data::block_builder().header().parent(b1.hash()).build()
-			//.transaction().output().value(20).build().build()
-			//.build(); // genesis -> b0 -> b1[tx1] -> b2[tx2]
-		//let b3 = test_data::block_builder().header().nonce(2).parent(b0.hash()).build()
-			//.transaction().output().value(30).build().build()
-			//.build(); // genesis -> b0 -> b3[tx3]
-		//let b4 = test_data::block_builder().header().parent(b3.hash()).build()
-			//.transaction().output().value(40).build().build()
-			//.build(); // genesis -> b0 -> b3[tx3] -> b4[tx4]
-		//let b5 = test_data::block_builder().header().parent(b4.hash()).build()
-			//.transaction().output().value(50).build().build()
-			//.build(); // genesis -> b0 -> b3[tx3] -> b4[tx4] -> b5[tx5]
-
-		//let tx1 = b1.transactions[0].clone();
-		//let tx1_hash = tx1.hash();
-		//let tx2 = b2.transactions[0].clone();
-		//let tx2_hash = tx2.hash();
-		//let tx3 = b3.transactions[0].clone();
-		//let tx4 = b4.transactions[0].clone();
-		//let tx5 = b5.transactions[0].clone();
-
-		//let path = RandomTempPath::create_dir();
-		//let storage = Arc::new(db::Storage::new(path.as_path()).unwrap(), );
-		//storage.insert_block(&genesis).expect("no db error");
-
-		//let mut chain = Chain::new(storage, Arc::new(RwLock::new(MemoryPool::new())));
-
-		//chain.insert_verified_transaction(tx3.into());
-		//chain.insert_verified_transaction(tx4.into());
-		//chain.insert_verified_transaction(tx5.into());
-
-		//assert_eq!(chain.insert_best_block(&b0.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b0.hash()]));
-		//assert_eq!(chain.information().transactions.transactions_count, 3);
-		//assert_eq!(chain.insert_best_block(&b1.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b1.hash()]));
-		//assert_eq!(chain.information().transactions.transactions_count, 3);
-		//assert_eq!(chain.insert_best_block(&b2.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b2.hash()]));
-		//assert_eq!(chain.information().transactions.transactions_count, 3);
-		//assert_eq!(chain.insert_best_block(&b3.clone().into()).expect("block accepted"), BlockInsertionResult::default());
-		//assert_eq!(chain.information().transactions.transactions_count, 3);
-		//assert_eq!(chain.insert_best_block(&b4.clone().into()).expect("block accepted"), BlockInsertionResult::default());
-		//assert_eq!(chain.information().transactions.transactions_count, 3);
-		//// order matters
-		//let insert_result = chain.insert_best_block(&b5.clone().into()).expect("block accepted");
-		//let transactions_to_reverify_hashes: Vec<_> = insert_result
-			//.transactions_to_reverify
-			//.into_iter()
-			//.map(|tx| tx.hash)
-			//.collect();
-		//assert_eq!(transactions_to_reverify_hashes, vec![tx1_hash, tx2_hash]);
-		//assert_eq!(insert_result.canonized_blocks_hashes, vec![b3.hash(), b4.hash(), b5.hash()]);
-		//assert_eq!(chain.information().transactions.transactions_count, 0); // tx3, tx4, tx5 are added to the database
-	//}
-
-	//#[test]
-	//fn double_spend_transaction_is_removed_from_memory_pool_when_output_is_spent_in_block_transaction() {
-		//let genesis = test_data::genesis();
-		//let tx0 = genesis.transactions[0].clone();
-		//let b0 = test_data::block_builder().header().nonce(1).parent(genesis.hash()).build()
-			//.transaction()
-				//.lock_time(1)
-				//.input().hash(tx0.hash()).index(0).build()
-				//.build()
-			//.build(); // genesis -> b0[tx1]
-		//// tx1 && tx2 are spending same output
-		//let tx2: Transaction = test_data::TransactionBuilder::with_output(20).add_input(&tx0, 0).into();
-		//let tx3: Transaction = test_data::TransactionBuilder::with_output(20).add_input(&tx0, 1).into();
-
-		//// insert tx2 to memory pool
-		//let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
-		//chain.insert_verified_transaction(tx2.clone().into());
-		//chain.insert_verified_transaction(tx3.clone().into());
-		//// insert verified block with tx1
-		//chain.insert_best_block(&b0.into()).expect("no error");
-		//// => tx2 is removed from memory pool, but tx3 remains
-		//assert_eq!(chain.information().transactions.transactions_count, 1);
-	//}
-
-	//#[test]
-	//fn update_memory_pool_transaction() {
-		//use test_data::{ChainBuilder, TransactionBuilder};
-
-		//let data_chain = &mut ChainBuilder::new();
-		//TransactionBuilder::with_output(10).add_output(10).add_output(10).store(data_chain)		// transaction0
-			//.reset().set_input(&data_chain.at(0), 0).add_output(20).lock().store(data_chain)	// transaction0 -> transaction1
-			//.reset().set_input(&data_chain.at(0), 0).add_output(30).store(data_chain);			// transaction0 -> transaction2
-
-		//let mut chain = Chain::new(Arc::new(db::TestStorage::with_genesis_block()), Arc::new(RwLock::new(MemoryPool::new())));
-		//chain.insert_verified_transaction(data_chain.at(1).into());
-		//assert_eq!(chain.information().transactions.transactions_count, 1);
-		//chain.insert_verified_transaction(data_chain.at(2).into());
-		//assert_eq!(chain.information().transactions.transactions_count, 1); // tx was replaces
-	//}
-//}

@@ -14,7 +14,7 @@ use ser::{
 };
 use kv::{
 	KeyValueDatabase, OverlayDatabase, Transaction as DBTransaction, Location, Value, DiskDatabase,
-	DatabaseConfig
+	DatabaseConfig, MemoryDatabase
 };
 use best_block::BestBlock;
 use {
@@ -77,6 +77,18 @@ impl BlockChainDatabase<DiskDatabase> {
 			Ok(db) => Ok(Self::open(db)),
 			Err(err) => Err(Error::DatabaseError(err))
 		}
+	}
+}
+
+impl BlockChainDatabase<MemoryDatabase> {
+	pub fn init_test_chain(blocks: Vec<IndexedBlock>) -> Self {
+		let store = BlockChainDatabase::open(MemoryDatabase::default());
+
+		for block in &blocks {
+			store.insert(block).unwrap();
+			store.canonize(block.hash()).unwrap();
+		}
+		store
 	}
 }
 

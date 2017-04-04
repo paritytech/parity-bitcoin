@@ -6,7 +6,6 @@ use futures::Future;
 use parking_lot::Mutex;
 use time;
 use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
-use db;
 use message::types;
 use message::common::{InventoryType, InventoryVector};
 use miner::transaction_fee_rate;
@@ -1177,1157 +1176,1151 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 }
 
-//#[cfg(test)]
-//pub mod tests {
-	//use std::sync::Arc;
-	//use parking_lot::{Mutex, RwLock};
-	//use chain::{Block, Transaction};
-	//use db;
-	//use devtools::RandomTempPath;
-	//use message::common::InventoryVector;
-	//use message::types;
-	//use miner::MemoryPool;
-	//use network::Magic;
-	//use primitives::hash::H256;
-	//use test_data;
-	//use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
-	//use inbound_connection::tests::DummyOutboundSyncConnection;
-	//use synchronization_chain::Chain;
-	//use synchronization_client::{SynchronizationClient, Client};
-	//use synchronization_peers::PeersImpl;
-	//use synchronization_executor::Task;
-	//use synchronization_executor::tests::DummyTaskExecutor;
-	//use synchronization_verifier::tests::DummyVerifier;
-	//use utils::SynchronizationState;
-	//use types::{PeerIndex, StorageRef, SynchronizationStateRef, ClientCoreRef};
-	//use super::{Config, SynchronizationClientCore, ClientCore, CoreVerificationSink};
-	//use super::super::SyncListener;
+#[cfg(test)]
+pub mod tests {
+	use std::sync::Arc;
+	use parking_lot::{Mutex, RwLock};
+	use chain::{Block, Transaction};
+	use db::BlockChainDatabase;
+	use message::common::InventoryVector;
+	use message::types;
+	use miner::MemoryPool;
+	use network::Magic;
+	use primitives::hash::H256;
+	use test_data;
+	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
+	use inbound_connection::tests::DummyOutboundSyncConnection;
+	use synchronization_chain::Chain;
+	use synchronization_client::{SynchronizationClient, Client};
+	use synchronization_peers::PeersImpl;
+	use synchronization_executor::Task;
+	use synchronization_executor::tests::DummyTaskExecutor;
+	use synchronization_verifier::tests::DummyVerifier;
+	use utils::SynchronizationState;
+	use types::{PeerIndex, StorageRef, SynchronizationStateRef, ClientCoreRef};
+	use super::{Config, SynchronizationClientCore, ClientCore, CoreVerificationSink};
+	use super::super::SyncListener;
 
-	//#[derive(Default)]
-	//struct DummySyncListenerData {
-		//pub is_synchronizing: bool,
-		//pub best_blocks: Vec<H256>,
-	//}
+	#[derive(Default)]
+	struct DummySyncListenerData {
+		pub is_synchronizing: bool,
+		pub best_blocks: Vec<H256>,
+	}
 
-	//struct DummySyncListener {
-		//data: Arc<Mutex<DummySyncListenerData>>,
-	//}
+	struct DummySyncListener {
+		data: Arc<Mutex<DummySyncListenerData>>,
+	}
 
-	//impl DummySyncListener {
-		//pub fn new(data: Arc<Mutex<DummySyncListenerData>>) -> Self {
-			//DummySyncListener {
-				//data: data,
-			//}
-		//}
-	//}
+	impl DummySyncListener {
+		pub fn new(data: Arc<Mutex<DummySyncListenerData>>) -> Self {
+			DummySyncListener {
+				data: data,
+			}
+		}
+	}
 
-	//impl SyncListener for DummySyncListener {
-		//fn synchronization_state_switched(&self, is_synchronizing: bool) {
-			//self.data.lock().is_synchronizing = is_synchronizing;
-		//}
+	impl SyncListener for DummySyncListener {
+		fn synchronization_state_switched(&self, is_synchronizing: bool) {
+			self.data.lock().is_synchronizing = is_synchronizing;
+		}
 
-		//fn best_storage_block_inserted(&self, block_hash: &H256) {
-			//self.data.lock().best_blocks.push(block_hash.clone());
-		//}
-	//}
+		fn best_storage_block_inserted(&self, block_hash: &H256) {
+			self.data.lock().best_blocks.push(block_hash.clone());
+		}
+	}
 
 	//fn create_disk_storage() -> StorageRef {
 		//let path = RandomTempPath::create_dir();
 		//Arc::new(db::Storage::new(path.as_path()).unwrap())
 	//}
 
-	//fn create_sync(storage: Option<StorageRef>, verifier: Option<DummyVerifier>) -> (Arc<DummyTaskExecutor>, ClientCoreRef<SynchronizationClientCore<DummyTaskExecutor>>, Arc<SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
-		//let sync_peers = Arc::new(PeersImpl::default());
-		//let storage = match storage {
-			//Some(storage) => storage,
-			//None => Arc::new(db::TestStorage::with_genesis_block()),
-		//};
-		//let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
-		//let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
-		//let chain = Chain::new(storage.clone(), memory_pool.clone());
-		//let executor = DummyTaskExecutor::new();
-		//let config = Config { network: Magic::Mainnet, close_connection_on_bad_block: true };
-
-		//let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Unitest));
-		//let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier.clone());
-		//{
-			//client_core.lock().set_verify_headers(false);
-		//}
-		//let mut verifier = verifier.unwrap_or_default();
-		//verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
-		//verifier.set_storage(storage);
-		//verifier.set_memory_pool(memory_pool);
-		//verifier.set_verifier(chain_verifier);
-
-		//let client = SynchronizationClient::new(sync_state, client_core.clone(), verifier);
-		//(executor, client_core, client)
-	//}
-
-	//fn request_block_headers_genesis(peer_index: PeerIndex) -> Task {
-		//Task::GetHeaders(peer_index, types::GetHeaders::with_block_locator_hashes(vec![test_data::genesis().hash()]))
-	//}
-
-	//fn request_block_headers_genesis_and(peer_index: PeerIndex, mut hashes: Vec<H256>) -> Task {
-		//hashes.push(test_data::genesis().hash());
-		//Task::GetHeaders(peer_index, types::GetHeaders::with_block_locator_hashes(hashes))
-	//}
-
-	//fn request_blocks(peer_index: PeerIndex, hashes: Vec<H256>) -> Task {
-		//Task::GetData(peer_index, types::GetData {
-			//inventory: hashes.into_iter().map(InventoryVector::block).collect(),
-		//})
-	//}
-
-	//#[test]
-	//fn synchronization_request_inventory_on_sync_start() {
-		//let (executor, _, sync) = create_sync(None, None);
-		//// start sync session
-		//sync.on_connect(0);
-		//// => ask for inventory
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![request_block_headers_genesis(0)]);
-	//}
-
-	//#[test]
-	//fn synchronization_saturated_on_start() {
-		//let (_, core, _) = create_sync(None, None);
-		//let info = core.lock().information();
-		//assert!(!info.state.is_synchronizing());
-		//assert_eq!(info.orphaned_blocks, 0);
-		//assert_eq!(info.orphaned_transactions, 0);
-	//}
-
-	//#[test]
-	//fn synchronization_in_order_block_path_nearly_saturated() {
-		//let (executor, core, sync) = create_sync(None, None);
-
-		//let block1: Block = test_data::block_h1();
-		//let block2: Block = test_data::block_h2();
-
-		//sync.on_headers(5, types::Headers::with_headers(vec![block1.block_header.clone()]));
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![request_block_headers_genesis_and(5, vec![block1.hash()]), request_blocks(5, vec![block1.hash()])]);
-		//assert!(core.lock().information().state.is_nearly_saturated());
-		//assert_eq!(core.lock().information().orphaned_blocks, 0);
-		//assert_eq!(core.lock().information().chain.scheduled, 0);
-		//assert_eq!(core.lock().information().chain.requested, 1);
-		//assert_eq!(core.lock().information().chain.stored, 1);
-		//assert_eq!(core.lock().information().peers_tasks.idle, 0);
-		//assert_eq!(core.lock().information().peers_tasks.active, 1);
-
-		//// push unknown block => will be queued as orphan
-		//sync.on_block(5, block2.into());
-		//assert!(core.lock().information().state.is_nearly_saturated());
-		//assert_eq!(core.lock().information().orphaned_blocks, 1);
-		//assert_eq!(core.lock().information().chain.scheduled, 0);
-		//assert_eq!(core.lock().information().chain.requested, 1);
-		//assert_eq!(core.lock().information().chain.stored, 1);
-		//assert_eq!(core.lock().information().peers_tasks.idle, 0);
-		//assert_eq!(core.lock().information().peers_tasks.active, 1);
-
-		//// push requested block => should be moved to the test storage && orphan should be moved
-		//sync.on_block(5, block1.into());
-		//assert!(core.lock().information().state.is_saturated());
-		//assert_eq!(core.lock().information().orphaned_blocks, 0);
-		//assert_eq!(core.lock().information().chain.scheduled, 0);
-		//assert_eq!(core.lock().information().chain.requested, 0);
-		//assert_eq!(core.lock().information().chain.stored, 3);
-		//// we have just requested new `inventory` from the peer => peer is forgotten
-		//assert_eq!(core.lock().information().peers_tasks.idle, 0);
-		//assert_eq!(core.lock().information().peers_tasks.active, 0);
-	//}
-
-	//#[test]
-	//fn synchronization_out_of_order_block_path() {
-		//let (_, core, sync) = create_sync(None, None);
-
-		//sync.on_headers(5, types::Headers::with_headers(vec![test_data::block_h1().block_header.clone(), test_data::block_h2().block_header.clone()]));
-		//sync.on_block(5, test_data::block_h169().into());
-
-		//// out-of-order block was presented by the peer
-		//assert!(core.lock().information().state.is_synchronizing());
-		//assert_eq!(core.lock().information().orphaned_blocks, 0);
-		//assert_eq!(core.lock().information().chain.scheduled, 0);
-		//assert_eq!(core.lock().information().chain.requested, 2);
-		//assert_eq!(core.lock().information().chain.stored, 1);
-		//// we have just requested new `inventory` from the peer => peer is forgotten
-		//assert_eq!(core.lock().information().peers_tasks.idle, 0);
-		//assert_eq!(core.lock().information().peers_tasks.active, 1);
-		//// TODO: check that peer is penalized
-	//}
-
-	//#[test]
-	//fn synchronization_parallel_peers() {
-		//let (executor, core, sync) = create_sync(None, None);
-
-		//let block1: Block = test_data::block_h1();
-		//let block2: Block = test_data::block_h2();
-
-		//{
-			//// not synchronizing after start
-			//assert!(core.lock().information().state.is_saturated());
-			//// receive inventory from new peer#1
-			//sync.on_headers(1, types::Headers::with_headers(vec![block1.block_header.clone()]));
-			//assert_eq!(core.lock().information().chain.requested, 1);
-			//// synchronization has started && new blocks have been requested
-			//let tasks = executor.take_tasks();
-			//assert!(core.lock().information().state.is_nearly_saturated());
-			//assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![block1.hash()]), request_blocks(1, vec![block1.hash()])]);
-		//}
-
-		//{
-			//// receive inventory from new peer#2
-			//sync.on_headers(2, types::Headers::with_headers(vec![block1.block_header.clone(), block2.block_header.clone()]));
-			//assert_eq!(core.lock().information().chain.requested, 2);
-			//// synchronization has started && new blocks have been requested
-			//let tasks = executor.take_tasks();
-			//assert!(core.lock().information().state.is_synchronizing());
-			//assert_eq!(tasks, vec![request_block_headers_genesis_and(2, vec![block2.hash(), block1.hash()]), request_blocks(2, vec![block2.hash()])]);
-		//}
-
-		//{
-			//// receive block from peer#2
-			//sync.on_block(2, block2.into());
-			//let information = core.lock().information();
-			//assert!(information.chain.requested == 2 && information.orphaned_blocks == 1);
-			//// receive block from peer#1
-			//sync.on_block(1, block1.into());
-
-			//let information = core.lock().information();
-			//assert!(information.chain.requested == 0
-				//&& information.orphaned_blocks == 0
-				//&& information.chain.stored == 3);
-		//}
-	//}
-
-	//#[test]
-	//fn synchronization_reset_when_peer_is_disconnected() {
-		//let (_, core, sync) = create_sync(None, None);
-
-		//// request new blocks
-		//{
-			//sync.on_headers(1, types::Headers::with_headers(vec![test_data::block_h1().block_header]));
-			//assert!(core.lock().information().state.is_nearly_saturated());
-		//}
-
-		//// lost connection to peer => synchronization state lost
-		//{
-			//sync.on_disconnect(1);
-			//assert!(core.lock().information().state.is_saturated());
-		//}
-	//}
-
-	//#[test]
-	//fn synchronization_not_starting_when_receiving_known_blocks() {
-		//let (executor, core, sync) = create_sync(None, None);
-		//// saturated => receive inventory with known blocks only
-		//sync.on_headers(1, types::Headers::with_headers(vec![test_data::genesis().block_header]));
-		//// => no need to start synchronization
-		//assert!(!core.lock().information().state.is_nearly_saturated());
-		//// => no synchronization tasks are scheduled
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![]);
-	//}
-
-	//#[test]
-	//fn synchronization_asks_for_inventory_after_saturating() {
-		//let (executor, _, sync) = create_sync(None, None);
-		//let block = test_data::block_h1();
-		//sync.on_headers(1, types::Headers::with_headers(vec![block.block_header.clone()]));
-		//sync.on_headers(2, types::Headers::with_headers(vec![block.block_header.clone()]));
-		//executor.take_tasks();
-		//sync.on_block(2, block.clone().into());
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks.len(), 6);
-		//// TODO: when saturating, RequestBlocksHeaders is sent twice to the peer who has supplied last block:
-		//// 1) from on_block_verification_success
-		//// 2) from switch_to_saturated_state
-		//assert!(tasks.iter().any(|t| t == &request_block_headers_genesis_and(1, vec![block.hash()])));
-		//assert!(tasks.iter().any(|t| t == &request_block_headers_genesis_and(2, vec![block.hash()])));
-		//assert!(tasks.iter().any(|t| t == &Task::MemoryPool(1)));
-		//assert!(tasks.iter().any(|t| t == &Task::MemoryPool(2)));
-		//assert!(tasks.iter().any(|t| t == &Task::RelayNewBlock(block.clone().into())));
-	//}
-
-	//#[test]
-	//fn synchronization_remembers_correct_block_headers_in_order() {
-		//let (executor, core, sync) = create_sync(None, None);
-
-		//let b1 = test_data::block_h1();
-		//let b2 = test_data::block_h2();
-		//sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks.len(), 2);
-		//assert!(tasks.iter().any(|t| t == &request_block_headers_genesis_and(1, vec![b2.hash(), b1.hash()])));
-		//assert!(tasks.iter().any(|t| t == &request_blocks(1, vec![b1.hash(), b2.hash()])));
-
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.information().headers.best, 2);
-			//assert_eq!(chain.information().headers.total, 2);
-		//}
-
-		//sync.on_block(1, b1.clone().into());
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![]);
-
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.information().headers.best, 1);
-			//assert_eq!(chain.information().headers.total, 1);
-		//}
-
-		//sync.on_block(1, b2.clone().into());
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![b2.hash(), b1.hash()]), Task::MemoryPool(1)]);
-
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.information().headers.best, 0);
-			//assert_eq!(chain.information().headers.total, 0);
-		//}
-	//}
-
-	//#[test]
-	//fn synchronization_remembers_correct_block_headers_out_of_order() {
-		//let (executor, core, sync) = create_sync(None, None);
-
-		//let b1 = test_data::block_h1();
-		//let b2 = test_data::block_h2();
-		//sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks.len(), 2);
-		//assert!(tasks.iter().any(|t| t == &request_block_headers_genesis_and(1, vec![b2.hash(), b1.hash()])));
-		//assert!(tasks.iter().any(|t| t == &request_blocks(1, vec![b1.hash(), b2.hash()])));
-
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.information().headers.best, 2);
-			//assert_eq!(chain.information().headers.total, 2);
-		//}
-
-		//sync.on_block(1, b2.clone().into());
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![]);
-
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.information().headers.best, 2);
-			//assert_eq!(chain.information().headers.total, 2);
-		//}
-
-		//sync.on_block(1, b1.clone().into());
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![b2.hash(), b1.hash()]), Task::MemoryPool(1)]);
-
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.information().headers.best, 0);
-			//assert_eq!(chain.information().headers.total, 0);
-		//}
-	//}
-
-	//#[test]
-	//fn synchronization_ignores_unknown_block_headers() {
-		//let (executor, core, sync) = create_sync(None, None);
-
-		//let b169 = test_data::block_h169();
-		//sync.on_headers(1, types::Headers::with_headers(vec![b169.block_header]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![]);
-
-		//let mut core = core.lock(); let chain = core.chain();
-		//assert_eq!(chain.information().headers.best, 0);
-		//assert_eq!(chain.information().headers.total, 0);
-	//}
-
-	//#[test]
-	//fn synchronization_works_for_forks_from_db_best_block() {
-		//let storage = create_disk_storage();
-		//let genesis = test_data::genesis();
-		//storage.insert_block(&genesis).expect("no db error");
-
-		//let (executor, core, sync) = create_sync(Some(storage), None);
-		//let genesis_header = &genesis.block_header;
-		//let fork1 = test_data::build_n_empty_blocks_from(2, 100, &genesis_header);
-		//let fork2 = test_data::build_n_empty_blocks_from(3, 200, &genesis_header);
-
-		//sync.on_headers(1, types::Headers::with_headers(vec![fork1[0].block_header.clone(), fork1[1].block_header.clone()]));
-		//sync.on_headers(2, types::Headers::with_headers(vec![fork2[0].block_header.clone(), fork2[1].block_header.clone(), fork2[2].block_header.clone()]));
-		//let tasks = { executor.take_tasks() };
-		//assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![fork1[1].hash(), fork1[0].hash()]),
-			//request_blocks(1, vec![fork1[0].hash(), fork1[1].hash()]),
-			//// this is possibly wrong, because we have mixed two forks, but this works because we ask for headers on saturating
-			//request_block_headers_genesis_and(2, vec![fork2[2].hash(), fork2[1].hash(), fork2[0].hash(), fork1[1].hash(), fork1[0].hash()]),
-			//request_blocks(2, vec![fork2[0].hash(), fork2[1].hash(), fork2[2].hash()]),
-		//]);
-
-		//sync.on_block(2, fork2[0].clone().into());
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.best_storage_block().hash, fork2[0].hash());
-			//assert_eq!(chain.best_storage_block().number, 1);
-		//}
-
-		//sync.on_block(1, fork1[0].clone().into());
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.best_storage_block().hash, fork2[0].hash());
-			//assert_eq!(chain.best_storage_block().number, 1);
-		//}
-
-		//sync.on_block(1, fork1[1].clone().into());
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
-			//assert_eq!(chain.best_storage_block().number, 2);
-		//}
-
-		//sync.on_block(2, fork2[1].clone().into());
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
-			//assert_eq!(chain.best_storage_block().number, 2);
-		//}
-
-		//sync.on_block(2, fork2[2].clone().into());
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.best_storage_block().hash, fork2[2].hash());
-			//assert_eq!(chain.best_storage_block().number, 3);
-		//}
-	//}
-
-	//#[test]
-	//fn synchronization_works_for_forks_long_after_short() {
-		//let storage = create_disk_storage();
-		//let genesis = test_data::genesis();
-		//storage.insert_block(&genesis).expect("no db error");
-
-		//let (executor, core, sync) = create_sync(Some(storage), None);
-		//let common_block = test_data::block_builder().header().parent(genesis.hash()).build().build();
-		//let fork1 = test_data::build_n_empty_blocks_from(2, 100, &common_block.block_header);
-		//let fork2 = test_data::build_n_empty_blocks_from(3, 200, &common_block.block_header);
-
-		//sync.on_headers(1, types::Headers::with_headers(vec![common_block.block_header.clone(), fork1[0].block_header.clone(), fork1[1].block_header.clone()]));
-		//sync.on_headers(2, types::Headers::with_headers(vec![common_block.block_header.clone(), fork2[0].block_header.clone(), fork2[1].block_header.clone(), fork2[2].block_header.clone()]));
-
-		//let tasks = { executor.take_tasks() };
-		//assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![fork1[1].hash(), fork1[0].hash(), common_block.hash()]),
-			//request_blocks(1, vec![common_block.hash(), fork1[0].hash(), fork1[1].hash()]),
-			//request_block_headers_genesis_and(2, vec![fork2[2].hash(), fork2[1].hash(), fork2[0].hash(), fork1[1].hash(), fork1[0].hash(), common_block.hash()]),
-			//request_blocks(2, vec![fork2[0].hash(), fork2[1].hash(), fork2[2].hash()]),
-		//]);
-
-		//// TODO: this will change from 3 to 4 after longest fork will be stored in the BestHeadersChain
-		//// however id doesn't affect sync process, as it is shown below
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.information().headers.best, 3);
-			//assert_eq!(chain.information().headers.total, 3);
-		//}
-
-		//sync.on_block(1, common_block.clone().into());
-		//sync.on_block(1, fork1[0].clone().into());
-		//sync.on_block(1, fork1[1].clone().into());
-		//sync.on_block(2, fork2[0].clone().into());
-		//sync.on_block(2, fork2[1].clone().into());
-		//sync.on_block(2, fork2[2].clone().into());
-
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.best_storage_block().hash, fork2[2].hash());
-			//assert_eq!(chain.best_storage_block().number, 4);
-		//}
-	//}
-
-	//#[test]
-	//fn accept_out_of_order_blocks_when_saturated() {
-		//let (_, core, sync) = create_sync(None, None);
-
-		//sync.on_block(1, test_data::block_h2().into());
-		//assert_eq!(core.lock().information().orphaned_blocks, 1);
-
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.best_storage_block().number, 0);
-		//}
-
-		//sync.on_block(1, test_data::block_h1().into());
-		//assert_eq!(core.lock().information().orphaned_blocks, 0);
-
-		//{
-			//let mut core = core.lock(); let chain = core.chain();
-			//assert_eq!(chain.best_storage_block().number, 2);
-		//}
-	//}
-
-	//#[test]
-	//fn do_not_rerequest_unknown_block_in_inventory() {
-		//let (executor, _, sync) = create_sync(None, None);
-
-		//sync.on_block(1, test_data::block_h2().into());
-		//sync.on_inventory(1, types::Inv::with_inventory(vec![
-			//InventoryVector::block(test_data::block_h1().hash()),
-			//InventoryVector::block(test_data::block_h2().hash()),
-		//]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![Task::GetData(1, types::GetData::with_inventory(vec![
-			//InventoryVector::block(test_data::block_h1().hash())
-		//]))]);
-	//}
-
-	//#[test]
-	//fn blocks_rerequested_on_peer_disconnect() {
-		//let (executor, _, sync) = create_sync(None, None);
-
-		//let block1: Block = test_data::block_h1();
-		//let block2: Block = test_data::block_h2();
-
-		//{
-			//// receive inventory from new peer#1
-			//sync.on_headers(1, types::Headers::with_headers(vec![block1.block_header.clone()]));
-			//// synchronization has started && new blocks have been requested
-			//let tasks = executor.take_tasks();
-			//assert_eq!(tasks, vec![
-				//request_block_headers_genesis_and(1, vec![block1.hash().clone()]),
-				//request_blocks(1, vec![block1.hash()])
-			//]);
-		//}
-
-		//{
-			//// receive inventory from new peer#2
-			//sync.on_headers(2, types::Headers::with_headers(vec![block1.block_header.clone(), block2.block_header.clone()]));
-			//// synchronization has started && new blocks have been requested
-			//let tasks = executor.take_tasks();
-			//assert_eq!(tasks, vec![
-				//request_block_headers_genesis_and(2, vec![block2.hash().clone(), block1.hash().clone()]),
-				//request_blocks(2, vec![block2.hash()])
-			//]);
-		//}
-
-		//{
-			//// peer#1 is disconnected && it has pending blocks requests => ask peer#2
-			//sync.on_disconnect(1);
-			//// blocks have been requested
-			//let tasks = executor.take_tasks();
-			//assert_eq!(tasks, vec![request_blocks(2, vec![block1.hash()])]);
-		//}
-	//}
-
-	//#[test]
-	//fn sync_after_db_insert_nonfatal_fail() {
-		//use db::Store;
-
-		//let mut storage = db::TestStorage::with_genesis_block();
-		//let block = test_data::block_h1();
-		//storage.insert_error(block.hash(), db::Error::Consistency(db::ConsistencyError::NoBestBlock));
-		//let best_genesis = storage.best_block().unwrap();
-
-		//let (_, core, sync) = create_sync(Some(Arc::new(storage)), None);
-
-		//sync.on_block(1, block.into());
-
-		//let mut core = core.lock(); let chain = core.chain();
-		//assert_eq!(chain.best_block(), best_genesis);
-	//}
-
-	//#[test]
-	//fn peer_removed_from_sync_after_responding_with_requested_block_notfound() {
-		//let (executor, core, sync) = create_sync(None, None);
-
-		//let b1 = test_data::block_h1();
-		//let b2 = test_data::block_h2();
-		//sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![b2.hash().clone(), b1.hash().clone()]), request_blocks(1, vec![b1.hash(), b2.hash()])]);
-
-		//assert_eq!(core.lock().information().peers_tasks.idle, 0);
-		//assert_eq!(core.lock().information().peers_tasks.unuseful, 0);
-		//assert_eq!(core.lock().information().peers_tasks.active, 1);
-
-		//sync.on_notfound(1, types::NotFound::with_inventory(vec![InventoryVector::block(b1.hash())]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![request_block_headers_genesis(1), Task::MemoryPool(1)]);
-
-		//assert_eq!(core.lock().information().peers_tasks.idle, 0);
-		//assert_eq!(core.lock().information().peers_tasks.unuseful, 1);
-		//assert_eq!(core.lock().information().peers_tasks.active, 0);
-	//}
-
-	//#[test]
-	//fn peer_not_removed_from_sync_after_responding_with_non_requested_block_notfound() {
-		//let (executor, core, sync) = create_sync(None, None);
-
-		//let b1 = test_data::block_h1();
-		//let b2 = test_data::block_h2();
-		//sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![b2.hash().clone(), b1.hash().clone()]), request_blocks(1, vec![b1.hash(), b2.hash()])]);
-
-		//assert_eq!(core.lock().information().peers_tasks.idle, 0);
-		//assert_eq!(core.lock().information().peers_tasks.unuseful, 0);
-		//assert_eq!(core.lock().information().peers_tasks.active, 1);
-
-		//sync.on_notfound(1, types::NotFound::with_inventory(vec![InventoryVector::block(test_data::block_h170().hash())]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![]);
-
-		//assert_eq!(core.lock().information().peers_tasks.idle, 0);
-		//assert_eq!(core.lock().information().peers_tasks.unuseful, 0);
-		//assert_eq!(core.lock().information().peers_tasks.active, 1);
-	//}
-
-	//#[test]
-	//fn transaction_is_not_requested_when_synchronizing() {
-		//let (executor, core, sync) = create_sync(None, None);
-
-		//let b1 = test_data::block_h1();
-		//let b2 = test_data::block_h2();
-		//sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
-
-		//assert!(core.lock().information().state.is_synchronizing());
-		//{ executor.take_tasks(); } // forget tasks
-
-		//sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![]);
-	//}
-
-	//#[test]
-	//fn transaction_is_requested_when_not_synchronizing() {
-		//let (executor, core, sync) = create_sync(None, None);
-
-		//sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
-
-		//{
-			//let tasks = executor.take_tasks();
-			//assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![InventoryVector::tx(H256::from(0))]))]);
-		//}
-
-		//let b1 = test_data::block_h1();
-		//sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone()]));
-
-		//assert!(core.lock().information().state.is_nearly_saturated());
-		//{ executor.take_tasks(); } // forget tasks
-
-		//sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(1))]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![InventoryVector::tx(H256::from(1))]))]);
-	//}
-
-	//#[test]
-	//fn same_transaction_can_be_requested_twice() {
-		//let (executor, _, sync) = create_sync(None, None);
-
-		//sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![
-			//InventoryVector::tx(H256::from(0))
-		//]))]);
-
-		//sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![
-			//InventoryVector::tx(H256::from(0))
-		//]))]);
-	//}
-
-	//#[test]
-	//fn known_transaction_is_not_requested() {
-		//let (executor, _, sync) = create_sync(None, None);
-
-		//sync.on_inventory(0, types::Inv::with_inventory(vec![
-			//InventoryVector::tx(test_data::genesis().transactions[0].hash()),
-			//InventoryVector::tx(H256::from(0)),
-		//]));
-		//assert_eq!(executor.take_tasks(), vec![Task::GetData(0, types::GetData::with_inventory(vec![
-			//InventoryVector::tx(H256::from(0))
-		//]))]);
-	//}
-
-	//#[test]
-	//fn transaction_is_not_accepted_when_synchronizing() {
-		//let (_, core, sync) = create_sync(None, None);
-
-		//let b1 = test_data::block_h1();
-		//let b2 = test_data::block_h2();
-		//sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
-
-		//assert!(core.lock().information().state.is_synchronizing());
-
-		//sync.on_transaction(1, Transaction::default().into());
-
-		//assert_eq!(core.lock().information().chain.transactions.transactions_count, 0);
-	//}
-
-	//#[test]
-	//fn transaction_is_accepted_when_not_synchronizing() {
-		//let (_, core, sync) = create_sync(None, None);
-
-		//sync.on_transaction(1, test_data::TransactionBuilder::with_version(1).into());
-		//assert_eq!(core.lock().information().chain.transactions.transactions_count, 1);
-
-		//let b1 = test_data::block_h1();
-		//sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone()]));
-
-		//assert!(core.lock().information().state.is_nearly_saturated());
-
-		//sync.on_transaction(1, test_data::TransactionBuilder::with_version(2).into());
-		//assert_eq!(core.lock().information().chain.transactions.transactions_count, 2);
-	//}
-
-	//#[test]
-	//fn transaction_is_orphaned_when_input_is_unknown() {
-		//let (_, core, sync) = create_sync(None, None);
-
-		//sync.on_transaction(1, test_data::TransactionBuilder::with_default_input(0).into());
-		//assert_eq!(core.lock().information().chain.transactions.transactions_count, 0);
-		//assert_eq!(core.lock().information().orphaned_transactions, 1);
-	//}
-
-	//#[test]
-	//fn orphaned_transaction_is_verified_when_input_is_received() {
-		//let chain = &mut test_data::ChainBuilder::new();
-		//test_data::TransactionBuilder::with_output(10).store(chain)		// t0
-			//.set_input(&chain.at(0), 0).set_output(20).store(chain);	// t0 -> t1
-
-		//let (_, core, sync) = create_sync(None, None);
-
-		//sync.on_transaction(1, chain.at(1).into());
-		//assert_eq!(core.lock().information().chain.transactions.transactions_count, 0);
-		//assert_eq!(core.lock().information().orphaned_transactions, 1);
-
-		//sync.on_transaction(1, chain.at(0).into());
-		//assert_eq!(core.lock().information().chain.transactions.transactions_count, 2);
-		//assert_eq!(core.lock().information().orphaned_transactions, 0);
-	//}
-
-	//#[test]
-	//// https://github.com/ethcore/parity-bitcoin/issues/121
-	//fn when_previous_block_verification_failed_fork_is_not_requested() {
-		//// got headers [b10, b11, b12] - some fork
-		//// got headers [b10, b21, b22] - main branch
-		//// got b10, b11, b12, b21. b22 is requested
-		////
-		//// verifying: [b10, b11, b12, b21]
-		//// headers_chain: [b10, b11, b12]
-		////
-		//// b21 verification failed => b22 is not removed (since it is not in headers_chain)
-		//// got new headers [b10, b21, b22, b23] => intersection point is b10 => scheduling [b21, b22, b23]
-		////
-		//// block queue is empty => new tasks => requesting [b21, b22] => panic in hash_queue
-		////
-		//// => do not trust first intersection point - check each hash when scheduling hashes.
-		//// If at least one hash is known => previous verification failed => drop all headers.
-
-		//let genesis = test_data::genesis();
-		//let b10 = test_data::block_builder().header().parent(genesis.hash()).build().build();
-
-		//let b11 = test_data::block_builder().header().nonce(1).parent(b10.hash()).build().build();
-		//let b12 = test_data::block_builder().header().parent(b11.hash()).build().build();
-
-		//let b21 = test_data::block_builder().header().nonce(2).parent(b10.hash()).build().build();
-		//let b22 = test_data::block_builder().header().parent(b21.hash()).build().build();
-		//let b23 = test_data::block_builder().header().parent(b22.hash()).build().build();
-
-		//// simulate verification during b21 verification
-		//let mut dummy_verifier = DummyVerifier::default();
-		//dummy_verifier.error_when_verifying(b21.hash(), "simulated");
-
-		//let (_, _, sync) = create_sync(None, Some(dummy_verifier));
-
-		//sync.on_headers(1, types::Headers::with_headers(vec![b10.block_header.clone(), b11.block_header.clone(), b12.block_header.clone()]));
-		//sync.on_headers(2, types::Headers::with_headers(vec![b10.block_header.clone(), b21.block_header.clone(), b22.block_header.clone()]));
-
-		//sync.on_block(1, b10.clone().into());
-		//sync.on_block(1, b11.into());
-		//sync.on_block(1, b12.into());
-
-		//sync.on_block(2, b21.clone().into());
-
-		//// should not panic here
-		//sync.on_headers(2, types::Headers::with_headers(vec![b10.block_header.clone(), b21.block_header.clone(),
-			//b22.block_header.clone(), b23.block_header.clone()]));
-	//}
-
-	//#[test]
-	//fn relay_new_block_when_in_saturated_state() {
-		//let (executor, _, sync) = create_sync(None, None);
-		//let genesis = test_data::genesis();
-		//let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
-		//let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
-		//let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
-		//let b3 = test_data::block_builder().header().parent(b2.hash()).build().build();
-
-		//sync.on_headers(1, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone()]));
-		//sync.on_block(1, b0.clone().into());
-		//sync.on_block(1, b1.clone().into());
-
-		//// we were in synchronization state => block is not relayed
-		//{
-
-			//let tasks = executor.take_tasks();
-			//assert_eq!(tasks, vec![
-				//request_block_headers_genesis_and(1, vec![b1.hash(), b0.hash()]),
-				//request_blocks(1, vec![b0.hash(), b1.hash()]),
-				//request_block_headers_genesis_and(1, vec![b1.hash(), b0.hash()]),
-				//Task::MemoryPool(1)
-			//]);
-		//}
-
-		//sync.on_block(2, b2.clone().into());
-
-		//// we were in saturated state => block is relayed
-		//{
-			//let tasks = executor.take_tasks();
-			//assert_eq!(tasks, vec![
-				//request_block_headers_genesis_and(2, vec![b2.hash(), b1.hash(), b0.hash()]),
-				//Task::RelayNewBlock(b2.clone().into())
-			//]);
-		//}
-
-		//sync.on_headers(1, types::Headers::with_headers(vec![b3.block_header.clone()]));
-		//sync.on_block(1, b3.clone().into());
-
-		//// we were in nearly saturated state => block is relayed
-		//{
-			//let tasks = executor.take_tasks();
-			//assert!(tasks.iter().any(|t| t == &Task::RelayNewBlock(b3.clone().into())));
-		//}
-	//}
-
-	//#[test]
-	//fn relay_new_transaction_when_in_saturated_state() {
-		//let (executor, _, sync) = create_sync(None, None);
-
-		//let tx: Transaction = test_data::TransactionBuilder::with_output(20).into();
-
-		//sync.on_connect(1);
-		//executor.take_tasks();
-
-		//sync.on_transaction(2, tx.clone().into());
-
-		//let tasks = executor.take_tasks();
-		//assert_eq!(tasks, vec![Task::RelayNewTransaction(tx.into(), 0)]);
-	//}
-
-	//#[test]
-	//fn receive_same_unknown_block_twice() {
-		//let (_, _, sync) = create_sync(None, None);
-
-		//sync.on_block(1, test_data::block_h2().into());
-		//// should not panic here
-		//sync.on_block(2, test_data::block_h2().into());
-	//}
-
-	//#[test]
-	//fn collection_closed_on_block_verification_error() {
-		//let genesis = test_data::genesis();
-		//let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
-
-		//// simulate verification error during b0 verification
-		//let mut dummy_verifier = DummyVerifier::default();
-		//dummy_verifier.error_when_verifying(b0.hash(), "simulated");
-
-		//let (_, core, sync) = create_sync(None, Some(dummy_verifier));
-
-		//core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
-		//assert!(core.lock().peers.enumerate().contains(&0));
-
-		//sync.on_block(0, b0.into());
-
-		//assert!(!core.lock().peers.enumerate().contains(&0));
-	//}
-
-	//#[test]
-	//fn collection_closed_on_begin_dead_end_block_header() {
-		//let genesis = test_data::genesis();
-		//let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
-		//let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
-		//let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
-
-		//let (_, core, sync) = create_sync(None, None);
-		//{
-			//let mut core = core.lock(); let mut chain = core.chain();
-			//chain.mark_dead_end_block(&b0.hash());
-		//}
-
-		//core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
-		//assert!(core.lock().peers.enumerate().contains(&0));
-
-		//sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
-
-		//assert!(!core.lock().peers.enumerate().contains(&0));
-	//}
-
-	//#[test]
-	//fn collection_closed_on_in_middle_dead_end_block_header() {
-		//let genesis = test_data::genesis();
-		//let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
-		//let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
-		//let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
-
-		//let (_, core, sync) = create_sync(None, None);
-		//{
-			//let mut core = core.lock(); let mut chain = core.chain();
-			//chain.mark_dead_end_block(&b1.hash());
-		//}
-
-		//core.lock().set_verify_headers(true);
-		//core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
-		//assert!(core.lock().peers.enumerate().contains(&0));
-
-		//sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
-
-		//assert!(!core.lock().peers.enumerate().contains(&0));
-	//}
-
-	//#[test]
-	//fn collection_closed_on_providing_dead_end_block() {
-		//let genesis = test_data::genesis();
-		//let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
-
-		//let (_, core, sync) = create_sync(None, None);
-		//{
-			//let mut core = core.lock(); let mut chain = core.chain();
-			//chain.mark_dead_end_block(&b0.hash());
-		//}
-
-		//core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
-		//assert!(core.lock().peers.enumerate().contains(&0));
-
-		//sync.on_block(0, b0.into());
-
-		//assert!(!core.lock().peers.enumerate().contains(&0));
-	//}
-
-	//#[test]
-	//fn collection_closed_on_providing_child_dead_end_block() {
-		//let genesis = test_data::genesis();
-		//let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
-		//let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
-
-		//let (_, core, sync) = create_sync(None, None);
-		//{
-			//let mut core = core.lock(); let mut chain = core.chain();
-			//chain.mark_dead_end_block(&b0.hash());
-		//}
-
-		//core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
-		//assert!(core.lock().peers.enumerate().contains(&0));
-
-		//sync.on_block(0, b1.into());
-
-		//assert!(!core.lock().peers.enumerate().contains(&0));
-	//}
-
-	//#[test]
-	//fn when_peer_does_not_respond_to_block_requests() {
-		//let genesis = test_data::genesis();
-		//let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build(); // block we will stuck with
-		//let b1 = test_data::block_builder().header().parent(genesis.hash()).build().build(); // another branch
-		//let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
-
-		//let (executor, core, sync) = create_sync(None, None);
-
-		//// when peer1 announces 'false' b0
-		//sync.on_headers(1, types::Headers::with_headers(vec![b0.block_header.clone()]));
-		//// and peer2 announces 'true' b1
-		//sync.on_headers(2, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
-
-		//// check that all blocks are requested
-		//assert_eq!(core.lock().information().chain.requested, 3);
-
-		//// forget tasks
-		//{ executor.take_tasks(); }
-
-		//// and then peer2 responds with with b1 while b0 is still left in queue
-		//sync.on_block(2, b1.into());
-
-		//// now simulate some time has passed && number of b0 failures is @max level
-		//{
-			//let mut core = core.lock();
-			//core.forget_failed_blocks(&vec![b0.hash()]);
-			//core.execute_synchronization_tasks(None, Some(vec![b0.hash()]));
-		//}
-
-		//// check that only one block (b2) is requested
-		//assert_eq!(core.lock().information().chain.requested, 1);
-	//}
-
-	//#[test]
-	//fn when_got_same_orphan_transaction_twice() {
-		//let (_, core, sync) = create_sync(None, None);
-
-		//sync.on_transaction(1, test_data::TransactionBuilder::with_default_input(0).into());
-		//assert_eq!(core.lock().information().chain.transactions.transactions_count, 0);
-		//assert_eq!(core.lock().information().orphaned_transactions, 1);
-
-		//// should not panic
-		//sync.on_transaction(1, test_data::TransactionBuilder::with_default_input(0).into());
-	//}
-
-	//#[test]
-	//fn when_transaction_replaces_locked_transaction() {
-		//// TODO
-	//}
-
-	//#[test]
-	//fn when_transaction_double_spends_during_reorg() {
-		//let b0 = test_data::block_builder().header().build()
-			//.transaction().coinbase()
-				//.output().value(10).build()
-				//.build()
-			//.transaction()
-				//.output().value(20).build()
-				//.build()
-			//.transaction()
-				//.output().value(30).build()
-				//.build()
-			//.transaction()
-				//.output().value(40).build()
-				//.build()
-			//.transaction()
-				//.output().value(50).build()
-				//.build()
-			//.build();
-
-		//// in-storage spends b0[1] && b0[2]
-		//let b1 = test_data::block_builder()
-			//.transaction().coinbase()
-				//.output().value(50).build()
-				//.build()
-			//.transaction().version(10)
-				//.input().hash(b0.transactions[1].hash()).index(0).build()
-				//.output().value(10).build()
-				//.build()
-			//.transaction().version(40)
-				//.input().hash(b0.transactions[2].hash()).index(0).build()
-				//.output().value(10).build()
-				//.build()
-			//.merkled_header().parent(b0.hash()).build()
-			//.build();
-		//// in-memory spends b0[3]
-		//// in-memory spends b0[4]
-		//let future_block = test_data::block_builder().header().parent(b1.hash()).build()
-			//.transaction().version(40)
-				//.input().hash(b0.transactions[3].hash()).index(0).build()
-				//.output().value(10).build()
-				//.build()
-			//.transaction().version(50)
-				//.input().hash(b0.transactions[4].hash()).index(0).build()
-				//.output().value(10).build()
-				//.build()
-			//.build();
-		//let tx2: Transaction = future_block.transactions[0].clone();
-		//let tx3: Transaction = future_block.transactions[1].clone();
-
-		//// in-storage [side] spends b0[3]
-		//let b2 = test_data::block_builder().header().parent(b0.hash()).build()
-			//.transaction().coinbase()
-				//.output().value(5555).build()
-				//.build()
-			//.transaction().version(20)
-				//.input().hash(b0.transactions[3].hash()).index(0).build()
-				//.build()
-			//.merkled_header().parent(b0.hash()).build()
-			//.build();
-		//// in-storage [causes reorg to b2 + b3] spends b0[1]
-		//let b3 = test_data::block_builder()
-			//.transaction().coinbase().version(40)
-				//.output().value(50).build()
-				//.build()
-			//.transaction().version(30)
-				//.input().hash(b0.transactions[1].hash()).index(0).build()
-				//.output().value(10).build()
-				//.build()
-			//.merkled_header().parent(b2.hash()).build()
-			//.build();
-
-		//let mut dummy_verifier = DummyVerifier::default();
-		//dummy_verifier.actual_check_when_verifying(b3.hash());
-
-		//let storage = create_disk_storage();
-		//storage.insert_block(&b0).expect("no db error");
-
-		//let (_, core, sync) = create_sync(Some(storage), Some(dummy_verifier));
-		//sync.on_block(0, b1.clone().into());
-		//sync.on_transaction(0, tx2.clone().into());
-		//sync.on_transaction(0, tx3.clone().into());
-		//assert_eq!(core.lock().information().chain.stored, 2); // b0 + b1
-		//assert_eq!(core.lock().information().chain.transactions.transactions_count, 2); // tx2 + tx3
-
-		//// insert b2, which will make tx2 invalid, but not yet
-		//sync.on_block(0, b2.clone().into());
-		//assert_eq!(core.lock().information().chain.stored, 2); // b0 + b1
-		//assert_eq!(core.lock().information().chain.transactions.transactions_count, 2); // tx2 + tx3
-
-		//// insert b3 => best chain is b0 + b2 + b3
-		//// + transaction from b0 is reverified => ok
-		//// + tx2 will be reverified => fail
-		//// + tx3 will be reverified => ok
-		//sync.on_block(0, b3.clone().into());
-		//assert_eq!(core.lock().information().chain.stored, 3); // b0 + b2 + b3
-		//assert_eq!(core.lock().information().chain.transactions.transactions_count, 2); // b1[0] + tx3
-
-		//let mempool = core.lock().chain().memory_pool();
-		//assert!(mempool.write().remove_by_hash(&b1.transactions[2].hash()).is_some());
-		//assert!(mempool.write().remove_by_hash(&tx3.hash()).is_some());
-	//}
-
-	//#[test]
-	//fn sync_listener_calls() {
-		//let (_, _, sync) = create_sync(None, None);
-
-		//// install sync listener
-		//let data = Arc::new(Mutex::new(DummySyncListenerData::default()));
-		//sync.install_sync_listener(Box::new(DummySyncListener::new(data.clone())));
-
-		//// at the beginning, is_synchronizing must be equal to false
-		//assert_eq!(data.lock().is_synchronizing, false);
-		//assert_eq!(data.lock().best_blocks.len(), 0);
-
-		//// supply with new block header => is_synchronizing is still false
-		//sync.on_headers(0, types::Headers::with_headers(vec![test_data::block_h1().block_header]));
-		//assert_eq!(data.lock().is_synchronizing, false);
-		//assert_eq!(data.lock().best_blocks.len(), 0);
-
-		//// supply with 2 new blocks headers => is_synchronizing is true
-		//sync.on_headers(0, types::Headers::with_headers(vec![test_data::block_h2().block_header, test_data::block_h3().block_header]));
-		//assert_eq!(data.lock().is_synchronizing, true);
-		//assert_eq!(data.lock().best_blocks.len(), 0);
-
-		//// supply with block 3 => no new best block is informed
-		//sync.on_block(0, test_data::block_h3().into());
-		//assert_eq!(data.lock().is_synchronizing, true);
-		//assert_eq!(data.lock().best_blocks.len(), 0);
-
-		//// supply with block 1 => new best block is informed
-		//sync.on_block(0, test_data::block_h1().into());
-		//assert_eq!(data.lock().is_synchronizing, true);
-		//assert_eq!(data.lock().best_blocks.len(), 1);
-
-		//// supply with block 2 => 2 new best block is informed
-		//sync.on_block(0, test_data::block_h2().into());
-		//assert_eq!(data.lock().is_synchronizing, false);
-		//assert_eq!(data.lock().best_blocks.len(), 3);
-	//}
-//}
+	fn create_sync(storage: Option<StorageRef>, verifier: Option<DummyVerifier>) -> (Arc<DummyTaskExecutor>, ClientCoreRef<SynchronizationClientCore<DummyTaskExecutor>>, Arc<SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
+		let sync_peers = Arc::new(PeersImpl::default());
+		let storage = match storage {
+			Some(storage) => storage,
+			None => Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()])),
+		};
+		let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
+		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
+		let chain = Chain::new(storage.clone(), memory_pool.clone());
+		let executor = DummyTaskExecutor::new();
+		let config = Config { network: Magic::Mainnet, close_connection_on_bad_block: true };
+
+		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Unitest));
+		let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier.clone());
+		{
+			client_core.lock().set_verify_headers(false);
+		}
+		let mut verifier = verifier.unwrap_or_default();
+		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
+		verifier.set_storage(storage);
+		verifier.set_memory_pool(memory_pool);
+		verifier.set_verifier(chain_verifier);
+
+		let client = SynchronizationClient::new(sync_state, client_core.clone(), verifier);
+		(executor, client_core, client)
+	}
+
+	fn request_block_headers_genesis(peer_index: PeerIndex) -> Task {
+		Task::GetHeaders(peer_index, types::GetHeaders::with_block_locator_hashes(vec![test_data::genesis().hash()]))
+	}
+
+	fn request_block_headers_genesis_and(peer_index: PeerIndex, mut hashes: Vec<H256>) -> Task {
+		hashes.push(test_data::genesis().hash());
+		Task::GetHeaders(peer_index, types::GetHeaders::with_block_locator_hashes(hashes))
+	}
+
+	fn request_blocks(peer_index: PeerIndex, hashes: Vec<H256>) -> Task {
+		Task::GetData(peer_index, types::GetData {
+			inventory: hashes.into_iter().map(InventoryVector::block).collect(),
+		})
+	}
+
+	#[test]
+	fn synchronization_request_inventory_on_sync_start() {
+		let (executor, _, sync) = create_sync(None, None);
+		// start sync session
+		sync.on_connect(0);
+		// => ask for inventory
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![request_block_headers_genesis(0)]);
+	}
+
+	#[test]
+	fn synchronization_saturated_on_start() {
+		let (_, core, _) = create_sync(None, None);
+		let info = core.lock().information();
+		assert!(!info.state.is_synchronizing());
+		assert_eq!(info.orphaned_blocks, 0);
+		assert_eq!(info.orphaned_transactions, 0);
+	}
+
+	#[test]
+	fn synchronization_in_order_block_path_nearly_saturated() {
+		let (executor, core, sync) = create_sync(None, None);
+
+		let block1: Block = test_data::block_h1();
+		let block2: Block = test_data::block_h2();
+
+		sync.on_headers(5, types::Headers::with_headers(vec![block1.block_header.clone()]));
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![request_block_headers_genesis_and(5, vec![block1.hash()]), request_blocks(5, vec![block1.hash()])]);
+		assert!(core.lock().information().state.is_nearly_saturated());
+		assert_eq!(core.lock().information().orphaned_blocks, 0);
+		assert_eq!(core.lock().information().chain.scheduled, 0);
+		assert_eq!(core.lock().information().chain.requested, 1);
+		assert_eq!(core.lock().information().chain.stored, 1);
+		assert_eq!(core.lock().information().peers_tasks.idle, 0);
+		assert_eq!(core.lock().information().peers_tasks.active, 1);
+
+		// push unknown block => will be queued as orphan
+		sync.on_block(5, block2.into());
+		assert!(core.lock().information().state.is_nearly_saturated());
+		assert_eq!(core.lock().information().orphaned_blocks, 1);
+		assert_eq!(core.lock().information().chain.scheduled, 0);
+		assert_eq!(core.lock().information().chain.requested, 1);
+		assert_eq!(core.lock().information().chain.stored, 1);
+		assert_eq!(core.lock().information().peers_tasks.idle, 0);
+		assert_eq!(core.lock().information().peers_tasks.active, 1);
+
+		// push requested block => should be moved to the test storage && orphan should be moved
+		sync.on_block(5, block1.into());
+		assert!(core.lock().information().state.is_saturated());
+		assert_eq!(core.lock().information().orphaned_blocks, 0);
+		assert_eq!(core.lock().information().chain.scheduled, 0);
+		assert_eq!(core.lock().information().chain.requested, 0);
+		assert_eq!(core.lock().information().chain.stored, 3);
+		// we have just requested new `inventory` from the peer => peer is forgotten
+		assert_eq!(core.lock().information().peers_tasks.idle, 0);
+		assert_eq!(core.lock().information().peers_tasks.active, 0);
+	}
+
+	#[test]
+	fn synchronization_out_of_order_block_path() {
+		let (_, core, sync) = create_sync(None, None);
+
+		sync.on_headers(5, types::Headers::with_headers(vec![test_data::block_h1().block_header.clone(), test_data::block_h2().block_header.clone()]));
+		sync.on_block(5, test_data::block_h169().into());
+
+		// out-of-order block was presented by the peer
+		assert!(core.lock().information().state.is_synchronizing());
+		assert_eq!(core.lock().information().orphaned_blocks, 0);
+		assert_eq!(core.lock().information().chain.scheduled, 0);
+		assert_eq!(core.lock().information().chain.requested, 2);
+		assert_eq!(core.lock().information().chain.stored, 1);
+		// we have just requested new `inventory` from the peer => peer is forgotten
+		assert_eq!(core.lock().information().peers_tasks.idle, 0);
+		assert_eq!(core.lock().information().peers_tasks.active, 1);
+		// TODO: check that peer is penalized
+	}
+
+	#[test]
+	fn synchronization_parallel_peers() {
+		let (executor, core, sync) = create_sync(None, None);
+
+		let block1: Block = test_data::block_h1();
+		let block2: Block = test_data::block_h2();
+
+		{
+			// not synchronizing after start
+			assert!(core.lock().information().state.is_saturated());
+			// receive inventory from new peer#1
+			sync.on_headers(1, types::Headers::with_headers(vec![block1.block_header.clone()]));
+			assert_eq!(core.lock().information().chain.requested, 1);
+			// synchronization has started && new blocks have been requested
+			let tasks = executor.take_tasks();
+			assert!(core.lock().information().state.is_nearly_saturated());
+			assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![block1.hash()]), request_blocks(1, vec![block1.hash()])]);
+		}
+
+		{
+			// receive inventory from new peer#2
+			sync.on_headers(2, types::Headers::with_headers(vec![block1.block_header.clone(), block2.block_header.clone()]));
+			assert_eq!(core.lock().information().chain.requested, 2);
+			// synchronization has started && new blocks have been requested
+			let tasks = executor.take_tasks();
+			assert!(core.lock().information().state.is_synchronizing());
+			assert_eq!(tasks, vec![request_block_headers_genesis_and(2, vec![block2.hash(), block1.hash()]), request_blocks(2, vec![block2.hash()])]);
+		}
+
+		{
+			// receive block from peer#2
+			sync.on_block(2, block2.into());
+			let information = core.lock().information();
+			assert!(information.chain.requested == 2 && information.orphaned_blocks == 1);
+			// receive block from peer#1
+			sync.on_block(1, block1.into());
+
+			let information = core.lock().information();
+			assert!(information.chain.requested == 0
+				&& information.orphaned_blocks == 0
+				&& information.chain.stored == 3);
+		}
+	}
+
+	#[test]
+	fn synchronization_reset_when_peer_is_disconnected() {
+		let (_, core, sync) = create_sync(None, None);
+
+		// request new blocks
+		{
+			sync.on_headers(1, types::Headers::with_headers(vec![test_data::block_h1().block_header]));
+			assert!(core.lock().information().state.is_nearly_saturated());
+		}
+
+		// lost connection to peer => synchronization state lost
+		{
+			sync.on_disconnect(1);
+			assert!(core.lock().information().state.is_saturated());
+		}
+	}
+
+	#[test]
+	fn synchronization_not_starting_when_receiving_known_blocks() {
+		let (executor, core, sync) = create_sync(None, None);
+		// saturated => receive inventory with known blocks only
+		sync.on_headers(1, types::Headers::with_headers(vec![test_data::genesis().block_header]));
+		// => no need to start synchronization
+		assert!(!core.lock().information().state.is_nearly_saturated());
+		// => no synchronization tasks are scheduled
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![]);
+	}
+
+	#[test]
+	fn synchronization_asks_for_inventory_after_saturating() {
+		let (executor, _, sync) = create_sync(None, None);
+		let block = test_data::block_h1();
+		sync.on_headers(1, types::Headers::with_headers(vec![block.block_header.clone()]));
+		sync.on_headers(2, types::Headers::with_headers(vec![block.block_header.clone()]));
+		executor.take_tasks();
+		sync.on_block(2, block.clone().into());
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks.len(), 6);
+		// TODO: when saturating, RequestBlocksHeaders is sent twice to the peer who has supplied last block:
+		// 1) from on_block_verification_success
+		// 2) from switch_to_saturated_state
+		assert!(tasks.iter().any(|t| t == &request_block_headers_genesis_and(1, vec![block.hash()])));
+		assert!(tasks.iter().any(|t| t == &request_block_headers_genesis_and(2, vec![block.hash()])));
+		assert!(tasks.iter().any(|t| t == &Task::MemoryPool(1)));
+		assert!(tasks.iter().any(|t| t == &Task::MemoryPool(2)));
+		assert!(tasks.iter().any(|t| t == &Task::RelayNewBlock(block.clone().into())));
+	}
+
+	#[test]
+	fn synchronization_remembers_correct_block_headers_in_order() {
+		let (executor, core, sync) = create_sync(None, None);
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks.len(), 2);
+		assert!(tasks.iter().any(|t| t == &request_block_headers_genesis_and(1, vec![b2.hash(), b1.hash()])));
+		assert!(tasks.iter().any(|t| t == &request_blocks(1, vec![b1.hash(), b2.hash()])));
+
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.information().headers.best, 2);
+			assert_eq!(chain.information().headers.total, 2);
+		}
+
+		sync.on_block(1, b1.clone().into());
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![]);
+
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.information().headers.best, 1);
+			assert_eq!(chain.information().headers.total, 1);
+		}
+
+		sync.on_block(1, b2.clone().into());
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![b2.hash(), b1.hash()]), Task::MemoryPool(1)]);
+
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.information().headers.best, 0);
+			assert_eq!(chain.information().headers.total, 0);
+		}
+	}
+
+	#[test]
+	fn synchronization_remembers_correct_block_headers_out_of_order() {
+		let (executor, core, sync) = create_sync(None, None);
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks.len(), 2);
+		assert!(tasks.iter().any(|t| t == &request_block_headers_genesis_and(1, vec![b2.hash(), b1.hash()])));
+		assert!(tasks.iter().any(|t| t == &request_blocks(1, vec![b1.hash(), b2.hash()])));
+
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.information().headers.best, 2);
+			assert_eq!(chain.information().headers.total, 2);
+		}
+
+		sync.on_block(1, b2.clone().into());
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![]);
+
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.information().headers.best, 2);
+			assert_eq!(chain.information().headers.total, 2);
+		}
+
+		sync.on_block(1, b1.clone().into());
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![b2.hash(), b1.hash()]), Task::MemoryPool(1)]);
+
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.information().headers.best, 0);
+			assert_eq!(chain.information().headers.total, 0);
+		}
+	}
+
+	#[test]
+	fn synchronization_ignores_unknown_block_headers() {
+		let (executor, core, sync) = create_sync(None, None);
+
+		let b169 = test_data::block_h169();
+		sync.on_headers(1, types::Headers::with_headers(vec![b169.block_header]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![]);
+
+		let mut core = core.lock(); let chain = core.chain();
+		assert_eq!(chain.information().headers.best, 0);
+		assert_eq!(chain.information().headers.total, 0);
+	}
+
+	#[test]
+	fn synchronization_works_for_forks_from_db_best_block() {
+		let genesis = test_data::genesis();
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+
+		let (executor, core, sync) = create_sync(Some(storage), None);
+		let genesis_header = &genesis.block_header;
+		let fork1 = test_data::build_n_empty_blocks_from(2, 100, &genesis_header);
+		let fork2 = test_data::build_n_empty_blocks_from(3, 200, &genesis_header);
+
+		sync.on_headers(1, types::Headers::with_headers(vec![fork1[0].block_header.clone(), fork1[1].block_header.clone()]));
+		sync.on_headers(2, types::Headers::with_headers(vec![fork2[0].block_header.clone(), fork2[1].block_header.clone(), fork2[2].block_header.clone()]));
+		let tasks = { executor.take_tasks() };
+		assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![fork1[1].hash(), fork1[0].hash()]),
+			request_blocks(1, vec![fork1[0].hash(), fork1[1].hash()]),
+			// this is possibly wrong, because we have mixed two forks, but this works because we ask for headers on saturating
+			request_block_headers_genesis_and(2, vec![fork2[2].hash(), fork2[1].hash(), fork2[0].hash(), fork1[1].hash(), fork1[0].hash()]),
+			request_blocks(2, vec![fork2[0].hash(), fork2[1].hash(), fork2[2].hash()]),
+		]);
+
+		sync.on_block(2, fork2[0].clone().into());
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.best_storage_block().hash, fork2[0].hash());
+			assert_eq!(chain.best_storage_block().number, 1);
+		}
+
+		sync.on_block(1, fork1[0].clone().into());
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.best_storage_block().hash, fork2[0].hash());
+			assert_eq!(chain.best_storage_block().number, 1);
+		}
+
+		sync.on_block(1, fork1[1].clone().into());
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
+			assert_eq!(chain.best_storage_block().number, 2);
+		}
+
+		sync.on_block(2, fork2[1].clone().into());
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.best_storage_block().hash, fork1[1].hash());
+			assert_eq!(chain.best_storage_block().number, 2);
+		}
+
+		sync.on_block(2, fork2[2].clone().into());
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.best_storage_block().hash, fork2[2].hash());
+			assert_eq!(chain.best_storage_block().number, 3);
+		}
+	}
+
+	#[test]
+	fn synchronization_works_for_forks_long_after_short() {
+		let genesis = test_data::genesis();
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+
+		let (executor, core, sync) = create_sync(Some(storage), None);
+		let common_block = test_data::block_builder().header().parent(genesis.hash()).build().build();
+		let fork1 = test_data::build_n_empty_blocks_from(2, 100, &common_block.block_header);
+		let fork2 = test_data::build_n_empty_blocks_from(3, 200, &common_block.block_header);
+
+		sync.on_headers(1, types::Headers::with_headers(vec![common_block.block_header.clone(), fork1[0].block_header.clone(), fork1[1].block_header.clone()]));
+		sync.on_headers(2, types::Headers::with_headers(vec![common_block.block_header.clone(), fork2[0].block_header.clone(), fork2[1].block_header.clone(), fork2[2].block_header.clone()]));
+
+		let tasks = { executor.take_tasks() };
+		assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![fork1[1].hash(), fork1[0].hash(), common_block.hash()]),
+			request_blocks(1, vec![common_block.hash(), fork1[0].hash(), fork1[1].hash()]),
+			request_block_headers_genesis_and(2, vec![fork2[2].hash(), fork2[1].hash(), fork2[0].hash(), fork1[1].hash(), fork1[0].hash(), common_block.hash()]),
+			request_blocks(2, vec![fork2[0].hash(), fork2[1].hash(), fork2[2].hash()]),
+		]);
+
+		// TODO: this will change from 3 to 4 after longest fork will be stored in the BestHeadersChain
+		// however id doesn't affect sync process, as it is shown below
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.information().headers.best, 3);
+			assert_eq!(chain.information().headers.total, 3);
+		}
+
+		sync.on_block(1, common_block.clone().into());
+		sync.on_block(1, fork1[0].clone().into());
+		sync.on_block(1, fork1[1].clone().into());
+		sync.on_block(2, fork2[0].clone().into());
+		sync.on_block(2, fork2[1].clone().into());
+		sync.on_block(2, fork2[2].clone().into());
+
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.best_storage_block().hash, fork2[2].hash());
+			assert_eq!(chain.best_storage_block().number, 4);
+		}
+	}
+
+	#[test]
+	fn accept_out_of_order_blocks_when_saturated() {
+		let (_, core, sync) = create_sync(None, None);
+
+		sync.on_block(1, test_data::block_h2().into());
+		assert_eq!(core.lock().information().orphaned_blocks, 1);
+
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.best_storage_block().number, 0);
+		}
+
+		sync.on_block(1, test_data::block_h1().into());
+		assert_eq!(core.lock().information().orphaned_blocks, 0);
+
+		{
+			let mut core = core.lock(); let chain = core.chain();
+			assert_eq!(chain.best_storage_block().number, 2);
+		}
+	}
+
+	#[test]
+	fn do_not_rerequest_unknown_block_in_inventory() {
+		let (executor, _, sync) = create_sync(None, None);
+
+		sync.on_block(1, test_data::block_h2().into());
+		sync.on_inventory(1, types::Inv::with_inventory(vec![
+			InventoryVector::block(test_data::block_h1().hash()),
+			InventoryVector::block(test_data::block_h2().hash()),
+		]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![Task::GetData(1, types::GetData::with_inventory(vec![
+			InventoryVector::block(test_data::block_h1().hash())
+		]))]);
+	}
+
+	#[test]
+	fn blocks_rerequested_on_peer_disconnect() {
+		let (executor, _, sync) = create_sync(None, None);
+
+		let block1: Block = test_data::block_h1();
+		let block2: Block = test_data::block_h2();
+
+		{
+			// receive inventory from new peer#1
+			sync.on_headers(1, types::Headers::with_headers(vec![block1.block_header.clone()]));
+			// synchronization has started && new blocks have been requested
+			let tasks = executor.take_tasks();
+			assert_eq!(tasks, vec![
+				request_block_headers_genesis_and(1, vec![block1.hash().clone()]),
+				request_blocks(1, vec![block1.hash()])
+			]);
+		}
+
+		{
+			// receive inventory from new peer#2
+			sync.on_headers(2, types::Headers::with_headers(vec![block1.block_header.clone(), block2.block_header.clone()]));
+			// synchronization has started && new blocks have been requested
+			let tasks = executor.take_tasks();
+			assert_eq!(tasks, vec![
+				request_block_headers_genesis_and(2, vec![block2.hash().clone(), block1.hash().clone()]),
+				request_blocks(2, vec![block2.hash()])
+			]);
+		}
+
+		{
+			// peer#1 is disconnected && it has pending blocks requests => ask peer#2
+			sync.on_disconnect(1);
+			// blocks have been requested
+			let tasks = executor.take_tasks();
+			assert_eq!(tasks, vec![request_blocks(2, vec![block1.hash()])]);
+		}
+	}
+
+	#[test]
+	fn sync_after_db_insert_nonfatal_fail() {
+		let block = test_data::block_h2();
+		let storage = BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]);
+		assert!(storage.insert(&test_data::block_h2().into()).is_err());
+		let best_genesis = storage.best_block();
+
+		let (_, core, sync) = create_sync(Some(Arc::new(storage)), None);
+
+		sync.on_block(1, block.into());
+
+		let mut core = core.lock(); let chain = core.chain();
+		assert_eq!(chain.best_block(), best_genesis);
+	}
+
+	#[test]
+	fn peer_removed_from_sync_after_responding_with_requested_block_notfound() {
+		let (executor, core, sync) = create_sync(None, None);
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![b2.hash().clone(), b1.hash().clone()]), request_blocks(1, vec![b1.hash(), b2.hash()])]);
+
+		assert_eq!(core.lock().information().peers_tasks.idle, 0);
+		assert_eq!(core.lock().information().peers_tasks.unuseful, 0);
+		assert_eq!(core.lock().information().peers_tasks.active, 1);
+
+		sync.on_notfound(1, types::NotFound::with_inventory(vec![InventoryVector::block(b1.hash())]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![request_block_headers_genesis(1), Task::MemoryPool(1)]);
+
+		assert_eq!(core.lock().information().peers_tasks.idle, 0);
+		assert_eq!(core.lock().information().peers_tasks.unuseful, 1);
+		assert_eq!(core.lock().information().peers_tasks.active, 0);
+	}
+
+	#[test]
+	fn peer_not_removed_from_sync_after_responding_with_non_requested_block_notfound() {
+		let (executor, core, sync) = create_sync(None, None);
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![b2.hash().clone(), b1.hash().clone()]), request_blocks(1, vec![b1.hash(), b2.hash()])]);
+
+		assert_eq!(core.lock().information().peers_tasks.idle, 0);
+		assert_eq!(core.lock().information().peers_tasks.unuseful, 0);
+		assert_eq!(core.lock().information().peers_tasks.active, 1);
+
+		sync.on_notfound(1, types::NotFound::with_inventory(vec![InventoryVector::block(test_data::block_h170().hash())]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![]);
+
+		assert_eq!(core.lock().information().peers_tasks.idle, 0);
+		assert_eq!(core.lock().information().peers_tasks.unuseful, 0);
+		assert_eq!(core.lock().information().peers_tasks.active, 1);
+	}
+
+	#[test]
+	fn transaction_is_not_requested_when_synchronizing() {
+		let (executor, core, sync) = create_sync(None, None);
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+
+		assert!(core.lock().information().state.is_synchronizing());
+		{ executor.take_tasks(); } // forget tasks
+
+		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![]);
+	}
+
+	#[test]
+	fn transaction_is_requested_when_not_synchronizing() {
+		let (executor, core, sync) = create_sync(None, None);
+
+		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
+
+		{
+			let tasks = executor.take_tasks();
+			assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![InventoryVector::tx(H256::from(0))]))]);
+		}
+
+		let b1 = test_data::block_h1();
+		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone()]));
+
+		assert!(core.lock().information().state.is_nearly_saturated());
+		{ executor.take_tasks(); } // forget tasks
+
+		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(1))]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![InventoryVector::tx(H256::from(1))]))]);
+	}
+
+	#[test]
+	fn same_transaction_can_be_requested_twice() {
+		let (executor, _, sync) = create_sync(None, None);
+
+		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![
+			InventoryVector::tx(H256::from(0))
+		]))]);
+
+		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![
+			InventoryVector::tx(H256::from(0))
+		]))]);
+	}
+
+	#[test]
+	fn known_transaction_is_not_requested() {
+		let (executor, _, sync) = create_sync(None, None);
+
+		sync.on_inventory(0, types::Inv::with_inventory(vec![
+			InventoryVector::tx(test_data::genesis().transactions[0].hash()),
+			InventoryVector::tx(H256::from(0)),
+		]));
+		assert_eq!(executor.take_tasks(), vec![Task::GetData(0, types::GetData::with_inventory(vec![
+			InventoryVector::tx(H256::from(0))
+		]))]);
+	}
+
+	#[test]
+	fn transaction_is_not_accepted_when_synchronizing() {
+		let (_, core, sync) = create_sync(None, None);
+
+		let b1 = test_data::block_h1();
+		let b2 = test_data::block_h2();
+		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+
+		assert!(core.lock().information().state.is_synchronizing());
+
+		sync.on_transaction(1, Transaction::default().into());
+
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 0);
+	}
+
+	#[test]
+	fn transaction_is_accepted_when_not_synchronizing() {
+		let (_, core, sync) = create_sync(None, None);
+
+		sync.on_transaction(1, test_data::TransactionBuilder::with_version(1).into());
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 1);
+
+		let b1 = test_data::block_h1();
+		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone()]));
+
+		assert!(core.lock().information().state.is_nearly_saturated());
+
+		sync.on_transaction(1, test_data::TransactionBuilder::with_version(2).into());
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 2);
+	}
+
+	#[test]
+	fn transaction_is_orphaned_when_input_is_unknown() {
+		let (_, core, sync) = create_sync(None, None);
+
+		sync.on_transaction(1, test_data::TransactionBuilder::with_default_input(0).into());
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 0);
+		assert_eq!(core.lock().information().orphaned_transactions, 1);
+	}
+
+	#[test]
+	fn orphaned_transaction_is_verified_when_input_is_received() {
+		let chain = &mut test_data::ChainBuilder::new();
+		test_data::TransactionBuilder::with_output(10).store(chain)		// t0
+			.set_input(&chain.at(0), 0).set_output(20).store(chain);	// t0 -> t1
+
+		let (_, core, sync) = create_sync(None, None);
+
+		sync.on_transaction(1, chain.at(1).into());
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 0);
+		assert_eq!(core.lock().information().orphaned_transactions, 1);
+
+		sync.on_transaction(1, chain.at(0).into());
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 2);
+		assert_eq!(core.lock().information().orphaned_transactions, 0);
+	}
+
+	#[test]
+	// https://github.com/ethcore/parity-bitcoin/issues/121
+	fn when_previous_block_verification_failed_fork_is_not_requested() {
+		// got headers [b10, b11, b12] - some fork
+		// got headers [b10, b21, b22] - main branch
+		// got b10, b11, b12, b21. b22 is requested
+		//
+		// verifying: [b10, b11, b12, b21]
+		// headers_chain: [b10, b11, b12]
+		//
+		// b21 verification failed => b22 is not removed (since it is not in headers_chain)
+		// got new headers [b10, b21, b22, b23] => intersection point is b10 => scheduling [b21, b22, b23]
+		//
+		// block queue is empty => new tasks => requesting [b21, b22] => panic in hash_queue
+		//
+		// => do not trust first intersection point - check each hash when scheduling hashes.
+		// If at least one hash is known => previous verification failed => drop all headers.
+
+		let genesis = test_data::genesis();
+		let b10 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+
+		let b11 = test_data::block_builder().header().nonce(1).parent(b10.hash()).build().build();
+		let b12 = test_data::block_builder().header().parent(b11.hash()).build().build();
+
+		let b21 = test_data::block_builder().header().nonce(2).parent(b10.hash()).build().build();
+		let b22 = test_data::block_builder().header().parent(b21.hash()).build().build();
+		let b23 = test_data::block_builder().header().parent(b22.hash()).build().build();
+
+		// simulate verification during b21 verification
+		let mut dummy_verifier = DummyVerifier::default();
+		dummy_verifier.error_when_verifying(b21.hash(), "simulated");
+
+		let (_, _, sync) = create_sync(None, Some(dummy_verifier));
+
+		sync.on_headers(1, types::Headers::with_headers(vec![b10.block_header.clone(), b11.block_header.clone(), b12.block_header.clone()]));
+		sync.on_headers(2, types::Headers::with_headers(vec![b10.block_header.clone(), b21.block_header.clone(), b22.block_header.clone()]));
+
+		sync.on_block(1, b10.clone().into());
+		sync.on_block(1, b11.into());
+		sync.on_block(1, b12.into());
+
+		sync.on_block(2, b21.clone().into());
+
+		// should not panic here
+		sync.on_headers(2, types::Headers::with_headers(vec![b10.block_header.clone(), b21.block_header.clone(),
+			b22.block_header.clone(), b23.block_header.clone()]));
+	}
+
+	#[test]
+	fn relay_new_block_when_in_saturated_state() {
+		let (executor, _, sync) = create_sync(None, None);
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+		let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
+		let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
+		let b3 = test_data::block_builder().header().parent(b2.hash()).build().build();
+
+		sync.on_headers(1, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone()]));
+		sync.on_block(1, b0.clone().into());
+		sync.on_block(1, b1.clone().into());
+
+		// we were in synchronization state => block is not relayed
+		{
+
+			let tasks = executor.take_tasks();
+			assert_eq!(tasks, vec![
+				request_block_headers_genesis_and(1, vec![b1.hash(), b0.hash()]),
+				request_blocks(1, vec![b0.hash(), b1.hash()]),
+				request_block_headers_genesis_and(1, vec![b1.hash(), b0.hash()]),
+				Task::MemoryPool(1)
+			]);
+		}
+
+		sync.on_block(2, b2.clone().into());
+
+		// we were in saturated state => block is relayed
+		{
+			let tasks = executor.take_tasks();
+			assert_eq!(tasks, vec![
+				request_block_headers_genesis_and(2, vec![b2.hash(), b1.hash(), b0.hash()]),
+				Task::RelayNewBlock(b2.clone().into())
+			]);
+		}
+
+		sync.on_headers(1, types::Headers::with_headers(vec![b3.block_header.clone()]));
+		sync.on_block(1, b3.clone().into());
+
+		// we were in nearly saturated state => block is relayed
+		{
+			let tasks = executor.take_tasks();
+			assert!(tasks.iter().any(|t| t == &Task::RelayNewBlock(b3.clone().into())));
+		}
+	}
+
+	#[test]
+	fn relay_new_transaction_when_in_saturated_state() {
+		let (executor, _, sync) = create_sync(None, None);
+
+		let tx: Transaction = test_data::TransactionBuilder::with_output(20).into();
+
+		sync.on_connect(1);
+		executor.take_tasks();
+
+		sync.on_transaction(2, tx.clone().into());
+
+		let tasks = executor.take_tasks();
+		assert_eq!(tasks, vec![Task::RelayNewTransaction(tx.into(), 0)]);
+	}
+
+	#[test]
+	fn receive_same_unknown_block_twice() {
+		let (_, _, sync) = create_sync(None, None);
+
+		sync.on_block(1, test_data::block_h2().into());
+		// should not panic here
+		sync.on_block(2, test_data::block_h2().into());
+	}
+
+	#[test]
+	fn collection_closed_on_block_verification_error() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+
+		// simulate verification error during b0 verification
+		let mut dummy_verifier = DummyVerifier::default();
+		dummy_verifier.error_when_verifying(b0.hash(), "simulated");
+
+		let (_, core, sync) = create_sync(None, Some(dummy_verifier));
+
+		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		assert!(core.lock().peers.enumerate().contains(&0));
+
+		sync.on_block(0, b0.into());
+
+		assert!(!core.lock().peers.enumerate().contains(&0));
+	}
+
+	#[test]
+	fn collection_closed_on_begin_dead_end_block_header() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+		let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
+		let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
+
+		let (_, core, sync) = create_sync(None, None);
+		{
+			let mut core = core.lock(); let mut chain = core.chain();
+			chain.mark_dead_end_block(&b0.hash());
+		}
+
+		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		assert!(core.lock().peers.enumerate().contains(&0));
+
+		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
+
+		assert!(!core.lock().peers.enumerate().contains(&0));
+	}
+
+	#[test]
+	fn collection_closed_on_in_middle_dead_end_block_header() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+		let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
+		let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
+
+		let (_, core, sync) = create_sync(None, None);
+		{
+			let mut core = core.lock(); let mut chain = core.chain();
+			chain.mark_dead_end_block(&b1.hash());
+		}
+
+		core.lock().set_verify_headers(true);
+		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		assert!(core.lock().peers.enumerate().contains(&0));
+
+		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
+
+		assert!(!core.lock().peers.enumerate().contains(&0));
+	}
+
+	#[test]
+	fn collection_closed_on_providing_dead_end_block() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+
+		let (_, core, sync) = create_sync(None, None);
+		{
+			let mut core = core.lock(); let mut chain = core.chain();
+			chain.mark_dead_end_block(&b0.hash());
+		}
+
+		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		assert!(core.lock().peers.enumerate().contains(&0));
+
+		sync.on_block(0, b0.into());
+
+		assert!(!core.lock().peers.enumerate().contains(&0));
+	}
+
+	#[test]
+	fn collection_closed_on_providing_child_dead_end_block() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build();
+		let b1 = test_data::block_builder().header().parent(b0.hash()).build().build();
+
+		let (_, core, sync) = create_sync(None, None);
+		{
+			let mut core = core.lock(); let mut chain = core.chain();
+			chain.mark_dead_end_block(&b0.hash());
+		}
+
+		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		assert!(core.lock().peers.enumerate().contains(&0));
+
+		sync.on_block(0, b1.into());
+
+		assert!(!core.lock().peers.enumerate().contains(&0));
+	}
+
+	#[test]
+	fn when_peer_does_not_respond_to_block_requests() {
+		let genesis = test_data::genesis();
+		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build(); // block we will stuck with
+		let b1 = test_data::block_builder().header().parent(genesis.hash()).build().build(); // another branch
+		let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
+
+		let (executor, core, sync) = create_sync(None, None);
+
+		// when peer1 announces 'false' b0
+		sync.on_headers(1, types::Headers::with_headers(vec![b0.block_header.clone()]));
+		// and peer2 announces 'true' b1
+		sync.on_headers(2, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+
+		// check that all blocks are requested
+		assert_eq!(core.lock().information().chain.requested, 3);
+
+		// forget tasks
+		{ executor.take_tasks(); }
+
+		// and then peer2 responds with with b1 while b0 is still left in queue
+		sync.on_block(2, b1.into());
+
+		// now simulate some time has passed && number of b0 failures is @max level
+		{
+			let mut core = core.lock();
+			core.forget_failed_blocks(&vec![b0.hash()]);
+			core.execute_synchronization_tasks(None, Some(vec![b0.hash()]));
+		}
+
+		// check that only one block (b2) is requested
+		assert_eq!(core.lock().information().chain.requested, 1);
+	}
+
+	#[test]
+	fn when_got_same_orphan_transaction_twice() {
+		let (_, core, sync) = create_sync(None, None);
+
+		sync.on_transaction(1, test_data::TransactionBuilder::with_default_input(0).into());
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 0);
+		assert_eq!(core.lock().information().orphaned_transactions, 1);
+
+		// should not panic
+		sync.on_transaction(1, test_data::TransactionBuilder::with_default_input(0).into());
+	}
+
+	#[test]
+	fn when_transaction_replaces_locked_transaction() {
+		// TODO
+	}
+
+	#[test]
+	fn when_transaction_double_spends_during_reorg() {
+		let b0 = test_data::block_builder().header().build()
+			.transaction().coinbase()
+				.output().value(10).build()
+				.build()
+			.transaction()
+				.output().value(20).build()
+				.build()
+			.transaction()
+				.output().value(30).build()
+				.build()
+			.transaction()
+				.output().value(40).build()
+				.build()
+			.transaction()
+				.output().value(50).build()
+				.build()
+			.build();
+
+		// in-storage spends b0[1] && b0[2]
+		let b1 = test_data::block_builder()
+			.transaction().coinbase()
+				.output().value(50).build()
+				.build()
+			.transaction().version(10)
+				.input().hash(b0.transactions[1].hash()).index(0).build()
+				.output().value(10).build()
+				.build()
+			.transaction().version(40)
+				.input().hash(b0.transactions[2].hash()).index(0).build()
+				.output().value(10).build()
+				.build()
+			.merkled_header().parent(b0.hash()).build()
+			.build();
+		// in-memory spends b0[3]
+		// in-memory spends b0[4]
+		let future_block = test_data::block_builder().header().parent(b1.hash()).build()
+			.transaction().version(40)
+				.input().hash(b0.transactions[3].hash()).index(0).build()
+				.output().value(10).build()
+				.build()
+			.transaction().version(50)
+				.input().hash(b0.transactions[4].hash()).index(0).build()
+				.output().value(10).build()
+				.build()
+			.build();
+		let tx2: Transaction = future_block.transactions[0].clone();
+		let tx3: Transaction = future_block.transactions[1].clone();
+
+		// in-storage [side] spends b0[3]
+		let b2 = test_data::block_builder().header().parent(b0.hash()).build()
+			.transaction().coinbase()
+				.output().value(5555).build()
+				.build()
+			.transaction().version(20)
+				.input().hash(b0.transactions[3].hash()).index(0).build()
+				.build()
+			.merkled_header().parent(b0.hash()).build()
+			.build();
+		// in-storage [causes reorg to b2 + b3] spends b0[1]
+		let b3 = test_data::block_builder()
+			.transaction().coinbase().version(40)
+				.output().value(50).build()
+				.build()
+			.transaction().version(30)
+				.input().hash(b0.transactions[1].hash()).index(0).build()
+				.output().value(10).build()
+				.build()
+			.merkled_header().parent(b2.hash()).build()
+			.build();
+
+		let mut dummy_verifier = DummyVerifier::default();
+		dummy_verifier.actual_check_when_verifying(b3.hash());
+
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![b0.into()]));
+
+		let (_, core, sync) = create_sync(Some(storage), Some(dummy_verifier));
+		sync.on_block(0, b1.clone().into());
+		sync.on_transaction(0, tx2.clone().into());
+		sync.on_transaction(0, tx3.clone().into());
+		assert_eq!(core.lock().information().chain.stored, 2); // b0 + b1
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 2); // tx2 + tx3
+
+		// insert b2, which will make tx2 invalid, but not yet
+		sync.on_block(0, b2.clone().into());
+		assert_eq!(core.lock().information().chain.stored, 2); // b0 + b1
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 2); // tx2 + tx3
+
+		// insert b3 => best chain is b0 + b2 + b3
+		// + transaction from b0 is reverified => ok
+		// + tx2 will be reverified => fail
+		// + tx3 will be reverified => ok
+		sync.on_block(0, b3.clone().into());
+		assert_eq!(core.lock().information().chain.stored, 3); // b0 + b2 + b3
+		assert_eq!(core.lock().information().chain.transactions.transactions_count, 2); // b1[0] + tx3
+
+		let mempool = core.lock().chain().memory_pool();
+		assert!(mempool.write().remove_by_hash(&b1.transactions[2].hash()).is_some());
+		assert!(mempool.write().remove_by_hash(&tx3.hash()).is_some());
+	}
+
+	#[test]
+	fn sync_listener_calls() {
+		let (_, _, sync) = create_sync(None, None);
+
+		// install sync listener
+		let data = Arc::new(Mutex::new(DummySyncListenerData::default()));
+		sync.install_sync_listener(Box::new(DummySyncListener::new(data.clone())));
+
+		// at the beginning, is_synchronizing must be equal to false
+		assert_eq!(data.lock().is_synchronizing, false);
+		assert_eq!(data.lock().best_blocks.len(), 0);
+
+		// supply with new block header => is_synchronizing is still false
+		sync.on_headers(0, types::Headers::with_headers(vec![test_data::block_h1().block_header]));
+		assert_eq!(data.lock().is_synchronizing, false);
+		assert_eq!(data.lock().best_blocks.len(), 0);
+
+		// supply with 2 new blocks headers => is_synchronizing is true
+		sync.on_headers(0, types::Headers::with_headers(vec![test_data::block_h2().block_header, test_data::block_h3().block_header]));
+		assert_eq!(data.lock().is_synchronizing, true);
+		assert_eq!(data.lock().best_blocks.len(), 0);
+
+		// supply with block 3 => no new best block is informed
+		sync.on_block(0, test_data::block_h3().into());
+		assert_eq!(data.lock().is_synchronizing, true);
+		assert_eq!(data.lock().best_blocks.len(), 0);
+
+		// supply with block 1 => new best block is informed
+		sync.on_block(0, test_data::block_h1().into());
+		assert_eq!(data.lock().is_synchronizing, true);
+		assert_eq!(data.lock().best_blocks.len(), 1);
+
+		// supply with block 2 => 2 new best block is informed
+		sync.on_block(0, test_data::block_h2().into());
+		assert_eq!(data.lock().is_synchronizing, false);
+		assert_eq!(data.lock().best_blocks.len(), 3);
+	}
+}
