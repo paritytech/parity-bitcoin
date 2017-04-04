@@ -222,10 +222,9 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 #[cfg(test)]
 pub mod tests {
 	use std::sync::Arc;
-	use devtools::RandomTempPath;
 	use jsonrpc_core::IoHandler;
 	use jsonrpc_core::Error;
-	use db::{self, BlockStapler};
+	use db::{BlockChainDatabase};
 	use primitives::bytes::Bytes as GlobalBytes;
 	use primitives::hash::H256 as GlobalH256;
 	use v1::types::{VerboseBlock, RawBlock};
@@ -407,11 +406,13 @@ pub mod tests {
 
 	#[test]
 	fn verbose_block_contents() {
-		let path = RandomTempPath::create_dir();
-		let storage = Arc::new(db::Storage::new(path.as_path()).unwrap());
-		storage.insert_block(&test_data::genesis()).expect("no error");
-		storage.insert_block(&test_data::block_h1()).expect("no error");
-		storage.insert_block(&test_data::block_h2()).expect("no error");
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(
+			vec![
+				test_data::genesis().into(),
+				test_data::block_h1().into(),
+				test_data::block_h2().into(),
+			]
+		));
 
 		let core = BlockChainClientCore::new(Magic::Mainnet, storage);
 
@@ -549,7 +550,7 @@ pub mod tests {
 
 	#[test]
 	fn verbose_transaction_out_contents() {
-		let storage = Arc::new(db::TestStorage::with_genesis_block());
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let core = BlockChainClientCore::new(Magic::Mainnet, storage);
 
 		// get info on tx from genesis block:
