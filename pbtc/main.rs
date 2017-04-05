@@ -38,6 +38,9 @@ pub const REGTEST_USER_AGENT: &'static str = "/Satoshi:0.12.1/";
 pub const LOG_INFO: &'static str = "sync=info";
 
 fn main() {
+	// Always print backtrace on panic.
+	::std::env::set_var("RUST_BACKTRACE", "1");
+
 	if let Err(err) = run() {
 		println!("{}", err);
 	}

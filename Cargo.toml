@@ -26,6 +26,20 @@ logs = { path = "logs" }
 rpc = { path = "rpc" }
 primitives = { path = "primitives" }
 
+[profile.dev]
+debug = true
+panic = 'abort'
+
+[profile.release]
+debug = true
+panic = 'abort'
+
+[profile.test]
+debug = true
+
+[profile.doc]
+debug = true
+
 [[bin]]
 path = "pbtc/main.rs"
 name = "pbtc"
