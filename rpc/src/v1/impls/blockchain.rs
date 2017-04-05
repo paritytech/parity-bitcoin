@@ -37,7 +37,6 @@ pub struct BlockChainClientCore {
 
 impl BlockChainClientCore {
 	pub fn new(network: Magic, storage: db::SharedStore) -> Self {
-		assert!(storage.best_block().is_some());
 
 		BlockChainClientCore {
 			network: network,
@@ -48,7 +47,7 @@ impl BlockChainClientCore {
 
 impl BlockChainClientCoreApi for BlockChainClientCore {
 	fn best_block_hash(&self) -> GlobalH256 {
-		self.storage.best_block().expect("storage with genesis block required").hash
+		self.storage.best_block().hash
 	}
 
 	fn block_hash(&self, height: u32) -> Option<GlobalH256> {
@@ -72,7 +71,7 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 				let block: chain::IndexedBlock = block.into();
 				let height = self.storage.block_number(block.hash());
 				let confirmations = match height {
-					Some(block_number) => (self.storage.best_block().expect("genesis block is required").number - block_number + 1) as i64,
+					Some(block_number) => (self.storage.best_block().number - block_number + 1) as i64,
 					None => -1,
 				};
 				let block_size = block.size();
@@ -129,7 +128,7 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 			None => return Err(transaction_not_found(prev_out.hash)),
 		};
 
-		let best_block = self.storage.best_block().expect("storage with genesis block is required");
+		let best_block = self.storage.best_block();
 		if best_block.number < meta.height() {
 			// this is possible during reorgs
 			return Err(transaction_not_found(prev_out.hash));
@@ -219,10 +218,9 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 #[cfg(test)]
 pub mod tests {
 	use std::sync::Arc;
-	use devtools::RandomTempPath;
 	use jsonrpc_core::IoHandler;
 	use jsonrpc_core::Error;
-	use db::{self, BlockStapler};
+	use db::{BlockChainDatabase};
 	use primitives::bytes::Bytes as GlobalBytes;
 	use primitives::hash::H256 as GlobalH256;
 	use v1::types::{VerboseBlock, RawBlock};
@@ -404,11 +402,13 @@ pub mod tests {
 
 	#[test]
 	fn verbose_block_contents() {
-		let path = RandomTempPath::create_dir();
-		let storage = Arc::new(db::Storage::new(path.as_path()).unwrap());
-		storage.insert_block(&test_data::genesis()).expect("no error");
-		storage.insert_block(&test_data::block_h1()).expect("no error");
-		storage.insert_block(&test_data::block_h2()).expect("no error");
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(
+			vec![
+				test_data::genesis().into(),
+				test_data::block_h1().into(),
+				test_data::block_h2().into(),
+			]
+		));
 
 		let core = BlockChainClientCore::new(Magic::Mainnet, storage);
 
@@ -546,7 +546,7 @@ pub mod tests {
 
 	#[test]
 	fn verbose_transaction_out_contents() {
-		let storage = Arc::new(db::TestStorage::with_genesis_block());
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let core = BlockChainClientCore::new(Magic::Mainnet, storage);
 
 		// get info on tx from genesis block:

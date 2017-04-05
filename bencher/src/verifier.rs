@@ -1,6 +1,5 @@
 use std::sync::Arc;
-use devtools::RandomTempPath;
-use db::{Storage, BlockStapler, Store};
+use db::BlockChainDatabase;
 use chain::IndexedBlock;
 use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify};
 use network::Magic;
@@ -25,8 +24,6 @@ pub fn main(benchmark: &mut Benchmark) {
 		"There will be not enough initial blocks to continue this bench");
 
 	// test setup
-	let path = RandomTempPath::create_dir();
-
 	let genesis = test_data::genesis();
 
 	let mut rolling_hash = genesis.hash();
@@ -52,10 +49,10 @@ pub fn main(benchmark: &mut Benchmark) {
 		blocks.push(next_block.into());
 	}
 
-	{
-		let store = Arc::new(Storage::new(path.as_path()).unwrap());
-		store.insert_block(&genesis).unwrap();
-		for block in blocks.iter() { store.insert_indexed_block(block).unwrap(); }
+	let store = Arc::new(BlockChainDatabase::init_test_chain(vec![genesis.clone().into()]));
+	for block in blocks.iter() {
+		store.insert(block).unwrap();
+		store.canonize(block.hash()).unwrap();
 	}
 
 	let mut verification_blocks: Vec<IndexedBlock> = Vec::new();
@@ -94,8 +91,7 @@ pub fn main(benchmark: &mut Benchmark) {
 	}
 
 
-	let store = Arc::new(Storage::new(path.as_path()).unwrap());
-	assert_eq!(store.best_block().unwrap().hash, rolling_hash);
+	assert_eq!(store.best_block().hash, rolling_hash);
 
 	let chain_verifier = ChainVerifier::new(store.clone(), Magic::Unitest);
 

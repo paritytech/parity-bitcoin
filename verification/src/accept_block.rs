@@ -117,12 +117,12 @@ impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 
 		let mut fees: u64 = 0;
 
-		for (tx_idx, tx) in self.block.transactions.iter().skip(1).enumerate() {
+		for (tx_idx, tx) in self.block.transactions.iter().enumerate().skip(1) {
 			// (1) Total sum of all referenced outputs
 			let mut incoming: u64 = 0;
 			for input in tx.raw.inputs.iter() {
 				let (sum, overflow) = incoming.overflowing_add(
-					store.previous_transaction_output(&input.previous_output).map(|o| o.value).unwrap_or(0));
+					store.previous_transaction_output(&input.previous_output, tx_idx).map(|o| o.value).unwrap_or(0));
 				if overflow {
 					return Err(Error::ReferencedInputsSumOverflow);
 				}
@@ -135,7 +135,7 @@ impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 			// Difference between (1) and (2)
 			let (difference, overflow) = incoming.overflowing_sub(spends);
 			if overflow {
-				return Err(Error::Transaction(tx_idx + 1, TransactionError::Overspend))
+				return Err(Error::Transaction(tx_idx, TransactionError::Overspend))
 			}
 
 			// Adding to total fees (with possible overflow)

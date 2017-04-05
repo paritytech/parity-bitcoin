@@ -1,7 +1,9 @@
 //! Transaction index
 
+use std::io;
 use bit_vec::BitVec;
-use byteorder::{LittleEndian, ByteOrder};
+use bytes::Bytes;
+use ser::{Serializable, Deserializable, Error as ReaderError, Stream, Reader};
 
 /// structure for indexing transaction info
 #[derive(Debug, Clone)]
@@ -12,9 +14,23 @@ pub struct TransactionMeta {
 	bits: BitVec,
 }
 
-#[derive(Debug)]
-pub enum Error {
-	KeyTooShort(usize),
+impl Serializable for TransactionMeta {
+	fn serialize(&self, stream: &mut Stream) {
+		stream
+			.append(&self.block_height)
+			.append(&Bytes::from(self.bits.to_bytes()));
+	}
+}
+
+impl Deserializable for TransactionMeta {
+	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
+		let result = TransactionMeta {
+			block_height: reader.read()?,
+			bits: BitVec::from_bytes(&reader.read::<Bytes>()?),
+		};
+
+		Ok(result)
+	}
 }
 
 impl TransactionMeta {
@@ -47,22 +63,6 @@ impl TransactionMeta {
 	/// Denote particular output as not used
 	pub fn denote_unused(&mut self, index: usize) {
 		self.bits.set(index + 1, false);
-	}
-
-	pub fn into_bytes(self) -> Vec<u8> {
-		let mut result = vec![0u8; 4];
-		LittleEndian::write_u32(&mut result[0..4], self.block_height);
-		result.extend(self.bits.to_bytes());
-		result
-	}
-
-	pub fn from_bytes(bytes: &[u8]) -> Result<TransactionMeta, Error> {
-		if bytes.len() <= 4 { return Err(Error::KeyTooShort(bytes.len())); }
-
-		Ok(TransactionMeta {
-			block_height: LittleEndian::read_u32(&bytes[0..4]),
-			bits: BitVec::from_bytes(&bytes[4..]),
-		})
 	}
 
 	pub fn height(&self) -> u32 {

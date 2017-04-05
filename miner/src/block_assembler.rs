@@ -170,8 +170,8 @@ impl<'a, T> FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entr
 }
 
 impl<'a, T> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a, T> where T: Send + Sync {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
-		self.store.previous_transaction_output(prevout)
+	fn previous_transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
+		self.store.previous_transaction_output(prevout, transaction_index)
 			.or_else(|| {
 				self.previous_entries.iter()
 					.find(|e| e.hash == prevout.hash)
@@ -242,7 +242,7 @@ impl BlockAssembler {
 	pub fn create_new_block(&self, store: &SharedStore, mempool: &MemoryPool, time: u32, network: Magic) -> BlockTemplate {
 		// get best block
 		// take it's hash && height
-		let best_block = store.best_block().expect("Cannot assemble new block without genesis block");
+		let best_block = store.best_block();
 		let previous_header_hash = best_block.hash;
 		let height = best_block.number + 1;
 		let bits = work_required(previous_header_hash.clone(), time, height, store.as_block_header_provider(), network);

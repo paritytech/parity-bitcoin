@@ -1,78 +1,39 @@
-//! Bitcoin database
-
-extern crate elastic_array;
 extern crate rocksdb;
+extern crate elastic_array;
 extern crate parking_lot;
-extern crate primitives;
-extern crate byteorder;
-extern crate chain;
-extern crate serialization;
+#[macro_use]
+extern crate log;
 extern crate bit_vec;
-#[macro_use] extern crate log;
-extern crate lru_cache;
 
-#[cfg(test)]
-extern crate ethcore_devtools as devtools;
-#[cfg(test)]
-extern crate test_data;
+extern crate primitives;
+extern crate serialization as ser;
+extern crate chain;
 
+pub mod kv;
 mod best_block;
-mod kvdb;
-mod storage;
-#[cfg(feature="dev")]
-mod test_storage;
-mod transaction_meta;
+mod block_origin;
 mod block_provider;
-mod block_stapler;
-mod transaction_provider;
-mod transaction_meta_provider;
+mod block_ref;
+mod block_chain;
+mod block_chain_db;
 mod error;
-mod update_context;
 mod impls;
+mod store;
+mod transaction_meta;
+mod transaction_meta_provider;
+mod transaction_provider;
 
-#[derive(Debug, Clone)]
-pub enum BlockRef {
-	Number(u32),
-	Hash(primitives::hash::H256),
-}
-
-impl From<u32> for BlockRef {
-	fn from(u: u32) -> Self {
-		BlockRef::Number(u)
-	}
-}
-
-impl From<primitives::hash::H256> for BlockRef {
-	fn from(hash: primitives::hash::H256) -> Self {
-		BlockRef::Hash(hash)
-	}
-}
-
-#[derive(PartialEq, Debug)]
-pub enum BlockLocation {
-	Main(u32),
-	Side(u32),
-}
-
-impl BlockLocation {
-	pub fn height(&self) -> u32 {
-		match *self {
-			BlockLocation::Main(h) | BlockLocation::Side(h) => h,
-		}
-	}
-}
-
-pub type SharedStore = std::sync::Arc<Store + Send + Sync>;
+pub use primitives::{hash, bytes};
 
 pub use best_block::BestBlock;
-pub use storage::{Storage, Store, AsSubstore};
-pub use error::{Error, ConsistencyError};
-pub use kvdb::Database;
-pub use transaction_provider::{TransactionProvider, PreviousTransactionOutputProvider};
-pub use transaction_meta_provider::{TransactionMetaProvider, TransactionOutputObserver};
+pub use block_origin::{BlockOrigin, SideChainOrigin};
+pub use block_provider::{BlockHeaderProvider, BlockProvider, IndexedBlockProvider};
+pub use block_ref::BlockRef;
+pub use block_chain::{BlockChain, ForkChain, Forkable};
+pub use block_chain_db::{BlockChainDatabase, ForkChainDatabase};
+pub use error::Error;
+pub use store::{AsSubstore, Store, SharedStore, CanonStore};
 pub use transaction_meta::TransactionMeta;
-pub use block_stapler::{BlockStapler, BlockInsertedChain};
-pub use block_provider::{BlockProvider, BlockHeaderProvider};
+pub use transaction_meta_provider::{TransactionMetaProvider, TransactionOutputObserver};
+pub use transaction_provider::{TransactionProvider, PreviousTransactionOutputProvider};
 
-#[cfg(feature="dev")]
-pub use test_storage::TestStorage;

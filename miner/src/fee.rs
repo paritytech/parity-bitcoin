@@ -19,7 +19,7 @@ pub fn transaction_fee_rate(store: &TransactionProvider, transaction: &Transacti
 #[cfg(test)]
 mod tests {
 	use std::sync::Arc;
-	use db::{TestStorage, AsSubstore};
+	use db::{BlockChainDatabase, AsSubstore};
 	use test_data;
 	use super::*;
 
@@ -28,32 +28,26 @@ mod tests {
 		let b0 = test_data::block_builder().header().nonce(1).build()
 			.transaction()
 				.output().value(1_000_000).build()
-				.build()
-			.transaction()
 				.output().value(2_000_000).build()
 				.build()
 			.build();
 		let tx0 = b0.transactions[0].clone();
 		let tx0_hash = tx0.hash();
-		let tx1 = b0.transactions[1].clone();
-		let tx1_hash = tx1.hash();
-		let b1 = test_data::block_builder().header().nonce(2).build()
+		let b1 = test_data::block_builder().header().parent(b0.hash().clone()).nonce(2).build()
 			.transaction()
-				.input().hash(tx0_hash).index(0).build()
-				.input().hash(tx1_hash).index(0).build()
+				.input().hash(tx0_hash.clone()).index(0).build()
+				.input().hash(tx0_hash).index(1).build()
 				.output().value(2_500_000).build()
 				.build()
 			.build();
 		let tx2 = b1.transactions[0].clone();
 
-		let db = Arc::new(TestStorage::with_blocks(&vec![b0, b1]));
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![b0.into(), b1.into()]));
 
 		assert_eq!(transaction_fee(db.as_transaction_provider(), &tx0), 0);
-		assert_eq!(transaction_fee(db.as_transaction_provider(), &tx1), 0);
 		assert_eq!(transaction_fee(db.as_transaction_provider(), &tx2), 500_000);
 
 		assert_eq!(transaction_fee_rate(db.as_transaction_provider(), &tx0), 0);
-		assert_eq!(transaction_fee_rate(db.as_transaction_provider(), &tx1), 0);
 		assert_eq!(transaction_fee_rate(db.as_transaction_provider(), &tx2), 4_901);
 	}
 }

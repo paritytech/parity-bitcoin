@@ -1,5 +1,5 @@
-use devtools::RandomTempPath;
-use db::{Storage, BlockStapler, BlockProvider, BlockRef, BlockInsertedChain};
+use chain::IndexedBlock;
+use db::{BlockProvider, BlockRef, BlockChainDatabase, BlockOrigin, ForkChain};
 use test_data;
 
 use super::Benchmark;
@@ -11,16 +11,10 @@ pub fn fetch(benchmark: &mut Benchmark) {
 	benchmark.samples(BLOCKS);
 
 	// test setup
-	let path = RandomTempPath::create_dir();
-	let store = Storage::new(path.as_path()).unwrap();
+	let genesis: IndexedBlock = test_data::genesis().into();
+	let store = BlockChainDatabase::init_test_chain(vec![genesis.clone()]);
 
-	let genesis = test_data::genesis();
-	store.insert_block(&genesis).unwrap();
-
-	let genesis = test_data::genesis();
-	store.insert_block(&genesis).unwrap();
-
-	let mut rolling_hash = genesis.hash();
+	let mut rolling_hash = genesis.hash().clone();
 	let mut blocks = Vec::new();
 	let mut hashes = Vec::new();
 
@@ -37,7 +31,11 @@ pub fn fetch(benchmark: &mut Benchmark) {
 		hashes.push(rolling_hash.clone());
 	}
 
-	for block in blocks.iter() { store.insert_block(block).unwrap(); }
+	for block in blocks.into_iter() {
+		let block = block.into();
+		store.insert(&block).unwrap();
+		store.canonize(block.hash()).unwrap();
+	}
 
 	// bench
 	benchmark.start();
@@ -54,13 +52,10 @@ pub fn write(benchmark: &mut Benchmark) {
 	benchmark.samples(BLOCKS);
 
 	// setup
-	let path = RandomTempPath::create_dir();
-	let store = Storage::new(path.as_path()).unwrap();
+	let genesis: IndexedBlock = test_data::genesis().into();
+	let store = BlockChainDatabase::init_test_chain(vec![genesis.clone()]);
 
-	let genesis = test_data::genesis();
-	store.insert_block(&genesis).unwrap();
-
-	let mut rolling_hash = genesis.hash();
+	let mut rolling_hash = genesis.hash().clone();
 
 	let mut blocks = Vec::new();
 
@@ -73,13 +68,14 @@ pub fn write(benchmark: &mut Benchmark) {
 			.merkled_header().parent(rolling_hash.clone()).nonce(x as u32).build()
 			.build();
 		rolling_hash = next_block.hash();
-		blocks.push(next_block);
+		blocks.push(next_block.into());
 	}
 
 	// bench
 	benchmark.start();
 	for idx in 0..BLOCKS {
-		store.insert_block(&blocks[idx]).unwrap();
+		store.insert(&blocks[idx]).unwrap();
+		store.canonize(blocks[idx].hash()).unwrap();
 	}
 	benchmark.stop();
 }
@@ -90,13 +86,10 @@ pub fn reorg_short(benchmark: &mut Benchmark) {
 	benchmark.samples(BLOCKS);
 
 	// setup
-	let path = RandomTempPath::create_dir();
-	let store = Storage::new(path.as_path()).unwrap();
+	let genesis: IndexedBlock = test_data::genesis().into();
+	let store = BlockChainDatabase::init_test_chain(vec![genesis.clone()]);
 
-	let genesis = test_data::genesis();
-	store.insert_block(&genesis).unwrap();
-
-	let mut rolling_hash = genesis.hash();
+	let mut rolling_hash = genesis.hash().clone();
 
 	let mut blocks = Vec::new();
 
@@ -150,8 +143,26 @@ pub fn reorg_short(benchmark: &mut Benchmark) {
 	benchmark.start();
 	for idx in 0..BLOCKS {
 		total += 1;
-		if let BlockInsertedChain::Reorganized(_) = store.insert_block(&blocks[idx]).unwrap() {
-			reorgs += 1;
+		let block: IndexedBlock = blocks[idx].clone().into();
+
+		match store.block_origin(&block.header).unwrap() {
+			BlockOrigin::KnownBlock => {
+				unreachable!();
+			},
+			BlockOrigin::CanonChain { .. } => {
+				store.insert(&block).unwrap();
+				store.canonize(block.hash()).unwrap();
+			},
+			BlockOrigin::SideChain(_origin) => {
+				store.insert(&block).unwrap();
+			},
+			BlockOrigin::SideChainBecomingCanonChain(origin) => {
+				reorgs += 1;
+				let fork = store.fork(origin).unwrap();
+				fork.store().insert(&block).unwrap();
+				fork.store().canonize(block.hash()).unwrap();
+				store.switch_to_fork(fork).unwrap();
+			},
 		}
 	}
 	benchmark.stop();
@@ -173,16 +184,10 @@ pub fn write_heavy(benchmark: &mut Benchmark) {
 	benchmark.samples(BLOCKS);
 
 	// test setup
-	let path = RandomTempPath::create_dir();
-	let store = Storage::new(path.as_path()).unwrap();
+	let genesis: IndexedBlock = test_data::genesis().into();
+	let store = BlockChainDatabase::init_test_chain(vec![genesis.clone()]);
 
-	let genesis = test_data::genesis();
-	store.insert_block(&genesis).unwrap();
-
-	let genesis = test_data::genesis();
-	store.insert_block(&genesis).unwrap();
-
-	let mut rolling_hash = genesis.hash();
+	let mut rolling_hash = genesis.hash().clone();
 	let mut blocks = Vec::new();
 	let mut hashes = Vec::new();
 
@@ -217,10 +222,18 @@ pub fn write_heavy(benchmark: &mut Benchmark) {
 		hashes.push(rolling_hash.clone());
 	}
 
-	for block in blocks[..BLOCKS_INITIAL].iter() { store.insert_block(block).unwrap(); }
+	for block in blocks[..BLOCKS_INITIAL].iter() {
+		let block = block.clone().into();
+		store.insert(&block).expect("cannot insert initial block");
+		store.canonize(block.hash()).unwrap();
+	}
 
 	// bench
 	benchmark.start();
-	for block in blocks[BLOCKS_INITIAL+1..].iter() { store.insert_block(block).unwrap(); }
+	for block in blocks[BLOCKS_INITIAL..].iter() {
+		let block = block.clone().into();
+		store.insert(&block).expect("cannot insert bench block");
+		store.canonize(block.hash()).unwrap();
+	}
 	benchmark.stop();
 }

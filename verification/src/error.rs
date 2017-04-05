@@ -1,5 +1,6 @@
-use primitives::hash::H256;
-use primitives::compact::Compact;
+use hash::H256;
+use compact::Compact;
+use db::Error as DBError;
 
 #[derive(Debug, PartialEq)]
 /// All possible verification errors
@@ -43,6 +44,14 @@ pub enum Error {
 	TransactionFeesOverflow,
 	/// Sum of all referenced outputs in block transactions resulted in the overflow
 	ReferencedInputsSumOverflow,
+	/// Database error
+	Database(DBError),
+}
+
+impl From<DBError> for Error {
+	fn from(err: DBError) -> Self {
+		Error::Database(err)
+	}
 }
 
 #[derive(Debug, PartialEq)]

@@ -7,7 +7,7 @@ use time::get_time;
 use chain::{IndexedBlock, IndexedTransaction};
 use network::Magic;
 use primitives::hash::H256;
-use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify, Chain};
+use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify};
 use types::{BlockHeight, StorageRef, MemoryPoolRef};
 use utils::MemoryPoolTransactionOutputProvider;
 
@@ -108,14 +108,10 @@ impl AsyncVerifier {
 				VerificationTask::VerifyBlock(block) => {
 					// verify block
 					match verifier.verify(&block) {
-						Ok(Chain::Main) | Ok(Chain::Side) => {
+						Ok(_) => {
 							if let Some(tasks) = sink.on_block_verification_success(block) {
 								tasks_queue.extend(tasks);
 							}
-						},
-						Ok(Chain::Orphan) => {
-							// this can happen for B1 if B0 verification has failed && we have already scheduled verification of B0
-							sink.on_block_verification_error("orphaned block because parent block verification has failed", block.hash())
 						},
 						Err(e) => {
 							sink.on_block_verification_error(&format!("{:?}", e), block.hash())
@@ -199,13 +195,12 @@ impl<T> Verifier for SyncVerifier<T> where T: VerificationSink {
 	/// Verify block
 	fn verify_block(&self, block: IndexedBlock) {
 		match self.verifier.verify(&block) {
-			Ok(Chain::Main) | Ok(Chain::Side) => {
+			Ok(_) => {
 				// SyncVerifier is used for bulk blocks import only
 				// => there are no memory pool
 				// => we could ignore decanonized transactions
 				self.sink.on_block_verification_success(block);
 			},
-			Ok(Chain::Orphan) => self.sink.on_block_verification_error("orphaned block because parent block verification has failed", block.hash()),
 			Err(e) => self.sink.on_block_verification_error(&format!("{:?}", e), block.hash()),
 		}
 	}
@@ -287,7 +282,7 @@ pub mod tests {
 					Some(err) => sink.on_transaction_verification_error(&err, &transaction.hash),
 					None => {
 						if self.actual_checks.contains(&transaction.hash) {
-							let next_block_height = self.storage.as_ref().unwrap().best_block().unwrap().number + 1;
+							let next_block_height = self.storage.as_ref().unwrap().best_block().number + 1;
 							AsyncVerifier::execute_single_task(sink, self.storage.as_ref().unwrap(), self.memory_pool.as_ref().unwrap(), self.verifier.as_ref().unwrap(), VerificationTask::VerifyTransaction(next_block_height, transaction));
 						} else {
 							sink.on_transaction_verification_success(transaction.into());

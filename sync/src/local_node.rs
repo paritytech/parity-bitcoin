@@ -335,7 +335,7 @@ pub mod tests {
 	use message::common::{InventoryVector, InventoryType};
 	use network::Magic;
 	use chain::Transaction;
-	use db;
+	use db::{BlockChainDatabase};
 	use miner::MemoryPool;
 	use super::LocalNode;
 	use test_data;
@@ -366,7 +366,7 @@ pub mod tests {
 
 	fn create_local_node(verifier: Option<DummyVerifier>) -> (Arc<DummyTaskExecutor>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
-		let storage = Arc::new(db::TestStorage::with_genesis_block());
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
 		let chain = Chain::new(storage.clone(), memory_pool.clone());
 		let sync_peers = Arc::new(PeersImpl::default());

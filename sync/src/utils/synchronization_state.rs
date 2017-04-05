@@ -15,7 +15,7 @@ pub struct SynchronizationState {
 
 impl SynchronizationState {
 	pub fn with_storage(storage: StorageRef) -> Self {
-		let best_storage_block_height = storage.best_block().map(|b| b.number).unwrap_or(0);
+		let best_storage_block_height = storage.best_block().number;
 		SynchronizationState {
 			is_synchronizing: AtomicBool::new(false),
 			best_storage_block_height: AtomicUsize::new(best_storage_block_height as usize),

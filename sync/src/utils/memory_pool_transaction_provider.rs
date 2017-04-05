@@ -33,7 +33,7 @@ impl MemoryPoolTransactionOutputProvider {
 				mempool_inputs: transaction.inputs.iter()
 					.map(|input| (
 						input.previous_output.clone().into(),
-						memory_pool.previous_transaction_output(&input.previous_output),
+						memory_pool.previous_transaction_output(&input.previous_output, usize::max_value()),
 					)).collect(),
 				nonfinal_spends: None,
 			}),
@@ -43,7 +43,7 @@ impl MemoryPoolTransactionOutputProvider {
 				mempool_inputs: transaction.inputs.iter()
 					.map(|input| (
 						input.previous_output.clone().into(),
-						memory_pool.previous_transaction_output(&input.previous_output),
+						memory_pool.previous_transaction_output(&input.previous_output, usize::max_value()),
 					)).collect(),
 				nonfinal_spends: Some(nonfinal_spends),
 			}),
@@ -67,7 +67,7 @@ impl TransactionOutputObserver for MemoryPoolTransactionOutputProvider {
 }
 
 impl PreviousTransactionOutputProvider for MemoryPoolTransactionOutputProvider {
-	fn previous_transaction_output(&self, prevout: &OutPoint) -> Option<TransactionOutput> {
+	fn previous_transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
 		let hashed_prevout: HashedOutPoint = prevout.clone().into();
 
 		// check if that is output of some transaction, which is vitually removed from memory pool
@@ -88,7 +88,7 @@ impl PreviousTransactionOutputProvider for MemoryPoolTransactionOutputProvider {
 		}
 
 		// now check in storage
-		self.storage_provider.previous_transaction_output(prevout)
+		self.storage_provider.previous_transaction_output(prevout, transaction_index)
 	}
 }
 
@@ -97,7 +97,7 @@ mod tests {
 	use std::sync::Arc;
 	use parking_lot::RwLock;
 	use chain::OutPoint;
-	use db::{self, TransactionOutputObserver, PreviousTransactionOutputProvider};
+	use db::{TransactionOutputObserver, PreviousTransactionOutputProvider, BlockChainDatabase};
 	use miner::MemoryPool;
 	use test_data;
 	use super::MemoryPoolTransactionOutputProvider;
@@ -111,7 +111,7 @@ mod tests {
 			.reset().set_input(&dchain.at(1), 0).add_output(30).store(dchain)			// dependent: t0[0] -> t1[0] -> t2
 			.reset().set_input(&dchain.at(0), 0).add_output(40).store(dchain);			// good replacement: t0[0] -> t3
 
-		let storage = Arc::new(db::TestStorage::with_genesis_block());
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
 		{
 			memory_pool.write().insert_verified(dchain.at(0).into());
@@ -132,8 +132,8 @@ mod tests {
 		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(0).hash(), index: 0, }), Some(false));
 		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(1).hash(), index: 0, }), None);
 		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(2).hash(), index: 0, }), None);
-		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(0).hash(), index: 0, }), Some(dchain.at(0).outputs[0].clone()));
-		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(1).hash(), index: 0, }), None);
-		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(2).hash(), index: 0, }), None);
+		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(0).hash(), index: 0, }, 0), Some(dchain.at(0).outputs[0].clone()));
+		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(1).hash(), index: 0, }, 0), None);
+		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(2).hash(), index: 0, }, 0), None);
 	}
 }

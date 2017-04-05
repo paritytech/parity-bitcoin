@@ -6,7 +6,6 @@ use futures::Future;
 use parking_lot::Mutex;
 use time;
 use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
-use db;
 use message::types;
 use message::common::{InventoryType, InventoryVector};
 use miner::transaction_fee_rate;
@@ -1064,11 +1063,6 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				}
 				Some(verification_tasks)
 			},
-			Err(db::Error::Consistency(e)) => {
-				// process as verification error
-				self.on_block_verification_error(&format!("{:?}", db::Error::Consistency(e)), block.hash());
-				None
-			},
 			Err(e) => {
 				// process as irrecoverable failure
 				panic!("Block {} insertion failed with error {:?}", block.hash().to_reversed_str(), e);
@@ -1182,8 +1176,7 @@ pub mod tests {
 	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
 	use chain::{Block, Transaction};
-	use db;
-	use devtools::RandomTempPath;
+	use db::BlockChainDatabase;
 	use message::common::InventoryVector;
 	use message::types;
 	use miner::MemoryPool;
@@ -1231,16 +1224,11 @@ pub mod tests {
 		}
 	}
 
-	fn create_disk_storage() -> StorageRef {
-		let path = RandomTempPath::create_dir();
-		Arc::new(db::Storage::new(path.as_path()).unwrap())
-	}
-
 	fn create_sync(storage: Option<StorageRef>, verifier: Option<DummyVerifier>) -> (Arc<DummyTaskExecutor>, ClientCoreRef<SynchronizationClientCore<DummyTaskExecutor>>, Arc<SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
 		let sync_peers = Arc::new(PeersImpl::default());
 		let storage = match storage {
 			Some(storage) => storage,
-			None => Arc::new(db::TestStorage::with_genesis_block()),
+			None => Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()])),
 		};
 		let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
@@ -1551,9 +1539,8 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_works_for_forks_from_db_best_block() {
-		let storage = create_disk_storage();
 		let genesis = test_data::genesis();
-		storage.insert_block(&genesis).expect("no db error");
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 
 		let (executor, core, sync) = create_sync(Some(storage), None);
 		let genesis_header = &genesis.block_header;
@@ -1608,9 +1595,8 @@ pub mod tests {
 
 	#[test]
 	fn synchronization_works_for_forks_long_after_short() {
-		let storage = create_disk_storage();
 		let genesis = test_data::genesis();
-		storage.insert_block(&genesis).expect("no db error");
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 
 		let (executor, core, sync) = create_sync(Some(storage), None);
 		let common_block = test_data::block_builder().header().parent(genesis.hash()).build().build();
@@ -1726,12 +1712,10 @@ pub mod tests {
 
 	#[test]
 	fn sync_after_db_insert_nonfatal_fail() {
-		use db::Store;
-
-		let mut storage = db::TestStorage::with_genesis_block();
-		let block = test_data::block_h1();
-		storage.insert_error(block.hash(), db::Error::Consistency(db::ConsistencyError::NoBestBlock));
-		let best_genesis = storage.best_block().unwrap();
+		let block = test_data::block_h2();
+		let storage = BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]);
+		assert!(storage.insert(&test_data::block_h2().into()).is_err());
+		let best_genesis = storage.best_block();
 
 		let (_, core, sync) = create_sync(Some(Arc::new(storage)), None);
 
@@ -1811,7 +1795,7 @@ pub mod tests {
 	#[test]
 	fn transaction_is_requested_when_not_synchronizing() {
 		let (executor, core, sync) = create_sync(None, None);
-		
+
 		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
 
 		{
@@ -2072,9 +2056,9 @@ pub mod tests {
 
 		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
-		
+
 		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
-		
+
 		assert!(!core.lock().peers.enumerate().contains(&0));
 	}
 
@@ -2094,7 +2078,7 @@ pub mod tests {
 		core.lock().set_verify_headers(true);
 		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
-		
+
 		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
 
 		assert!(!core.lock().peers.enumerate().contains(&0));
@@ -2265,8 +2249,7 @@ pub mod tests {
 		let mut dummy_verifier = DummyVerifier::default();
 		dummy_verifier.actual_check_when_verifying(b3.hash());
 
-		let storage = create_disk_storage();
-		storage.insert_block(&b0).expect("no db error");
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![b0.into()]));
 
 		let (_, core, sync) = create_sync(Some(storage), Some(dummy_verifier));
 		sync.on_block(0, b1.clone().into());

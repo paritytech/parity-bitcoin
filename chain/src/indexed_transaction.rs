@@ -1,13 +1,22 @@
-use std::{cmp, io, borrow};
+use std::{cmp, io, borrow, fmt};
 use hash::H256;
 use ser::{Deserializable, Reader, Error as ReaderError};
 use transaction::Transaction;
 use read_and_hash::ReadAndHash;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct IndexedTransaction {
 	pub hash: H256,
 	pub raw: Transaction,
+}
+
+impl fmt::Debug for IndexedTransaction {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		f.debug_struct("IndexedTransaction")
+			.field("hash", &self.hash.reversed())
+			.field("raw", &self.raw)
+			.finish()
+	}
 }
 
 impl<T> From<T> for IndexedTransaction where Transaction: From<T> {

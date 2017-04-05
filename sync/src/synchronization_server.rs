@@ -155,7 +155,7 @@ impl ServerQueue {
 					let peer_task = peer_tasks.pop_front()
 						.expect("entry from peer_tasks is removed when empty; when empty, peer is removed from peers_queue; qed");
 					(peer_task, peer_tasks.is_empty())
-				};				
+				};
 
 				// remove if no tasks left || schedule otherwise
 				if !is_last_peer_task {
@@ -462,7 +462,7 @@ pub mod tests {
 	use std::mem::replace;
 	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
-	use db::{self, BlockStapler};
+	use db::{BlockChainDatabase};
 	use message::types;
 	use message::common::{self, InventoryVector, InventoryType};
 	use primitives::hash::H256;
@@ -505,7 +505,7 @@ pub mod tests {
 
 	fn create_synchronization_server() -> (StorageRef, MemoryPoolRef, ExecutorRef<DummyTaskExecutor>, PeersRef, ServerImpl) {
 		let peers = Arc::new(PeersImpl::default());
-		let storage = Arc::new(db::TestStorage::with_genesis_block());
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
 		let executor = DummyTaskExecutor::new();
 		let server = ServerImpl::new(peers.clone(), storage.clone(), memory_pool.clone(), executor.clone());
@@ -562,7 +562,8 @@ pub mod tests {
 	#[test]
 	fn server_getblocks_responds_inventory_when_have_unknown_blocks() {
 		let (storage, _, executor, _, server) = create_synchronization_server();
-		storage.insert_block(&test_data::block_h1()).expect("Db write error");
+		storage.insert(&test_data::block_h1().into()).expect("Db write error");
+		storage.canonize(&test_data::block_h1().hash()).unwrap();
 		// when asking for blocks hashes
 		server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
 			version: 0,
@@ -597,7 +598,8 @@ pub mod tests {
 	#[test]
 	fn server_getheaders_responds_headers_when_have_unknown_blocks() {
 		let (storage, _, executor, _, server) = create_synchronization_server();
-		storage.insert_block(&test_data::block_h1()).expect("Db write error");
+		storage.insert(&test_data::block_h1().into()).expect("Db write error");
+		storage.canonize(&test_data::block_h1().hash()).unwrap();
 		// when asking for blocks hashes
 		let dummy_id = 0;
 		server.execute(ServerTask::GetHeaders(0, types::GetHeaders {
@@ -740,7 +742,8 @@ pub mod tests {
 	fn server_responds_with_nonempty_inventory_when_getdata_stop_hash_filled() {
 		let (storage, _, executor, _, server) = create_synchronization_server();
 		{
-			storage.insert_block(&test_data::block_h1()).expect("no error");
+			storage.insert(&test_data::block_h1().into()).expect("no error");
+			storage.canonize(&test_data::block_h1().hash()).unwrap();
 		}
 		// when asking with stop_hash
 		server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
@@ -761,7 +764,8 @@ pub mod tests {
 	fn server_responds_with_nonempty_headers_when_getdata_stop_hash_filled() {
 		let (storage, _, executor, _, server) = create_synchronization_server();
 		{
-			storage.insert_block(&test_data::block_h1()).expect("no error");
+			storage.insert(&test_data::block_h1().into()).expect("no error");
+			storage.canonize(&test_data::block_h1().hash()).unwrap();
 		}
 		// when asking with stop_hash
 		let dummy_id = 6;
@@ -781,7 +785,7 @@ pub mod tests {
 	#[test]
 	fn server_serves_merkleblock() {
 		let peers = Arc::new(PeersImpl::default());
-		let storage = Arc::new(db::TestStorage::with_genesis_block());
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
 		let sync_executor = DummyTaskExecutor::new();
 		let executor = ServerTaskExecutor::new(peers.clone(), storage.clone(), memory_pool.clone(), sync_executor.clone());
@@ -801,8 +805,10 @@ pub mod tests {
 		let b2_hash = b2.hash();
 
 		// This peer will provide blocks
-		storage.insert_block(&b1.clone()).expect("no error");
-		storage.insert_block(&b2.clone()).expect("no error");
+		storage.insert(&b1.clone().into()).expect("no error");
+		storage.insert(&b2.clone().into()).expect("no error");
+		storage.canonize(&b1.hash()).unwrap();
+		storage.canonize(&b2.hash()).unwrap();
 
 		// This peer won't get any blocks, because it has not set filter for the connection
 		let peer_index2 = 1; peers.insert(peer_index2, DummyOutboundSyncConnection::new());
@@ -883,7 +889,7 @@ pub mod tests {
 	#[test]
 	fn server_serves_compactblock() {
 		let peers = Arc::new(PeersImpl::default());
-		let storage = Arc::new(db::TestStorage::with_genesis_block());
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
 		let sync_executor = DummyTaskExecutor::new();
 		let executor = ServerTaskExecutor::new(peers.clone(), storage.clone(), memory_pool.clone(), sync_executor.clone());
@@ -895,7 +901,8 @@ pub mod tests {
 		let b1_hash = b1.hash();
 
 		// This peer will provide blocks
-		storage.insert_block(&b1.clone()).expect("no error");
+		storage.insert(&b1.clone().into()).expect("no error");
+		storage.canonize(&b1.hash()).unwrap();
 
 		// This peer will receive compact block
 		let peer_index2 = 1; peers.insert(peer_index2, DummyOutboundSyncConnection::new());

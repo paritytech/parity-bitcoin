@@ -2,31 +2,20 @@
 
 use hash::H256;
 use chain::{IndexedBlock, IndexedBlockHeader, BlockHeader, Transaction};
-use db::{BlockLocation, SharedStore, PreviousTransactionOutputProvider, BlockHeaderProvider, TransactionOutputObserver};
+use db::{
+	SharedStore, PreviousTransactionOutputProvider, BlockHeaderProvider, TransactionOutputObserver,
+	BlockOrigin
+};
 use network::Magic;
 use error::{Error, TransactionError};
 use canon::{CanonBlock, CanonTransaction};
-use duplex_store::{DuplexTransactionOutputProvider, NoopStore};
+use duplex_store::{DuplexTransactionOutputObserver, DuplexTransactionOutputProvider, NoopStore};
 use verify_chain::ChainVerifier;
 use verify_header::HeaderVerifier;
 use verify_transaction::MemoryPoolTransactionVerifier;
 use accept_chain::ChainAcceptor;
 use accept_transaction::MemoryPoolTransactionAcceptor;
 use Verify;
-
-#[derive(PartialEq, Debug)]
-/// Block verification chain
-pub enum Chain {
-	/// Main chain
-	Main,
-	/// Side chain
-	Side,
-	/// Orphan (no known parent)
-	Orphan,
-}
-
-/// Verification result
-pub type VerificationResult = Result<Chain, Error>;
 
 pub struct BackwardsCompatibleChainVerifier {
 	store: SharedStore,
@@ -41,29 +30,43 @@ impl BackwardsCompatibleChainVerifier {
 		}
 	}
 
-	fn verify_block(&self, block: &IndexedBlock) -> VerificationResult {
+	fn verify_block(&self, block: &IndexedBlock) -> Result<(), Error> {
 		let current_time = ::time::get_time().sec as u32;
 		// first run pre-verification
 		let chain_verifier = ChainVerifier::new(block, self.network, current_time);
-		try!(chain_verifier.check());
+		chain_verifier.check()?;
 
-		// check pre-verified header location
-		// TODO: now this function allows full verification for sidechain block
-		// it should allow full verification only for canon blocks
-		let location = match self.store.accepted_location(&block.header.raw) {
-			Some(location) => location,
-			None => return Ok(Chain::Orphan),
-		};
-
-		// now do full verification
-		let canon_block = CanonBlock::new(block);
-		let chain_acceptor = ChainAcceptor::new(&self.store, self.network, canon_block, location.height());
-		try!(chain_acceptor.check());
-
-		match location {
-			BlockLocation::Main(_) => Ok(Chain::Main),
-			BlockLocation::Side(_) => Ok(Chain::Side),
+		assert_eq!(Some(self.store.best_block().hash), self.store.block_hash(self.store.best_block().number));
+		let block_origin = self.store.block_origin(&block.header)?;
+		trace!(target: "verification", "verify_block: {:?} best_block: {:?} block_origin: {:?}", block.hash().reversed(), self.store.best_block(), block_origin);
+		match block_origin {
+			BlockOrigin::KnownBlock => {
+				// there should be no known blocks at this point
+				unreachable!();
+			},
+			BlockOrigin::CanonChain { block_number } => {
+				let canon_block = CanonBlock::new(block);
+				let chain_acceptor = ChainAcceptor::new(self.store.as_store(), self.network, canon_block, block_number);
+				chain_acceptor.check()?;
+			},
+			BlockOrigin::SideChain(origin) => {
+				let block_number = origin.block_number;
+				let fork = self.store.fork(origin)?;
+				let canon_block = CanonBlock::new(block);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number);
+				chain_acceptor.check()?;
+			},
+			BlockOrigin::SideChainBecomingCanonChain(origin) => {
+				let block_number = origin.block_number;
+				let fork = self.store.fork(origin)?;
+				let canon_block = CanonBlock::new(block);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number);
+				chain_acceptor.check()?;
+			},
 		}
+
+		assert_eq!(Some(self.store.best_block().hash), self.store.block_hash(self.store.best_block().number));
+		Ok(())
 	}
 
 	pub fn verify_block_header(
@@ -96,10 +99,11 @@ impl BackwardsCompatibleChainVerifier {
 		// now let's do full verification
 		let noop = NoopStore;
 		let prevouts = DuplexTransactionOutputProvider::new(prevout_provider, &noop);
+		let spents = DuplexTransactionOutputObserver::new(prevout_provider, &noop);
 		let tx_acceptor = MemoryPoolTransactionAcceptor::new(
 			self.store.as_transaction_meta_provider(),
 			prevouts,
-			prevout_provider,
+			spents,
 			self.network,
 			canon_tx,
 			height,
@@ -110,7 +114,7 @@ impl BackwardsCompatibleChainVerifier {
 }
 
 impl Verify for BackwardsCompatibleChainVerifier {
-	fn verify(&self, block: &IndexedBlock) -> VerificationResult {
+	fn verify(&self, block: &IndexedBlock) -> Result<(), Error> {
 		let result = self.verify_block(block);
 		trace!(
 			target: "verification", "Block {} (transactions: {}) verification finished. Result {:?}",
@@ -124,51 +128,47 @@ impl Verify for BackwardsCompatibleChainVerifier {
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use std::sync::Arc;
 	use chain::IndexedBlock;
-	use db::{TestStorage, Storage, Store, BlockStapler};
+	use db::{BlockChainDatabase, Error as DBError};
 	use network::Magic;
-	use devtools::RandomTempPath;
-	use {script, test_data};
+	use script;
 	use super::BackwardsCompatibleChainVerifier as ChainVerifier;
-	use super::super::{Verify, Chain, Error, TransactionError};
+	use {Verify, Error, TransactionError};
 
 	#[test]
 	fn verify_orphan() {
-		let storage = TestStorage::with_blocks(&vec![test_data::genesis()]);
-		let b2 = test_data::block_h2();
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
-
-		assert_eq!(Chain::Orphan, verifier.verify(&b2.into()).unwrap());
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let b2 = test_data::block_h2().into();
+		let verifier = ChainVerifier::new(storage, Magic::Unitest);
+		assert_eq!(Err(Error::Database(DBError::UnknownParent)), verifier.verify(&b2));
 	}
 
 	#[test]
 	fn verify_smoky() {
-		let storage = TestStorage::with_blocks(&vec![test_data::genesis()]);
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let b1 = test_data::block_h1();
-		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
-		assert_eq!(Chain::Main, verifier.verify(&b1.into()).unwrap());
+		let verifier = ChainVerifier::new(storage, Magic::Unitest);
+		assert!(verifier.verify(&b1.into()).is_ok());
 	}
 
+
 	#[test]
-	fn firtst_tx() {
-		let storage = TestStorage::with_blocks(
-			&vec![
-				test_data::block_h9(),
-				test_data::block_h169(),
-			]
-		);
-		let b1 = test_data::block_h170();
+	fn first_tx() {
+		let storage = BlockChainDatabase::init_test_chain(
+			vec![
+				test_data::block_h0().into(),
+				test_data::block_h1().into(),
+			]);
+		let b1 = test_data::block_h2();
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
-		assert_eq!(Chain::Main, verifier.verify(&b1.into()).unwrap());
+		assert!(verifier.verify(&b1.into()).is_ok());
 	}
 
 	#[test]
 	fn coinbase_maturity() {
-
-		let path = RandomTempPath::create_dir();
-		let storage = Storage::new(path.as_path()).unwrap();
-
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
@@ -177,7 +177,7 @@ mod tests {
 			.merkled_header().build()
 			.build();
 
-		storage.insert_block(&genesis).unwrap();
+		let storage = BlockChainDatabase::init_test_chain(vec![genesis.clone().into()]);
 		let genesis_coinbase = genesis.transactions()[0].hash();
 
 		let block = test_data::block_builder()
@@ -204,9 +204,6 @@ mod tests {
 
 	#[test]
 	fn non_coinbase_happy() {
-		let path = RandomTempPath::create_dir();
-		let storage = Storage::new(path.as_path()).unwrap();
-
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
@@ -218,7 +215,7 @@ mod tests {
 			.merkled_header().build()
 			.build();
 
-		storage.insert_block(&genesis).unwrap();
+		let storage = BlockChainDatabase::init_test_chain(vec![genesis.clone().into()]);
 		let reference_tx = genesis.transactions()[1].hash();
 
 		let block = test_data::block_builder()
@@ -234,17 +231,11 @@ mod tests {
 			.build();
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
-
-		let expected = Ok(Chain::Main);
-		assert_eq!(expected, verifier.verify(&block.into()));
+		assert!(verifier.verify(&block.into()).is_ok());
 	}
-
 
 	#[test]
 	fn transaction_references_same_block_happy() {
-		let path = RandomTempPath::create_dir();
-		let storage = Storage::new(path.as_path()).unwrap();
-
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
@@ -256,7 +247,7 @@ mod tests {
 			.merkled_header().build()
 			.build();
 
-		storage.insert_block(&genesis).expect("Genesis should be inserted with no errors");
+		let storage = BlockChainDatabase::init_test_chain(vec![genesis.clone().into()]);
 		let first_tx_hash = genesis.transactions()[1].hash();
 
 		let block = test_data::block_builder()
@@ -276,16 +267,11 @@ mod tests {
 			.build();
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
-
-		let expected = Ok(Chain::Main);
-		assert_eq!(expected, verifier.verify(&block.into()));
+		assert!(verifier.verify(&block.into()).is_ok());
 	}
 
 	#[test]
 	fn transaction_references_same_block_overspend() {
-		let path = RandomTempPath::create_dir();
-		let storage = Storage::new(path.as_path()).unwrap();
-
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
@@ -297,7 +283,7 @@ mod tests {
 			.merkled_header().build()
 			.build();
 
-		storage.insert_block(&genesis).expect("Genesis should be inserted with no errors");
+		let storage = BlockChainDatabase::init_test_chain(vec![genesis.clone().into()]);
 		let first_tx_hash = genesis.transactions()[1].hash();
 
 		let block = test_data::block_builder()
@@ -328,10 +314,6 @@ mod tests {
 	#[test]
 	#[ignore]
 	fn coinbase_happy() {
-
-		let path = RandomTempPath::create_dir();
-		let storage = Storage::new(path.as_path()).unwrap();
-
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
@@ -340,20 +322,21 @@ mod tests {
 			.merkled_header().build()
 			.build();
 
-		storage.insert_block(&genesis).unwrap();
+		let storage = BlockChainDatabase::init_test_chain(vec![genesis.clone().into()]);
 		let genesis_coinbase = genesis.transactions()[0].hash();
 
 		// waiting 100 blocks for genesis coinbase to become valid
 		for _ in 0..100 {
-			storage.insert_block(
-				&test_data::block_builder()
-					.transaction().coinbase().build()
+			let block = test_data::block_builder()
+				.transaction().coinbase().build()
 				.merkled_header().parent(genesis.hash()).build()
 				.build()
-			).expect("All dummy blocks should be inserted");
+				.into();
+			storage.insert(&block).expect("All dummy blocks should be inserted");
+			storage.canonize(block.hash()).unwrap();
 		}
 
-		let best_hash = storage.best_block().expect("Store should have hash after all we pushed there").hash;
+		let best_hash = storage.best_block().hash;
 
 		let block = test_data::block_builder()
 			.transaction().coinbase().build()
@@ -364,17 +347,11 @@ mod tests {
 			.build();
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
-
-		let expected = Ok(Chain::Main);
-
-		assert_eq!(expected, verifier.verify(&block.into()))
+		assert!(verifier.verify(&block.into()).is_ok());
 	}
 
 	#[test]
 	fn sigops_overflow_block() {
-		let path = RandomTempPath::create_dir();
-		let storage = Storage::new(path.as_path()).unwrap();
-
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
@@ -385,7 +362,7 @@ mod tests {
 			.merkled_header().build()
 			.build();
 
-		storage.insert_block(&genesis).unwrap();
+		let storage = BlockChainDatabase::init_test_chain(vec![genesis.clone().into()]);
 		let reference_tx = genesis.transactions()[1].hash();
 
 		let mut builder_tx1 = script::Builder::default();
@@ -417,22 +394,17 @@ mod tests {
 			.into();
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
-
 		let expected = Err(Error::MaximumSigops);
 		assert_eq!(expected, verifier.verify(&block.into()));
 	}
 
 	#[test]
 	fn coinbase_overspend() {
-
-		let path = RandomTempPath::create_dir();
-		let storage = Storage::new(path.as_path()).unwrap();
-
 		let genesis = test_data::block_builder()
 			.transaction().coinbase().build()
 			.merkled_header().build()
 			.build();
-		storage.insert_block(&genesis).unwrap();
+		let storage = BlockChainDatabase::init_test_chain(vec![genesis.clone().into()]);
 
 		let block: IndexedBlock = test_data::block_builder()
 			.transaction()

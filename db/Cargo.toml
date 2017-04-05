@@ -1,21 +1,18 @@
 [package]
 name = "db"
 version = "0.1.0"
-authors = ["Nikolay Volf <nikvolf@gmail.com>"]
+authors = ["Parity Technologies <admin@parity.io>"]
 
 [dependencies]
-elastic-array = { git = "https://github.com/ethcore/elastic-array" }
 rocksdb = { git = "https://github.com/ethcore/rust-rocksdb" }
-ethcore-devtools = { path = "../devtools" }
-primitives = { path = "../primitives" }
-byteorder = "1.0"
-chain = { path = "../chain"  }
-serialization = { path = "../serialization" }
+elastic-array = "0.6"
 parking_lot = "0.4"
-test-data = { path = "../test-data" }
-bit-vec = "0.4"
 log = "0.3"
-lru-cache = "0.1.0"
+bit-vec = "0.4"
+primitives = { path = "../primitives" }
+serialization = { path = "../serialization" }
+chain = { path = "../chain" }
 
-[features]
-dev = []
+[dev-dependencies]
+ethcore-devtools = { path = "../devtools" }
+test-data = { path = "../test-data" }
