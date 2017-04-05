@@ -28,8 +28,6 @@ pub trait AsSubstore: BlockChain + IndexedBlockProvider + TransactionProvider + 
 
 	fn as_block_header_provider(&self) -> &BlockHeaderProvider;
 
-	//fn as_block_chain(&self) -> &BlockChain;
-
 	fn as_transaction_provider(&self) -> &TransactionProvider;
 
 	fn as_previous_transaction_output_provider(&self) -> &PreviousTransactionOutputProvider;
@@ -47,10 +45,6 @@ impl<T> AsSubstore for T where T: BlockChain + IndexedBlockProvider + Transactio
 	fn as_block_header_provider(&self) -> &BlockHeaderProvider {
 		&*self
 	}
-
-	//fn as_block_chain(&self) -> &BlockChain {
-		//&*self
-	//}
 
 	fn as_transaction_provider(&self) -> &TransactionProvider {
 		&*self
