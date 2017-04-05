@@ -21,8 +21,6 @@ extern crate db;
 extern crate test_data;
 extern crate miner;
 extern crate verification;
-#[cfg(test)]
-extern crate ethcore_devtools as devtools;
 extern crate script as global_script;
 extern crate keys;
 

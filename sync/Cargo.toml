@@ -9,9 +9,8 @@ log = "0.3"
 time = "0.1"
 futures = "0.1"
 linked-hash-map = "0.3"
-ethcore-devtools = { path = "../devtools" }
 bit-vec = "0.4.3"
-murmur3 = "0.3"
+murmur3 = "0.4"
 rand = "0.3"
 byteorder = "1.0"
 

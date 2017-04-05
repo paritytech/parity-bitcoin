@@ -11,7 +11,6 @@ verification = { path = "../verification" }
 network = { path = "../network" }
 chain = { path = "../chain" }
 primitives = { path = "../primitives" }
-ethcore-devtools = { path = "../devtools" }
 test-data = { path = "../test-data" }
 time = "*"
 byteorder = "1.0"

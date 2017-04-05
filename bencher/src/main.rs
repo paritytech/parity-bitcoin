@@ -1,6 +1,5 @@
 extern crate db;
 extern crate chain;
-extern crate ethcore_devtools as devtools;
 extern crate test_data;
 extern crate time;
 extern crate verification;
