@@ -19,12 +19,21 @@ const SCHEDULED_QUEUE: usize = 2;
 const NUMBER_OF_QUEUES: usize = 3;
 
 /// Block insertion result
-#[derive(Debug, Default, PartialEq)]
+#[derive(Default, PartialEq)]
 pub struct BlockInsertionResult {
 	/// Hashes of blocks, which were canonized during this insertion procedure. Order matters
 	pub canonized_blocks_hashes: Vec<H256>,
 	/// Transaction to 'reverify'. Order matters
 	pub transactions_to_reverify: Vec<IndexedTransaction>,
+}
+
+impl fmt::Debug for BlockInsertionResult {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		f.debug_struct("BlockInsertionResult")
+			.field("canonized_blocks_hashes", &self.canonized_blocks_hashes.iter().map(H256::reversed).collect::<Vec<_>>())
+			.field("transactions_to_reverify", &self.transactions_to_reverify)
+			.finish()
+	}
 }
 
 impl BlockInsertionResult {
@@ -421,14 +430,18 @@ impl Chain {
 
 				canonized_blocks_hashes.push(block.hash().clone());
 
-				Ok(BlockInsertionResult {
+				let result = BlockInsertionResult {
 					canonized_blocks_hashes: canonized_blocks_hashes,
 					// order matters: db transactions, then ordered mempool transactions, then ordered verifying transactions
 					transactions_to_reverify: old_main_blocks_transactions.into_iter()
 						.chain(memory_pool_transactions.into_iter())
 						.chain(verifying_transactions.into_iter())
 						.collect(),
-				})
+				};
+
+				trace!(target: "sync", "result: {:?}", result);
+
+				Ok(result)
 			},
 			// case 3: block has been added to the side branch without reorganization to this branch
 			db::BlockOrigin::SideChain(_origin) => {
