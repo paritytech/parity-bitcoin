@@ -4,18 +4,16 @@ version = "0.1.0"
 authors = ["Ethcore <admin@ethcore.io>"]
 
 [dependencies]
-parking_lot = "0.3"
+parking_lot = "0.4"
 log = "0.3"
 time = "0.1"
 futures = "0.1"
-futures-cpupool = "0.1"
-tokio-core = "0.1"
 linked-hash-map = "0.3"
 ethcore-devtools = { path = "../devtools" }
 bit-vec = "0.4.3"
 murmur3 = "0.3"
 rand = "0.3"
-byteorder = "0.5"
+byteorder = "1.0"
 
 chain = { path = "../chain" }
 bitcrypto = { path = "../crypto" }

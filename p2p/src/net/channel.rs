@@ -1,4 +1,4 @@
-use tokio_core::io::{write_all, WriteAll};
+use tokio_io::io::{write_all, WriteAll};
 use session::Session;
 use io::{SharedTcpStream, read_any_message, ReadAnyMessage};
 use util::PeerInfo;

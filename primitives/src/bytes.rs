@@ -1,6 +1,9 @@
+//! Wrapper around `Vec<u8>`
+
 use std::{ops, str, fmt, io, marker};
 use hex::{ToHex, FromHex, FromHexError};
 
+/// Wrapper around `Vec<u8>`
 #[derive(Default, PartialEq, Clone)]
 pub struct Bytes(Vec<u8>);
 
@@ -11,6 +14,14 @@ impl Bytes {
 
 	pub fn new_with_len(len: usize) -> Self {
 		Bytes(vec![0; len])
+	}
+
+	pub fn take(self) -> Vec<u8> {
+		self.0
+	}
+
+	pub fn len(&self) -> usize {
+		self.0.len()
 	}
 }
 
@@ -88,6 +99,7 @@ impl AsMut<[u8]> for Bytes {
 	}
 }
 
+/// Wrapper around `Vec<u8>` which represent associated type
 #[derive(Default, PartialEq, Clone)]
 pub struct TaggedBytes<T> {
 	bytes: Bytes,

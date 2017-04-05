@@ -3,8 +3,10 @@ use std::str::FromStr;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use serde;
+use serde::de::Unexpected;
 use rustc_serialize::hex::{ToHex, FromHex};
 use primitives::hash::H256 as GlobalH256;
+use primitives::hash::H160 as GlobalH160;
 
 macro_rules! impl_hash {
 	($name: ident, $other: ident, $size: expr) => {
@@ -84,7 +86,7 @@ macro_rules! impl_hash {
 		}
 
 		impl serde::Serialize for $name {
-			fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error>
+			fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
 			where S: serde::Serializer {
 				let mut hex = String::new();
 				hex.push_str(&$other::from(self.0.clone()).to_hex());
@@ -93,16 +95,20 @@ macro_rules! impl_hash {
 		}
 
 		impl serde::Deserialize for $name {
-			fn deserialize<D>(deserializer: &mut D) -> Result<$name, D::Error> where D: serde::Deserializer {
+			fn deserialize<D>(deserializer: D) -> Result<$name, D::Error> where D: serde::Deserializer {
 				struct HashVisitor;
 
 				impl serde::de::Visitor for HashVisitor {
 					type Value = $name;
 
-					fn visit_str<E>(&mut self, value: &str) -> Result<Self::Value, E> where E: serde::Error {
+					fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+						formatter.write_str("a hash string")
+					}
+
+					fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> where E: serde::de::Error {
 
 						if value.len() != $size * 2 {
-							return Err(serde::Error::custom("Invalid length."));
+							return Err(E::invalid_value(Unexpected::Str(value), &self))
 						}
 
 						match value[..].from_hex() {
@@ -111,11 +117,12 @@ macro_rules! impl_hash {
 								result.copy_from_slice(v);
 								Ok($name($other::from(result).take()))
 							},
-							_ => Err(serde::Error::custom("Invalid hex value."))
+							_ => Err(E::invalid_value(Unexpected::Str(value), &self))
+
 						}
 					}
 
-					fn visit_string<E>(&mut self, value: String) -> Result<Self::Value, E> where E: serde::Error {
+					fn visit_string<E>(self, value: String) -> Result<Self::Value, E> where E: serde::de::Error {
 						self.visit_str(value.as_ref())
 					}
 				}
@@ -127,6 +134,15 @@ macro_rules! impl_hash {
 }
 
 impl_hash!(H256, GlobalH256, 32);
+impl_hash!(H160, GlobalH160, 20);
+
+impl H256 {
+	pub fn reversed(&self) -> Self {
+		let mut result = self.clone();
+		result.0.reverse();
+		result
+	}
+}
 
 #[cfg(test)]
 mod tests {

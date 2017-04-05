@@ -29,5 +29,6 @@ cargo clippy -p rpc
 cargo clippy -p script
 cargo clippy -p serialization
 cargo clippy -p sync
+cargo clippy -p test-data
 cargo clippy -p verification
 

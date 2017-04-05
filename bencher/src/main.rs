@@ -3,8 +3,13 @@ extern crate chain;
 extern crate ethcore_devtools as devtools;
 extern crate test_data;
 extern crate time;
+extern crate verification;
+extern crate network;
+extern crate byteorder;
+extern crate primitives;
 
 mod database;
+mod verifier;
 
 use time::{PreciseTime, Duration};
 use std::io::Write;
@@ -70,4 +75,5 @@ fn main() {
 	benchmark!(database::write);
 	benchmark!(database::reorg_short);
 	benchmark!(database::write_heavy);
+	benchmark!(verifier::main);
 }

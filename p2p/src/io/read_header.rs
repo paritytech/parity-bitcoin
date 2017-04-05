@@ -1,10 +1,11 @@
 use std::io;
 use futures::{Future, Poll, Async};
-use tokio_core::io::{ReadExact, read_exact};
+use tokio_io::AsyncRead;
+use tokio_io::io::{ReadExact, read_exact};
 use message::{MessageHeader, MessageResult};
 use network::Magic;
 
-pub fn read_header<A>(a: A, magic: Magic) -> ReadHeader<A> where A: io::Read {
+pub fn read_header<A>(a: A, magic: Magic) -> ReadHeader<A> where A: AsyncRead {
 	ReadHeader {
 		reader: read_exact(a, [0u8; 24]),
 		magic: magic,
@@ -16,7 +17,7 @@ pub struct ReadHeader<A> {
 	magic: Magic,
 }
 
-impl<A> Future for ReadHeader<A> where A: io::Read {
+impl<A> Future for ReadHeader<A> where A: AsyncRead {
 	type Item = (A, MessageResult<MessageHeader>);
 	type Error = io::Error;
 

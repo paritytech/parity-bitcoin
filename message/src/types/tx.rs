@@ -8,6 +8,14 @@ pub struct Tx {
 	pub transaction: Transaction,
 }
 
+impl Tx {
+	pub fn with_transaction(transaction: Transaction) -> Self {
+		Tx {
+			transaction: transaction,
+		}
+	}
+}
+
 impl Payload for Tx {
 	fn version() -> u32 {
 		0

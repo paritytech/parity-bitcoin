@@ -1,3 +1,5 @@
+//! Fixed-size hashes
+
 use std::{fmt, ops, cmp, str};
 use hex::{ToHex, FromHex, FromHexError};
 use std::hash::{Hash, Hasher};
@@ -10,6 +12,12 @@ macro_rules! impl_hash {
 		impl Default for $name {
 			fn default() -> Self {
 				$name([0u8; $size])
+			}
+		}
+
+		impl AsRef<$name> for $name {
+			fn as_ref(&self) -> &$name {
+				self
 			}
 		}
 

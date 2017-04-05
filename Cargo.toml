@@ -2,13 +2,14 @@
 name = "pbtc"
 version = "0.1.0"
 license = "GPL-3.0"
-authors = ["Ethcore <admin@ethcore.io>"]
+authors = ["Parity Technologies <admin@parity.io>"]
 description = "Parity bitcoin client."
 
 [dependencies]
 log = "0.3"
 env_logger = "0.3"
 app_dirs = "^1.1.1"
+libc = "0.2"
 clap = { version = "2", features = ["yaml"] }
 chain = { path = "chain" }
 keys = { path = "keys" }
@@ -24,6 +25,7 @@ import = { path = "import" }
 bencher = { path = "bencher" }
 logs = { path = "logs" }
 rpc = { path = "rpc" }
+primitives = { path = "primitives" }
 
 [profile.dev]
 debug = true

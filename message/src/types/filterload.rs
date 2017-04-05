@@ -3,6 +3,9 @@ use bytes::Bytes;
 use ser::{Serializable, Deserializable, Stream, Reader, Error as ReaderError};
 use {Payload, MessageResult};
 
+pub const FILTERLOAD_MAX_FILTER_LEN: usize = 36_000;
+pub const FILTERLOAD_MAX_HASH_FUNCS: usize = 50;
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
 /// Controls how the filter is updated after match is found.

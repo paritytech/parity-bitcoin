@@ -50,6 +50,22 @@ pub struct InventoryVector {
 	pub hash: H256,
 }
 
+impl InventoryVector {
+	pub fn tx(hash: H256) -> Self {
+		InventoryVector {
+			inv_type: InventoryType::MessageTx,
+			hash: hash,
+		}
+	}
+
+	pub fn block(hash: H256) -> Self {
+		InventoryVector {
+			inv_type: InventoryType::MessageBlock,
+			hash: hash,
+		}
+	}
+}
+
 impl Serializable for InventoryVector {
 	fn serialize(&self, stream: &mut Stream) {
 		stream

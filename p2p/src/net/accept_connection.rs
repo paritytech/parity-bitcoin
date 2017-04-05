@@ -36,9 +36,10 @@ impl Future for AcceptConnection {
 		};
 		let connection = Connection {
 			stream: stream.into(),
-			version: result.negotiated_version,
-			magic: self.magic,
 			services: result.version.services(),
+			version: result.negotiated_version,
+			version_message: result.version, 
+			magic: self.magic,
 			address: self.address,
 		};
 		Ok(Ok(connection).into())

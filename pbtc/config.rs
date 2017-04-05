@@ -21,6 +21,7 @@ pub struct Config {
 	pub user_agent: String,
 	pub internet_protocol: InternetProtocol,
 	pub rpc_config: RpcHttpConfig,
+	pub block_notify_command: Option<String>,
 }
 
 pub const DEFAULT_DB_CACHE: usize = 512;
@@ -36,17 +37,17 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 
 	let (in_connections, out_connections) = match magic {
 		Magic::Testnet | Magic::Mainnet | Magic::Other(_) => (10, 10),
-		Magic::Regtest => (1, 0),
+		Magic::Regtest | Magic::Unitest => (1, 0),
 	};
 
 	let p2p_threads = match magic {
 		Magic::Testnet | Magic::Mainnet | Magic::Other(_) => 4,
-		Magic::Regtest => 1,
+		Magic::Regtest | Magic::Unitest => 1,
 	};
 
 	// to skip idiotic 30 seconds delay in test-scripts
 	let user_agent = match magic {
-		Magic::Testnet | Magic::Mainnet | Magic::Other(_) => USER_AGENT,
+		Magic::Testnet | Magic::Mainnet | Magic::Unitest | Magic::Other(_) => USER_AGENT,
 		Magic::Regtest => REGTEST_USER_AGENT,
 	};
 
@@ -70,7 +71,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => match magic {
 			Magic::Mainnet => mainnet_seednodes().into_iter().map(Into::into).collect(),
 			Magic::Testnet => testnet_seednodes().into_iter().map(Into::into).collect(),
-			Magic::Other(_) | Magic::Regtest => Vec::new(),
+			Magic::Other(_) | Magic::Regtest | Magic::Unitest => Vec::new(),
 		},
 	};
 
@@ -91,6 +92,11 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 
 	let rpc_config = try!(parse_rpc_config(magic, matches));
 
+	let block_notify_command = match matches.value_of("blocknotify") {
+		Some(s) => Some(try!(s.parse().map_err(|_| "Invalid blocknotify commmand".to_owned()))),
+		None => None,
+	};
+
 	let config = Config {
 		print_to_console: print_to_console,
 		magic: magic,
@@ -105,6 +111,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		user_agent: user_agent.to_string(),
 		internet_protocol: only_net,
 		rpc_config: rpc_config,
+		block_notify_command: block_notify_command,
 	};
 
 	Ok(config)

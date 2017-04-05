@@ -5,17 +5,15 @@ use protocol::Protocol;
 use net::PeerContext;
 
 pub type InboundSyncConnectionRef = Box<InboundSyncConnection>;
-pub type OutboundSyncConnectionRef = Box<OutboundSyncConnection>;
+pub type OutboundSyncConnectionRef = Arc<OutboundSyncConnection>;
 pub type LocalSyncNodeRef = Box<LocalSyncNode>;
 
-// TODO: use this to respond to construct Version message (start_height field)
 pub trait LocalSyncNode : Send + Sync {
-	fn start_height(&self) -> i32;
 	fn create_sync_session(&self, height: i32, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;
 }
 
 pub trait InboundSyncConnection : Send + Sync {
-	fn start_sync_session(&self, version: u32);
+	fn start_sync_session(&self, version: types::Version);
 	fn close_session(&self);
 	fn on_inventory(&self, message: types::Inv);
 	fn on_getdata(&self, message: types::GetData);
@@ -72,10 +70,6 @@ impl OutboundSync {
 		OutboundSync {
 			context: context,
 		}
-	}
-
-	pub fn boxed(self) -> Box<OutboundSyncConnection> {
-		Box::new(self)
 	}
 }
 
@@ -176,7 +170,7 @@ pub struct SyncProtocol {
 
 impl SyncProtocol {
 	pub fn new(context: Arc<PeerContext>) -> Self {
-		let outbound_connection = OutboundSync::new(context.clone()).boxed();
+		let outbound_connection = Arc::new(OutboundSync::new(context.clone()));
 		let inbound_connection = context.global().create_sync_session(0, outbound_connection);
 		SyncProtocol {
 			inbound_connection: inbound_connection,
@@ -187,7 +181,7 @@ impl SyncProtocol {
 
 impl Protocol for SyncProtocol {
 	fn initialize(&mut self) {
-		self.inbound_connection.start_sync_session(self.context.info().version);
+		self.inbound_connection.start_sync_session(self.context.info().version_message.clone());
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes) -> Result<(), Error> {

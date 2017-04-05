@@ -1,5 +1,8 @@
-use uint::U256;
+//! Compact representation of `U256`
 
+use bigint::{U256, Uint};
+
+/// Compact representation of `U256`
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Compact(u32);
 
@@ -31,6 +34,10 @@ impl From<Compact> for U256 {
 impl Compact {
 	pub fn new(u: u32) -> Self {
 		Compact(u)
+	}
+
+	pub fn max_value() -> Self {
+		U256::max_value().into()
 	}
 
 	/// Computes the target [0, T] that a blockhash must land in to be valid
@@ -88,7 +95,7 @@ impl Compact {
 
 #[cfg(test)]
 mod tests {
-	use uint::U256;
+	use bigint::{U256, Uint};
 	use super::Compact;
 
 	#[test]

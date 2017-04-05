@@ -23,7 +23,7 @@ impl ConsensusParams {
 				bip16_time: 1333238400,	// Apr 1 2012
 				bip65_height: 581885,	// 00000000007f6655f22f98e72ed80d8b06dc761d5da09df0fa1dc4be4f861eb6
 			},
-			Magic::Regtest => ConsensusParams {
+			Magic::Regtest | Magic::Unitest => ConsensusParams {
 				bip16_time: 1333238400,	// Apr 1 2012
 				bip65_height: 1351,
 			},

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use super::hash::H256;
-use super::raw_transaction::RawTransaction;
-use db;
+use chain;
+use super::transaction::RawTransaction;
 use miner;
 
 /// Block template as described in:
@@ -85,7 +85,7 @@ impl From<miner::BlockTemplate> for BlockTemplate {
 			version: block.version,
 			previousblockhash: block.previous_header_hash.reversed().into(),
 			curtime: block.time,
-			bits: block.nbits,
+			bits: block.bits.into(),
 			height: block.height,
 			transactions: block.transactions.into_iter().map(Into::into).collect(),
 			coinbasevalue: Some(block.coinbase_value),
@@ -96,8 +96,8 @@ impl From<miner::BlockTemplate> for BlockTemplate {
 	}
 }
 
-impl From<db::IndexedTransaction> for BlockTemplateTransaction {
-	fn from(transaction: db::IndexedTransaction) -> Self {
+impl From<chain::IndexedTransaction> for BlockTemplateTransaction {
+	fn from(transaction: chain::IndexedTransaction) -> Self {
 		use ser::serialize;
 		let serialize = serialize(&transaction.raw);
 		BlockTemplateTransaction {

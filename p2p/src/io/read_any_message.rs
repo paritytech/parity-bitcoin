@@ -1,13 +1,14 @@
 use std::io;
 use futures::{Future, Poll, Async};
-use tokio_core::io::{read_exact, ReadExact};
+use tokio_io::io::{read_exact, ReadExact};
+use tokio_io::AsyncRead;
 use crypto::checksum;
 use network::Magic;
 use message::{Error, MessageHeader, MessageResult, Command};
 use bytes::Bytes;
 use io::{read_header, ReadHeader};
 
-pub fn read_any_message<A>(a: A, magic: Magic) -> ReadAnyMessage<A> where A: io::Read {
+pub fn read_any_message<A>(a: A, magic: Magic) -> ReadAnyMessage<A> where A: AsyncRead {
 	ReadAnyMessage {
 		state: ReadAnyMessageState::ReadHeader(read_header(a, magic)),
 	}
@@ -26,7 +27,7 @@ pub struct ReadAnyMessage<A> {
 	state: ReadAnyMessageState<A>,
 }
 
-impl<A> Future for ReadAnyMessage<A> where A: io::Read {
+impl<A> Future for ReadAnyMessage<A> where A: AsyncRead {
 	type Item = MessageResult<(Command, Bytes)>;
 	type Error = io::Error;
 

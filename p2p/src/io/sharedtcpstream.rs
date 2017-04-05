@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::net::Shutdown;
 use std::io::{Read, Write, Error};
+use futures::Poll;
+use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_core::net::TcpStream;
 
 pub struct SharedTcpStream {
@@ -29,6 +31,14 @@ impl From<TcpStream> for SharedTcpStream {
 impl Read for SharedTcpStream {
 	fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
 		Read::read(&mut (&*self.io as &TcpStream), buf)
+	}
+}
+
+impl AsyncRead for SharedTcpStream {}
+
+impl AsyncWrite for SharedTcpStream {
+	fn shutdown(&mut self) -> Poll<(), Error> {
+		self.io.shutdown(Shutdown::Both).map(Into::into)
 	}
 }
 

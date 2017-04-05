@@ -1,16 +1,21 @@
 use std::collections::HashSet;
+use std::sync::{Arc, Weak};
+use std::thread;
+use std::time::Duration;
+use parking_lot::{Mutex, Condvar};
 use time::precise_time_s;
-use orphan_blocks_pool::OrphanBlocksPool;
-use orphan_transactions_pool::OrphanTransactionsPool;
-use synchronization_peers::Peers;
 use primitives::hash::H256;
+use synchronization_client_core::{ClientCore, SynchronizationClientCore};
+use synchronization_executor::TaskExecutor;
+use synchronization_peers_tasks::PeersTasks;
+use utils::{OrphanBlocksPool, OrphanTransactionsPool};
 
 /// Management interval (in ms)
-pub const MANAGEMENT_INTERVAL_MS: u64 = 10 * 1000;
+const MANAGEMENT_INTERVAL_MS: u64 = 10 * 1000;
 /// Response time before getting block to decrease peer score
 const DEFAULT_PEER_BLOCK_FAILURE_INTERVAL_MS: u32 = 60 * 1000;
-/// Response time before getting inventory to decrease peer score
-const DEFAULT_PEER_INVENTORY_FAILURE_INTERVAL_MS: u32 = 60 * 1000;
+/// Response time before getting headers to decrease peer score
+const DEFAULT_PEER_HEADERS_FAILURE_INTERVAL_MS: u32 = 60 * 1000;
 /// Unknown orphan block removal time
 const DEFAULT_UNKNOWN_BLOCK_REMOVAL_TIME_MS: u32 = 20 * 60 * 1000;
 /// Maximal number of orphaned blocks
@@ -20,19 +25,107 @@ const DEFAULT_ORPHAN_TRANSACTION_REMOVAL_TIME_MS: u32 = 10 * 60 * 1000;
 /// Maximal number of orphaned transactions
 const DEFAULT_ORPHAN_TRANSACTIONS_MAX_LEN: usize = 10000;
 
+/// Synchronization management worker
+pub struct ManagementWorker {
+	/// Stop flag.
+	is_stopping: Arc<Mutex<bool>>,
+	/// Stop event.
+	stopping_event: Arc<Condvar>,
+	/// Verification thread.
+	thread: Option<thread::JoinHandle<()>>,
+}
+
+impl ManagementWorker {
+	pub fn new<T: TaskExecutor>(core: Weak<Mutex<SynchronizationClientCore<T>>>) -> Self {
+		let is_stopping = Arc::new(Mutex::new(false));
+		let stopping_event = Arc::new(Condvar::new());
+		ManagementWorker {
+			is_stopping: is_stopping.clone(),
+			stopping_event: stopping_event.clone(),
+			thread: Some(thread::Builder::new()
+				.name("Sync management thread".to_string())
+				.spawn(move || ManagementWorker::worker_proc(is_stopping, stopping_event, core))
+				.expect("Error creating management thread"))
+		}
+	}
+
+	fn worker_proc<T: TaskExecutor>(is_stopping: Arc<Mutex<bool>>, stopping_event: Arc<Condvar>, core: Weak<Mutex<SynchronizationClientCore<T>>>) {
+		let peers_config = ManagePeersConfig::default();
+		let unknown_config = ManageUnknownBlocksConfig::default();
+		let orphan_config = ManageOrphanTransactionsConfig::default();
+
+		loop {
+			let mut lock = is_stopping.lock();
+			if *lock {
+				break;
+			}
+
+			if !stopping_event.wait_for(&mut lock, Duration::from_millis(MANAGEMENT_INTERVAL_MS)).timed_out() {
+				if *lock {
+					break;
+				}
+
+				// spurious wakeup?
+				continue;
+			}
+			drop(lock);
+
+			// if core is dropped => stop thread
+			let core = match core.upgrade() {
+				None => break,
+				Some(core) => core,
+			};
+
+			let mut core = core.lock();
+			// trace synchronization state
+			core.print_synchronization_information();
+			// execute management tasks if not saturated
+			if core.state().is_synchronizing() || core.state().is_nearly_saturated() {
+				let (blocks_to_request, blocks_to_forget) = manage_synchronization_peers_blocks(&peers_config, core.peers_tasks());
+				core.forget_failed_blocks(&blocks_to_forget);
+				core.execute_synchronization_tasks(
+					if blocks_to_request.is_empty() { None } else { Some(blocks_to_request) },
+					if blocks_to_forget.is_empty() { None } else { Some(blocks_to_forget) },
+				);
+
+				manage_synchronization_peers_headers(&peers_config, core.peers_tasks());
+				manage_orphaned_transactions(&orphan_config, core.orphaned_transactions_pool());
+				if let Some(orphans_to_remove) = manage_unknown_orphaned_blocks(&unknown_config, core.orphaned_blocks_pool()) {
+					for orphan_to_remove in orphans_to_remove {
+						core.chain().forget_block(&orphan_to_remove);
+					}
+				}
+			}
+		}
+
+		trace!(target: "sync", "Stopping sync management thread");
+	}
+}
+
+impl Drop for ManagementWorker {
+	fn drop(&mut self) {
+		if let Some(join_handle) = self.thread.take() {
+			*self.is_stopping.lock() = true;
+			self.stopping_event.notify_all();
+			join_handle.join().expect("Clean shutdown.");
+		}
+	}
+}
+
+
 /// Peers management configuration
 pub struct ManagePeersConfig {
 	/// Time interval (in milliseconds) to wait block from the peer before penalizing && reexecuting tasks
 	pub block_failure_interval_ms: u32,
-	/// Time interval (in milliseconds) to wait inventory from the peer before penalizing && reexecuting tasks
-	pub inventory_failure_interval_ms: u32,
+	/// Time interval (in milliseconds) to wait headers from the peer before penalizing && reexecuting tasks
+	pub headers_failure_interval_ms: u32,
 }
 
 impl Default for ManagePeersConfig {
 	fn default() -> Self {
 		ManagePeersConfig {
 			block_failure_interval_ms: DEFAULT_PEER_BLOCK_FAILURE_INTERVAL_MS,
-			inventory_failure_interval_ms: DEFAULT_PEER_INVENTORY_FAILURE_INTERVAL_MS,
+			headers_failure_interval_ms: DEFAULT_PEER_HEADERS_FAILURE_INTERVAL_MS,
 		}
 	}
 }
@@ -72,15 +165,16 @@ impl Default for ManageOrphanTransactionsConfig {
 }
 
 /// Manage stalled synchronization peers blocks tasks
-pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &mut Peers) -> (Vec<H256>, Vec<H256>) {
+pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &mut PeersTasks) -> (Vec<H256>, Vec<H256>) {
 	let mut blocks_to_request: Vec<H256> = Vec::new();
 	let mut blocks_to_forget: Vec<H256> = Vec::new();
 	let now = precise_time_s();
 
 	// reset tasks for peers, which has not responded during given period
-	for (worst_peer_index, worst_peer_time) in peers.ordered_blocks_requests() {
+	let ordered_blocks_requests: Vec<_> = peers.ordered_blocks_requests().clone().into_iter().collect();
+	for (worst_peer_index, blocks_request) in ordered_blocks_requests {
 		// check if peer has not responded within given time
-		let time_diff = now - worst_peer_time;
+		let time_diff = now - blocks_request.timestamp;
 		if time_diff <= config.block_failure_interval_ms as f64 / 1000f64 {
 			break;
 		}
@@ -97,24 +191,26 @@ pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: &m
 		// if peer failed many times => forget it
 		if peers.on_peer_block_failure(worst_peer_index) {
 			warn!(target: "sync", "Too many failures for peer#{}. Excluding from synchronization", worst_peer_index);
+			peers.unuseful_peer(worst_peer_index);
 		}
 	}
 
 	(blocks_to_request, blocks_to_forget)
 }
 
-/// Manage stalled synchronization peers inventory tasks
-pub fn manage_synchronization_peers_inventory(config: &ManagePeersConfig, peers: &mut Peers) {
+/// Manage stalled synchronization peers headers tasks
+pub fn manage_synchronization_peers_headers(config: &ManagePeersConfig, peers: &mut PeersTasks) {
 	let now = precise_time_s();
 	// reset tasks for peers, which has not responded during given period
-	for (worst_peer_index, worst_peer_time) in peers.ordered_inventory_requests() {
+	let ordered_headers_requests: Vec<_> = peers.ordered_headers_requests().clone().into_iter().collect();
+	for (worst_peer_index, headers_request) in ordered_headers_requests {
 		// check if peer has not responded within given time
-		let time_diff = now - worst_peer_time;
-		if time_diff <= config.inventory_failure_interval_ms as f64 / 1000f64 {
+		let time_diff = now - headers_request.timestamp;
+		if time_diff <= config.headers_failure_interval_ms as f64 / 1000f64 {
 			break;
 		}
 
-		peers.on_peer_inventory_failure(worst_peer_index);
+		peers.on_peer_headers_failure(worst_peer_index);
 	}
 }
 
@@ -146,7 +242,7 @@ pub fn manage_unknown_orphaned_blocks(config: &ManageUnknownBlocksConfig, orphan
 
 	// remove unknown blocks
 	let unknown_to_remove: Vec<H256> = orphaned_blocks_pool.remove_blocks(&unknown_to_remove).into_iter()
-		.map(|t| t.0)
+		.map(|b| b.header.hash)
 		.collect();
 
 	if unknown_to_remove.is_empty() { None } else { Some(unknown_to_remove) }
@@ -180,7 +276,7 @@ pub fn manage_orphaned_transactions(config: &ManageOrphanTransactionsConfig, orp
 
 	// remove unknown blocks
 	let orphans_to_remove: Vec<H256> = orphaned_transactions_pool.remove_transactions(&orphans_to_remove).into_iter()
-		.map(|t| t.0)
+		.map(|t| t.hash)
 		.collect();
 
 	if orphans_to_remove.is_empty() { None } else { Some(orphans_to_remove) }
@@ -189,22 +285,21 @@ pub fn manage_orphaned_transactions(config: &ManageOrphanTransactionsConfig, orp
 #[cfg(test)]
 mod tests {
 	use std::collections::HashSet;
-	use super::{ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig, manage_synchronization_peers_blocks,
-		manage_unknown_orphaned_blocks, manage_orphaned_transactions};
-	use synchronization_peers::Peers;
 	use primitives::hash::H256;
 	use test_data;
-	use orphan_blocks_pool::OrphanBlocksPool;
-	use orphan_transactions_pool::OrphanTransactionsPool;
+	use synchronization_peers_tasks::PeersTasks;
+	use super::{ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig, manage_synchronization_peers_blocks,
+		manage_unknown_orphaned_blocks, manage_orphaned_transactions};
+	use utils::{OrphanBlocksPool, OrphanTransactionsPool};
 
 	#[test]
 	fn manage_good_peer() {
 		let config = ManagePeersConfig { block_failure_interval_ms: 1000, ..Default::default() };
-		let mut peers = Peers::new();
+		let mut peers = PeersTasks::default();
 		peers.on_blocks_requested(1, &vec![H256::from(0), H256::from(1)]);
 		peers.on_block_received(1, &H256::from(0));
 		assert_eq!(manage_synchronization_peers_blocks(&config, &mut peers), (vec![], vec![]));
-		assert_eq!(peers.idle_peers_for_blocks(), vec![]);
+		assert_eq!(peers.idle_peers_for_blocks().len(), 0);
 	}
 
 	#[test]
@@ -212,7 +307,7 @@ mod tests {
 		use std::thread::sleep;
 		use std::time::Duration;
 		let config = ManagePeersConfig { block_failure_interval_ms: 0, ..Default::default() };
-		let mut peers = Peers::new();
+		let mut peers = PeersTasks::default();
 		peers.on_blocks_requested(1, &vec![H256::from(0)]);
 		peers.on_blocks_requested(2, &vec![H256::from(1)]);
 		sleep(Duration::from_millis(1));
@@ -231,7 +326,7 @@ mod tests {
 		let config = ManageUnknownBlocksConfig { removal_time_ms: 1000, max_number: 100 };
 		let mut pool = OrphanBlocksPool::new();
 		let block = test_data::genesis();
-		pool.insert_unknown_block(block.hash(), block.into());
+		pool.insert_unknown_block(block.into());
 		assert_eq!(manage_unknown_orphaned_blocks(&config, &mut pool), None);
 		assert_eq!(pool.len(), 1);
 	}
@@ -244,7 +339,7 @@ mod tests {
 		let mut pool = OrphanBlocksPool::new();
 		let block = test_data::genesis();
 		let block_hash = block.hash();
-		pool.insert_unknown_block(block_hash.clone(), block.into());
+		pool.insert_unknown_block(block.into());
 		sleep(Duration::from_millis(1));
 
 		assert_eq!(manage_unknown_orphaned_blocks(&config, &mut pool), Some(vec![block_hash]));
@@ -258,9 +353,8 @@ mod tests {
 		let block1 = test_data::genesis();
 		let block1_hash = block1.hash();
 		let block2 = test_data::block_h2();
-		let block2_hash = block2.hash();
-		pool.insert_unknown_block(block1_hash.clone(), block1.into());
-		pool.insert_unknown_block(block2_hash.clone(), block2.into());
+		pool.insert_unknown_block(block1.into());
+		pool.insert_unknown_block(block2.into());
 		assert_eq!(manage_unknown_orphaned_blocks(&config, &mut pool), Some(vec![block1_hash]));
 		assert_eq!(pool.len(), 1);
 	}
@@ -271,7 +365,7 @@ mod tests {
 		let mut pool = OrphanTransactionsPool::new();
 		let transaction = test_data::block_h170().transactions[1].clone();
 		let unknown_inputs: HashSet<H256> = transaction.inputs.iter().map(|i| i.previous_output.hash.clone()).collect();
-		pool.insert(transaction.hash(), transaction, unknown_inputs);
+		pool.insert(transaction.into(), unknown_inputs);
 		assert_eq!(manage_orphaned_transactions(&config, &mut pool), None);
 		assert_eq!(pool.len(), 1);
 	}
@@ -285,7 +379,7 @@ mod tests {
 		let transaction = test_data::block_h170().transactions[1].clone();
 		let unknown_inputs: HashSet<H256> = transaction.inputs.iter().map(|i| i.previous_output.hash.clone()).collect();
 		let transaction_hash = transaction.hash();
-		pool.insert(transaction_hash.clone(), transaction, unknown_inputs);
+		pool.insert(transaction.into(), unknown_inputs);
 		sleep(Duration::from_millis(1));
 
 		assert_eq!(manage_orphaned_transactions(&config, &mut pool), Some(vec![transaction_hash]));
@@ -301,9 +395,8 @@ mod tests {
 		let transaction1_hash = transaction1.hash();
 		let transaction2 = test_data::block_h182().transactions[1].clone();
 		let unknown_inputs2: HashSet<H256> = transaction2.inputs.iter().map(|i| i.previous_output.hash.clone()).collect();
-		let transaction2_hash = transaction2.hash();
-		pool.insert(transaction1_hash.clone(), transaction1, unknown_inputs1);
-		pool.insert(transaction2_hash.clone(), transaction2, unknown_inputs2);
+		pool.insert(transaction1.into(), unknown_inputs1);
+		pool.insert(transaction2.into(), unknown_inputs2);
 		assert_eq!(manage_orphaned_transactions(&config, &mut pool), Some(vec![transaction1_hash]));
 		assert_eq!(pool.len(), 1);
 	}

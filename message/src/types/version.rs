@@ -8,11 +8,17 @@ use common::{NetAddress, Services};
 use {Payload, MessageResult};
 use serialization::deserialize_payload;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Version {
 	V0(V0),
 	V106(V0, V106),
 	V70001(V0, V106, V70001),
+}
+
+impl Default for Version {
+	fn default() -> Version {
+		Version::V0(V0::default())
+	}
 }
 
 impl Payload for Version {
@@ -78,9 +84,17 @@ impl Version {
 			Version::V70001(ref s, _, _) => s.services,
 		}
 	}
+
+	pub fn relay_transactions(&self) -> bool {
+		match *self {
+			Version::V0(_) => true,
+			Version::V106(_, _) => true,
+			Version::V70001(_, _, ref v) => v.relay,
+		}
+	}
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct V0 {
 	pub version: u32,
 	pub services: Services,
@@ -88,7 +102,7 @@ pub struct V0 {
 	pub receiver: NetAddress,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct V106 {
 	pub from: NetAddress,
 	pub nonce: u64,
@@ -96,7 +110,7 @@ pub struct V106 {
 	pub start_height: i32,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct V70001 {
 	pub relay: bool,
 }

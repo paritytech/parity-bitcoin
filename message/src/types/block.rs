@@ -8,6 +8,14 @@ pub struct Block {
 	pub block: ChainBlock,
 }
 
+impl Block {
+	pub fn with_block(block: ChainBlock) -> Self {
+		Block {
+			block: block,
+		}
+	}
+}
+
 impl Payload for Block {
 	fn version() -> u32 {
 		0

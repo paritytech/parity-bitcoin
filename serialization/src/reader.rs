@@ -84,6 +84,11 @@ impl<R> Reader<R> where R: io::Read {
 		T::deserialize(self)
 	}
 
+	pub fn read_with_proxy<T, F>(&mut self, proxy: F) -> Result<T, Error> where T: Deserializable, F: FnMut(&[u8]) {
+		let mut reader = Reader::from_read(Proxy::new(self, proxy));
+		T::deserialize(&mut reader)
+	}
+
 	pub fn read_slice(&mut self, bytes: &mut [u8]) -> Result<(), Error> {
 		io::Read::read_exact(self, bytes).map_err(|_| Error::UnexpectedEnd)
 	}
@@ -146,5 +151,28 @@ impl<R, T> Iterator for ReadIterator<R, T> where R: io::Read, T: Deserializable 
 		} else {
 			Some(self.reader.read())
 		}
+	}
+}
+
+struct Proxy<F, T> {
+	from: F,
+	to: T,
+}
+
+impl<F, T> Proxy<F, T> {
+	fn new(from: F, to: T) -> Self {
+		Proxy {
+			from: from,
+			to: to,
+		}
+	}
+}
+
+impl<F, T> io::Read for Proxy<F, T> where F: io::Read, T: FnMut(&[u8]) {
+	fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+		let len = try!(io::Read::read(&mut self.from, buf));
+		let to = &mut self.to;
+		to(&buf[..len]);
+		Ok(len)
 	}
 }

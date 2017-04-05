@@ -1,7 +1,7 @@
 use primitives::hash::H256;
 use ser::Serializable;
 use primitives::bytes::Bytes;
-use chain::{Transaction, TransactionInput, TransactionOutput, OutPoint};
+use chain::{Transaction, IndexedTransaction, TransactionInput, TransactionOutput, OutPoint};
 
 #[derive(Debug, Default, Clone)]
 pub struct ChainBuilder {
@@ -36,6 +36,15 @@ impl ChainBuilder {
 impl Into<Transaction> for TransactionBuilder {
 	fn into(self) -> Transaction {
 		self.transaction
+	}
+}
+
+impl Into<IndexedTransaction> for TransactionBuilder {
+	fn into(self) -> IndexedTransaction {
+		IndexedTransaction {
+			hash: self.transaction.hash(),
+			raw: self.transaction,
+		}
 	}
 }
 
@@ -97,7 +106,7 @@ impl TransactionBuilder {
 				index: output_index,
 			},
 			script_sig: Bytes::new_with_len(0),
-			sequence: 0,
+			sequence: 0xffffffff,
 		});
 		self
 	}
@@ -113,8 +122,14 @@ impl TransactionBuilder {
 				index: output_index,
 			},
 			script_sig: Bytes::new_with_len(0),
-			sequence: 0,
+			sequence: 0xffffffff,
 		}];
+		self
+	}
+
+	pub fn lock(mut self) -> Self {
+		self.transaction.inputs[0].sequence = 0;
+		self.transaction.lock_time = 500000;
 		self
 	}
 

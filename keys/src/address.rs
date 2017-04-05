@@ -1,3 +1,5 @@
+//! `AddressHash` with network identifier and format type
+//!
 //! A Bitcoin address, or simply address, is an identifier of 26-35 alphanumeric characters, beginning with the number 1
 //! or 3, that represents a possible destination for a bitcoin payment.
 //!
@@ -25,6 +27,7 @@ pub enum Type {
 	P2SH,
 }
 
+/// `AddressHash` with network identifier and format type
 #[derive(Debug, PartialEq)]
 pub struct Address {
 	/// The type of the address.

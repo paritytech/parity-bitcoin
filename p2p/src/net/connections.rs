@@ -35,8 +35,13 @@ impl Connections {
 		self.channels().values().map(|channel| channel.peer_info().address).collect()
 	}
 
+	/// Returns info on every peer
+	pub fn info(&self) -> Vec<PeerInfo> {
+		self.channels().values().map(|channel| channel.peer_info()).collect()
+	}
+
 	/// Returns number of connections.
-	pub fn _count(&self) -> usize {
+	pub fn count(&self) -> usize {
 		self.channels.read().len()
 	}
 
@@ -50,6 +55,7 @@ impl Connections {
 			address: connection.address,
 			direction: direction,
 			version: connection.version,
+			version_message: connection.version_message,
 			magic: connection.magic,
 		};
 

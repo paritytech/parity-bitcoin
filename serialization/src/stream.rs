@@ -1,17 +1,24 @@
-//! Stream used for serialization.
+//! Stream used for serialization of Bitcoin structures
 use std::io::{self, Write};
+use std::borrow::Borrow;
 use compact_integer::CompactInteger;
 use bytes::Bytes;
 
-pub fn serialize(t: &Serializable) -> Bytes {
+pub fn serialize<T>(t: &T) -> Bytes where T: Serializable{
 	let mut stream = Stream::default();
 	stream.append(t);
 	stream.out()
 }
 
-pub fn serialized_list_size<T>(t: &[T]) -> usize where T: Serializable {
+pub fn serialize_list<T, K>(t: &[K]) -> Bytes where T: Serializable, K: Borrow<T> {
+	let mut stream = Stream::default();
+	stream.append_list(t);
+	stream.out()
+}
+
+pub fn serialized_list_size<T, K>(t: &[K]) -> usize where T: Serializable, K: Borrow<T> {
 	CompactInteger::from(t.len()).serialized_size() +
-		t.iter().map(Serializable::serialized_size).sum::<usize>()
+		t.iter().map(Borrow::borrow).map(Serializable::serialized_size).sum::<usize>()
 }
 
 pub trait Serializable {
@@ -25,7 +32,7 @@ pub trait Serializable {
 	}
 }
 
-/// Stream used for serialization.
+/// Stream used for serialization of Bitcoin structures
 #[derive(Default)]
 pub struct Stream {
 	buffer: Vec<u8>,
@@ -38,7 +45,7 @@ impl Stream {
 	}
 
 	/// Serializes the struct and appends it to the end of stream.
-	pub fn append(&mut self, t: &Serializable) -> &mut Self {
+	pub fn append<T>(&mut self, t: &T) -> &mut Self where T: Serializable {
 		t.serialize(self);
 		self
 	}
@@ -51,18 +58,10 @@ impl Stream {
 	}
 
 	/// Appends a list of serializable structs to the end of the stream.
-	pub fn append_list<T>(&mut self, t: &[T]) -> &mut Self where T: Serializable {
+	pub fn append_list<T, K>(&mut self, t: &[K]) -> &mut Self where T: Serializable, K: Borrow<T> {
 		CompactInteger::from(t.len()).serialize(self);
 		for i in t {
-			i.serialize(self);
-		}
-		self
-	}
-
-	pub fn append_list_ref<T>(&mut self, t: &[&T]) -> &mut Self where T: Serializable {
-		CompactInteger::from(t.len()).serialize(self);
-		for i in t {
-			i.serialize(self);
+			i.borrow().serialize(self);
 		}
 		self
 	}

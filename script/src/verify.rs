@@ -1,10 +1,12 @@
 use keys::{Public, Signature};
-use chain::{
-	self, SEQUENCE_FINAL, SEQUENCE_LOCKTIME_DISABLE_FLAG,
-	SEQUENCE_LOCKTIME_MASK, SEQUENCE_LOCKTIME_TYPE_FLAG
+use chain::constants::{
+	SEQUENCE_FINAL, SEQUENCE_LOCKTIME_DISABLE_FLAG,
+	SEQUENCE_LOCKTIME_MASK, SEQUENCE_LOCKTIME_TYPE_FLAG, LOCKTIME_THRESHOLD
 };
-use {SignatureVersion, Script, TransactionInputSigner, Num};
+use sign::SignatureVersion;
+use {Script, TransactionInputSigner, Num};
 
+/// Checks transaction signature
 pub trait SignatureChecker {
 	fn check_signature(
 		&self,
@@ -64,8 +66,8 @@ impl SignatureChecker for TransactionSignatureChecker {
 		// the nLockTime in the transaction.
 		let lock_time_u32: u32 = lock_time.into();
 		if !(
-			(self.signer.lock_time < chain::LOCKTIME_THRESHOLD && lock_time_u32 < chain::LOCKTIME_THRESHOLD) ||
-			(self.signer.lock_time >= chain::LOCKTIME_THRESHOLD && lock_time_u32 >= chain::LOCKTIME_THRESHOLD)
+			(self.signer.lock_time < LOCKTIME_THRESHOLD && lock_time_u32 < LOCKTIME_THRESHOLD) ||
+			(self.signer.lock_time >= LOCKTIME_THRESHOLD && lock_time_u32 >= LOCKTIME_THRESHOLD)
 		) {
 			return false;
 		}

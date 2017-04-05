@@ -11,28 +11,7 @@ use ser::{
 };
 use crypto::dhash256;
 use hash::H256;
-
-// Below flags apply in the context of BIP 68
-// If this flag set, CTxIn::nSequence is NOT interpreted as a
-// relative lock-time.
-pub const SEQUENCE_LOCKTIME_DISABLE_FLAG: u32 = 1u32 << 31;
-
-// Setting nSequence to this value for every input in a transaction
-// disables nLockTime.
-pub const SEQUENCE_FINAL: u32 = 0xffffffff;
-
-// If CTxIn::nSequence encodes a relative lock-time and this flag
-// is set, the relative lock-time has units of 512 seconds,
-// otherwise it specifies blocks with a granularity of 1.
-pub const SEQUENCE_LOCKTIME_TYPE_FLAG: u32 = (1 << 22);
-
-// If CTxIn::nSequence encodes a relative lock-time, this mask is
-// applied to extract that lock-time from the sequence field.
-pub const SEQUENCE_LOCKTIME_MASK: u32 = 0x0000ffff;
-
-/// Threshold for `nLockTime`: below this value it is interpreted as block number,
-/// otherwise as UNIX timestamp.
-pub const LOCKTIME_THRESHOLD: u32 = 500000000; // Tue Nov  5 00:53:20 1985 UTC
+use constants::{SEQUENCE_FINAL, LOCKTIME_THRESHOLD};
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct OutPoint {
@@ -72,10 +51,6 @@ impl OutPoint {
 		}
 	}
 
-	pub fn hash(&self) -> &H256 {
-		&self.hash
-	}
-
 	pub fn is_null(&self) -> bool {
 		self.hash.is_zero() && self.index == u32::max_value()
 	}
@@ -89,6 +64,14 @@ pub struct TransactionInput {
 }
 
 impl TransactionInput {
+	pub fn coinbase(script_sig: Bytes) -> Self {
+		TransactionInput {
+			previous_output: OutPoint::null(),
+			script_sig: script_sig,
+			sequence: SEQUENCE_FINAL,
+		}
+	}
+
 	pub fn is_final(&self) -> bool {
 		self.sequence == SEQUENCE_FINAL
 	}
@@ -238,11 +221,29 @@ impl Transaction {
 		&self.outputs
 	}
 
+	pub fn is_empty(&self) -> bool {
+		self.inputs.is_empty() || self.outputs.is_empty()
+	}
+
+	pub fn is_null(&self) -> bool {
+		self.inputs.iter().any(|input| input.previous_output.is_null())
+	}
+
 	pub fn is_coinbase(&self) -> bool {
 		self.inputs.len() == 1 && self.inputs[0].previous_output.is_null()
 	}
 
-	pub fn is_final(&self, block_height: u32, block_time: u32) -> bool {
+	pub fn is_final(&self) -> bool {
+		// if lock_time is 0, transaction is final
+		if self.lock_time == 0 {
+			return true;
+		}
+		// setting all sequence numbers to 0xffffffff disables the time lock, so if you want to use locktime,
+		// at least one input must have a sequence number below the maximum.
+		self.inputs.iter().all(TransactionInput::is_final)
+	}
+
+	pub fn is_final_in_block(&self, block_height: u32, block_time: u32) -> bool {
 		if self.lock_time == 0 {
 			return true;
 		}
@@ -261,9 +262,14 @@ impl Transaction {
 	}
 
 	pub fn total_spends(&self) -> u64 {
-		self.outputs
-			.iter()
-			.fold(0u64, |acc, out| acc + out.value)
+		let mut result = 0u64;
+		for output in self.outputs.iter() {
+			if u64::max_value() - result < output.value {
+				return u64::max_value();
+			}
+			result += output.value;
+		}
+		result
 	}
 }
 

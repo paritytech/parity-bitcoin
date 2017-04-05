@@ -1,3 +1,5 @@
+//! Bitcoind blockchain database importer
+
 #[macro_use]
 extern crate log;
 extern crate primitives;
@@ -10,4 +12,4 @@ mod fs;
 
 pub use primitives::{hash, bytes};
 
-pub use blk::{open_blk_file, open_blk_dir};
+pub use blk::{open_blk_dir, BlkDir};
