@@ -18,8 +18,6 @@ extern crate verification;
 extern crate miner;
 extern crate script;
 extern crate serialization as ser;
-#[cfg(test)]
-extern crate ethcore_devtools as devtools;
 extern crate rand;
 extern crate network;
 

@@ -2,9 +2,10 @@ diff --git Cargo.toml Cargo.toml
 index fca51d5..6a16dd6 100644
 --- Cargo.toml
 +++ Cargo.toml
-@@ -24,3 +24,5 @@ import = { path = "import" }
+@@ -24,3 +24,6 @@ import = { path = "import" }
  [[bin]]
  path = "pbtc/main.rs"
  name = "pbtc"
 +
 +[workspace]
++members = ["bencher"]

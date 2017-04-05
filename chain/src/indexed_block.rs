@@ -1,8 +1,9 @@
 use std::{io, cmp};
 use hash::H256;
+use hex::FromHex;
 use ser::{
 	Serializable, serialized_list_size,
-	Deserializable, Reader, Error as ReaderError
+	Deserializable, Reader, Error as ReaderError, deserialize
 };
 use block::Block;
 use transaction::Transaction;
@@ -73,5 +74,11 @@ impl Deserializable for IndexedBlock {
 		};
 
 		Ok(block)
+	}
+}
+
+impl From<&'static str> for IndexedBlock {
+	fn from(s: &'static str) -> Self {
+		deserialize(&s.from_hex().unwrap() as &[u8]).unwrap()
 	}
 }
