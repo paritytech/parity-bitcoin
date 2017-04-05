@@ -1063,11 +1063,6 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				}
 				Some(verification_tasks)
 			},
-			//Err(db::Error::Consistency(e)) => {
-				//// process as verification error
-				//self.on_block_verification_error(&format!("{:?}", db::Error::Consistency(e)), block.hash());
-				//None
-			//},
 			Err(e) => {
 				// process as irrecoverable failure
 				panic!("Block {} insertion failed with error {:?}", block.hash().to_reversed_str(), e);
@@ -1228,11 +1223,6 @@ pub mod tests {
 			self.data.lock().best_blocks.push(block_hash.clone());
 		}
 	}
-
-	//fn create_disk_storage() -> StorageRef {
-		//let path = RandomTempPath::create_dir();
-		//Arc::new(db::Storage::new(path.as_path()).unwrap())
-	//}
 
 	fn create_sync(storage: Option<StorageRef>, verifier: Option<DummyVerifier>) -> (Arc<DummyTaskExecutor>, ClientCoreRef<SynchronizationClientCore<DummyTaskExecutor>>, Arc<SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
 		let sync_peers = Arc::new(PeersImpl::default());

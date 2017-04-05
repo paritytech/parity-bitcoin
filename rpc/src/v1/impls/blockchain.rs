@@ -37,7 +37,6 @@ pub struct BlockChainClientCore {
 
 impl BlockChainClientCore {
 	pub fn new(network: Magic, storage: db::SharedStore) -> Self {
-		//assert!(storage.best_block().is_some());
 
 		BlockChainClientCore {
 			network: network,
@@ -49,7 +48,6 @@ impl BlockChainClientCore {
 impl BlockChainClientCoreApi for BlockChainClientCore {
 	fn best_block_hash(&self) -> GlobalH256 {
 		self.storage.best_block().hash
-		//self.storage.best_block().expect("storage with genesis block required").hash
 	}
 
 	fn block_hash(&self, height: u32) -> Option<GlobalH256> {
@@ -73,7 +71,6 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 				let block: chain::IndexedBlock = block.into();
 				let height = self.storage.block_number(block.hash());
 				let confirmations = match height {
-					//Some(block_number) => (self.storage.best_block().expect("genesis block is required").number - block_number + 1) as i64,
 					Some(block_number) => (self.storage.best_block().number - block_number + 1) as i64,
 					None => -1,
 				};
@@ -131,7 +128,6 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 			None => return Err(transaction_not_found(prev_out.hash)),
 		};
 
-		//let best_block = self.storage.best_block().expect("storage with genesis block is required");
 		let best_block = self.storage.best_block();
 		if best_block.number < meta.height() {
 			// this is possible during reorgs

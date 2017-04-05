@@ -2,7 +2,7 @@
 name = "pbtc"
 version = "0.1.0"
 license = "GPL-3.0"
-authors = ["Ethcore <admin@ethcore.io>"]
+authors = ["Parity Technologies <admin@parity.io>"]
 description = "Parity bitcoin client."
 
 [dependencies]
@@ -19,7 +19,6 @@ miner = { path = "miner" }
 p2p = { path = "p2p" }
 script = { path = "script" }
 db = { path = "db" }
-#newdb = { path = "newdb" }
 verification = { path = "verification" }
 sync = { path = "sync" }
 import = { path = "import" }

@@ -92,48 +92,48 @@ impl PreviousTransactionOutputProvider for MemoryPoolTransactionOutputProvider {
 	}
 }
 
-//#[cfg(test)]
-//mod tests {
-	//use std::sync::Arc;
-	//use parking_lot::RwLock;
-	//use chain::OutPoint;
-	//use db::{self, TransactionOutputObserver, PreviousTransactionOutputProvider};
-	//use miner::MemoryPool;
-	//use test_data;
-	//use super::MemoryPoolTransactionOutputProvider;
+#[cfg(test)]
+mod tests {
+	use std::sync::Arc;
+	use parking_lot::RwLock;
+	use chain::OutPoint;
+	use db::{TransactionOutputObserver, PreviousTransactionOutputProvider, BlockChainDatabase};
+	use miner::MemoryPool;
+	use test_data;
+	use super::MemoryPoolTransactionOutputProvider;
 
-	//#[test]
-	//fn when_transaction_depends_on_removed_nonfinal_transaction() {
-		//let dchain = &mut test_data::ChainBuilder::new();
+	#[test]
+	fn when_transaction_depends_on_removed_nonfinal_transaction() {
+		let dchain = &mut test_data::ChainBuilder::new();
 
-		//test_data::TransactionBuilder::with_output(10).store(dchain)					// t0
-			//.reset().set_input(&dchain.at(0), 0).add_output(20).lock().store(dchain)	// nonfinal: t0[0] -> t1
-			//.reset().set_input(&dchain.at(1), 0).add_output(30).store(dchain)			// dependent: t0[0] -> t1[0] -> t2
-			//.reset().set_input(&dchain.at(0), 0).add_output(40).store(dchain);			// good replacement: t0[0] -> t3
+		test_data::TransactionBuilder::with_output(10).store(dchain)					// t0
+			.reset().set_input(&dchain.at(0), 0).add_output(20).lock().store(dchain)	// nonfinal: t0[0] -> t1
+			.reset().set_input(&dchain.at(1), 0).add_output(30).store(dchain)			// dependent: t0[0] -> t1[0] -> t2
+			.reset().set_input(&dchain.at(0), 0).add_output(40).store(dchain);			// good replacement: t0[0] -> t3
 
-		//let storage = Arc::new(db::TestStorage::with_genesis_block());
-		//let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
-		//{
-			//memory_pool.write().insert_verified(dchain.at(0).into());
-			//memory_pool.write().insert_verified(dchain.at(1).into());
-			//memory_pool.write().insert_verified(dchain.at(2).into());
-		//}
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
+		{
+			memory_pool.write().insert_verified(dchain.at(0).into());
+			memory_pool.write().insert_verified(dchain.at(1).into());
+			memory_pool.write().insert_verified(dchain.at(2).into());
+		}
 
-		//// when inserting t3:
-		//// check that is_spent(t0[0]) == Some(false) (as it is spent by nonfinal t1)
-		//// check that is_spent(t1[0]) == None (as t1 is virtually removed)
-		//// check that is_spent(t2[0]) == None (as t2 is virtually removed)
-		//// check that previous_transaction_output(t0[0]) = Some(_)
-		//// check that previous_transaction_output(t1[0]) = None (as t1 is virtually removed)
-		//// check that previous_transaction_output(t2[0]) = None (as t2 is virtually removed)
-		//// =>
-		//// if t3 is also depending on t1[0] || t2[0], it will be rejected by verification as missing inputs
-		//let provider = MemoryPoolTransactionOutputProvider::for_transaction(storage, &memory_pool, &dchain.at(3)).unwrap();
-		//assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(0).hash(), index: 0, }), Some(false));
-		//assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(1).hash(), index: 0, }), None);
-		//assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(2).hash(), index: 0, }), None);
-		//assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(0).hash(), index: 0, }), Some(dchain.at(0).outputs[0].clone()));
-		//assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(1).hash(), index: 0, }), None);
-		//assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(2).hash(), index: 0, }), None);
-	//}
-//}
+		// when inserting t3:
+		// check that is_spent(t0[0]) == Some(false) (as it is spent by nonfinal t1)
+		// check that is_spent(t1[0]) == None (as t1 is virtually removed)
+		// check that is_spent(t2[0]) == None (as t2 is virtually removed)
+		// check that previous_transaction_output(t0[0]) = Some(_)
+		// check that previous_transaction_output(t1[0]) = None (as t1 is virtually removed)
+		// check that previous_transaction_output(t2[0]) = None (as t2 is virtually removed)
+		// =>
+		// if t3 is also depending on t1[0] || t2[0], it will be rejected by verification as missing inputs
+		let provider = MemoryPoolTransactionOutputProvider::for_transaction(storage, &memory_pool, &dchain.at(3)).unwrap();
+		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(0).hash(), index: 0, }), Some(false));
+		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(1).hash(), index: 0, }), None);
+		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(2).hash(), index: 0, }), None);
+		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(0).hash(), index: 0, }, 0), Some(dchain.at(0).outputs[0].clone()));
+		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(1).hash(), index: 0, }, 0), None);
+		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(2).hash(), index: 0, }, 0), None);
+	}
+}

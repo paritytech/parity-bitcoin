@@ -12,7 +12,6 @@ pub fn open_db(cfg: &Config) -> db::SharedStore {
 		None => app_dir(AppDataType::UserData, &APP_INFO, "db").expect("Failed to get app dir"),
 	};
 	Arc::new(db::BlockChainDatabase::open_at_path(db_path, cfg.db_cache).expect("Failed to open database"))
-	//Arc::new(db::Storage::with_cache(db_path, cfg.db_cache).expect("Failed to open database"))
 }
 
 pub fn node_table_path(cfg: &Config) -> PathBuf {
