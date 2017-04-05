@@ -32,9 +32,9 @@ const COL_TRANSACTIONS: u32 = 4;
 const COL_TRANSACTIONS_META: u32 = 5;
 const COL_BLOCK_NUMBERS: u32 = 6;
 
-const KEY_VERSION: &'static[u8] = b"version";
-const KEY_BEST_BLOCK_NUMBER: &'static[u8] = b"best_block_number";
-const KEY_BEST_BLOCK_HASH: &'static[u8] = b"best_block_hash";
+const KEY_VERSION: &'static str = "version";
+const KEY_BEST_BLOCK_NUMBER: &'static str = "best_block_number";
+const KEY_BEST_BLOCK_HASH: &'static str = "best_block_hash";
 
 const DB_VERSION: u32 = 1;
 const MAX_FORK_ROUTE_PRESET: usize = 2048;
@@ -94,8 +94,8 @@ impl BlockChainDatabase<MemoryDatabase> {
 
 impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 	fn read_best_block(db: &T) -> Option<BestBlock> {
-		let best_number = db.get(COL_META.into(), KEY_BEST_BLOCK_NUMBER);
-		let best_hash = db.get(COL_META.into(), KEY_BEST_BLOCK_HASH);
+		let best_number = db.get(COL_META.into(), &serialize(&KEY_BEST_BLOCK_NUMBER));
+		let best_hash = db.get(COL_META.into(), &serialize(&KEY_BEST_BLOCK_HASH));
 
 		match (best_number, best_hash) {
 			(Ok(None), Ok(None)) => None,
@@ -246,8 +246,8 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		let mut update = DBTransaction::new();
 		update.insert(COL_BLOCK_HASHES.into(), &new_best_block.number, &new_best_block.hash);
 		update.insert(COL_BLOCK_NUMBERS.into(), &new_best_block.hash, &new_best_block.number);
-		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_HASH, &serialize(&new_best_block.hash));
-		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_NUMBER, &serialize(&new_best_block.number));
+		update.insert(COL_META.into(), &KEY_BEST_BLOCK_HASH, &new_best_block.hash);
+		update.insert(COL_META.into(), &KEY_BEST_BLOCK_NUMBER, &new_best_block.number);
 
 		let mut modified_meta: HashMap<H256, TransactionMeta> = HashMap::new();
 		if let Some(tx) = block.transactions.first() {
@@ -309,8 +309,8 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		let mut update = DBTransaction::new();
 		update.delete(COL_BLOCK_HASHES.into(), &block_number);
 		update.delete(COL_BLOCK_NUMBERS.into(), &block_hash);
-		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_HASH, &serialize(&new_best_block.hash));
-		update.insert_raw(COL_META.into(), KEY_BEST_BLOCK_NUMBER, &serialize(&new_best_block.number));
+		update.insert(COL_META.into(), &KEY_BEST_BLOCK_HASH, &new_best_block.hash);
+		update.insert(COL_META.into(), &KEY_BEST_BLOCK_NUMBER, &new_best_block.number);
 
 		let mut modified_meta: HashMap<H256, TransactionMeta> = HashMap::new();
 		for tx in block.transactions.iter().skip(1) {

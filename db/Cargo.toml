@@ -14,5 +14,5 @@ serialization = { path = "../serialization" }
 chain = { path = "../chain" }
 
 [dev-dependencies]
-ethcore-devtools = { path = "../devtools" }
+tempdir = "0.3"
 test-data = { path = "../test-data" }

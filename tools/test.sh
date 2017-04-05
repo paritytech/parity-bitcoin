@@ -4,7 +4,6 @@ cargo test\
 	-p bitcrypto\
 	-p chain\
 	-p db\
-	-p ethcore-devtools\
 	-p import\
 	-p keys\
 	-p message\

@@ -291,15 +291,15 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
-	extern crate ethcore_devtools as devtools;
+	extern crate tempdir;
 
+	use self::tempdir::TempDir;
 	use kv::{Transaction, Location};
 	use super::*;
-	use self::devtools::*;
 
 	fn test_db(config: DatabaseConfig) {
-		let path = RandomTempPath::create_dir();
-		let db = Database::open(config, path.as_path().to_str().unwrap()).unwrap();
+		let tempdir = TempDir::new("").unwrap();
+		let db = Database::open(config, tempdir.path()).unwrap();
 
 		let key1 = b"key1";
 		let key2 = b"key2";
@@ -338,8 +338,8 @@ mod tests {
 
 	#[test]
 	fn kvdb() {
-		let path = RandomTempPath::create_dir();
-		let _ = Database::open_default(path.as_path().to_str().unwrap()).unwrap();
+		let tempdir = TempDir::new("").unwrap();
+		let _ = Database::open_default(tempdir.path()).unwrap();
 		test_db(DatabaseConfig::default());
 	}
 }

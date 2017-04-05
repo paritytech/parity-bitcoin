@@ -17,7 +17,6 @@ cd primitives
 cargo clippy -p bitcrypto
 cargo clippy -p chain
 cargo clippy -p db
-cargo clippy -p ethcore-devtools
 cargo clippy -p import
 cargo clippy -p keys
 cargo clippy -p message

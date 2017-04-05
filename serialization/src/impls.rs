@@ -159,6 +159,21 @@ impl Serializable for String {
 	}
 }
 
+impl<'a> Serializable for &'a str {
+	fn serialize(&self, stream: &mut Stream) {
+		let bytes: &[u8] = self.as_bytes();
+		stream
+			.append(&CompactInteger::from(bytes.len()))
+			.append_slice(bytes);
+	}
+
+	#[inline]
+	fn serialized_size(&self) -> usize {
+		let bytes: &[u8] = self.as_bytes();
+		CompactInteger::from(bytes.len()).serialized_size() + bytes.len()
+	}
+}
+
 impl Deserializable for String {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 		let bytes: Bytes = try!(reader.read());
