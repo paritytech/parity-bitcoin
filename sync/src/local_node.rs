@@ -324,6 +324,8 @@ impl TransactionVerificationSink for TransactionAcceptSink {
 
 #[cfg(test)]
 pub mod tests {
+	extern crate test_data;
+
 	use std::sync::Arc;
 	use parking_lot::RwLock;
 	use synchronization_executor::Task;
@@ -338,7 +340,6 @@ pub mod tests {
 	use db::{BlockChainDatabase};
 	use miner::MemoryPool;
 	use super::LocalNode;
-	use test_data;
 	use synchronization_server::ServerTask;
 	use synchronization_server::tests::DummyServer;
 	use synchronization_verifier::tests::DummyVerifier;

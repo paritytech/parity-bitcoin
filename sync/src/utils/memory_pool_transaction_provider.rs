@@ -94,12 +94,13 @@ impl PreviousTransactionOutputProvider for MemoryPoolTransactionOutputProvider {
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use std::sync::Arc;
 	use parking_lot::RwLock;
 	use chain::OutPoint;
 	use db::{TransactionOutputObserver, PreviousTransactionOutputProvider, BlockChainDatabase};
 	use miner::MemoryPool;
-	use test_data;
 	use super::MemoryPoolTransactionOutputProvider;
 
 	#[test]

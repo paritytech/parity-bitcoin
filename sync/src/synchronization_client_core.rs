@@ -1173,6 +1173,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 
 #[cfg(test)]
 pub mod tests {
+	extern crate test_data;
+
 	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
 	use chain::{Block, Transaction};
@@ -1182,7 +1184,6 @@ pub mod tests {
 	use miner::MemoryPool;
 	use network::Magic;
 	use primitives::hash::H256;
-	use test_data;
 	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 	use inbound_connection::tests::DummyOutboundSyncConnection;
 	use synchronization_chain::Chain;

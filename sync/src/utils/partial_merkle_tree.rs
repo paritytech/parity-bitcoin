@@ -232,9 +232,10 @@ impl PartialMerkleTreeBuilder {
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use chain::{Transaction, merkle_root};
 	use primitives::hash::H256;
-	use test_data;
 	use super::{build_partial_merkle_tree, parse_partial_merkle_tree};
 
 	#[test]

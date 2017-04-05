@@ -123,11 +123,12 @@ impl ConnectionFilter {
 
 #[cfg(test)]
 pub mod tests {
+	extern crate test_data;
+
 	use std::iter::repeat;
 	use chain::IndexedTransaction;
 	use message::types;
 	use primitives::bytes::Bytes;
-	use test_data;
 	use super::ConnectionFilter;
 	use utils::KnownHashType;
 

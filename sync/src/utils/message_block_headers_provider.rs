@@ -54,8 +54,9 @@ impl<'a> BlockHeaderProvider for MessageBlockHeadersProvider<'a> {
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use db::{AsSubstore, BlockHeaderProvider, BlockChainDatabase, BlockRef};
-	use test_data;
 	use primitives::hash::H256;
 	use super::MessageBlockHeadersProvider;
 

@@ -23,8 +23,10 @@ primitives = { path = "../primitives" }
 p2p = { path = "../p2p" }
 network = { path = "../network" }
 db = { path = "../db" }
-test-data = { path = "../test-data" }
 miner = { path = "../miner" }
 verification = { path = "../verification" }
 script = { path = "../script" }
 keys = { path = "../keys" }
+
+[dev-dependencies]
+test-data = { path = "../test-data" }

@@ -459,6 +459,8 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 
 #[cfg(test)]
 pub mod tests {
+	extern crate test_data;
+
 	use std::mem::replace;
 	use std::sync::Arc;
 	use parking_lot::{Mutex, RwLock};
@@ -466,7 +468,6 @@ pub mod tests {
 	use message::types;
 	use message::common::{self, InventoryVector, InventoryType};
 	use primitives::hash::H256;
-	use test_data;
 	use chain::Transaction;
 	use inbound_connection::tests::DummyOutboundSyncConnection;
 	use miner::MemoryPool;

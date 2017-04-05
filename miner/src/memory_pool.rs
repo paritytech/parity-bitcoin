@@ -865,10 +865,12 @@ impl<'a> Iterator for MemoryPoolIterator<'a> {
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use chain::{Transaction, OutPoint};
 	use heapsize::HeapSizeOf;
 	use super::{MemoryPool, OrderingStrategy, DoubleSpendCheckResult};
-	use test_data::{ChainBuilder, TransactionBuilder};
+	use self::test_data::{ChainBuilder, TransactionBuilder};
 
 	fn to_memory_pool(chain: &mut ChainBuilder) -> MemoryPool {
 		let mut pool = MemoryPool::new();

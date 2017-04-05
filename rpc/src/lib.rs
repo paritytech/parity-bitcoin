@@ -17,8 +17,6 @@ extern crate primitives;
 extern crate p2p;
 extern crate network;
 extern crate db;
-#[cfg(test)]
-extern crate test_data;
 extern crate miner;
 extern crate verification;
 extern crate script as global_script;
