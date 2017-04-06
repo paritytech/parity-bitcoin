@@ -58,7 +58,6 @@ impl<'a> TransactionAcceptor<'a> {
 }
 
 pub struct MemoryPoolTransactionAcceptor<'a> {
-	pub bip30: TransactionBip30<'a>,
 	pub missing_inputs: TransactionMissingInputs<'a>,
 	pub maturity: TransactionMaturity<'a>,
 	pub overspent: TransactionOverspent<'a>,
@@ -85,7 +84,6 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		let params = network.consensus_params();
 		let transaction_index = 0;
 		MemoryPoolTransactionAcceptor {
-			bip30: TransactionBip30::new_for_mempool(transaction, meta_store),
 			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, prevout_store),
@@ -96,8 +94,8 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 	}
 
 	pub fn check(&self) -> Result<(), TransactionError> {
-		// TODO: b82 fails, when this is enabled, fix this
-		//try!(self.bip30.check());
+		// Bip30 is not checked because we don't need to allow tx pool acceptance of an unspent duplicate.
+		// Tx pool validation is not strinctly a matter of consensus.
 		try!(self.missing_inputs.check());
 		try!(self.maturity.check());
 		try!(self.overspent.check());
@@ -112,6 +110,15 @@ pub trait TransactionRule {
 	fn check(&self) -> Result<(), TransactionError>;
 }
 
+/// Bip30 validation
+///
+/// A transaction hash that exists in the chain is not acceptable even if
+/// the original is spent in the new block. This is not necessary nor is it
+/// described by BIP30, but it is in the code referenced by BIP30. As such
+/// the tx pool need only test against the chain, skipping the pool.
+///
+/// source:
+/// https://github.com/libbitcoin/libbitcoin/blob/61759b2fd66041bcdbc124b2f04ed5ddc20c7312/src/chain/transaction.cpp#L780-L785
 pub struct TransactionBip30<'a> {
 	transaction: CanonTransaction<'a>,
 	store: &'a TransactionMetaProvider,
@@ -134,27 +141,10 @@ impl<'a> TransactionBip30<'a> {
 			exception: exception,
 		}
 	}
-
-	fn new_for_mempool(transaction: CanonTransaction<'a>, store: &'a TransactionMetaProvider) -> Self {
-		TransactionBip30 {
-			transaction: transaction,
-			store: store,
-			exception: false,
-		}
-	}
 }
 
 impl<'a> TransactionRule for TransactionBip30<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
-		// we allow optionals here, cause previous output may be a part of current block
-		// yet, we do not need to check current block, cause duplicated transactions
-		// in the same block are also forbidden
-		//
-		// update*
-		// TODO:
-		// There is a potential consensus failure here, cause transaction before this one
-		// may have fully spent the output, and we, by checking only storage, have no knowladge
-		// of it
 		match self.store.transaction_meta(&self.transaction.hash) {
 			Some(ref meta) if !meta.is_fully_spent() && !self.exception => {
 				Err(TransactionError::UnspentTransactionWithTheSameHash)

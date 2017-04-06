@@ -4,13 +4,12 @@ use db::{PreviousTransactionOutputProvider, TransactionOutputObserver};
 use miner::{DoubleSpendCheckResult, HashedOutPoint, NonFinalDoubleSpendSet};
 use verification::TransactionError;
 use super::super::types::{MemoryPoolRef, StorageRef};
-use super::StorageTransactionOutputProvider;
 
 /// Transaction output observer, which looks into both storage && into memory pool.
 /// It also allows to replace non-final transactions in the memory pool.
 pub struct MemoryPoolTransactionOutputProvider {
 	/// Storage provider
-	storage_provider: StorageTransactionOutputProvider,
+	storage_provider: StorageRef,
 	/// Transaction inputs from memory pool transactions
 	mempool_inputs: HashMap<HashedOutPoint, Option<TransactionOutput>>,
 	/// Previous outputs, for which we should return 'Not spent' value.
@@ -29,7 +28,7 @@ impl MemoryPoolTransactionOutputProvider {
 			DoubleSpendCheckResult::DoubleSpend(_, hash, index) => Err(TransactionError::UsingSpentOutput(hash, index)),
 			// there are no transactions, which are spending same inputs in memory pool
 			DoubleSpendCheckResult::NoDoubleSpend => Ok(MemoryPoolTransactionOutputProvider {
-				storage_provider: StorageTransactionOutputProvider::with_storage(storage),
+				storage_provider: storage,
 				mempool_inputs: transaction.inputs.iter()
 					.map(|input| (
 						input.previous_output.clone().into(),
@@ -39,7 +38,7 @@ impl MemoryPoolTransactionOutputProvider {
 			}),
 			// there are non-final transactions, which are spending same inputs in memory pool
 			DoubleSpendCheckResult::NonFinalDoubleSpend(nonfinal_spends) => Ok(MemoryPoolTransactionOutputProvider {
-				storage_provider: StorageTransactionOutputProvider::with_storage(storage),
+				storage_provider: storage,
 				mempool_inputs: transaction.inputs.iter()
 					.map(|input| (
 						input.previous_output.clone().into(),
