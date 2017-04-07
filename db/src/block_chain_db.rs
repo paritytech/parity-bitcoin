@@ -14,7 +14,7 @@ use ser::{
 };
 use kv::{
 	KeyValueDatabase, OverlayDatabase, Transaction as DBTransaction, Location, Value, DiskDatabase,
-	DatabaseConfig, MemoryDatabase
+	DatabaseConfig, MemoryDatabase, AutoFlushingOverlayDatabase
 };
 use best_block::BestBlock;
 use {
@@ -58,7 +58,7 @@ impl<'a, T> ForkChain for ForkChainDatabase<'a, T> where T: KeyValueDatabase {
 	}
 }
 
-impl BlockChainDatabase<DiskDatabase> {
+impl BlockChainDatabase<AutoFlushingOverlayDatabase<DiskDatabase>> {
 	pub fn open_at_path<P>(path: P, total_cache: usize) -> Result<Self, Error> where P: AsRef<Path> {
 		fs::create_dir_all(path.as_ref()).map_err(|err| Error::DatabaseError(err.to_string()))?;
 		let mut cfg = DatabaseConfig::with_columns(Some(COL_COUNT));
@@ -74,7 +74,7 @@ impl BlockChainDatabase<DiskDatabase> {
 		cfg.bloom_filters.insert(Some(COL_TRANSACTIONS_META), 32);
 
 		match DiskDatabase::open(cfg, path) {
-			Ok(db) => Ok(Self::open(db)),
+			Ok(db) => Ok(Self::open_with_cache(db)),
 			Err(err) => Err(Error::DatabaseError(err))
 		}
 	}
@@ -89,6 +89,17 @@ impl BlockChainDatabase<MemoryDatabase> {
 			store.canonize(block.hash()).unwrap();
 		}
 		store
+	}
+}
+
+impl<T> BlockChainDatabase<AutoFlushingOverlayDatabase<T>> where T: KeyValueDatabase {
+	pub fn open_with_cache(db: T) -> Self {
+		let db = AutoFlushingOverlayDatabase::new(db, 50);
+		let best_block = Self::read_best_block(&db).unwrap_or_default();
+		BlockChainDatabase {
+			best_block: RwLock::new(best_block),
+			db: db,
+		}
 	}
 }
 
