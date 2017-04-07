@@ -32,11 +32,6 @@ impl<'a> BlockAcceptor<'a> {
 	}
 }
 
-trait BlockRule {
-	/// If verification fails returns an error
-	fn check(&self) -> Result<(), Error>;
-}
-
 pub struct BlockFinality<'a> {
 	block: CanonBlock<'a>,
 	height: u32,
@@ -49,9 +44,7 @@ impl<'a> BlockFinality<'a> {
 			height: height,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockFinality<'a> {
 	fn check(&self) -> Result<(), Error> {
 		if self.block.is_final(self.height) {
 			Ok(())
@@ -77,9 +70,7 @@ impl<'a> BlockSigops<'a> {
 			max_sigops: max_sigops,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockSigops<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
 		let bip16_active = self.block.header.raw.time >= self.consensus_params.bip16_time;
@@ -109,9 +100,7 @@ impl<'a> BlockCoinbaseClaim<'a> {
 			height: height,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
 

@@ -106,10 +106,6 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 	}
 }
 
-pub trait TransactionRule {
-	fn check(&self) -> Result<(), TransactionError>;
-}
-
 /// Bip30 validation
 ///
 /// A transaction hash that exists in the chain is not acceptable even if
@@ -141,9 +137,7 @@ impl<'a> TransactionBip30<'a> {
 			exception: exception,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionBip30<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		match self.store.transaction_meta(&self.transaction.hash) {
 			Some(ref meta) if !meta.is_fully_spent() && !self.exception => {
@@ -168,9 +162,7 @@ impl<'a> TransactionMissingInputs<'a> {
 			transaction_index: transaction_index,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionMissingInputs<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		let missing_index = self.transaction.raw.inputs.iter()
 			.position(|input| {
@@ -200,9 +192,7 @@ impl<'a> TransactionMaturity<'a> {
 			height: height,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionMaturity<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		// TODO: this is should also fail when we are trying to spend current block coinbase
 		let immature_spend = self.transaction.raw.inputs.iter()
@@ -231,9 +221,7 @@ impl<'a> TransactionOverspent<'a> {
 			store: store,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionOverspent<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		if self.transaction.raw.is_coinbase() {
 			return Ok(());
@@ -271,9 +259,7 @@ impl<'a> TransactionSigops<'a> {
 			time: time,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionSigops<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		let bip16_active = self.time >= self.consensus_params.bip16_time;
 		let sigops = transaction_sigops(&self.transaction.raw, &self.store, bip16_active);
@@ -310,9 +296,7 @@ impl<'a> TransactionEval<'a> {
 			verify_clocktime: verify_clocktime,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionEval<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		if self.transaction.raw.is_coinbase() {
 			return Ok(());
@@ -359,12 +343,10 @@ impl<'a> TransactionDoubleSpend<'a> {
 			store: store,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionDoubleSpend<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		for input in &self.transaction.raw.inputs {
-			if self.store.is_spent(&input.previous_output).unwrap_or(false) {
+			if self.store.is_spent(&input.previous_output) {
 				return Err(TransactionError::UsingSpentOutput(
 					input.previous_output.hash.clone(),
 					input.previous_output.index

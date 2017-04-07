@@ -277,7 +277,7 @@ impl BlockAssembler {
 
 #[cfg(test)]
 mod tests {
-	use chain::{IndexedTransaction, IndexedTransactionsRef};
+	use chain::{IndexedTransaction};
 	use verification::constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 	use memory_pool::Entry;
 	use super::{SizePolicy, NextStep, FittingTransactionsIterator};
@@ -311,16 +311,6 @@ mod tests {
 		assert_eq!(NextStep::FinishAndAppend.and(NextStep::FinishAndIgnore), NextStep::FinishAndIgnore);
 		assert_eq!(NextStep::FinishAndAppend.and(NextStep::Ignore), NextStep::FinishAndIgnore);
 		assert_eq!(NextStep::FinishAndAppend.and(NextStep::Append), NextStep::FinishAndAppend);
-	}
-
-	#[test]
-	fn test_fitting_transactions_iterator_no_transactions() {
-		let store: Vec<IndexedTransaction> = Vec::new();
-		let store_ref = IndexedTransactionsRef::new(&store);
-		let entries: Vec<Entry> = Vec::new();
-
-		let iter = FittingTransactionsIterator::new(&store_ref, entries.iter(), MAX_BLOCK_SIZE as u32, MAX_BLOCK_SIGOPS as u32, 0, 0);
-		assert!(iter.collect::<Vec<_>>().is_empty());
 	}
 
 	#[test]

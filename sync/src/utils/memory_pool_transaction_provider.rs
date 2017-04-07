@@ -51,11 +51,11 @@ impl MemoryPoolTransactionOutputProvider {
 }
 
 impl TransactionOutputObserver for MemoryPoolTransactionOutputProvider {
-	fn is_spent(&self, prevout: &OutPoint) -> Option<bool> {
+	fn is_spent(&self, prevout: &OutPoint) -> bool {
 		// check if this output is spent by some non-final mempool transaction
 		if let Some(ref nonfinal_spends) = self.nonfinal_spends {
 			if nonfinal_spends.double_spends.contains(&prevout.clone().into()) {
-				return Some(false);
+				return false;
 			}
 		}
 
@@ -128,9 +128,9 @@ mod tests {
 		// =>
 		// if t3 is also depending on t1[0] || t2[0], it will be rejected by verification as missing inputs
 		let provider = MemoryPoolTransactionOutputProvider::for_transaction(storage, &memory_pool, &dchain.at(3)).unwrap();
-		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(0).hash(), index: 0, }), Some(false));
-		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(1).hash(), index: 0, }), None);
-		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(2).hash(), index: 0, }), None);
+		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(0).hash(), index: 0, }), false);
+		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(1).hash(), index: 0, }), false);
+		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(2).hash(), index: 0, }), false);
 		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(0).hash(), index: 0, }, 0), Some(dchain.at(0).outputs[0].clone()));
 		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(1).hash(), index: 0, }, 0), None);
 		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(2).hash(), index: 0, }, 0), None);

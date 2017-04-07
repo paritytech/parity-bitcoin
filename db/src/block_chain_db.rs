@@ -473,9 +473,10 @@ impl<T> PreviousTransactionOutputProvider for BlockChainDatabase<T> where T: Key
 }
 
 impl<T> TransactionOutputObserver for BlockChainDatabase<T> where T: KeyValueDatabase {
-	fn is_spent(&self, prevout: &OutPoint) -> Option<bool> {
+	fn is_spent(&self, prevout: &OutPoint) -> bool {
 		self.transaction_meta(&prevout.hash)
 			.and_then(|meta| meta.is_spent(prevout.index as usize))
+			.unwrap_or(false)
 	}
 }
 

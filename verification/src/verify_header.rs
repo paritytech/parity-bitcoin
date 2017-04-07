@@ -25,10 +25,6 @@ impl<'a> HeaderVerifier<'a> {
 	}
 }
 
-pub trait HeaderRule {
-	fn check(&self) -> Result<(), Error>;
-}
-
 pub struct HeaderProofOfWork<'a> {
 	header: &'a IndexedBlockHeader,
 	max_work_bits: Compact,
@@ -41,9 +37,7 @@ impl<'a> HeaderProofOfWork<'a> {
 			max_work_bits: network.max_bits(),
 		}
 	}
-}
 
-impl<'a> HeaderRule for HeaderProofOfWork<'a> {
 	fn check(&self) -> Result<(), Error> {
 		if is_valid_proof_of_work(self.max_work_bits, self.header.raw.bits, &self.header.hash) {
 			Ok(())
@@ -67,9 +61,7 @@ impl<'a> HeaderTimestamp<'a> {
 			max_future: max_future,
 		}
 	}
-}
 
-impl<'a> HeaderRule for HeaderTimestamp<'a> {
 	fn check(&self) -> Result<(), Error> {
 		if self.header.raw.time > self.current_time + self.max_future {
 			Err(Error::FuturisticTimestamp)

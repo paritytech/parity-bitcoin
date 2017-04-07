@@ -25,7 +25,7 @@ impl<'a> ChainAcceptor<'a> {
 			transactions: block.transactions()
 				.into_iter()
 				.enumerate()
-				.map(|(index, tx)| TransactionAcceptor::new(
+				.map(|(tx_index, tx)| TransactionAcceptor::new(
 						store.as_transaction_meta_provider(),
 						prevouts,
 						spents,
@@ -34,7 +34,7 @@ impl<'a> ChainAcceptor<'a> {
 						block.hash(),
 						height,
 						block.header.raw.time,
-						index
+						tx_index
 				))
 				.collect(),
 		}

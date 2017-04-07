@@ -60,10 +60,6 @@ impl<'a> MemoryPoolTransactionVerifier<'a> {
 	}
 }
 
-trait TransactionRule {
-	fn check(&self) -> Result<(), TransactionError>;
-}
-
 pub struct TransactionEmpty<'a> {
 	transaction: &'a IndexedTransaction,
 }
@@ -74,9 +70,7 @@ impl<'a> TransactionEmpty<'a> {
 			transaction: transaction,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionEmpty<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		if self.transaction.raw.is_empty() {
 			Err(TransactionError::Empty)
@@ -96,9 +90,7 @@ impl<'a> TransactionNullNonCoinbase<'a> {
 			transaction: transaction,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionNullNonCoinbase<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		if !self.transaction.raw.is_coinbase() && self.transaction.raw.is_null() {
 			Err(TransactionError::NullNonCoinbase)
@@ -120,9 +112,7 @@ impl<'a> TransactionOversizedCoinbase<'a> {
 			size_range: size_range,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionOversizedCoinbase<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		if self.transaction.raw.is_coinbase() {
 			let script_len = self.transaction.raw.inputs[0].script_sig.len();
@@ -144,9 +134,7 @@ impl<'a> TransactionMemoryPoolCoinbase<'a> {
 			transaction: transaction,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionMemoryPoolCoinbase<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		if self.transaction.raw.is_coinbase() {
 			Err(TransactionError::MemoryPoolCoinbase)
@@ -168,9 +156,7 @@ impl<'a> TransactionSize<'a> {
 			max_size: max_size,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionSize<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		if self.transaction.raw.serialized_size() > self.max_size {
 			Err(TransactionError::MaxSize)
@@ -192,9 +178,7 @@ impl<'a> TransactionSigops<'a> {
 			max_sigops: max_sigops,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionSigops<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		let sigops = transaction_sigops(&self.transaction.raw, &NoopStore, false);
 		if sigops > self.max_sigops {

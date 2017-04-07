@@ -42,12 +42,8 @@ impl<'a> DuplexTransactionOutputObserver<'a> {
 }
 
 impl<'a> TransactionOutputObserver for DuplexTransactionOutputObserver<'a> {
-	fn is_spent(&self, prevout: &OutPoint) -> Option<bool> {
-		if self.first.is_spent(prevout).unwrap_or(false) {
-			Some(true)
-		} else {
-			self.second.is_spent(prevout)
-		}
+	fn is_spent(&self, prevout: &OutPoint) -> bool {
+		self.first.is_spent(prevout) || self.second.is_spent(prevout)
 	}
 }
 
@@ -60,7 +56,7 @@ impl PreviousTransactionOutputProvider for NoopStore {
 }
 
 impl TransactionOutputObserver for NoopStore {
-	fn is_spent(&self, _prevout: &OutPoint) -> Option<bool> {
-		None
+	fn is_spent(&self, _prevout: &OutPoint) -> bool {
+		false
 	}
 }
