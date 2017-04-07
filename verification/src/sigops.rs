@@ -1,5 +1,5 @@
 use chain::Transaction;
-use db::PreviousTransactionOutputProvider;
+use db::TransactionOutputProvider;
 use script::Script;
 
 /// Counts signature operations in given transaction
@@ -8,7 +8,7 @@ use script::Script;
 /// missing, we simply ignore that fact and just carry on counting
 pub fn transaction_sigops(
 	transaction: &Transaction,
-	store: &PreviousTransactionOutputProvider,
+	store: &TransactionOutputProvider,
 	bip16_active: bool
 ) -> usize {
 	let output_sigops: usize = transaction.outputs.iter().map(|output| {
@@ -27,7 +27,7 @@ pub fn transaction_sigops(
 		let input_script: Script = input.script_sig.clone().into();
 		input_sigops += input_script.sigops_count(false);
 		if bip16_active {
-			let previous_output = match store.previous_transaction_output(&input.previous_output, usize::max_value()) {
+			let previous_output = match store.transaction_output(&input.previous_output, usize::max_value()) {
 				Some(output) => output,
 				None => continue,
 			};

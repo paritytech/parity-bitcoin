@@ -1,6 +1,6 @@
+use std::cmp;
 use chain::{OutPoint, TransactionOutput, IndexedBlock, IndexedTransaction};
-use transaction_provider::PreviousTransactionOutputProvider;
-use transaction_meta_provider::TransactionOutputObserver;
+use {TransactionOutputProvider};
 
 fn transaction_output(transactions: &[IndexedTransaction], prevout: &OutPoint) -> Option<TransactionOutput> {
 	transactions.iter()
@@ -9,7 +9,7 @@ fn transaction_output(transactions: &[IndexedTransaction], prevout: &OutPoint) -
 		.cloned()
 }
 
-fn is_spent(transactions: &[IndexedTransaction], prevout: &OutPoint) -> bool {
+fn is_double_spent(transactions: &[IndexedTransaction], prevout: &OutPoint) -> bool {
 	// the code below is valid, but has rather poor performance
 
 	// if previous transaction output appears more than once than we can safely
@@ -23,14 +23,13 @@ fn is_spent(transactions: &[IndexedTransaction], prevout: &OutPoint) -> bool {
 	spends == 2
 }
 
-impl PreviousTransactionOutputProvider for IndexedBlock {
-	fn previous_transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
-		transaction_output(&self.transactions[..transaction_index], prevout)
+impl TransactionOutputProvider for IndexedBlock {
+	fn transaction_output(&self, outpoint: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
+		let take = cmp::min(transaction_index, self.transactions.len());
+		transaction_output(&self.transactions[..take], outpoint)
 	}
-}
 
-impl TransactionOutputObserver for IndexedBlock {
-	fn is_spent(&self, prevout: &OutPoint) -> bool {
-		is_spent(&self.transactions, prevout)
+	fn is_double_spent(&self, outpoint: &OutPoint) -> bool {
+		is_double_spent(&self.transactions, outpoint)
 	}
 }

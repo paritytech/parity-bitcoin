@@ -2,8 +2,7 @@ use std::sync::Arc;
 use chain::BlockHeader;
 use {
 	BestBlock, BlockProvider, BlockHeaderProvider, TransactionProvider, TransactionMetaProvider,
-	PreviousTransactionOutputProvider, BlockChain, IndexedBlockProvider, TransactionOutputObserver,
-	Forkable
+	TransactionOutputProvider, BlockChain, IndexedBlockProvider, Forkable
 };
 
 pub trait CanonStore: Store + Forkable {
@@ -23,21 +22,19 @@ pub trait Store: AsSubstore {
 }
 
 /// Allows casting Arc<Store> to reference to any substore type
-pub trait AsSubstore: BlockChain + IndexedBlockProvider + TransactionProvider + TransactionMetaProvider + PreviousTransactionOutputProvider + TransactionOutputObserver {
+pub trait AsSubstore: BlockChain + IndexedBlockProvider + TransactionProvider + TransactionMetaProvider + TransactionOutputProvider {
 	fn as_block_provider(&self) -> &BlockProvider;
 
 	fn as_block_header_provider(&self) -> &BlockHeaderProvider;
 
 	fn as_transaction_provider(&self) -> &TransactionProvider;
 
-	fn as_previous_transaction_output_provider(&self) -> &PreviousTransactionOutputProvider;
+	fn as_transaction_output_provider(&self) -> &TransactionOutputProvider;
 
 	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider;
-
-	fn as_transaction_output_observer(&self) -> &TransactionOutputObserver;
 }
 
-impl<T> AsSubstore for T where T: BlockChain + IndexedBlockProvider + TransactionProvider + TransactionMetaProvider + PreviousTransactionOutputProvider + TransactionOutputObserver {
+impl<T> AsSubstore for T where T: BlockChain + IndexedBlockProvider + TransactionProvider + TransactionMetaProvider + TransactionOutputProvider {
 	fn as_block_provider(&self) -> &BlockProvider {
 		&*self
 	}
@@ -50,15 +47,11 @@ impl<T> AsSubstore for T where T: BlockChain + IndexedBlockProvider + Transactio
 		&*self
 	}
 
-	fn as_previous_transaction_output_provider(&self) -> &PreviousTransactionOutputProvider {
+	fn as_transaction_output_provider(&self) -> &TransactionOutputProvider {
 		&*self
 	}
 
 	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider {
-		&*self
-	}
-
-	fn as_transaction_output_observer(&self) -> &TransactionOutputObserver {
 		&*self
 	}
 }

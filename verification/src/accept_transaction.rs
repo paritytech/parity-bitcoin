@@ -1,8 +1,8 @@
 use primitives::hash::H256;
-use db::{TransactionMetaProvider, PreviousTransactionOutputProvider, TransactionOutputObserver};
+use db::{TransactionMetaProvider, TransactionOutputProvider};
 use network::{Magic, ConsensusParams};
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner};
-use duplex_store::{DuplexTransactionOutputProvider, DuplexTransactionOutputObserver};
+use duplex_store::DuplexTransactionOutputProvider;
 use sigops::transaction_sigops;
 use canon::CanonTransaction;
 use constants::{COINBASE_MATURITY, MAX_BLOCK_SIGOPS};
@@ -23,10 +23,7 @@ impl<'a> TransactionAcceptor<'a> {
 		meta_store: &'a TransactionMetaProvider,
 		// previous transaction outputs
 		// in case of block validation, that's database and currently processed block
-		prevout_store: DuplexTransactionOutputProvider<'a>,
-		// in case of block validation, that's database and currently processed block
-		//spent_store: &'a TransactionOutputObserver,
-		spent_store: DuplexTransactionOutputObserver<'a>,
+		output_store: DuplexTransactionOutputProvider<'a>,
 		network: Magic,
 		transaction: CanonTransaction<'a>,
 		block_hash: &'a H256,
@@ -38,11 +35,11 @@ impl<'a> TransactionAcceptor<'a> {
 		let params = network.consensus_params();
 		TransactionAcceptor {
 			bip30: TransactionBip30::new_for_sync(transaction, meta_store, params.clone(), block_hash, height),
-			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store, transaction_index),
+			missing_inputs: TransactionMissingInputs::new(transaction, output_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
-			overspent: TransactionOverspent::new(transaction, prevout_store),
-			double_spent: TransactionDoubleSpend::new(transaction, spent_store),
-			eval: TransactionEval::new(transaction, prevout_store, params, height, time),
+			overspent: TransactionOverspent::new(transaction, output_store),
+			double_spent: TransactionDoubleSpend::new(transaction, output_store),
+			eval: TransactionEval::new(transaction, output_store, params, height, time),
 		}
 	}
 
@@ -71,10 +68,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		// TODO: in case of memory pool it should be db and memory pool
 		meta_store: &'a TransactionMetaProvider,
 		// in case of memory pool it should be db and memory pool
-		prevout_store: DuplexTransactionOutputProvider<'a>,
-		// in case of memory pool it should be db and memory pool
-		//spent_store: &'a TransactionOutputObserver,
-		spent_store: DuplexTransactionOutputObserver<'a>,
+		output_store: DuplexTransactionOutputProvider<'a>,
 		network: Magic,
 		transaction: CanonTransaction<'a>,
 		height: u32,
@@ -84,12 +78,12 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		let params = network.consensus_params();
 		let transaction_index = 0;
 		MemoryPoolTransactionAcceptor {
-			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store, transaction_index),
+			missing_inputs: TransactionMissingInputs::new(transaction, output_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
-			overspent: TransactionOverspent::new(transaction, prevout_store),
-			sigops: TransactionSigops::new(transaction, prevout_store, params.clone(), MAX_BLOCK_SIGOPS, time),
-			double_spent: TransactionDoubleSpend::new(transaction, spent_store),
-			eval: TransactionEval::new(transaction, prevout_store, params, height, time),
+			overspent: TransactionOverspent::new(transaction, output_store),
+			sigops: TransactionSigops::new(transaction, output_store, params.clone(), MAX_BLOCK_SIGOPS, time),
+			double_spent: TransactionDoubleSpend::new(transaction, output_store),
+			eval: TransactionEval::new(transaction, output_store, params, height, time),
 		}
 	}
 
@@ -167,7 +161,7 @@ impl<'a> TransactionMissingInputs<'a> {
 		let missing_index = self.transaction.raw.inputs.iter()
 			.position(|input| {
 				let is_not_null = !input.previous_output.is_null();
-				let is_missing = self.store.previous_transaction_output(&input.previous_output, self.transaction_index).is_none();
+				let is_missing = self.store.transaction_output(&input.previous_output, self.transaction_index).is_none();
 				is_not_null && is_missing
 			});
 
@@ -228,7 +222,7 @@ impl<'a> TransactionOverspent<'a> {
 		}
 
 		let available = self.transaction.raw.inputs.iter()
-			.map(|input| self.store.previous_transaction_output(&input.previous_output, usize::max_value()).map(|o| o.value).unwrap_or(0))
+			.map(|input| self.store.transaction_output(&input.previous_output, usize::max_value()).map(|o| o.value).unwrap_or(0))
 			.sum::<u64>();
 
 		let spends = self.transaction.raw.total_spends();
@@ -310,7 +304,7 @@ impl<'a> TransactionEval<'a> {
 		};
 
 		for (index, input) in self.transaction.raw.inputs.iter().enumerate() {
-			let output = self.store.previous_transaction_output(&input.previous_output, usize::max_value())
+			let output = self.store.transaction_output(&input.previous_output, usize::max_value())
 				.ok_or_else(|| TransactionError::UnknownReference(input.previous_output.hash.clone()))?;
 
 			checker.input_index = index;
@@ -331,13 +325,11 @@ impl<'a> TransactionEval<'a> {
 
 pub struct TransactionDoubleSpend<'a> {
 	transaction: CanonTransaction<'a>,
-	//store: &'a TransactionOutputObserver,
-	store: DuplexTransactionOutputObserver<'a>,
+	store: DuplexTransactionOutputProvider<'a>,
 }
 
 impl<'a> TransactionDoubleSpend<'a> {
-	//fn new(transaction: CanonTransaction<'a>, store: &'a TransactionOutputObserver) -> Self {
-	fn new(transaction: CanonTransaction<'a>, store: DuplexTransactionOutputObserver<'a>) -> Self {
+	fn new(transaction: CanonTransaction<'a>, store: DuplexTransactionOutputProvider<'a>) -> Self {
 		TransactionDoubleSpend {
 			transaction: transaction,
 			store: store,
@@ -346,7 +338,7 @@ impl<'a> TransactionDoubleSpend<'a> {
 
 	fn check(&self) -> Result<(), TransactionError> {
 		for input in &self.transaction.raw.inputs {
-			if self.store.is_spent(&input.previous_output) {
+			if self.store.is_double_spent(&input.previous_output) {
 				return Err(TransactionError::UsingSpentOutput(
 					input.previous_output.hash.clone(),
 					input.previous_output.index

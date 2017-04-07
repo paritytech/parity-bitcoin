@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use primitives::hash::H256;
 use primitives::compact::Compact;
 use chain::{OutPoint, TransactionOutput, IndexedTransaction};
-use db::{SharedStore, PreviousTransactionOutputProvider};
+use db::{SharedStore, TransactionOutputProvider};
 use network::Magic;
 use memory_pool::{MemoryPool, OrderingStrategy, Entry};
 use verification::{work_required, block_reward_satoshi, transaction_sigops};
@@ -133,7 +133,7 @@ impl Default for BlockAssembler {
 /// Iterator iterating over mempool transactions and yielding only those which fit the block
 struct FittingTransactionsIterator<'a, T> {
 	/// Shared store is used to query previous transaction outputs from database
-	store: &'a PreviousTransactionOutputProvider,
+	store: &'a TransactionOutputProvider,
 	/// Memory pool transactions iterator
 	iter: T,
 	/// New block height
@@ -153,7 +153,7 @@ struct FittingTransactionsIterator<'a, T> {
 }
 
 impl<'a, T> FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entry> {
-	fn new(store: &'a PreviousTransactionOutputProvider, iter: T, max_block_size: u32, max_block_sigops: u32, block_height: u32, block_time: u32) -> Self {
+	fn new(store: &'a TransactionOutputProvider, iter: T, max_block_size: u32, max_block_sigops: u32, block_height: u32, block_time: u32) -> Self {
 		FittingTransactionsIterator {
 			store: store,
 			iter: iter,
@@ -169,15 +169,19 @@ impl<'a, T> FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entr
 	}
 }
 
-impl<'a, T> PreviousTransactionOutputProvider for FittingTransactionsIterator<'a, T> where T: Send + Sync {
-	fn previous_transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
-		self.store.previous_transaction_output(prevout, transaction_index)
+impl<'a, T> TransactionOutputProvider for FittingTransactionsIterator<'a, T> where T: Send + Sync {
+	fn transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
+		self.store.transaction_output(prevout, transaction_index)
 			.or_else(|| {
 				self.previous_entries.iter()
 					.find(|e| e.hash == prevout.hash)
 					.and_then(|e| e.transaction.outputs.iter().nth(prevout.index as usize))
 					.cloned()
 			})
+	}
+
+	fn is_double_spent(&self, _outpoint: &OutPoint) -> bool {
+		unimplemented!();
 	}
 }
 
@@ -252,7 +256,7 @@ impl BlockAssembler {
 		let mut transactions = Vec::new();
 
 		let mempool_iter = mempool.iter(OrderingStrategy::ByTransactionScore);
-		let tx_iter = FittingTransactionsIterator::new(store.as_previous_transaction_output_provider(), mempool_iter, self.max_block_size, self.max_block_sigops, height, time);
+		let tx_iter = FittingTransactionsIterator::new(store.as_transaction_output_provider(), mempool_iter, self.max_block_size, self.max_block_sigops, height, time);
 		for entry in tx_iter {
 			// miner_fee is i64, but we can safely cast it to u64
 			// memory pool should restrict miner fee to be positive
