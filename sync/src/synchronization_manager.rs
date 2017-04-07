@@ -284,9 +284,10 @@ pub fn manage_orphaned_transactions(config: &ManageOrphanTransactionsConfig, orp
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use std::collections::HashSet;
 	use primitives::hash::H256;
-	use test_data;
 	use synchronization_peers_tasks::PeersTasks;
 	use super::{ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig, manage_synchronization_peers_blocks,
 		manage_unknown_orphaned_blocks, manage_orphaned_transactions};

@@ -71,10 +71,11 @@ pub fn short_transaction_id(key0: u64, key1: u64, transaction_hash: &H256) -> Sh
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use std::collections::HashSet;
 	use chain::{BlockHeader, Transaction, ShortTransactionID};
 	use message::common::{BlockHeaderAndIDs, PrefilledTransaction};
-	use test_data;
 	use super::*;
 
 	#[test]

@@ -23,9 +23,11 @@ p2p = { path = "../p2p" }
 primitives = { path = "../primitives" }
 script = { path = "../script" }
 serialization = { path = "../serialization" }
-test-data = { path = "../test-data" }
 verification = { path = "../verification" }
 network = { path = "../network" }
+
+[dev-dependencies]
+test-data = { path = "../test-data" }
 
 [features]
 dev = []

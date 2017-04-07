@@ -12,7 +12,6 @@ extern crate linked_hash_map;
 extern crate bit_vec;
 extern crate murmur3;
 extern crate primitives;
-extern crate test_data;
 extern crate time;
 extern crate verification;
 extern crate miner;

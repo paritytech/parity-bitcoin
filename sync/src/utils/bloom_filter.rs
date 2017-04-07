@@ -178,13 +178,14 @@ impl BloomFilterData {
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use std::iter::repeat;
 	use chain::IndexedTransaction;
 	use message::types;
 	use primitives::bytes::Bytes;
 	use primitives::hash::H256;
 	use ser::serialize;
-	use test_data;
 	use super::{BloomFilter, BloomFilterData};
 
 	fn default_filterload() -> types::FilterLoad {

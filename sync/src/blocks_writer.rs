@@ -150,10 +150,11 @@ impl TransactionVerificationSink for BlocksWriterSink {
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use std::sync::Arc;
 	use db::{BlockChainDatabase};
 	use network::Magic;
-	use test_data;
 	use super::super::Error;
 	use super::{BlocksWriter, MAX_ORPHANED_BLOCKS};
 

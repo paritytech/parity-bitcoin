@@ -132,8 +132,10 @@ impl OrphanTransaction {
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use std::collections::HashSet;
-	use test_data::{TransactionBuilder, ChainBuilder};
+	use self::test_data::{TransactionBuilder, ChainBuilder};
 	use primitives::hash::H256;
 	use super::OrphanTransactionsPool;
 

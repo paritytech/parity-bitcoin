@@ -18,9 +18,10 @@ pub fn transaction_fee_rate(store: &TransactionProvider, transaction: &Transacti
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use std::sync::Arc;
 	use db::{BlockChainDatabase, AsSubstore};
-	use test_data;
 	use super::*;
 
 	#[test]

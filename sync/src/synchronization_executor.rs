@@ -215,13 +215,14 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 
 #[cfg(test)]
 pub mod tests {
+	extern crate test_data;
+
 	use super::*;
 	use std::sync::Arc;
 	use std::time;
 	use parking_lot::{Mutex, Condvar};
 	use chain::Transaction;
 	use message::types;
-	use test_data;
 	use inbound_connection::tests::DummyOutboundSyncConnection;
 	use local_node::tests::{default_filterload, make_filteradd};
 	use synchronization_peers::{PeersImpl, PeersContainer, PeersFilters, PeersOptions, BlockAnnouncementType};

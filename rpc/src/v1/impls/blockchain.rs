@@ -217,6 +217,8 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 
 #[cfg(test)]
 pub mod tests {
+	extern crate test_data;
+
 	use std::sync::Arc;
 	use jsonrpc_core::IoHandler;
 	use jsonrpc_core::Error;
@@ -231,7 +233,6 @@ pub mod tests {
 	use v1::types::H256;
 	use v1::types::ScriptType;
 	use chain::OutPoint;
-	use test_data;
 	use network::Magic;
 	use super::*;
 

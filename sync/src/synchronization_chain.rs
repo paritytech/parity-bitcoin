@@ -716,13 +716,14 @@ impl fmt::Debug for Chain {
 
 #[cfg(test)]
 mod tests {
+	extern crate test_data;
+
 	use std::sync::Arc;
 	use parking_lot::RwLock;
 	use chain::{Transaction, IndexedBlockHeader};
 	use db::BlockChainDatabase;
 	use miner::MemoryPool;
 	use primitives::hash::H256;
-	use test_data;
 	use super::{Chain, BlockState, TransactionState, BlockInsertionResult};
 	use utils::HashPosition;
 
@@ -1096,7 +1097,7 @@ mod tests {
 
 	#[test]
 	fn update_memory_pool_transaction() {
-		use test_data::{ChainBuilder, TransactionBuilder};
+		use self::test_data::{ChainBuilder, TransactionBuilder};
 
 		let data_chain = &mut ChainBuilder::new();
 		TransactionBuilder::with_output(10).add_output(10).add_output(10).store(data_chain)		// transaction0
