@@ -1,7 +1,6 @@
-use network::Magic;
+use network::{Magic, ConsensusParams};
 use db::BlockHeaderProvider;
 use canon::CanonHeader;
-use constants::MIN_BLOCK_VERSION;
 use error::Error;
 use work::work_required;
 use timestamp::median_timestamp;
@@ -14,9 +13,10 @@ pub struct HeaderAcceptor<'a> {
 
 impl<'a> HeaderAcceptor<'a> {
 	pub fn new(store: &'a BlockHeaderProvider, network: Magic, header: CanonHeader<'a>, height: u32) -> Self {
+		let params = network.consensus_params();
 		HeaderAcceptor {
 			// TODO: check last 1000 blocks instead of hardcoding the value
-			version: HeaderVersion::new(header, MIN_BLOCK_VERSION),
+			version: HeaderVersion::new(header, height, params),
 			work: HeaderWork::new(header, store, height, network),
 			median_timestamp: HeaderMedianTimestamp::new(header, store, network),
 		}
@@ -30,21 +30,27 @@ impl<'a> HeaderAcceptor<'a> {
 	}
 }
 
+/// Conforms to BIP90
+/// https://github.com/bitcoin/bips/blob/master/bip-0090.mediawiki
 pub struct HeaderVersion<'a> {
 	header: CanonHeader<'a>,
-	min_version: u32,
+	height: u32,
+	consensus_params: ConsensusParams,
 }
 
 impl<'a> HeaderVersion<'a> {
-	fn new(header: CanonHeader<'a>, min_version: u32) -> Self {
+	fn new(header: CanonHeader<'a>, height: u32, consensus_params: ConsensusParams) -> Self {
 		HeaderVersion {
 			header: header,
-			min_version: min_version,
+			height: height,
+			consensus_params: consensus_params,
 		}
 	}
 
 	fn check(&self) -> Result<(), Error> {
-		if self.header.raw.version < self.min_version {
+		if (self.header.raw.version < 2 && self.height >= self.consensus_params.bip34_height) ||
+			(self.header.raw.version < 3 && self.height >= self.consensus_params.bip65_height) ||
+			(self.header.raw.version < 4 && self.height >= self.consensus_params.bip66_height) {
 			Err(Error::OldVersionBlock)
 		} else {
 			Ok(())
