@@ -27,6 +27,8 @@ pub enum Error {
 	MerkleRoot,
 	/// Coinbase spends too much
 	CoinbaseOverspend { expected_max: u64, actual: u64 },
+	/// Coinbase has invalid script sig prefix (BIP90 -> BIP34)
+	CoinbaseScript,
 	/// Maximum sigops operations exceeded - will not provide how much it was in total
 	/// since it stops counting once `MAX_BLOCK_SIGOPS` is reached
 	MaximumSigops,

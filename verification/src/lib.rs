@@ -60,7 +60,7 @@ extern crate db;
 extern crate chain;
 extern crate network;
 extern crate primitives;
-extern crate serialization;
+extern crate serialization as ser;
 extern crate script;
 
 pub mod constants;

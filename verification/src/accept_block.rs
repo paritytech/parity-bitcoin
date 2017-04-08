@@ -1,4 +1,5 @@
 use network::{Magic, ConsensusParams};
+use ser::serialize;
 use db::TransactionOutputProvider;
 use sigops::transaction_sigops;
 use work::block_reward_satoshi;
@@ -12,6 +13,7 @@ pub struct BlockAcceptor<'a> {
 	pub finality: BlockFinality<'a>,
 	pub sigops: BlockSigops<'a>,
 	pub coinbase_claim: BlockCoinbaseClaim<'a>,
+	pub coinbase_script: BlockCoinbaseScript<'a>,
 }
 
 impl<'a> BlockAcceptor<'a> {
@@ -19,15 +21,17 @@ impl<'a> BlockAcceptor<'a> {
 		let params = network.consensus_params();
 		BlockAcceptor {
 			finality: BlockFinality::new(block, height),
-			sigops: BlockSigops::new(block, store, params, MAX_BLOCK_SIGOPS),
+			coinbase_script: BlockCoinbaseScript::new(block, &params, height),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store, height),
+			sigops: BlockSigops::new(block, store, params, MAX_BLOCK_SIGOPS),
 		}
 	}
 
 	pub fn check(&self) -> Result<(), Error> {
-		try!(self.finality.check());
-		try!(self.sigops.check());
-		try!(self.coinbase_claim.check());
+		self.finality.check()?;
+		self.sigops.check()?;
+		self.coinbase_claim.check()?;
+		self.coinbase_script.check()?;
 		Ok(())
 	}
 }
@@ -147,6 +151,35 @@ impl<'a> BlockCoinbaseClaim<'a> {
 			Err(Error::CoinbaseOverspend { expected_max: reward, actual: claim })
 		} else {
 			Ok(())
+		}
+	}
+}
+
+pub struct BlockCoinbaseScript<'a> {
+	block: CanonBlock<'a>,
+	bip34_active: bool,
+	height: u32,
+}
+
+impl<'a> BlockCoinbaseScript<'a> {
+	fn new(block: CanonBlock<'a>, consensus_params: &ConsensusParams, height: u32) -> Self {
+		BlockCoinbaseScript {
+			block: block,
+			bip34_active: height >= consensus_params.bip34_height,
+			height: height,
+		}
+	}
+
+	fn check(&self) -> Result<(), Error> {
+		let matches = !self.bip34_active || self.block.transactions.first()
+			.and_then(|tx| tx.raw.inputs.first())
+			.map(|input| input.script_sig.starts_with(&serialize(&self.height)))
+			.unwrap_or(false);
+
+		if matches {
+			Ok(())
+		} else {
+			Err(Error::CoinbaseScript)
 		}
 	}
 }

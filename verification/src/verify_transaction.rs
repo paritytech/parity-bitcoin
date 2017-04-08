@@ -1,5 +1,5 @@
 use std::ops;
-use serialization::Serializable;
+use ser::Serializable;
 use chain::IndexedTransaction;
 use duplex_store::NoopStore;
 use sigops::transaction_sigops;
