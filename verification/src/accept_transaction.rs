@@ -1,8 +1,8 @@
 use primitives::hash::H256;
-use db::{TransactionMetaProvider, PreviousTransactionOutputProvider, TransactionOutputObserver};
+use db::{TransactionMetaProvider, TransactionOutputProvider};
 use network::{Magic, ConsensusParams};
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner};
-use duplex_store::{DuplexTransactionOutputProvider, DuplexTransactionOutputObserver};
+use duplex_store::DuplexTransactionOutputProvider;
 use sigops::transaction_sigops;
 use canon::CanonTransaction;
 use constants::{COINBASE_MATURITY, MAX_BLOCK_SIGOPS};
@@ -23,10 +23,7 @@ impl<'a> TransactionAcceptor<'a> {
 		meta_store: &'a TransactionMetaProvider,
 		// previous transaction outputs
 		// in case of block validation, that's database and currently processed block
-		prevout_store: DuplexTransactionOutputProvider<'a>,
-		// in case of block validation, that's database and currently processed block
-		//spent_store: &'a TransactionOutputObserver,
-		spent_store: DuplexTransactionOutputObserver<'a>,
+		output_store: DuplexTransactionOutputProvider<'a>,
 		network: Magic,
 		transaction: CanonTransaction<'a>,
 		block_hash: &'a H256,
@@ -38,11 +35,11 @@ impl<'a> TransactionAcceptor<'a> {
 		let params = network.consensus_params();
 		TransactionAcceptor {
 			bip30: TransactionBip30::new_for_sync(transaction, meta_store, params.clone(), block_hash, height),
-			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store, transaction_index),
+			missing_inputs: TransactionMissingInputs::new(transaction, output_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
-			overspent: TransactionOverspent::new(transaction, prevout_store),
-			double_spent: TransactionDoubleSpend::new(transaction, spent_store),
-			eval: TransactionEval::new(transaction, prevout_store, params, height, time),
+			overspent: TransactionOverspent::new(transaction, output_store),
+			double_spent: TransactionDoubleSpend::new(transaction, output_store),
+			eval: TransactionEval::new(transaction, output_store, params, height, time),
 		}
 	}
 
@@ -58,7 +55,6 @@ impl<'a> TransactionAcceptor<'a> {
 }
 
 pub struct MemoryPoolTransactionAcceptor<'a> {
-	pub bip30: TransactionBip30<'a>,
 	pub missing_inputs: TransactionMissingInputs<'a>,
 	pub maturity: TransactionMaturity<'a>,
 	pub overspent: TransactionOverspent<'a>,
@@ -72,10 +68,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		// TODO: in case of memory pool it should be db and memory pool
 		meta_store: &'a TransactionMetaProvider,
 		// in case of memory pool it should be db and memory pool
-		prevout_store: DuplexTransactionOutputProvider<'a>,
-		// in case of memory pool it should be db and memory pool
-		//spent_store: &'a TransactionOutputObserver,
-		spent_store: DuplexTransactionOutputObserver<'a>,
+		output_store: DuplexTransactionOutputProvider<'a>,
 		network: Magic,
 		transaction: CanonTransaction<'a>,
 		height: u32,
@@ -85,19 +78,18 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		let params = network.consensus_params();
 		let transaction_index = 0;
 		MemoryPoolTransactionAcceptor {
-			bip30: TransactionBip30::new_for_mempool(transaction, meta_store),
-			missing_inputs: TransactionMissingInputs::new(transaction, prevout_store, transaction_index),
+			missing_inputs: TransactionMissingInputs::new(transaction, output_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
-			overspent: TransactionOverspent::new(transaction, prevout_store),
-			sigops: TransactionSigops::new(transaction, prevout_store, params.clone(), MAX_BLOCK_SIGOPS, time),
-			double_spent: TransactionDoubleSpend::new(transaction, spent_store),
-			eval: TransactionEval::new(transaction, prevout_store, params, height, time),
+			overspent: TransactionOverspent::new(transaction, output_store),
+			sigops: TransactionSigops::new(transaction, output_store, params.clone(), MAX_BLOCK_SIGOPS, time),
+			double_spent: TransactionDoubleSpend::new(transaction, output_store),
+			eval: TransactionEval::new(transaction, output_store, params, height, time),
 		}
 	}
 
 	pub fn check(&self) -> Result<(), TransactionError> {
-		// TODO: b82 fails, when this is enabled, fix this
-		//try!(self.bip30.check());
+		// Bip30 is not checked because we don't need to allow tx pool acceptance of an unspent duplicate.
+		// Tx pool validation is not strinctly a matter of consensus.
 		try!(self.missing_inputs.check());
 		try!(self.maturity.check());
 		try!(self.overspent.check());
@@ -108,10 +100,15 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 	}
 }
 
-pub trait TransactionRule {
-	fn check(&self) -> Result<(), TransactionError>;
-}
-
+/// Bip30 validation
+///
+/// A transaction hash that exists in the chain is not acceptable even if
+/// the original is spent in the new block. This is not necessary nor is it
+/// described by BIP30, but it is in the code referenced by BIP30. As such
+/// the tx pool need only test against the chain, skipping the pool.
+///
+/// source:
+/// https://github.com/libbitcoin/libbitcoin/blob/61759b2fd66041bcdbc124b2f04ed5ddc20c7312/src/chain/transaction.cpp#L780-L785
 pub struct TransactionBip30<'a> {
 	transaction: CanonTransaction<'a>,
 	store: &'a TransactionMetaProvider,
@@ -135,26 +132,7 @@ impl<'a> TransactionBip30<'a> {
 		}
 	}
 
-	fn new_for_mempool(transaction: CanonTransaction<'a>, store: &'a TransactionMetaProvider) -> Self {
-		TransactionBip30 {
-			transaction: transaction,
-			store: store,
-			exception: false,
-		}
-	}
-}
-
-impl<'a> TransactionRule for TransactionBip30<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
-		// we allow optionals here, cause previous output may be a part of current block
-		// yet, we do not need to check current block, cause duplicated transactions
-		// in the same block are also forbidden
-		//
-		// update*
-		// TODO:
-		// There is a potential consensus failure here, cause transaction before this one
-		// may have fully spent the output, and we, by checking only storage, have no knowladge
-		// of it
 		match self.store.transaction_meta(&self.transaction.hash) {
 			Some(ref meta) if !meta.is_fully_spent() && !self.exception => {
 				Err(TransactionError::UnspentTransactionWithTheSameHash)
@@ -178,14 +156,12 @@ impl<'a> TransactionMissingInputs<'a> {
 			transaction_index: transaction_index,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionMissingInputs<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		let missing_index = self.transaction.raw.inputs.iter()
 			.position(|input| {
 				let is_not_null = !input.previous_output.is_null();
-				let is_missing = self.store.previous_transaction_output(&input.previous_output, self.transaction_index).is_none();
+				let is_missing = self.store.transaction_output(&input.previous_output, self.transaction_index).is_none();
 				is_not_null && is_missing
 			});
 
@@ -210,9 +186,7 @@ impl<'a> TransactionMaturity<'a> {
 			height: height,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionMaturity<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		// TODO: this is should also fail when we are trying to spend current block coinbase
 		let immature_spend = self.transaction.raw.inputs.iter()
@@ -241,16 +215,14 @@ impl<'a> TransactionOverspent<'a> {
 			store: store,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionOverspent<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		if self.transaction.raw.is_coinbase() {
 			return Ok(());
 		}
 
 		let available = self.transaction.raw.inputs.iter()
-			.map(|input| self.store.previous_transaction_output(&input.previous_output, usize::max_value()).map(|o| o.value).unwrap_or(0))
+			.map(|input| self.store.transaction_output(&input.previous_output, usize::max_value()).map(|o| o.value).unwrap_or(0))
 			.sum::<u64>();
 
 		let spends = self.transaction.raw.total_spends();
@@ -281,9 +253,7 @@ impl<'a> TransactionSigops<'a> {
 			time: time,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionSigops<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		let bip16_active = self.time >= self.consensus_params.bip16_time;
 		let sigops = transaction_sigops(&self.transaction.raw, &self.store, bip16_active);
@@ -323,9 +293,7 @@ impl<'a> TransactionEval<'a> {
 			verify_dersig: verify_dersig,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionEval<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		if self.transaction.raw.is_coinbase() {
 			return Ok(());
@@ -339,7 +307,7 @@ impl<'a> TransactionRule for TransactionEval<'a> {
 		};
 
 		for (index, input) in self.transaction.raw.inputs.iter().enumerate() {
-			let output = self.store.previous_transaction_output(&input.previous_output, usize::max_value())
+			let output = self.store.transaction_output(&input.previous_output, usize::max_value())
 				.ok_or_else(|| TransactionError::UnknownReference(input.previous_output.hash.clone()))?;
 
 			checker.input_index = index;
@@ -361,24 +329,20 @@ impl<'a> TransactionRule for TransactionEval<'a> {
 
 pub struct TransactionDoubleSpend<'a> {
 	transaction: CanonTransaction<'a>,
-	//store: &'a TransactionOutputObserver,
-	store: DuplexTransactionOutputObserver<'a>,
+	store: DuplexTransactionOutputProvider<'a>,
 }
 
 impl<'a> TransactionDoubleSpend<'a> {
-	//fn new(transaction: CanonTransaction<'a>, store: &'a TransactionOutputObserver) -> Self {
-	fn new(transaction: CanonTransaction<'a>, store: DuplexTransactionOutputObserver<'a>) -> Self {
+	fn new(transaction: CanonTransaction<'a>, store: DuplexTransactionOutputProvider<'a>) -> Self {
 		TransactionDoubleSpend {
 			transaction: transaction,
 			store: store,
 		}
 	}
-}
 
-impl<'a> TransactionRule for TransactionDoubleSpend<'a> {
 	fn check(&self) -> Result<(), TransactionError> {
 		for input in &self.transaction.raw.inputs {
-			if self.store.is_spent(&input.previous_output).unwrap_or(false) {
+			if self.store.is_double_spent(&input.previous_output) {
 				return Err(TransactionError::UsingSpentOutput(
 					input.previous_output.hash.clone(),
 					input.previous_output.index

@@ -1,16 +1,15 @@
 use std::collections::HashMap;
 use chain::{Transaction, TransactionOutput, OutPoint};
-use db::{PreviousTransactionOutputProvider, TransactionOutputObserver};
+use db::TransactionOutputProvider;
 use miner::{DoubleSpendCheckResult, HashedOutPoint, NonFinalDoubleSpendSet};
 use verification::TransactionError;
 use super::super::types::{MemoryPoolRef, StorageRef};
-use super::StorageTransactionOutputProvider;
 
 /// Transaction output observer, which looks into both storage && into memory pool.
 /// It also allows to replace non-final transactions in the memory pool.
 pub struct MemoryPoolTransactionOutputProvider {
 	/// Storage provider
-	storage_provider: StorageTransactionOutputProvider,
+	storage_provider: StorageRef,
 	/// Transaction inputs from memory pool transactions
 	mempool_inputs: HashMap<HashedOutPoint, Option<TransactionOutput>>,
 	/// Previous outputs, for which we should return 'Not spent' value.
@@ -29,21 +28,21 @@ impl MemoryPoolTransactionOutputProvider {
 			DoubleSpendCheckResult::DoubleSpend(_, hash, index) => Err(TransactionError::UsingSpentOutput(hash, index)),
 			// there are no transactions, which are spending same inputs in memory pool
 			DoubleSpendCheckResult::NoDoubleSpend => Ok(MemoryPoolTransactionOutputProvider {
-				storage_provider: StorageTransactionOutputProvider::with_storage(storage),
+				storage_provider: storage,
 				mempool_inputs: transaction.inputs.iter()
 					.map(|input| (
 						input.previous_output.clone().into(),
-						memory_pool.previous_transaction_output(&input.previous_output, usize::max_value()),
+						memory_pool.transaction_output(&input.previous_output, usize::max_value()),
 					)).collect(),
 				nonfinal_spends: None,
 			}),
 			// there are non-final transactions, which are spending same inputs in memory pool
 			DoubleSpendCheckResult::NonFinalDoubleSpend(nonfinal_spends) => Ok(MemoryPoolTransactionOutputProvider {
-				storage_provider: StorageTransactionOutputProvider::with_storage(storage),
+				storage_provider: storage,
 				mempool_inputs: transaction.inputs.iter()
 					.map(|input| (
 						input.previous_output.clone().into(),
-						memory_pool.previous_transaction_output(&input.previous_output, usize::max_value()),
+						memory_pool.transaction_output(&input.previous_output, usize::max_value()),
 					)).collect(),
 				nonfinal_spends: Some(nonfinal_spends),
 			}),
@@ -51,23 +50,8 @@ impl MemoryPoolTransactionOutputProvider {
 	}
 }
 
-impl TransactionOutputObserver for MemoryPoolTransactionOutputProvider {
-	fn is_spent(&self, prevout: &OutPoint) -> Option<bool> {
-		// check if this output is spent by some non-final mempool transaction
-		if let Some(ref nonfinal_spends) = self.nonfinal_spends {
-			if nonfinal_spends.double_spends.contains(&prevout.clone().into()) {
-				return Some(false);
-			}
-		}
-
-		// we can omit memory_pool check here, because it has been completed in `for_transaction` method
-		// => just check spending in storage
-		self.storage_provider.is_spent(prevout)
-	}
-}
-
-impl PreviousTransactionOutputProvider for MemoryPoolTransactionOutputProvider {
-	fn previous_transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
+impl TransactionOutputProvider for MemoryPoolTransactionOutputProvider {
+	fn transaction_output(&self, prevout: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
 		let hashed_prevout: HashedOutPoint = prevout.clone().into();
 
 		// check if that is output of some transaction, which is vitually removed from memory pool
@@ -88,7 +72,20 @@ impl PreviousTransactionOutputProvider for MemoryPoolTransactionOutputProvider {
 		}
 
 		// now check in storage
-		self.storage_provider.previous_transaction_output(prevout, transaction_index)
+		self.storage_provider.transaction_output(prevout, transaction_index)
+	}
+
+	fn is_double_spent(&self, prevout: &OutPoint) -> bool {
+		// check if this output is spent by some non-final mempool transaction
+		if let Some(ref nonfinal_spends) = self.nonfinal_spends {
+			if nonfinal_spends.double_spends.contains(&prevout.clone().into()) {
+				return false;
+			}
+		}
+
+		// we can omit memory_pool check here, because it has been completed in `for_transaction` method
+		// => just check spending in storage
+		self.storage_provider.is_double_spent(prevout)
 	}
 }
 
@@ -99,7 +96,7 @@ mod tests {
 	use std::sync::Arc;
 	use parking_lot::RwLock;
 	use chain::OutPoint;
-	use db::{TransactionOutputObserver, PreviousTransactionOutputProvider, BlockChainDatabase};
+	use db::{TransactionOutputProvider, BlockChainDatabase};
 	use miner::MemoryPool;
 	use super::MemoryPoolTransactionOutputProvider;
 
@@ -130,11 +127,11 @@ mod tests {
 		// =>
 		// if t3 is also depending on t1[0] || t2[0], it will be rejected by verification as missing inputs
 		let provider = MemoryPoolTransactionOutputProvider::for_transaction(storage, &memory_pool, &dchain.at(3)).unwrap();
-		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(0).hash(), index: 0, }), Some(false));
-		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(1).hash(), index: 0, }), None);
-		assert_eq!(provider.is_spent(&OutPoint { hash: dchain.at(2).hash(), index: 0, }), None);
-		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(0).hash(), index: 0, }, 0), Some(dchain.at(0).outputs[0].clone()));
-		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(1).hash(), index: 0, }, 0), None);
-		assert_eq!(provider.previous_transaction_output(&OutPoint { hash: dchain.at(2).hash(), index: 0, }, 0), None);
+		assert_eq!(provider.is_double_spent(&OutPoint { hash: dchain.at(0).hash(), index: 0, }), false);
+		assert_eq!(provider.is_double_spent(&OutPoint { hash: dchain.at(1).hash(), index: 0, }), false);
+		assert_eq!(provider.is_double_spent(&OutPoint { hash: dchain.at(2).hash(), index: 0, }), false);
+		assert_eq!(provider.transaction_output(&OutPoint { hash: dchain.at(0).hash(), index: 0, }, 0), Some(dchain.at(0).outputs[0].clone()));
+		assert_eq!(provider.transaction_output(&OutPoint { hash: dchain.at(1).hash(), index: 0, }, 0), None);
+		assert_eq!(provider.transaction_output(&OutPoint { hash: dchain.at(2).hash(), index: 0, }, 0), None);
 	}
 }

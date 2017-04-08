@@ -1,5 +1,5 @@
 use network::{Magic, ConsensusParams};
-use db::PreviousTransactionOutputProvider;
+use db::TransactionOutputProvider;
 use sigops::transaction_sigops;
 use work::block_reward_satoshi;
 use duplex_store::DuplexTransactionOutputProvider;
@@ -15,7 +15,7 @@ pub struct BlockAcceptor<'a> {
 }
 
 impl<'a> BlockAcceptor<'a> {
-	pub fn new(store: &'a PreviousTransactionOutputProvider, network: Magic, block: CanonBlock<'a>, height: u32) -> Self {
+	pub fn new(store: &'a TransactionOutputProvider, network: Magic, block: CanonBlock<'a>, height: u32) -> Self {
 		let params = network.consensus_params();
 		BlockAcceptor {
 			finality: BlockFinality::new(block, height),
@@ -32,11 +32,6 @@ impl<'a> BlockAcceptor<'a> {
 	}
 }
 
-trait BlockRule {
-	/// If verification fails returns an error
-	fn check(&self) -> Result<(), Error>;
-}
-
 pub struct BlockFinality<'a> {
 	block: CanonBlock<'a>,
 	height: u32,
@@ -49,9 +44,7 @@ impl<'a> BlockFinality<'a> {
 			height: height,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockFinality<'a> {
 	fn check(&self) -> Result<(), Error> {
 		if self.block.is_final(self.height) {
 			Ok(())
@@ -63,13 +56,13 @@ impl<'a> BlockRule for BlockFinality<'a> {
 
 pub struct BlockSigops<'a> {
 	block: CanonBlock<'a>,
-	store: &'a PreviousTransactionOutputProvider,
+	store: &'a TransactionOutputProvider,
 	consensus_params: ConsensusParams,
 	max_sigops: usize,
 }
 
 impl<'a> BlockSigops<'a> {
-	fn new(block: CanonBlock<'a>, store: &'a PreviousTransactionOutputProvider, consensus_params: ConsensusParams, max_sigops: usize) -> Self {
+	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus_params: ConsensusParams, max_sigops: usize) -> Self {
 		BlockSigops {
 			block: block,
 			store: store,
@@ -77,9 +70,7 @@ impl<'a> BlockSigops<'a> {
 			max_sigops: max_sigops,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockSigops<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
 		let bip16_active = self.block.header.raw.time >= self.consensus_params.bip16_time;
@@ -97,21 +88,19 @@ impl<'a> BlockRule for BlockSigops<'a> {
 
 pub struct BlockCoinbaseClaim<'a> {
 	block: CanonBlock<'a>,
-	store: &'a PreviousTransactionOutputProvider,
+	store: &'a TransactionOutputProvider,
 	height: u32,
 }
 
 impl<'a> BlockCoinbaseClaim<'a> {
-	fn new(block: CanonBlock<'a>, store: &'a PreviousTransactionOutputProvider, height: u32) -> Self {
+	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, height: u32) -> Self {
 		BlockCoinbaseClaim {
 			block: block,
 			store: store,
 			height: height,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
 
@@ -122,7 +111,7 @@ impl<'a> BlockRule for BlockCoinbaseClaim<'a> {
 			let mut incoming: u64 = 0;
 			for input in tx.raw.inputs.iter() {
 				let (sum, overflow) = incoming.overflowing_add(
-					store.previous_transaction_output(&input.previous_output, tx_idx).map(|o| o.value).unwrap_or(0));
+					store.transaction_output(&input.previous_output, tx_idx).map(|o| o.value).unwrap_or(0));
 				if overflow {
 					return Err(Error::ReferencedInputsSumOverflow);
 				}

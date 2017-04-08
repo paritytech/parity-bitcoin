@@ -6,7 +6,7 @@ use canon::CanonBlock;
 use accept_block::BlockAcceptor;
 use accept_header::HeaderAcceptor;
 use accept_transaction::TransactionAcceptor;
-use duplex_store::{DuplexTransactionOutputProvider, DuplexTransactionOutputObserver};
+use duplex_store::DuplexTransactionOutputProvider;
 
 pub struct ChainAcceptor<'a> {
 	pub block: BlockAcceptor<'a>,
@@ -17,24 +17,22 @@ pub struct ChainAcceptor<'a> {
 impl<'a> ChainAcceptor<'a> {
 	pub fn new(store: &'a Store, network: Magic, block: CanonBlock<'a>, height: u32) -> Self {
 		trace!(target: "verification", "Block verification {}", block.hash().to_reversed_str());
-		let prevouts = DuplexTransactionOutputProvider::new(store.as_previous_transaction_output_provider(), block.raw());
-		let spents = DuplexTransactionOutputObserver::new(store.as_transaction_output_observer(), block.raw());
+		let output_store = DuplexTransactionOutputProvider::new(store.as_transaction_output_provider(), block.raw());
 		ChainAcceptor {
-			block: BlockAcceptor::new(store.as_previous_transaction_output_provider(), network, block, height),
+			block: BlockAcceptor::new(store.as_transaction_output_provider(), network, block, height),
 			header: HeaderAcceptor::new(store.as_block_header_provider(), network, block.header(), height),
 			transactions: block.transactions()
 				.into_iter()
 				.enumerate()
-				.map(|(index, tx)| TransactionAcceptor::new(
+				.map(|(tx_index, tx)| TransactionAcceptor::new(
 						store.as_transaction_meta_provider(),
-						prevouts,
-						spents,
+						output_store,
 						network,
 						tx,
 						block.hash(),
 						height,
 						block.header.raw.time,
-						index
+						tx_index
 				))
 				.collect(),
 		}
