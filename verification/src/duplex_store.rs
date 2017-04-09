@@ -25,8 +25,8 @@ impl<'a> TransactionOutputProvider for DuplexTransactionOutputProvider<'a> {
 			.or_else(|| self.second.transaction_output(prevout, transaction_index))
 	}
 
-	fn is_double_spent(&self, prevout: &OutPoint) -> bool {
-		self.first.is_double_spent(prevout) || self.second.is_double_spent(prevout)
+	fn is_spent(&self, prevout: &OutPoint) -> bool {
+		self.first.is_spent(prevout) || self.second.is_spent(prevout)
 	}
 }
 
@@ -37,7 +37,7 @@ impl TransactionOutputProvider for NoopStore {
 		None
 	}
 
-	fn is_double_spent(&self, _prevout: &OutPoint) -> bool {
+	fn is_spent(&self, _prevout: &OutPoint) -> bool {
 		false
 	}
 }

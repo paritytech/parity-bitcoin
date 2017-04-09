@@ -471,7 +471,7 @@ impl<T> TransactionOutputProvider for BlockChainDatabase<T> where T: KeyValueDat
 			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
 	}
 
-	fn is_double_spent(&self, prevout: &OutPoint) -> bool {
+	fn is_spent(&self, prevout: &OutPoint) -> bool {
 		self.transaction_meta(&prevout.hash)
 			.and_then(|meta| meta.is_spent(prevout.index as usize))
 			.unwrap_or(false)
