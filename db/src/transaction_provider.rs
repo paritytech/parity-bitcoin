@@ -23,7 +23,7 @@ pub trait TransactionOutputProvider: Send + Sync {
 	fn transaction_output(&self, outpoint: &OutPoint, transaction_index: usize) -> Option<TransactionOutput>;
 
 	/// Returns true if we know that output is double spent.
-	fn is_double_spent(&self, outpoint: &OutPoint) -> bool;
+	fn is_spent(&self, outpoint: &OutPoint) -> bool;
 }
 
 /// Transaction meta provider stores transaction meta information

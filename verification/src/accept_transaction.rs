@@ -342,7 +342,7 @@ impl<'a> TransactionDoubleSpend<'a> {
 
 	fn check(&self) -> Result<(), TransactionError> {
 		for input in &self.transaction.raw.inputs {
-			if self.store.is_double_spent(&input.previous_output) {
+			if self.store.is_spent(&input.previous_output) {
 				return Err(TransactionError::UsingSpentOutput(
 					input.previous_output.hash.clone(),
 					input.previous_output.index

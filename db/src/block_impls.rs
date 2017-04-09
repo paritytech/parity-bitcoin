@@ -9,7 +9,7 @@ fn transaction_output(transactions: &[IndexedTransaction], prevout: &OutPoint) -
 		.cloned()
 }
 
-fn is_double_spent(transactions: &[IndexedTransaction], prevout: &OutPoint) -> bool {
+fn is_spent(transactions: &[IndexedTransaction], prevout: &OutPoint) -> bool {
 	// the code below is valid, but has rather poor performance
 
 	// if previous transaction output appears more than once than we can safely
@@ -29,7 +29,7 @@ impl TransactionOutputProvider for IndexedBlock {
 		transaction_output(&self.transactions[..take], outpoint)
 	}
 
-	fn is_double_spent(&self, outpoint: &OutPoint) -> bool {
-		is_double_spent(&self.transactions, outpoint)
+	fn is_spent(&self, outpoint: &OutPoint) -> bool {
+		is_spent(&self.transactions, outpoint)
 	}
 }

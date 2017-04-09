@@ -819,7 +819,7 @@ impl TransactionOutputProvider for MemoryPool {
 			.cloned()
 	}
 
-	fn is_double_spent(&self, outpoint: &OutPoint) -> bool {
+	fn is_spent(&self, outpoint: &OutPoint) -> bool {
 		self.is_spent(outpoint)
 	}
 }

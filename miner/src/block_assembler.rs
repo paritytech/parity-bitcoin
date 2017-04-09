@@ -180,7 +180,7 @@ impl<'a, T> TransactionOutputProvider for FittingTransactionsIterator<'a, T> whe
 			})
 	}
 
-	fn is_double_spent(&self, _outpoint: &OutPoint) -> bool {
+	fn is_spent(&self, _outpoint: &OutPoint) -> bool {
 		unimplemented!();
 	}
 }
