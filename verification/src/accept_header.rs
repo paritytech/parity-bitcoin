@@ -30,10 +30,6 @@ impl<'a> HeaderAcceptor<'a> {
 	}
 }
 
-pub trait HeaderRule {
-	fn check(&self) -> Result<(), Error>;
-}
-
 pub struct HeaderVersion<'a> {
 	header: CanonHeader<'a>,
 	min_version: u32,
@@ -46,9 +42,7 @@ impl<'a> HeaderVersion<'a> {
 			min_version: min_version,
 		}
 	}
-}
 
-impl<'a> HeaderRule for HeaderVersion<'a> {
 	fn check(&self) -> Result<(), Error> {
 		if self.header.raw.version < self.min_version {
 			Err(Error::OldVersionBlock)
@@ -74,9 +68,7 @@ impl<'a> HeaderWork<'a> {
 			network: network,
 		}
 	}
-}
 
-impl<'a> HeaderRule for HeaderWork<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let previous_header_hash = self.header.raw.previous_header_hash.clone();
 		let time = self.header.raw.time;
@@ -103,9 +95,7 @@ impl<'a> HeaderMedianTimestamp<'a> {
 			network: network,
 		}
 	}
-}
 
-impl<'a> HeaderRule for HeaderMedianTimestamp<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let median = median_timestamp(&self.header.raw, self.store, self.network);
 		if self.header.raw.time <= median {

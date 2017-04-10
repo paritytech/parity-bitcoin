@@ -17,10 +17,9 @@ mod block_ref;
 mod block_chain;
 mod block_chain_db;
 mod error;
-mod impls;
+mod block_impls;
 mod store;
 mod transaction_meta;
-mod transaction_meta_provider;
 mod transaction_provider;
 
 pub use primitives::{hash, bytes};
@@ -34,6 +33,5 @@ pub use block_chain_db::{BlockChainDatabase, ForkChainDatabase};
 pub use error::Error;
 pub use store::{AsSubstore, Store, SharedStore, CanonStore};
 pub use transaction_meta::TransactionMeta;
-pub use transaction_meta_provider::{TransactionMetaProvider, TransactionOutputObserver};
-pub use transaction_provider::{TransactionProvider, PreviousTransactionOutputProvider};
+pub use transaction_provider::{TransactionProvider, TransactionOutputProvider, TransactionMetaProvider};
 

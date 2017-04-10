@@ -2,14 +2,11 @@
 
 use hash::H256;
 use chain::{IndexedBlock, IndexedBlockHeader, BlockHeader, Transaction};
-use db::{
-	SharedStore, PreviousTransactionOutputProvider, BlockHeaderProvider, TransactionOutputObserver,
-	BlockOrigin
-};
+use db::{SharedStore, TransactionOutputProvider, BlockHeaderProvider, BlockOrigin};
 use network::Magic;
 use error::{Error, TransactionError};
 use canon::{CanonBlock, CanonTransaction};
-use duplex_store::{DuplexTransactionOutputObserver, DuplexTransactionOutputProvider, NoopStore};
+use duplex_store::{DuplexTransactionOutputProvider, NoopStore};
 use verify_chain::ChainVerifier;
 use verify_header::HeaderVerifier;
 use verify_transaction::MemoryPoolTransactionVerifier;
@@ -89,7 +86,7 @@ impl BackwardsCompatibleChainVerifier {
 		height: u32,
 		time: u32,
 		transaction: &Transaction,
-	) -> Result<(), TransactionError> where T: PreviousTransactionOutputProvider + TransactionOutputObserver {
+	) -> Result<(), TransactionError> where T: TransactionOutputProvider {
 		let indexed_tx = transaction.clone().into();
 		// let's do preverification first
 		let tx_verifier = MemoryPoolTransactionVerifier::new(&indexed_tx);
@@ -98,12 +95,10 @@ impl BackwardsCompatibleChainVerifier {
 		let canon_tx = CanonTransaction::new(&indexed_tx);
 		// now let's do full verification
 		let noop = NoopStore;
-		let prevouts = DuplexTransactionOutputProvider::new(prevout_provider, &noop);
-		let spents = DuplexTransactionOutputObserver::new(prevout_provider, &noop);
+		let output_store = DuplexTransactionOutputProvider::new(prevout_provider, &noop);
 		let tx_acceptor = MemoryPoolTransactionAcceptor::new(
 			self.store.as_transaction_meta_provider(),
-			prevouts,
-			spents,
+			output_store,
 			self.network,
 			canon_tx,
 			height,

@@ -32,6 +32,6 @@ pub use transaction::{Transaction, TransactionInput, TransactionOutput, OutPoint
 pub use read_and_hash::{ReadAndHash, HashedData};
 pub use indexed_block::IndexedBlock;
 pub use indexed_header::IndexedBlockHeader;
-pub use indexed_transaction::{IndexedTransaction, IndexedTransactionsRef};
+pub use indexed_transaction::IndexedTransaction;
 
 pub type ShortTransactionID = hash::H48;

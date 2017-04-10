@@ -1,4 +1,4 @@
-use std::{cmp, io, borrow, fmt};
+use std::{cmp, io, fmt};
 use hash::H256;
 use ser::{Deserializable, Reader, Error as ReaderError};
 use transaction::Transaction;
@@ -54,17 +54,5 @@ impl Deserializable for IndexedTransaction {
 		};
 
 		Ok(tx)
-	}
-}
-
-pub struct IndexedTransactionsRef<'a, T> where T: 'a {
-	pub transactions: &'a [T],
-}
-
-impl<'a, T> IndexedTransactionsRef<'a, T> where T: borrow::Borrow<IndexedTransaction> {
-	pub fn new(transactions: &'a [T]) -> Self {
-		IndexedTransactionsRef {
-			transactions: transactions,
-		}
 	}
 }

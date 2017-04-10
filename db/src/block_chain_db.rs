@@ -19,8 +19,8 @@ use kv::{
 use best_block::BestBlock;
 use {
 	BlockRef, Error, BlockHeaderProvider, BlockProvider, BlockOrigin, TransactionMeta, IndexedBlockProvider,
-	TransactionMetaProvider, TransactionProvider, PreviousTransactionOutputProvider, BlockChain, Store,
-	SideChainOrigin, ForkChain, TransactionOutputObserver, Forkable, CanonStore
+	TransactionMetaProvider, TransactionProvider, TransactionOutputProvider, BlockChain, Store,
+	SideChainOrigin, ForkChain, Forkable, CanonStore
 };
 
 const COL_COUNT: u32 = 10;
@@ -474,19 +474,18 @@ impl<T> TransactionProvider for BlockChainDatabase<T> where T: KeyValueDatabase 
 	}
 }
 
-impl<T> PreviousTransactionOutputProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
-	fn previous_transaction_output(&self, prevout: &OutPoint, _transaction_index: usize) -> Option<TransactionOutput> {
+impl<T> TransactionOutputProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
+	fn transaction_output(&self, prevout: &OutPoint, _transaction_index: usize) -> Option<TransactionOutput> {
 		// return previous transaction outputs only for canon chain transactions
 		self.transaction_meta(&prevout.hash)
 			.and_then(|_| self.transaction(&prevout.hash))
 			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
 	}
-}
 
-impl<T> TransactionOutputObserver for BlockChainDatabase<T> where T: KeyValueDatabase {
-	fn is_spent(&self, prevout: &OutPoint) -> Option<bool> {
+	fn is_spent(&self, prevout: &OutPoint) -> bool {
 		self.transaction_meta(&prevout.hash)
 			.and_then(|meta| meta.is_spent(prevout.index as usize))
+			.unwrap_or(false)
 	}
 }
 

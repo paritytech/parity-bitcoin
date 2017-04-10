@@ -11,7 +11,6 @@ mod message_block_headers_provider;
 mod orphan_blocks_pool;
 mod orphan_transactions_pool;
 mod partial_merkle_tree;
-mod storage_transaction_provider;
 mod synchronization_state;
 
 pub use self::average_speed_meter::AverageSpeedMeter;
@@ -27,7 +26,6 @@ pub use self::message_block_headers_provider::MessageBlockHeadersProvider;
 pub use self::orphan_blocks_pool::OrphanBlocksPool;
 pub use self::orphan_transactions_pool::{OrphanTransactionsPool, OrphanTransaction};
 pub use self::partial_merkle_tree::{PartialMerkleTree, build_partial_merkle_tree};
-pub use self::storage_transaction_provider::StorageTransactionOutputProvider;
 pub use self::synchronization_state::SynchronizationState;
 
 /// Block height type

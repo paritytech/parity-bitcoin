@@ -40,10 +40,6 @@ impl<'a> BlockVerifier<'a> {
 	}
 }
 
-trait BlockRule {
-	fn check(&self) -> Result<(), Error>;
-}
-
 pub struct BlockEmpty<'a> {
 	block: &'a IndexedBlock,
 }
@@ -54,9 +50,7 @@ impl<'a> BlockEmpty<'a> {
 			block: block,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockEmpty<'a> {
 	fn check(&self) -> Result<(), Error> {
 		if self.block.transactions.is_empty() {
 			Err(Error::Empty)
@@ -78,9 +72,7 @@ impl<'a> BlockSerializedSize<'a> {
 			max_size: max_size,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockSerializedSize<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let size = self.block.size();
 		if size > self.max_size {
@@ -101,9 +93,7 @@ impl<'a> BlockCoinbase<'a> {
 			block: block,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockCoinbase<'a> {
 	fn check(&self) -> Result<(), Error> {
 		if self.block.transactions.first().map(|tx| tx.raw.is_coinbase()).unwrap_or(false) {
 			Ok(())
@@ -123,9 +113,7 @@ impl<'a> BlockExtraCoinbases<'a> {
 			block: block,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockExtraCoinbases<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let misplaced = self.block.transactions.iter()
 			.skip(1)
@@ -148,9 +136,7 @@ impl<'a> BlockTransactionsUniqueness<'a> {
 			block: block,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockTransactionsUniqueness<'a> {
 	fn check(&self) -> Result<(), Error> {
 		let hashes = self.block.transactions.iter().map(|tx| tx.hash.clone()).collect::<HashSet<_>>();
 		if hashes.len() == self.block.transactions.len() {
@@ -173,9 +159,7 @@ impl<'a> BlockSigops<'a> {
 			max_sigops: max_sigops,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockSigops<'a> {
 	fn check(&self) -> Result<(), Error> {
 		// We cannot know if bip16 is enabled at this point so we disable it.
 		let sigops = self.block.transactions.iter()
@@ -200,9 +184,7 @@ impl<'a> BlockMerkleRoot<'a> {
 			block: block,
 		}
 	}
-}
 
-impl<'a> BlockRule for BlockMerkleRoot<'a> {
 	fn check(&self) -> Result<(), Error> {
 		if self.block.merkle_root() == self.block.header.raw.merkle_root_hash {
 			Ok(())

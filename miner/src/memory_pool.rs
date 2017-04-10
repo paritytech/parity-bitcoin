@@ -5,7 +5,7 @@
 //! transactions.
 //! It also guarantees that ancestor-descendant relation won't break during ordered removal (ancestors always removed
 //! before descendants). Removal using `remove_by_hash` can break this rule.
-use db::{TransactionProvider, PreviousTransactionOutputProvider};
+use db::{TransactionProvider, TransactionOutputProvider};
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
 use chain::{IndexedTransaction, Transaction, OutPoint, TransactionOutput};
@@ -812,11 +812,15 @@ impl TransactionProvider for MemoryPool {
 	}
 }
 
-impl PreviousTransactionOutputProvider for MemoryPool {
-	fn previous_transaction_output(&self, prevout: &OutPoint, _transaction_index: usize) -> Option<TransactionOutput> {
+impl TransactionOutputProvider for MemoryPool {
+	fn transaction_output(&self, prevout: &OutPoint, _transaction_index: usize) -> Option<TransactionOutput> {
 		self.get(&prevout.hash)
 			.and_then(|tx| tx.outputs.get(prevout.index as usize))
 			.cloned()
+	}
+
+	fn is_spent(&self, outpoint: &OutPoint) -> bool {
+		self.is_spent(outpoint)
 	}
 }
 
