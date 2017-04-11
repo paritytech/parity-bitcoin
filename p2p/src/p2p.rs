@@ -106,7 +106,7 @@ impl Context {
 	pub fn autoconnect(context: Arc<Context>, handle: &Handle) {
 		let c = context.clone();
 		// every 10 seconds connect to new peers (if needed)
-		let interval: BoxedEmptyFuture = Interval::new(time::Duration::new(10, 0), handle).expect("Failed to create interval")
+		let interval: BoxedEmptyFuture = Interval::new_at(time::Instant::now(), time::Duration::new(10, 0), handle).expect("Failed to create interval")
 			.and_then(move |_| {
 				// print traces
 				let ic = context.connection_counter.inbound_connections();
