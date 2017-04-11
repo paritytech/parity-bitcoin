@@ -1,6 +1,6 @@
 use network::{Magic, ConsensusParams};
-use ser::serialize;
 use db::TransactionOutputProvider;
+use script;
 use sigops::transaction_sigops;
 use work::block_reward_satoshi;
 use duplex_store::DuplexTransactionOutputProvider;
@@ -171,9 +171,17 @@ impl<'a> BlockCoinbaseScript<'a> {
 	}
 
 	fn check(&self) -> Result<(), Error> {
-		let matches = !self.bip34_active || self.block.transactions.first()
+		if !self.bip34_active {
+			return Ok(())
+		}
+
+		let prefix = script::Builder::default()
+			.push_num(self.height.into())
+			.into_script();
+
+		let matches = self.block.transactions.first()
 			.and_then(|tx| tx.raw.inputs.first())
-			.map(|input| input.script_sig.starts_with(&serialize(&self.height)))
+			.map(|input| input.script_sig.starts_with(&prefix))
 			.unwrap_or(false);
 
 		if matches {
@@ -181,5 +189,42 @@ impl<'a> BlockCoinbaseScript<'a> {
 		} else {
 			Err(Error::CoinbaseScript)
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	extern crate test_data;
+
+	use {Error, CanonBlock};
+	use super::BlockCoinbaseScript;
+
+	#[test]
+	fn test_block_coinbase_script() {
+		// transaction from block 461373
+		// https://blockchain.info/rawtx/7cf05175ce9c8dbfff9aafa8263edc613fc08f876e476553009afcf7e3868a0c?format=hex
+		let tx = "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff3f033d0a070004b663ec58049cba630608733867a0787a02000a425720537570706f727420384d200a666973686572206a696e78696e092f425720506f6f6c2fffffffff01903d9d4e000000001976a914721afdf638d570285d02d3076d8be6a03ee0794d88ac00000000".into();
+		let block_number = 461373;
+		let block = test_data::block_builder()
+			.with_transaction(tx)
+			.header().build()
+			.build()
+			.into();
+
+		let coinbase_script_validator = BlockCoinbaseScript {
+			block: CanonBlock::new(&block),
+			bip34_active: true,
+			height: block_number,
+		};
+
+		assert_eq!(coinbase_script_validator.check(), Ok(()));
+
+		let coinbase_script_validator2 = BlockCoinbaseScript {
+			block: CanonBlock::new(&block),
+			bip34_active: true,
+			height: block_number - 1,
+		};
+
+		assert_eq!(coinbase_script_validator2.check(), Err(Error::CoinbaseScript));
 	}
 }

@@ -34,6 +34,14 @@ impl From<u8> for Num {
 	}
 }
 
+impl From<u32> for Num {
+	fn from(i: u32) -> Self {
+		Num {
+			value: i as i64
+		}
+	}
+}
+
 impl From<usize> for Num {
 	fn from(i: usize) -> Self {
 		Num {
