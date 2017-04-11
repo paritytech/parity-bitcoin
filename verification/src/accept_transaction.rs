@@ -270,6 +270,7 @@ pub struct TransactionEval<'a> {
 	store: DuplexTransactionOutputProvider<'a>,
 	verify_p2sh: bool,
 	verify_clocktime: bool,
+	verify_dersig: bool,
 }
 
 impl<'a> TransactionEval<'a> {
@@ -282,12 +283,14 @@ impl<'a> TransactionEval<'a> {
 	) -> Self {
 		let verify_p2sh = time >= params.bip16_time;
 		let verify_clocktime = height >= params.bip65_height;
+		let verify_dersig = height >= params.bip66_height;
 
 		TransactionEval {
 			transaction: transaction,
 			store: store,
 			verify_p2sh: verify_p2sh,
 			verify_clocktime: verify_clocktime,
+			verify_dersig: verify_dersig,
 		}
 	}
 
@@ -314,7 +317,8 @@ impl<'a> TransactionEval<'a> {
 
 			let flags = VerificationFlags::default()
 				.verify_p2sh(self.verify_p2sh)
-				.verify_clocktimeverify(self.verify_clocktime);
+				.verify_clocktimeverify(self.verify_clocktime)
+				.verify_dersig(self.verify_dersig);
 
 			try!(verify_script(&input, &output, &flags, &checker).map_err(|_| TransactionError::Signature(index)));
 		}

@@ -77,5 +77,10 @@ impl VerificationFlags {
 		self.verify_clocktimeverify = value;
 		self
 	}
+
+	pub fn verify_dersig(mut self, value: bool) -> Self {
+		self.verify_dersig = value;
+		self
+	}
 }
 

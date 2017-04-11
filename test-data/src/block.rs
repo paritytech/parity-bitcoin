@@ -209,7 +209,8 @@ impl<F> BlockHeaderBuilder<F> where F: Invoke<chain::BlockHeader> {
 			merkle_root: 0.into(),
 			parent: 0.into(),
 			bits: Compact::max_value(),
-			version: 1,
+			// set to 4 to allow creating long test chains
+			version: 4,
 		}
 	}
 
@@ -575,7 +576,7 @@ fn example5() {
 			.build()
 		.build();
 
-	assert_eq!(hash, "842cee5f58ad1b1caf1896902fc62a0542188a1462372b166ca550acd7fccf1a".into());
+	assert_eq!(hash, "3e24319d69a77c58e2da8c7331a21729482835c96834dafb3e1793c1253847c7".into());
 	assert_eq!(block.header().previous_header_hash, "0000000000000000000000000000000000000000000000000000000000000000".into());
 }
 

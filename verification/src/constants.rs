@@ -6,7 +6,6 @@ pub const MAX_BLOCK_SIZE: usize = 1_000_000;
 pub const MAX_BLOCK_SIGOPS: usize = 20_000;
 pub const MIN_COINBASE_SIZE: usize = 2;
 pub const MAX_COINBASE_SIZE: usize = 100;
-pub const MIN_BLOCK_VERSION: u32 = 0;
 
 pub const RETARGETING_FACTOR: u32 = 4;
 pub const TARGET_SPACING_SECONDS: u32 = 10 * 60;
