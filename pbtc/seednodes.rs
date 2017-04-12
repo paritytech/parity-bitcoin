@@ -9,10 +9,12 @@ pub fn mainnet_seednodes() -> Vec<&'static str> {
 		"dnsseed.bitcoin.dashjr.org:8333",
 		// Christian Decker
 		"seed.bitcoinstats.com:8333",
-		// Jeff Garzik
-		"bitseed.xf2.org:8333",
 		// Jonas Schnelli
-		"seed.bitcoin.jonasschnelli.ch:8333"
+		"seed.bitcoin.jonasschnelli.ch:8333",
+		// Peter Todd
+		"seed.btc.petertodd.org:8333",
+		//
+		"seed.voskuil.org:8333",
 	]
 }
 
@@ -21,6 +23,7 @@ pub fn testnet_seednodes() -> Vec<&'static str> {
 		"testnet-seed.bitcoin.jonasschnelli.ch:18333",
 		"seed.tbtc.petertodd.org:18333",
 		"testnet-seed.bluematt.me:18333",
-		"testnet-seed.bitcoin.schildbach.de:18333"
+		"testnet-seed.bitcoin.schildbach.de:18333",
+		"testnet-seed.voskuil.org:18333",
 	]
 }
