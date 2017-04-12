@@ -121,10 +121,9 @@ impl Context {
 				let used_addresses = context.connections.addresses();
 				let max = (ic.1 + oc.1) as usize;
 				let needed = context.connection_counter.outbound_connections_needed() as usize;
-				let peers = context.node_table.read().nodes_with_services(&Services::default(), context.config.internet_protocol, max);
+				let peers = context.node_table.read().nodes_with_services(&Services::default(), context.config.internet_protocol, &used_addresses, max);
 				let addresses = peers.into_iter()
 					.map(|peer| peer.address())
-					.filter(|address| !used_addresses.contains(address))
 					.take(needed)
 					.collect::<Vec<_>>();
 

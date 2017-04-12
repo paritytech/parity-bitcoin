@@ -1,5 +1,5 @@
-use std::{io, path, fs};
-use std::collections::{HashMap, BTreeSet};
+use std::{io, path, fs, net};
+use std::collections::{HashSet, HashMap, BTreeSet};
 use std::collections::hash_map::Entry;
 use std::net::SocketAddr;
 use std::cmp::{PartialOrd, Ord, Ordering};
@@ -287,10 +287,11 @@ impl<T> NodeTable<T> where T: Time {
 	}
 
 	/// Returnes most reliable nodes with desired services.
-	pub fn nodes_with_services(&self, services: &Services, protocol: InternetProtocol, limit: usize) -> Vec<Node> {
+	pub fn nodes_with_services(&self, services: &Services, protocol: InternetProtocol, except: &HashSet<net::SocketAddr>, limit: usize) -> Vec<Node> {
 		self.by_score.iter()
 			.filter(|node| protocol.is_allowed(&node.0.addr))
 			.filter(|node| node.0.services.includes(services))
+			.filter(|node| !except.contains(&node.0.address()))
 			.map(|node| node.0.clone())
 			.take(limit)
 			.collect()
@@ -389,6 +390,7 @@ impl<T> NodeTable<T> where T: Time {
 #[cfg(test)]
 mod tests {
 	use std::net::SocketAddr;
+	use std::collections::HashSet;
 	use message::common::Services;
 	use util::InternetProtocol;
 	use util::time::{IncrementalTime, ZeroTime};
@@ -403,7 +405,7 @@ mod tests {
 		table.insert(s0, Services::default());
 		table.insert(s1, Services::default());
 		table.insert(s2, Services::default());
-		let nodes = table.nodes_with_services(&Services::default(), InternetProtocol::default(), 2);
+		let nodes = table.nodes_with_services(&Services::default(), InternetProtocol::default(), &HashSet::new(), 2);
 		assert_eq!(nodes.len(), 2);
 		assert_eq!(nodes[0].addr, s2);
 		assert_eq!(nodes[0].time, 2);
@@ -431,7 +433,7 @@ mod tests {
 		table.note_used(&s1);
 		table.note_failure(&s2);
 		table.note_failure(&s3);
-		let nodes = table.nodes_with_services(&Services::default(), InternetProtocol::default(), 10);
+		let nodes = table.nodes_with_services(&Services::default(), InternetProtocol::default(), &HashSet::new(), 10);
 		assert_eq!(nodes.len(), 5);
 
 		assert_eq!(nodes[0].addr, s1);
