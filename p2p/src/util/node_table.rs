@@ -291,7 +291,17 @@ impl<T> NodeTable<T> where T: Time {
 		self.by_score.iter()
 			.filter(|node| protocol.is_allowed(&node.0.addr))
 			.filter(|node| node.0.services.includes(services))
-			.filter(|node| !except.contains(&node.0.address()))
+			.filter(|node| {
+				let node_address = node.0.address();
+				!except.contains(&node_address)
+					&& match node_address {
+						net::SocketAddr::V4(v4) => !except
+							.contains(&net::SocketAddr::V6(net::SocketAddrV6::new(v4.ip().to_ipv6_compatible(), v4.port(), 0, 0))),
+						net::SocketAddr::V6(v6) => v6.ip().to_ipv4()
+							.map(|v4| !except.contains(&net::SocketAddr::V4(net::SocketAddrV4::new(v4, v6.port()))))
+							.unwrap_or(true),
+					}
+			})
 			.map(|node| node.0.clone())
 			.take(limit)
 			.collect()
