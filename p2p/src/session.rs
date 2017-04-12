@@ -17,7 +17,7 @@ impl SessionFactory for SeednodeSessionFactory {
 	fn new_session(context: Arc<Context>, info: PeerInfo, synchronous: bool) -> Session {
 		let peer_context = Arc::new(PeerContext::new(context, info, synchronous));
 		let ping = PingProtocol::new(peer_context.clone()).boxed();
-		let addr = AddrProtocol::new(peer_context.clone()).boxed();
+		let addr = AddrProtocol::new(peer_context.clone(), true).boxed();
 		let seed = SeednodeProtocol::new(peer_context.clone()).boxed();
 		Session::new(peer_context, vec![ping, addr, seed])
 	}
@@ -29,7 +29,7 @@ impl SessionFactory for NormalSessionFactory {
 	fn new_session(context: Arc<Context>, info: PeerInfo, synchronous: bool) -> Session {
 		let peer_context = Arc::new(PeerContext::new(context, info, synchronous));
 		let ping = PingProtocol::new(peer_context.clone()).boxed();
-		let addr = AddrProtocol::new(peer_context.clone()).boxed();
+		let addr = AddrProtocol::new(peer_context.clone(), false).boxed();
 		let sync = SyncProtocol::new(peer_context.clone()).boxed();
 		Session::new(peer_context, vec![ping, addr, sync])
 	}

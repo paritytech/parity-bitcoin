@@ -10,12 +10,15 @@ use util::Direction;
 pub struct AddrProtocol {
 	/// Context
 	context: Arc<PeerContext>,
+	/// True if this is a connection to the seednode && we should disconnect after receiving addr message
+	is_seed_node_connection: bool,
 }
 
 impl AddrProtocol {
-	pub fn new(context: Arc<PeerContext>) -> Self {
+	pub fn new(context: Arc<PeerContext>, is_seed_node_connection: bool) -> Self {
 		AddrProtocol {
 			context: context,
+			is_seed_node_connection: is_seed_node_connection,
 		}
 	}
 }
@@ -44,6 +47,9 @@ impl Protocol for AddrProtocol {
 				Addr::V31402(addr) => {
 					let nodes = addr.addresses.into_iter().map(Into::into).collect();
 					self.context.global().update_node_table(nodes);
+					if self.is_seed_node_connection {
+						self.context.close();
+					}
 				},
 			}
 		}
