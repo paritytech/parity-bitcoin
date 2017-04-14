@@ -10,12 +10,15 @@ use util::Direction;
 pub struct AddrProtocol {
 	/// Context
 	context: Arc<PeerContext>,
+	/// True if this is a connection to the seednode && we should disconnect after receiving addr message
+	is_seed_node_connection: bool,
 }
 
 impl AddrProtocol {
-	pub fn new(context: Arc<PeerContext>) -> Self {
+	pub fn new(context: Arc<PeerContext>, is_seed_node_connection: bool) -> Self {
 		AddrProtocol {
 			context: context,
+			is_seed_node_connection: is_seed_node_connection,
 		}
 	}
 }
@@ -42,8 +45,15 @@ impl Protocol for AddrProtocol {
 					unreachable!("This version of protocol is not supported!");
 				},
 				Addr::V31402(addr) => {
-					let nodes = addr.addresses.into_iter().map(Into::into).collect();
+					let nodes: Vec<_> = addr.addresses.into_iter().map(Into::into).collect();
+					let nodes_len = nodes.len();
 					self.context.global().update_node_table(nodes);
+					// seednodes are currently responding with two addr messages:
+					// 1) addr message with single address - seednode itself
+					// 2) addr message with 1000 addresses (seednode node_table contents)
+					if self.is_seed_node_connection && nodes_len > 1 {
+						self.context.close();
+					}
 				},
 			}
 		}

@@ -106,7 +106,7 @@ impl Context {
 	pub fn autoconnect(context: Arc<Context>, handle: &Handle) {
 		let c = context.clone();
 		// every 10 seconds connect to new peers (if needed)
-		let interval: BoxedEmptyFuture = Interval::new(time::Duration::new(10, 0), handle).expect("Failed to create interval")
+		let interval: BoxedEmptyFuture = Interval::new_at(time::Instant::now(), time::Duration::new(10, 0), handle).expect("Failed to create interval")
 			.and_then(move |_| {
 				// print traces
 				let ic = context.connection_counter.inbound_connections();
@@ -118,19 +118,18 @@ impl Context {
 					channel.session().maintain();
 				}
 
-				let used_addresses = context.connections.addresses();
-				let max = (ic.1 + oc.1) as usize;
 				let needed = context.connection_counter.outbound_connections_needed() as usize;
-				let peers = context.node_table.read().nodes_with_services(&Services::default(), context.config.internet_protocol, max);
-				let addresses = peers.into_iter()
-					.map(|peer| peer.address())
-					.filter(|address| !used_addresses.contains(address))
-					.take(needed)
-					.collect::<Vec<_>>();
+				if needed != 0 {
+					let used_addresses = context.connections.addresses();
+					let peers = context.node_table.read().nodes_with_services(&Services::default(), context.config.internet_protocol, &used_addresses, needed);
+					let addresses = peers.into_iter()
+						.map(|peer| peer.address())
+						.collect::<Vec<_>>();
 
-				trace!("Creating {} more outbound connections", addresses.len());
-				for address in addresses {
-					Context::connect::<NormalSessionFactory>(context.clone(), address);
+					trace!("Creating {} more outbound connections", addresses.len());
+					for address in addresses {
+						Context::connect::<NormalSessionFactory>(context.clone(), address);
+					}
 				}
 
 				if let Err(_err) = context.node_table.read().save_to_file(&context.config.node_table_path) {
