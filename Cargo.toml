@@ -7,7 +7,7 @@ description = "Parity bitcoin client."
 
 [dependencies]
 log = "0.3"
-env_logger = "0.3"
+env_logger = "0.4"
 app_dirs = "^1.1.1"
 libc = "0.2"
 clap = { version = "2", features = ["yaml"] }
