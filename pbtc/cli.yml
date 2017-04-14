@@ -37,7 +37,9 @@ args:
         takes_value: true
     - db-cache:
         long: db-cache
+        value_name: SIZE
         help: Sets db cache size
+        takes_value: true
     - only-net:
         long: only-net
         value_name: NET
