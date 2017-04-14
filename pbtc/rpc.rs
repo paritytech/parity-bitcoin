@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use rpc_apis::{self, ApiSet};
-use ethcore_rpc::{Server, RpcServerError, start_http, MetaIoHandler, RpcHandler, Remote, Compatibility};
+use ethcore_rpc::{Server, Error, start_http, MetaIoHandler, Compatibility, Remote};
 use network::Magic;
 use std::io;
 use sync;
@@ -56,13 +56,11 @@ pub fn setup_http_rpc_server(
 	apis: ApiSet,
 	deps: Dependencies,
 ) -> Result<Server, String> {
-	let remote = deps.remote.clone();
 	let server = setup_rpc_server(apis, deps);
-	let handler = RpcHandler::new(Arc::new(server), remote);
 	// TODO: PanicsHandler
-	let start_result = start_http(url, cors_domains, allowed_hosts, handler);
+	let start_result = start_http(url, cors_domains, allowed_hosts, server);
 	match start_result {
-		Err(RpcServerError::IoError(err)) => match err.kind() {
+		Err(Error::Io(err)) => match err.kind() {
 			io::ErrorKind::AddrInUse => Err(format!("RPC address {} is already in use, make sure that another instance of an Ethereum client is not running or change the address using the --jsonrpc-port and --jsonrpc-interface options.", url)),
 			_ => Err(format!("RPC io error: {}", err)),
 		},
