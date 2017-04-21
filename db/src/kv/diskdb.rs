@@ -6,7 +6,7 @@ use rocksdb::{
 	DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
 	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column, ReadOptions
 };
-use kv::{Transaction, Operation, Location, Value, KeyValueDatabase};
+use kv::{Transaction, RawTransaction, RawOperation, Location, Value, KeyValueDatabase, DatabaseKey};
 
 const DB_BACKGROUND_FLUSHES: i32 = 2;
 const DB_BACKGROUND_COMPACTIONS: i32 = 2;
@@ -121,11 +121,13 @@ pub struct Database {
 
 impl KeyValueDatabase for Database {
 	fn write(&self, tx: Transaction) -> Result<(), String> {
-		Database::write(self, tx)
+		Database::write(self, tx.into())
 	}
 
-	fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
-		Database::get(self, location, key)
+	fn get<Key, Value>(&self, key: &Key) -> Result<Option<Value>, String> where Key: DatabaseKey<Value> {
+		unimplemented!();
+	//fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
+		//Database::get(self, location, key)
 	}
 }
 
@@ -239,16 +241,16 @@ impl Database {
 	}
 
 	/// Commit transaction to database.
-	pub fn write(&self, tx: Transaction) -> Result<(), String> {
+	pub fn write(&self, tx: RawTransaction) -> Result<(), String> {
 		let DBAndColumns { ref db, ref cfs } = self.db;
 		let batch = WriteBatch::new();
 		for op in tx.operations.into_iter() {
 			match op {
-				Operation::Insert { location, key, value } => match location {
+				RawOperation::Insert { location, key, value } => match location {
 					Location::DB => batch.put(&key, &value)?,
 					Location::Column(col) => batch.put_cf(cfs[col as usize], &key, &value)?,
 				},
-				Operation::Delete { location, key } => match location {
+				RawOperation::Delete { location, key } => match location {
 					Location::DB => batch.delete(&key)?,
 					Location::Column(col) => batch.delete_cf(cfs[col as usize], &key)?,
 				},
@@ -263,11 +265,11 @@ impl Database {
 		match location {
 			Location::DB => {
 				let value = db.get_opt(key, &self.read_opts)?;
-				Ok(value.map(|v| Value::from_slice(&v)))
+				Ok(value.map(|v| (&*v).into()))
 			},
 			Location::Column(col) => {
 				let value = db.get_cf_opt(cfs[col as usize], key, &self.read_opts)?;
-				Ok(value.map(|v| Value::from_slice(&v)))
+				Ok(value.map(|v| (&*v).into()))
 			}
 		}
 	}
@@ -294,7 +296,7 @@ mod tests {
 	extern crate tempdir;
 
 	use self::tempdir::TempDir;
-	use kv::{Transaction, Location};
+	use kv::{RawTransaction, Location};
 	use super::*;
 
 	fn test_db(config: DatabaseConfig) {
@@ -305,7 +307,7 @@ mod tests {
 		let key2 = b"key2";
 		let key3 = b"key3";
 
-		let mut batch = Transaction::default();
+		let mut batch = RawTransaction::default();
 		batch.insert_raw(Location::DB, key1, b"cat");
 		batch.insert_raw(Location::DB, key2, b"dog");
 		db.write(batch).unwrap();
@@ -319,17 +321,17 @@ mod tests {
 		assert_eq!(&*contents[1].0, &*key2);
 		assert_eq!(&*contents[1].1, b"dog");
 
-		let mut batch = Transaction::default();
+		let mut batch = RawTransaction::default();
 		batch.delete_raw(Location::DB, key1);
 		db.write(batch).unwrap();
 
 		assert_eq!(db.get(Location::DB, key1).unwrap(), None);
 
-		let mut batch = Transaction::default();
+		let mut batch = RawTransaction::default();
 		batch.insert_raw(Location::DB, key1, b"cat");
 		db.write(batch).unwrap();
 
-		let mut transaction = Transaction::default();
+		let mut transaction = RawTransaction::default();
 		transaction.insert_raw(Location::DB, key3, b"elephant");
 		transaction.delete_raw(Location::DB, key1);
 		db.write(transaction).unwrap();

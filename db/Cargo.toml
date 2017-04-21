@@ -9,6 +9,7 @@ elastic-array = "0.6"
 parking_lot = "0.4"
 log = "0.3"
 bit-vec = "0.4"
+lru-cache = "0.1"
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
 chain = { path = "../chain" }

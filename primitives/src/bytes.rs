@@ -4,7 +4,7 @@ use std::{ops, str, fmt, io, marker};
 use hex::{ToHex, FromHex, FromHexError};
 
 /// Wrapper around `Vec<u8>`
-#[derive(Default, PartialEq, Clone)]
+#[derive(Default, PartialEq, Clone, Eq, Hash)]
 pub struct Bytes(Vec<u8>);
 
 impl Bytes {
