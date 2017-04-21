@@ -1,7 +1,7 @@
 use std::io;
 use {Serializable, Deserializable, Error, Reader, Stream};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct List<T>(Vec<T>);
 
 impl<T> List<T> where T: Serializable + Deserializable {

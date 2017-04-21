@@ -6,7 +6,7 @@ use hash::H256;
 use bytes::Bytes;
 use ser::List;
 use chain::{Transaction as ChainTransaction, BlockHeader};
-use kv::{Transaction, Key, KeyState, Location, Operation, Value, KeyValueDatabase, DatabaseKey, Insert, Delete};
+use kv::{Transaction, Key, KeyState, Operation, Value, KeyValueDatabase, KeyValue};
 use {TransactionMeta};
 
 #[derive(Default, Debug)]
@@ -29,40 +29,25 @@ impl MemoryDatabase {
 	pub fn drain_transaction(&self) -> Transaction {
 		let mut db = self.db.write();
 		let meta = replace(&mut db.meta, HashMap::default()).into_iter()
-			.map(|(key, state)| match state {
-				KeyState::Insert(value) => Operation::Insert(Insert::Meta(key, value)),
-				KeyState::Delete => Operation::Delete(Delete::Meta(key)),
-			});
+			.flat_map(|(key, state)| state.into_operation(key, KeyValue::Meta, Key::Meta));
+
 		let block_hash = replace(&mut db.block_hash, HashMap::default()).into_iter()
-			.map(|(key, state)| match state {
-				KeyState::Insert(value) => Operation::Insert(Insert::BlockHash(key, value)),
-				KeyState::Delete => Operation::Delete(Delete::BlockHash(key)),
-			});
+			.flat_map(|(key, state)| state.into_operation(key, KeyValue::BlockHash, Key::BlockHash));
+
 		let block_header = replace(&mut db.block_header, HashMap::default()).into_iter()
-			.map(|(key, state)| match state {
-				KeyState::Insert(value) => Operation::Insert(Insert::BlockHeader(key, value)),
-				KeyState::Delete => Operation::Delete(Delete::BlockHeader(key)),
-			});
+			.flat_map(|(key, state)| state.into_operation(key, KeyValue::BlockHeader, Key::BlockHeader));
+
 		let block_transactions = replace(&mut db.block_transactions, HashMap::default()).into_iter()
-			.map(|(key, state)| match state {
-				KeyState::Insert(value) => Operation::Insert(Insert::BlockTransactions(key, value)),
-				KeyState::Delete => Operation::Delete(Delete::BlockTransactions(key)),
-			});
+			.flat_map(|(key, state)| state.into_operation(key, KeyValue::BlockTransactions, Key::BlockTransactions));
+
 		let transaction = replace(&mut db.transaction, HashMap::default()).into_iter()
-			.map(|(key, state)| match state {
-				KeyState::Insert(value) => Operation::Insert(Insert::Transaction(key, value)),
-				KeyState::Delete => Operation::Delete(Delete::Transaction(key)),
-			});
+			.flat_map(|(key, state)| state.into_operation(key, KeyValue::Transaction, Key::Transaction));
+
 		let transaction_meta = replace(&mut db.transaction_meta, HashMap::default()).into_iter()
-			.map(|(key, state)| match state {
-				KeyState::Insert(value) => Operation::Insert(Insert::TransactionMeta(key, value)),
-				KeyState::Delete => Operation::Delete(Delete::TransactionMeta(key)),
-			});
+			.flat_map(|(key, state)| state.into_operation(key, KeyValue::TransactionMeta, Key::TransactionMeta));
+
 		let block_number = replace(&mut db.block_number, HashMap::default()).into_iter()
-			.map(|(key, state)| match state {
-				KeyState::Insert(value) => Operation::Insert(Insert::BlockNumber(key, value)),
-				KeyState::Delete => Operation::Delete(Delete::BlockNumber(key)),
-			});
+			.flat_map(|(key, state)| state.into_operation(key, KeyValue::BlockNumber, Key::BlockNumber));
 
 		Transaction {
 			operations: meta
@@ -83,44 +68,41 @@ impl KeyValueDatabase for MemoryDatabase {
 		for op in tx.operations.into_iter() {
 			match op {
 				Operation::Insert(insert) => match insert {
-					Insert::Meta(key, value) => { db.meta.insert(key, KeyState::Insert(value)); },
-					Insert::BlockHash(key, value) => { db.block_hash.insert(key, KeyState::Insert(value)); },
-					Insert::BlockHeader(key, value) => { db.block_header.insert(key, KeyState::Insert(value)); },
-					Insert::BlockTransactions(key, value) => { db.block_transactions.insert(key, KeyState::Insert(value)); },
-					Insert::Transaction(key, value) => { db.transaction.insert(key, KeyState::Insert(value)); },
-					Insert::TransactionMeta(key, value) => { db.transaction_meta.insert(key, KeyState::Insert(value)); },
-					Insert::BlockNumber(key, value) => { db.block_number.insert(key, KeyState::Insert(value)); },
+					KeyValue::Meta(key, value) => { db.meta.insert(key, KeyState::Insert(value)); },
+					KeyValue::BlockHash(key, value) => { db.block_hash.insert(key, KeyState::Insert(value)); },
+					KeyValue::BlockHeader(key, value) => { db.block_header.insert(key, KeyState::Insert(value)); },
+					KeyValue::BlockTransactions(key, value) => { db.block_transactions.insert(key, KeyState::Insert(value)); },
+					KeyValue::Transaction(key, value) => { db.transaction.insert(key, KeyState::Insert(value)); },
+					KeyValue::TransactionMeta(key, value) => { db.transaction_meta.insert(key, KeyState::Insert(value)); },
+					KeyValue::BlockNumber(key, value) => { db.block_number.insert(key, KeyState::Insert(value)); },
 				},
 				Operation::Delete(delete) => match delete {
-					Delete::Meta(key) => { db.meta.insert(key, KeyState::Delete); }
-					Delete::BlockHash(key) => { db.block_hash.insert(key, KeyState::Delete); }
-					Delete::BlockHeader(key) => { db.block_header.insert(key, KeyState::Delete); }
-					Delete::BlockTransactions(key) => { db.block_transactions.insert(key, KeyState::Delete); }
-					Delete::Transaction(key) => { db.transaction.insert(key, KeyState::Delete); }
-					Delete::TransactionMeta(key) => { db.transaction_meta.insert(key, KeyState::Delete); }
-					Delete::BlockNumber(key) => { db.block_number.insert(key, KeyState::Delete); }
+					Key::Meta(key) => { db.meta.insert(key, KeyState::Delete); }
+					Key::BlockHash(key) => { db.block_hash.insert(key, KeyState::Delete); }
+					Key::BlockHeader(key) => { db.block_header.insert(key, KeyState::Delete); }
+					Key::BlockTransactions(key) => { db.block_transactions.insert(key, KeyState::Delete); }
+					Key::Transaction(key) => { db.transaction.insert(key, KeyState::Delete); }
+					Key::TransactionMeta(key) => { db.transaction_meta.insert(key, KeyState::Delete); }
+					Key::BlockNumber(key) => { db.block_number.insert(key, KeyState::Delete); }
 				}
 			}
 		}
 		Ok(())
 	}
 
-	fn get<Key, Value>(&self, key: &Key) -> Result<Option<Value>, String> where Key: DatabaseKey<Value> {
-		unimplemented!();
-		//use kv::transaction::{COL_META};
+	fn get(&self, key: &Key) -> Result<KeyState<Value>, String> {
+		let db = self.db.read();
+		let result = match *key {
+			Key::Meta(ref key) => db.meta.get(key).cloned().unwrap_or_default().map(Value::Meta),
+			Key::BlockHash(ref key) => db.block_hash.get(key).cloned().unwrap_or_default().map(Value::BlockHash),
+			Key::BlockHeader(ref key) => db.block_header.get(key).cloned().unwrap_or_default().map(Value::BlockHeader),
+			Key::BlockTransactions(ref key) => db.block_transactions.get(key).cloned().unwrap_or_default().map(Value::BlockTransactions),
+			Key::Transaction(ref key) => db.transaction.get(key).cloned().unwrap_or_default().map(Value::Transaction),
+			Key::TransactionMeta(ref key) => db.transaction_meta.get(key).cloned().unwrap_or_default().map(Value::TransactionMeta),
+			Key::BlockNumber(ref key) => db.block_number.get(key).cloned().unwrap_or_default().map(Value::BlockNumber),
+		};
 
-		//let db = self.db.read();
-
-		//let result = match Key::location() {
-			//Location::Column(COL_META) => db.meta.get(key).and_then(|state| state.clone().into_option()),
-			//_ => { unimplemented!(); }
-		//};
-		//Ok(result)
-	//fn get(&self, location: Location, key: &Key) -> Result<Option<Value>, String> {
-		//match self.db.read().get(&location).and_then(|db| db.get(key)) {
-			//Some(&KeyState::Insert(ref value)) => Ok(Some(value.clone())),
-			//Some(&KeyState::Delete) | None => Ok(None),
-		//}
+		Ok(result)
 	}
 }
 
@@ -150,9 +132,7 @@ impl KeyValueDatabase for SharedMemoryDatabase {
 		self.db.write(tx)
 	}
 
-	fn get<Key, Value>(&self, key: &Key) -> Result<Option<Value>, String> where Key: DatabaseKey<Value> {
-		unimplemented!();
-	//fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
-		//self.db.get(location, key)
+	fn get(&self, key: &Key) -> Result<KeyState<Value>, String> {
+		self.db.get(key)
 	}
 }

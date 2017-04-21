@@ -1,7 +1,6 @@
-use elastic_array::{ElasticArray32, ElasticArray128};
 use bytes::Bytes;
 use hash::H256;
-use ser::{Serializable, serialize, List};
+use ser::{serialize, List, deserialize};
 use chain::{Transaction as ChainTransaction, BlockHeader};
 use {TransactionMeta};
 
@@ -13,17 +12,14 @@ pub const COL_TRANSACTIONS: u32 = 4;
 pub const COL_TRANSACTIONS_META: u32 = 5;
 pub const COL_BLOCK_NUMBERS: u32 = 6;
 
-pub type Key = Bytes;
-pub type Value = Bytes;
-
 #[derive(Debug)]
 pub enum Operation {
-	Insert(Insert),
-	Delete(Delete),
+	Insert(KeyValue),
+	Delete(Key),
 }
 
 #[derive(Debug)]
-pub enum Insert {
+pub enum KeyValue {
 	Meta(&'static str, Bytes),
 	BlockHash(u32, H256),
 	BlockHeader(H256, BlockHeader),
@@ -34,7 +30,7 @@ pub enum Insert {
 }
 
 #[derive(Debug)]
-pub enum Delete {
+pub enum Key {
 	Meta(&'static str),
 	BlockHash(u32),
 	BlockHeader(H256),
@@ -45,63 +41,116 @@ pub enum Delete {
 }
 
 #[derive(Debug, Clone)]
-pub enum KeyState<Value> {
-	Insert(Value),
-	Delete,
+pub enum Value {
+	Meta(Bytes),
+	BlockHash(H256),
+	BlockHeader(BlockHeader),
+	BlockTransactions(List<H256>),
+	Transaction(ChainTransaction),
+	TransactionMeta(TransactionMeta),
+	BlockNumber(u32),
 }
 
-impl<Value> KeyState<Value> {
-	pub fn into_option(self) -> Option<Value> {
+impl Value {
+	pub fn for_key(key: &Key, bytes: &[u8]) -> Result<Self, String> {
+		match *key {
+			Key::Meta(_) => deserialize(bytes).map(Value::Meta),
+			Key::BlockHash(_) => deserialize(bytes).map(Value::BlockHash),
+			Key::BlockHeader(_) => deserialize(bytes).map(Value::BlockHeader),
+			Key::BlockTransactions(_) => deserialize(bytes).map(Value::BlockTransactions),
+			Key::Transaction(_) => deserialize(bytes).map(Value::Transaction),
+			Key::TransactionMeta(_) => deserialize(bytes).map(Value::TransactionMeta),
+			Key::BlockNumber(_) => deserialize(bytes).map(Value::BlockNumber),
+		}.map_err(|e| format!("{:?}", e))
+	}
+
+	pub fn as_meta(self) -> Option<Bytes> {
 		match self {
-			KeyState::Insert(value) => Some(value),
-			KeyState::Delete => None,
+			Value::Meta(bytes) => Some(bytes),
+			_ => None,
+		}
+	}
+
+	pub fn as_block_hash(self) -> Option<H256> {
+		match self {
+			Value::BlockHash(block_hash) => Some(block_hash),
+			_ => None,
+		}
+	}
+
+	pub fn as_block_header(self) -> Option<BlockHeader> {
+		match self {
+			Value::BlockHeader(block_header) => Some(block_header),
+			_ => None,
+		}
+	}
+
+	pub fn as_block_transactions(self) -> Option<List<H256>> {
+		match self {
+			Value::BlockTransactions(list) => Some(list),
+			_ => None,
+		}
+	}
+
+	pub fn as_transaction(self) -> Option<ChainTransaction> {
+		match self {
+			Value::Transaction(transaction) => Some(transaction),
+			_ => None,
+		}
+	}
+
+	pub fn as_transaction_meta(self) -> Option<TransactionMeta> {
+		match self {
+			Value::TransactionMeta(meta) => Some(meta),
+			_ => None,
+		}
+	}
+
+	pub fn as_block_number(self) -> Option<u32> {
+		match self {
+			Value::BlockNumber(number) => Some(number),
+			_ => None,
 		}
 	}
 }
 
-pub trait DatabaseKey<Value> {
-	fn location() -> Location;
+#[derive(Debug, Clone)]
+pub enum KeyState<V> {
+	Insert(V),
+	Delete,
+	Unknown,
 }
 
-impl DatabaseKey<Bytes> for &'static str {
-	fn location() -> Location {
-		COL_META.into()
+impl<V> Default for KeyState<V> {
+	fn default() -> Self {
+		KeyState::Unknown
 	}
 }
 
-impl DatabaseKey<H256> for u32 {
-	fn location() -> Location {
-		COL_BLOCK_HASHES.into()
+impl<V> KeyState<V> {
+	pub fn map<U, F>(self, f: F) -> KeyState<U> where F: FnOnce(V) -> U {
+		match self {
+			KeyState::Insert(value) => KeyState::Insert(f(value)),
+			KeyState::Delete => KeyState::Delete,
+			KeyState::Unknown => KeyState::Unknown,
+		}
 	}
-}
 
-impl DatabaseKey<BlockHeader> for H256 {
-	fn location() -> Location {
-		COL_BLOCK_HEADERS.into()
+	pub fn into_option(self) -> Option<V> {
+		match self {
+			KeyState::Insert(value) => Some(value),
+			KeyState::Delete => None,
+			KeyState::Unknown => None,
+		}
 	}
-}
 
-impl DatabaseKey<List<H256>> for H256 {
-	fn location() -> Location {
-		COL_BLOCK_TRANSACTIONS.into()
-	}
-}
-
-impl DatabaseKey<ChainTransaction> for H256 {
-	fn location() -> Location {
-		COL_TRANSACTIONS.into()
-	}
-}
-
-impl DatabaseKey<TransactionMeta> for H256 {
-	fn location() -> Location {
-		COL_TRANSACTIONS_META.into()
-	}
-}
-
-impl DatabaseKey<u32> for H256 {
-	fn location() -> Location {
-		COL_BLOCK_NUMBERS.into()
+	pub fn into_operation<K, I, D>(self, key: K, insert: I, delete: D) -> Option<Operation>
+	where I: FnOnce(K, V) -> KeyValue, D: FnOnce(K) -> Key {
+		match self {
+			KeyState::Insert(value) => Some(Operation::Insert(insert(key, value))),
+			KeyState::Delete => Some(Operation::Delete(delete(key))),
+			KeyState::Unknown => None,
+		}
 	}
 }
 
@@ -123,11 +172,11 @@ impl Transaction {
 		Transaction::default()
 	}
 
-	pub fn insert(&mut self, insert: Insert) {
+	pub fn insert(&mut self, insert: KeyValue) {
 		self.operations.push(Operation::Insert(insert));
 	}
 
-	pub fn delete(&mut self, delete: Delete) {
+	pub fn delete(&mut self, delete: Key) {
 		self.operations.push(Operation::Delete(delete));
 	}
 }
@@ -145,53 +194,65 @@ impl From<u32> for Location {
 }
 
 pub enum RawOperation {
-	Insert {
-		location: Location,
-		key: Key,
-		value: Value,
-	},
-	Delete {
-		location: Location,
-		key: Key,
+	Insert(RawKeyValue),
+	Delete(RawKey),
+}
+
+pub struct RawKeyValue {
+	pub location: Location,
+	pub key: Bytes,
+	pub value: Bytes,
+}
+
+impl<'a> From<&'a KeyValue> for RawKeyValue {
+	fn from(i: &'a KeyValue) -> Self {
+		let (location, key, value) = match *i {
+			KeyValue::Meta(ref key, ref value) => (COL_META, serialize(key), serialize(value)),
+			KeyValue::BlockHash(ref key, ref value) => (COL_BLOCK_HASHES, serialize(key), serialize(value)),
+			KeyValue::BlockHeader(ref key, ref value) => (COL_BLOCK_HEADERS, serialize(key), serialize(value)),
+			KeyValue::BlockTransactions(ref key, ref value) => (COL_BLOCK_TRANSACTIONS, serialize(key), serialize(value)),
+			KeyValue::Transaction(ref key, ref value) => (COL_TRANSACTIONS, serialize(key), serialize(value)),
+			KeyValue::TransactionMeta(ref key, ref value) => (COL_TRANSACTIONS_META, serialize(key), serialize(value)),
+			KeyValue::BlockNumber(ref key, ref value) => (COL_BLOCK_NUMBERS, serialize(key), serialize(value)),
+		};
+
+		RawKeyValue {
+			location: location.into(),
+			key: key,
+			value: value,
+		}
 	}
 }
 
-fn raw_insert<Key, Value>(key: &Key, value: &Value) -> RawOperation where Key: DatabaseKey<Value> + Serializable, Value: Serializable {
-	RawOperation::Insert {
-		location: Key::location(),
-		key: serialize(key),
-		value: serialize(value),
+pub struct RawKey {
+	pub location: Location,
+	pub key: Bytes,
+}
+
+impl<'a> From<&'a Key> for RawKey {
+	fn from(d: &'a Key) -> Self {
+		let (location, key) = match *d {
+			Key::Meta(ref key) => (COL_META, serialize(key)),
+			Key::BlockHash(ref key) => (COL_BLOCK_HASHES, serialize(key)),
+			Key::BlockHeader(ref key) => (COL_BLOCK_HEADERS, serialize(key)),
+			Key::BlockTransactions(ref key) => (COL_BLOCK_TRANSACTIONS, serialize(key)),
+			Key::Transaction(ref key) => (COL_TRANSACTIONS, serialize(key)),
+			Key::TransactionMeta(ref key) => (COL_TRANSACTIONS_META, serialize(key)),
+			Key::BlockNumber(ref key) => (COL_BLOCK_NUMBERS, serialize(key)),
+		};
+
+		RawKey {
+			location: location.into(),
+			key: key,
+		}
 	}
 }
 
-fn raw_delete<Key, Value>(key: &Key) -> RawOperation where Key: DatabaseKey<Value> + Serializable {
-	RawOperation::Delete {
-		location: Key::location(),
-		key: serialize(key),
-	}
-}
-
-impl From<Operation> for RawOperation {
-	fn from(o: Operation) -> Self {
-		match o {
-			Operation::Insert(insert) => match insert {
-				Insert::Meta(key, value) => raw_insert(&key, &value),
-				Insert::BlockHash(key, value) => raw_insert(&key, &value),
-				Insert::BlockHeader(key, value) => raw_insert(&key, &value),
-				Insert::BlockTransactions(key, value) => raw_insert(&key, &value),
-				Insert::Transaction(key, value) => raw_insert(&key, &value),
-				Insert::TransactionMeta(key, value) => raw_insert(&key, &value),
-				Insert::BlockNumber(key, value) => raw_insert(&key, &value),
-			},
-			Operation::Delete(delete) => match delete {
-				Delete::Meta(key) => raw_delete::<_, Bytes>(&key),
-				Delete::BlockHash(key) => raw_delete::<_, H256>(&key),
-				Delete::BlockHeader(key) => raw_delete::<_, BlockHeader>(&key),
-				Delete::BlockTransactions(key) => raw_delete::<_, List<H256>>(&key),
-				Delete::Transaction(key) => raw_delete::<_, ChainTransaction>(&key),
-				Delete::TransactionMeta(key) => raw_delete::<_, TransactionMeta>(&key),
-				Delete::BlockNumber(key) => raw_delete::<_, u32>(&key),
-			},
+impl<'a> From<&'a Operation> for RawOperation {
+	fn from(o: &'a Operation) -> Self {
+		match *o {
+			Operation::Insert(ref insert) => RawOperation::Insert(insert.into()),
+			Operation::Delete(ref delete) => RawOperation::Delete(delete.into()),
 		}
 	}
 }
@@ -200,10 +261,10 @@ pub struct RawTransaction {
 	pub operations: Vec<RawOperation>,
 }
 
-impl From<Transaction> for RawTransaction {
-	fn from(tx: Transaction) -> Self {
+impl<'a> From<&'a Transaction> for RawTransaction {
+	fn from(tx: &'a Transaction) -> Self {
 		RawTransaction {
-			operations: tx.operations.into_iter().map(Into::into).collect()
+			operations: tx.operations.iter().map(Into::into).collect()
 		}
 	}
 }

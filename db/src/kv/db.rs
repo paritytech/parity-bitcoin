@@ -1,7 +1,7 @@
-use kv::{Location, Transaction, Value, DatabaseKey};
+use kv::{Transaction, KeyState, Key, Value};
 
 pub trait KeyValueDatabase: Send + Sync {
 	fn write(&self, tx: Transaction) -> Result<(), String>;
 
-	fn get<Key, Value>(&self, key: &Key) -> Result<Option<Value>, String> where Key: DatabaseKey<Value>;
+	fn get(&self, key: &Key) -> Result<KeyState<Value>, String>;
 }

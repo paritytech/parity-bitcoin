@@ -6,7 +6,9 @@ use rocksdb::{
 	DB, Writable, WriteBatch, WriteOptions, IteratorMode, DBIterator,
 	Options, DBCompactionStyle, BlockBasedOptions, Cache, Column, ReadOptions
 };
-use kv::{Transaction, RawTransaction, RawOperation, Location, Value, KeyValueDatabase, DatabaseKey};
+use bytes::Bytes;
+use kv::{Transaction, RawTransaction, RawOperation, Location, Value, KeyValueDatabase, Key, KeyState, RawKeyValue,
+RawKey};
 
 const DB_BACKGROUND_FLUSHES: i32 = 2;
 const DB_BACKGROUND_COMPACTIONS: i32 = 2;
@@ -121,13 +123,14 @@ pub struct Database {
 
 impl KeyValueDatabase for Database {
 	fn write(&self, tx: Transaction) -> Result<(), String> {
-		Database::write(self, tx.into())
+		Database::write(self, (&tx).into())
 	}
 
-	fn get<Key, Value>(&self, key: &Key) -> Result<Option<Value>, String> where Key: DatabaseKey<Value> {
-		unimplemented!();
-	//fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
-		//Database::get(self, location, key)
+	fn get(&self, key: &Key) -> Result<KeyState<Value>, String> {
+		match Database::get(self, &key.into())? {
+			Some(value) => Ok(KeyState::Insert(Value::for_key(key, &value)?)),
+			None => Ok(KeyState::Unknown)
+		}
 	}
 }
 
@@ -246,11 +249,11 @@ impl Database {
 		let batch = WriteBatch::new();
 		for op in tx.operations.into_iter() {
 			match op {
-				RawOperation::Insert { location, key, value } => match location {
+				RawOperation::Insert(RawKeyValue { location, key, value }) => match location {
 					Location::DB => batch.put(&key, &value)?,
 					Location::Column(col) => batch.put_cf(cfs[col as usize], &key, &value)?,
 				},
-				RawOperation::Delete { location, key } => match location {
+				RawOperation::Delete(RawKey { location, key }) => match location {
 					Location::DB => batch.delete(&key)?,
 					Location::Column(col) => batch.delete_cf(cfs[col as usize], &key)?,
 				},
@@ -260,15 +263,15 @@ impl Database {
 	}
 
 	/// Get value by key.
-	pub fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
+	pub fn get(&self, key: &RawKey) -> Result<Option<Bytes>, String> {
 		let DBAndColumns { ref db, ref cfs } = self.db;
-		match location {
+		match key.location {
 			Location::DB => {
-				let value = db.get_opt(key, &self.read_opts)?;
+				let value = db.get_opt(&key.key, &self.read_opts)?;
 				Ok(value.map(|v| (&*v).into()))
 			},
 			Location::Column(col) => {
-				let value = db.get_cf_opt(cfs[col as usize], key, &self.read_opts)?;
+				let value = db.get_cf_opt(cfs[col as usize], &key.key, &self.read_opts)?;
 				Ok(value.map(|v| (&*v).into()))
 			}
 		}
