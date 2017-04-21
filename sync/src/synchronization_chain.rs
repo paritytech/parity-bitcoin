@@ -333,8 +333,7 @@ impl Chain {
 	}
 
 	/// Insert new best block to storage
-	pub fn insert_best_block(&mut self, block: &IndexedBlock) -> Result<BlockInsertionResult, db::Error> {
-		trace!(target: "sync", "insert_best_block {:?} best_block: {:?}", block.hash().reversed(), self.storage.best_block());
+	pub fn insert_best_block(&mut self, block: IndexedBlock) -> Result<BlockInsertionResult, db::Error> {
 		assert_eq!(Some(self.storage.best_block().hash), self.storage.block_hash(self.storage.best_block().number));
 		let block_origin = self.storage.block_origin(&block.header)?;
 		trace!(target: "sync", "insert_best_block {:?} origin: {:?}", block.hash().reversed(), block_origin);
@@ -345,7 +344,7 @@ impl Chain {
 			},
 			// case 1: block has been added to the main branch
 			db::BlockOrigin::CanonChain { .. } => {
-				self.storage.insert(block)?;
+				self.storage.insert(block.clone())?;
 				self.storage.canonize(block.hash())?;
 
 				// remember new best block hash
@@ -379,7 +378,7 @@ impl Chain {
 			// case 2: block has been added to the side branch with reorganization to this branch
 			db::BlockOrigin::SideChainBecomingCanonChain(origin) => {
 				let fork = self.storage.fork(origin.clone())?;
-				fork.store().insert(block)?;
+				fork.store().insert(block.clone())?;
 				fork.store().canonize(block.hash())?;
 				self.storage.switch_to_fork(fork)?;
 
@@ -445,11 +444,12 @@ impl Chain {
 			},
 			// case 3: block has been added to the side branch without reorganization to this branch
 			db::BlockOrigin::SideChain(_origin) => {
+				let block_hash = block.hash().clone();
 				self.storage.insert(block)?;
 
 				// remove inserted block + handle possible reorganization in headers chain
 				// TODO: mk, not sure if it's needed here at all
-				self.headers_chain.block_inserted_to_storage(block.hash(), &self.best_storage_block.hash);
+				self.headers_chain.block_inserted_to_storage(&block_hash, &self.best_storage_block.hash);
 
 				// no transactions were accepted
 				// no transactions to reverify
@@ -791,7 +791,7 @@ mod tests {
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 1);
 		// insert new best block to the chain
-		chain.insert_best_block(&test_data::block_h1().into()).expect("Db error");
+		chain.insert_best_block(test_data::block_h1().into()).expect("Db error");
 		assert!(chain.information().scheduled == 3 && chain.information().requested == 1
 			&& chain.information().verifying == 1 && chain.information().stored == 2);
 		assert_eq!(db.best_block().number, 1);
@@ -807,13 +807,13 @@ mod tests {
 		let block1 = test_data::block_h1();
 		let block1_hash = block1.hash();
 
-		chain.insert_best_block(&block1.into()).expect("Error inserting new block");
+		chain.insert_best_block(block1.into()).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block1_hash.clone(), genesis_hash.clone()]);
 
 		let block2 = test_data::block_h2();
 		let block2_hash = block2.hash();
 
-		chain.insert_best_block(&block2.into()).expect("Error inserting new block");
+		chain.insert_best_block(block2.into()).expect("Error inserting new block");
 		assert_eq!(chain.block_locator_hashes(), vec![block2_hash.clone(), block1_hash.clone(), genesis_hash.clone()]);
 
 		let blocks0 = test_data::build_n_empty_blocks_from_genesis(11, 0);
@@ -930,7 +930,7 @@ mod tests {
 		assert_eq!(chain.information().transactions.transactions_count, 1);
 
 		// when block is inserted to the database => all accepted transactions are removed from mempool && verifying queue
-		chain.insert_best_block(&b1.into()).expect("block accepted");
+		chain.insert_best_block(b1.into()).expect("block accepted");
 
 		assert_eq!(chain.information().transactions.transactions_count, 0);
 		assert!(!chain.forget_verifying_transaction(&tx1_hash));
@@ -999,15 +999,15 @@ mod tests {
 		chain.insert_verified_transaction(tx2.into());
 
 		// no reorg
-		let result = chain.insert_best_block(&b1.into()).expect("no error");
+		let result = chain.insert_best_block(b1.into()).expect("no error");
 		assert_eq!(result.transactions_to_reverify.len(), 0);
 
 		// no reorg
-		let result = chain.insert_best_block(&b2.into()).expect("no error");
+		let result = chain.insert_best_block(b2.into()).expect("no error");
 		assert_eq!(result.transactions_to_reverify.len(), 0);
 
 		// reorg
-		let result = chain.insert_best_block(&b3.into()).expect("no error");
+		let result = chain.insert_best_block(b3.into()).expect("no error");
 		assert_eq!(result.transactions_to_reverify.len(), 2);
 		assert!(result.transactions_to_reverify.iter().any(|ref tx| &tx.hash == &tx1_hash));
 		assert!(result.transactions_to_reverify.iter().any(|ref tx| &tx.hash == &tx2_hash));
@@ -1048,18 +1048,18 @@ mod tests {
 		chain.insert_verified_transaction(tx4.into());
 		chain.insert_verified_transaction(tx5.into());
 
-		assert_eq!(chain.insert_best_block(&b0.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b0.hash()]));
+		assert_eq!(chain.insert_best_block(b0.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b0.hash()]));
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(&b1.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b1.hash()]));
+		assert_eq!(chain.insert_best_block(b1.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b1.hash()]));
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(&b2.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b2.hash()]));
+		assert_eq!(chain.insert_best_block(b2.clone().into()).expect("block accepted"), BlockInsertionResult::with_canonized_blocks(vec![b2.hash()]));
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(&b3.clone().into()).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.insert_best_block(b3.clone().into()).expect("block accepted"), BlockInsertionResult::default());
 		assert_eq!(chain.information().transactions.transactions_count, 3);
-		assert_eq!(chain.insert_best_block(&b4.clone().into()).expect("block accepted"), BlockInsertionResult::default());
+		assert_eq!(chain.insert_best_block(b4.clone().into()).expect("block accepted"), BlockInsertionResult::default());
 		assert_eq!(chain.information().transactions.transactions_count, 3);
 		// order matters
-		let insert_result = chain.insert_best_block(&b5.clone().into()).expect("block accepted");
+		let insert_result = chain.insert_best_block(b5.clone().into()).expect("block accepted");
 		let transactions_to_reverify_hashes: Vec<_> = insert_result
 			.transactions_to_reverify
 			.into_iter()
@@ -1090,7 +1090,7 @@ mod tests {
 		chain.insert_verified_transaction(tx2.clone().into());
 		chain.insert_verified_transaction(tx3.clone().into());
 		// insert verified block with tx1
-		chain.insert_best_block(&b0.into()).expect("no error");
+		chain.insert_best_block(b0.into()).expect("no error");
 		// => tx2 is removed from memory pool, but tx3 remains
 		assert_eq!(chain.information().transactions.transactions_count, 1);
 	}

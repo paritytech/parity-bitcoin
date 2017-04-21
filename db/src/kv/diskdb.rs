@@ -315,7 +315,7 @@ mod tests {
 		batch.insert_raw(Location::DB, key2, b"dog");
 		db.write(batch).unwrap();
 
-		assert_eq!(&*db.get(Location::DB, key1).unwrap().unwrap(), b"cat");
+		assert_eq!(&*db.get(&RawKey::new(Location::DB,key1 as &[u8])).unwrap().unwrap(), b"cat");
 
 		let contents: Vec<_> = db.iter(Location::DB).collect();
 		assert_eq!(contents.len(), 2);
@@ -328,7 +328,7 @@ mod tests {
 		batch.delete_raw(Location::DB, key1);
 		db.write(batch).unwrap();
 
-		assert_eq!(db.get(Location::DB, key1).unwrap(), None);
+		assert_eq!(db.get(&RawKey::new(Location::DB, key1 as &[u8])).unwrap(), None);
 
 		let mut batch = RawTransaction::default();
 		batch.insert_raw(Location::DB, key1, b"cat");
@@ -338,7 +338,7 @@ mod tests {
 		transaction.insert_raw(Location::DB, key3, b"elephant");
 		transaction.delete_raw(Location::DB, key1);
 		db.write(transaction).unwrap();
-		assert_eq!(&*db.get(Location::DB, key3).unwrap().unwrap(), b"elephant");
+		assert_eq!(&*db.get(&RawKey::new(Location::DB, key3 as &[u8])).unwrap().unwrap(), b"elephant");
 	}
 
 	#[test]

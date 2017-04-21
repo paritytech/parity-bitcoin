@@ -229,6 +229,15 @@ pub struct RawKey {
 	pub key: Bytes,
 }
 
+impl RawKey {
+	pub fn new<B>(location: Location, key: B) -> Self where B: Into<Bytes> {
+		RawKey {
+			location: location,
+			key: key.into(),
+		}
+	}
+}
+
 impl<'a> From<&'a Key> for RawKey {
 	fn from(d: &'a Key) -> Self {
 		let (location, key) = match *d {
@@ -280,5 +289,22 @@ impl Default for RawTransaction {
 impl RawTransaction {
 	pub fn new() -> RawTransaction {
 		RawTransaction::default()
+	}
+
+	pub fn insert_raw(&mut self, location: Location, key: &[u8], value: &[u8]) {
+		let operation = RawOperation::Insert(RawKeyValue {
+			location: location,
+			key: key.into(),
+			value: value.into(),
+		});
+		self.operations.push(operation);
+	}
+
+	pub fn delete_raw(&mut self, location: Location, key: &[u8]) {
+		let operation = RawOperation::Delete(RawKey {
+			location: location,
+			key: key.into(),
+		});
+		self.operations.push(operation);
 	}
 }

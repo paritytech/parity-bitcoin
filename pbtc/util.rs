@@ -30,8 +30,9 @@ pub fn init_db(cfg: &Config, db: &db::SharedStore) -> Result<(), String> {
 		Some(ref db_genesis_block_hash) if db_genesis_block_hash != genesis_block.hash() => Err("Trying to open database with incompatible genesis block".into()),
 		Some(_) => Ok(()),
 		None => {
-			db.insert(&genesis_block).expect("Failed to insert genesis block to the database");
-			db.canonize(genesis_block.hash()).expect("Failed to canonize genesis block");
+			let hash = genesis_block.hash().clone();
+			db.insert(genesis_block).expect("Failed to insert genesis block to the database");
+			db.canonize(&hash).expect("Failed to canonize genesis block");
 			Ok(())
 		}
 	}

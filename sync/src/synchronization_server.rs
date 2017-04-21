@@ -563,7 +563,7 @@ pub mod tests {
 	#[test]
 	fn server_getblocks_responds_inventory_when_have_unknown_blocks() {
 		let (storage, _, executor, _, server) = create_synchronization_server();
-		storage.insert(&test_data::block_h1().into()).expect("Db write error");
+		storage.insert(test_data::block_h1().into()).expect("Db write error");
 		storage.canonize(&test_data::block_h1().hash()).unwrap();
 		// when asking for blocks hashes
 		server.execute(ServerTask::GetBlocks(0, types::GetBlocks {
@@ -599,7 +599,7 @@ pub mod tests {
 	#[test]
 	fn server_getheaders_responds_headers_when_have_unknown_blocks() {
 		let (storage, _, executor, _, server) = create_synchronization_server();
-		storage.insert(&test_data::block_h1().into()).expect("Db write error");
+		storage.insert(test_data::block_h1().into()).expect("Db write error");
 		storage.canonize(&test_data::block_h1().hash()).unwrap();
 		// when asking for blocks hashes
 		let dummy_id = 0;
@@ -743,7 +743,7 @@ pub mod tests {
 	fn server_responds_with_nonempty_inventory_when_getdata_stop_hash_filled() {
 		let (storage, _, executor, _, server) = create_synchronization_server();
 		{
-			storage.insert(&test_data::block_h1().into()).expect("no error");
+			storage.insert(test_data::block_h1().into()).expect("no error");
 			storage.canonize(&test_data::block_h1().hash()).unwrap();
 		}
 		// when asking with stop_hash
@@ -765,7 +765,7 @@ pub mod tests {
 	fn server_responds_with_nonempty_headers_when_getdata_stop_hash_filled() {
 		let (storage, _, executor, _, server) = create_synchronization_server();
 		{
-			storage.insert(&test_data::block_h1().into()).expect("no error");
+			storage.insert(test_data::block_h1().into()).expect("no error");
 			storage.canonize(&test_data::block_h1().hash()).unwrap();
 		}
 		// when asking with stop_hash
@@ -806,8 +806,8 @@ pub mod tests {
 		let b2_hash = b2.hash();
 
 		// This peer will provide blocks
-		storage.insert(&b1.clone().into()).expect("no error");
-		storage.insert(&b2.clone().into()).expect("no error");
+		storage.insert(b1.clone().into()).expect("no error");
+		storage.insert(b2.clone().into()).expect("no error");
 		storage.canonize(&b1.hash()).unwrap();
 		storage.canonize(&b2.hash()).unwrap();
 
@@ -902,7 +902,7 @@ pub mod tests {
 		let b1_hash = b1.hash();
 
 		// This peer will provide blocks
-		storage.insert(&b1.clone().into()).expect("no error");
+		storage.insert(b1.clone().into()).expect("no error");
 		storage.canonize(&b1.hash()).unwrap();
 
 		// This peer will receive compact block

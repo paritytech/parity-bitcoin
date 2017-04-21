@@ -1013,6 +1013,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		// remove flags
 		let needs_relay = !self.do_not_relay.remove(block.hash());
 
+		let block_hash = block.hash().clone();
 		// insert block to the storage
 		match {
 			// remove block from verification queue
@@ -1020,7 +1021,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			// or it is removed earlier, when block was removed from the verifying queue
 			if self.chain.forget_block_with_state_leave_header(block.hash(), BlockState::Verifying) != HashPosition::Missing {
 				// block was in verification queue => insert to storage
-				self.chain.insert_best_block(&block)
+				self.chain.insert_best_block(block)
 			} else {
 				Ok(BlockInsertionResult::default())
 			}
@@ -1037,7 +1038,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				}
 
 				// awake threads, waiting for this block insertion
-				self.awake_waiting_threads(block.hash());
+				self.awake_waiting_threads(&block_hash);
 
 				// continue with synchronization
 				self.execute_synchronization_tasks(None, None);
@@ -1065,7 +1066,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			},
 			Err(e) => {
 				// process as irrecoverable failure
-				panic!("Block {} insertion failed with error {:?}", block.hash().to_reversed_str(), e);
+				panic!("Block {} insertion failed with error {:?}", block_hash.to_reversed_str(), e);
 			}
 		}
 	}
@@ -1715,7 +1716,7 @@ pub mod tests {
 	fn sync_after_db_insert_nonfatal_fail() {
 		let block = test_data::block_h2();
 		let storage = BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]);
-		assert!(storage.insert(&test_data::block_h2().into()).is_err());
+		assert!(storage.insert(test_data::block_h2().into()).is_err());
 		let best_genesis = storage.best_block();
 
 		let (_, core, sync) = create_sync(Some(Arc::new(storage)), None);

@@ -322,13 +322,14 @@ mod tests {
 
 		// waiting 100 blocks for genesis coinbase to become valid
 		for _ in 0..100 {
-			let block = test_data::block_builder()
+			let block: IndexedBlock = test_data::block_builder()
 				.transaction().coinbase().build()
 				.merkled_header().parent(genesis.hash()).build()
 				.build()
 				.into();
-			storage.insert(&block).expect("All dummy blocks should be inserted");
-			storage.canonize(block.hash()).unwrap();
+			let hash = block.hash().clone();
+			storage.insert(block).expect("All dummy blocks should be inserted");
+			storage.canonize(&hash).unwrap();
 		}
 
 		let best_hash = storage.best_block().hash;

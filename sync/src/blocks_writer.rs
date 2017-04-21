@@ -85,8 +85,9 @@ impl BlocksWriter {
 					return Err(err);
 				}
 			} else {
-				self.storage.insert(&block).map_err(Error::Database)?;
-				self.storage.canonize(block.hash()).map_err(Error::Database)?;
+				let hash = block.hash().clone();
+				self.storage.insert(block).map_err(Error::Database)?;
+				self.storage.canonize(&hash).map_err(Error::Database)?;
 			}
 		}
 
@@ -123,10 +124,11 @@ impl VerificationSink for BlocksWriterSink {
 
 impl BlockVerificationSink for BlocksWriterSink {
 	fn on_block_verification_success(&self, block: chain::IndexedBlock) -> Option<Vec<VerificationTask>> {
-		if let Err(err) = self.data.storage.insert(&block) {
+		let hash = block.hash().clone();
+		if let Err(err) = self.data.storage.insert(block) {
 			*self.data.err.lock() = Some(Error::Database(err));
 		}
-		if let Err(err) = self.data.storage.canonize(block.hash()) {
+		if let Err(err) = self.data.storage.canonize(&hash) {
 			*self.data.err.lock() = Some(Error::Database(err));
 		}
 
