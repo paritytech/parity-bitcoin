@@ -4,6 +4,7 @@ extern crate parking_lot;
 #[macro_use]
 extern crate log;
 extern crate bit_vec;
+extern crate lru_cache;
 
 extern crate primitives;
 extern crate serialization as ser;

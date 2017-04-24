@@ -1,9 +1,11 @@
+mod cachedb;
 mod db;
 mod diskdb;
 mod memorydb;
 mod overlaydb;
 mod transaction;
 
+pub use self::cachedb::CacheDatabase;
 pub use self::db::KeyValueDatabase;
 pub use self::diskdb::{Database as DiskDatabase, DatabaseConfig, CompactionProfile};
 pub use self::memorydb::{MemoryDatabase, SharedMemoryDatabase};

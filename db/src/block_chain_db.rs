@@ -9,11 +9,11 @@ use chain::{
 	OutPoint, TransactionOutput
 };
 use ser::{
-	deserialize, serialize, serialize_list, Serializable, Deserializable, List
+	deserialize, serialize, List
 };
 use kv::{
-	KeyValueDatabase, OverlayDatabase, Transaction as DBTransaction, Location, Value, DiskDatabase,
-	DatabaseConfig, MemoryDatabase, AutoFlushingOverlayDatabase, KeyValue, Key, KeyState
+	KeyValueDatabase, OverlayDatabase, Transaction as DBTransaction, Value, DiskDatabase,
+	DatabaseConfig, MemoryDatabase, AutoFlushingOverlayDatabase, KeyValue, Key, KeyState, CacheDatabase
 };
 use best_block::BestBlock;
 use {
@@ -57,7 +57,7 @@ impl<'a, T> ForkChain for ForkChainDatabase<'a, T> where T: KeyValueDatabase {
 	}
 }
 
-impl BlockChainDatabase<AutoFlushingOverlayDatabase<DiskDatabase>> {
+impl BlockChainDatabase<CacheDatabase<AutoFlushingOverlayDatabase<DiskDatabase>>> {
 	pub fn open_at_path<P>(path: P, total_cache: usize) -> Result<Self, Error> where P: AsRef<Path> {
 		fs::create_dir_all(path.as_ref()).map_err(|err| Error::DatabaseError(err.to_string()))?;
 		let mut cfg = DatabaseConfig::with_columns(Some(COL_COUNT));
@@ -92,9 +92,9 @@ impl BlockChainDatabase<MemoryDatabase> {
 	}
 }
 
-impl<T> BlockChainDatabase<AutoFlushingOverlayDatabase<T>> where T: KeyValueDatabase {
+impl<T> BlockChainDatabase<CacheDatabase<AutoFlushingOverlayDatabase<T>>> where T: KeyValueDatabase {
 	pub fn open_with_cache(db: T) -> Self {
-		let db = AutoFlushingOverlayDatabase::new(db, 50);
+		let db = CacheDatabase::new(AutoFlushingOverlayDatabase::new(db, 50));
 		let best_block = Self::read_best_block(&db).unwrap_or_default();
 		BlockChainDatabase {
 			best_block: RwLock::new(best_block),
