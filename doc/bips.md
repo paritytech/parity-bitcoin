@@ -4,35 +4,36 @@ BIPs that are implemented by pbtc
 - `+` implemented
 - `?` unknown
 - `a` application layer
+- `w` work in progress
 
 | BIPs | pbtc | core | unlimited |
 | ------ | ------ | ------ | ------ |
-| [BIP 9][BIP9] | - | + | ? |
+| [BIP 9][BIP9] | w | + | ? |
 | [BIP 11][BIP11] | a | + | ? |
 | [BIP 13][BIP13] | a | + | ? |
 | [BIP 14][BIP14] | - | + | ? |
 | [BIP 16][BIP16] | + | + | ? |
 | [BIP 21][BIP21] | a | + | ? |
-| [BIP 22][BIP22] | ? | + | ? |
-| [BIP 23][BIP23] | ? | + | ? |
+| [BIP 22][BIP22] | + | + | ? |
+| [BIP 23][BIP23] | + | + | ? |
 | [BIP 30][BIP30] | + | + | ? |
 | [BIP 31][BIP31] | + | + | ? |
 | [BIP 32][BIP32] | a | + | ? |
 | [BIP 34][BIP34] | + | + | ? |
-| [BIP 35][BIP35] | ? | + | ? |
-| [BIP 37][BIP37] | ? | + | ? |
+| [BIP 35][BIP35] | + | + | ? |
+| [BIP 37][BIP37] | + | + | ? |
 | [BIP 42][BIP42] | + | + | ? |
 | [BIP 61][BIP61] | ? | + | ? |
 | [BIP 65][BIP65] | + | + | ? |
 | [BIP 66][BIP66] | + | + | ? |
-| [BIP 68][BIP68] | - | + | ? |
+| [BIP 68][BIP68] | w | + | ? |
 | [BIP 70][BIP70] | a | + | ? |
 | [BIP 71][BIP71] | a | + | ? |
 | [BIP 72][BIP72] | a | + | ? |
 | [BIP 90][BIP90] | + | + | ? |
 | [BIP 111][BIP111] | ? | + | ? |
-| [BIP 112][BIP112] | - | + | ? |
-| [BIP 113][BIP113] | - | + | ? |
+| [BIP 112][BIP112] | w | + | ? |
+| [BIP 113][BIP113] | w | + | ? |
 | [BIP 125][BIP125] | a | + | ? |
 | [BIP 130][BIP130] | ? | + | ? |
 | [BIP 133][BIP133] | ? | + | ? |
