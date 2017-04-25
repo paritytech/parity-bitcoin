@@ -69,6 +69,7 @@ mod duplex_store;
 mod error;
 mod sigops;
 mod timestamp;
+mod versionbits;
 mod work;
 
 // pre-verification

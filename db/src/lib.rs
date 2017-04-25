@@ -12,6 +12,7 @@ extern crate chain;
 
 pub mod kv;
 mod best_block;
+mod block_ancestors;
 mod block_origin;
 mod block_provider;
 mod block_ref;
@@ -26,6 +27,7 @@ mod transaction_provider;
 pub use primitives::{hash, bytes};
 
 pub use best_block::BestBlock;
+pub use block_ancestors::BlockAncestors;
 pub use block_origin::{BlockOrigin, SideChainOrigin};
 pub use block_provider::{BlockHeaderProvider, BlockProvider, IndexedBlockProvider};
 pub use block_ref::BlockRef;
