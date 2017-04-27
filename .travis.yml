@@ -42,7 +42,7 @@ after_success: |
   [ $TRAVIS_BRANCH = master ] &&
   [ $TRAVIS_PULL_REQUEST = false ] &&
   [ $TRAVIS_RUST_VERSION = stable ] &&
-  cargo doc --no-deps --verbose &&
+  cargo doc &&
   echo '<meta http-equiv=refresh content=0;url=pbtc/index.html>' > target/doc/index.html &&
   pip install --user ghp-import &&
   /home/travis/.local/bin/ghp-import -n target/doc &&
@@ -51,5 +51,5 @@ env:
   global:
   - CXX="g++-4.8"
   - CC="gcc-4.8"
-  - secure: IbTkR3KY7N9e3lc6hreWuY2mhuKyf7k6LSRUMMrOeb1k9TIncYMbR6Sl2W1t5+CJVp7WqVoUbP9YIH8o8a9BBuFldTyAz3tapa908KrZKIRlb/uCTef11z/jzasye4Ttj+358DBrCXZqueFw5Bh5Bnaie3r5bSYWTcQU693Bm/tKFp0lh4fSjzGyk7kRZ4V4rz2YHudZOcNIXN+QfY8aY6dxQraw82GUnNXJLzGiC5GJgeSV1uSnxMUM/lb4+zP1qRlcLBLnwHSTH/3vHH5xsOaRwHEYOQT9pTDyxMnJzDgYfjH4mNu3jSvZ7WFrP+Sza/yR+3sjHpOCFN6rsWc88iTq6Nwp+ESfyjHiLT+jqWs7r57sg2VfwHXuzoEW5GGagrIoF/pDEWJvhtNRYvdYevDtlZYPTfhSR4WOPkMPCg7Ln2W7a7vrSH2iRNxawUDnq3bOIyGGBeGwBJFDOEd6CmP+ojjUUm9L5I4berYACgYEDuZ4bpRX3WpGR1yAhSF4o5BTh+88EWU/VhL2ceXreHlztma3KQ5526Ip46lC4eLFrl/w64zaupesEZFjLsOFm7U9Vx9IM6aqBzOFr8Mt8DlPLaTRmRrbzPRYqHg0MLpHkH8S/HyNbK0xvqbQFRHQ6XPXNJVJXZPz8XPUYWYPK9ayplVdRN9nonHQO7F0gV8=
+  - secure: RPpiXGV2RgRNv/S5XICdym33pauO5PNQu06+0kIuap6acsT6rjWZDeKU0kXIkCyv7XGu6TAE3m1/N6DSFvoeObdoodzakpUnzI9ysC9UbGbX3KgFAILrsuD+Th0HR1yZ2+boXEnetl7lp87X6m3HL4dz7ccuRJOGQFCdzo4iQd4RXMJXq1nS8pXYOnOiGtWy/K6SBqHus42End303vR6ptd71iuEYmX2qL5LUpXRQ5JuvE78JL4v5e1jrLwwrIG5hr3ej+EICiEKjAtZcv3C/CYq2+V7T8mI8FQFBsVG56FxP1Qq0G1jnv6r8i/pLb342DiQapeQZ+CZ1vHv3Ruzxm4+T9VLkwIcI5kOZmbOjt/BnO1yHFMr6uslxYuyEvSLZXsvnB7Qi2cB/nFWxi8nk19CzuYy2hjrnDA/bfeii65oQ4hyqAuF6QvHgZtMmSONbea679b1mbl9K67EWt04J4k67Hfuj6HvmIOT3KF0TPXO6K4b6a4OJ43PinNSWtIOlCb4658HrfUBTUEe1XN14uC/F8dyFw8PTrw/VQKkmNEDRvI0AuWF1s+qN1u1mm+CpyJaqxcPloUR+RgVBk3KrRd/Gm6neunx07G6STv/S2mGCZ2ZRIUpbSqha7XTmHltoWZRYFeM3dhVMXe3hgEYuJfm4n7HxGvp4b1s1ckenPI=
   - RUST_BACKTRACE=1
