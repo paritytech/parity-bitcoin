@@ -22,15 +22,15 @@ The Parity Bitcoin client
 - [Project Graph][graph]
 
 [graph]: ./tools/graph.svg
-[travis-image]: https://travis-ci.com/ethcore/parity-bitcoin.svg?token=DMFvZu71iaTbUYx9UypX&branch=master
-[travis-url]: https://travis-ci.com/ethcore/parity-bitcoin
-[doc-url]: https://ethcore.github.io/parity-bitcoin/pbtc/index.html
+[travis-image]: https://travis-ci.com/paritytech/parity-bitcoin.svg?token=DMFvZu71iaTbUYx9UypX&branch=master
+[travis-url]: https://travis-ci.com/paritytech/parity-bitcoin
+[doc-url]: https://paritytech.github.io/parity-bitcoin/pbtc/index.html
 
 ## Install guide
 
 As for now `pbtc` can be installed only from source. It requires `rustc` and `cargo`.
 
-Minimal supported version is `rustc 1.13.0 (2c6933acc 2016-11-07)`
+Minimal supported version is `rustc 1.16.0 (30cf806ef 2017-03-10)`
 
 #### Install rustc and cargo
 
