@@ -150,13 +150,13 @@ Full list of cli options, which is available under `pbtc --help`
 
 ```
 pbtc 0.1.0
+Parity Technologies <admin@parity.io>
 Parity bitcoin client
 
 USAGE:
     pbtc [FLAGS] [OPTIONS] [SUBCOMMAND]
 
 FLAGS:
-        --db-cache            Sets db cache size
     -h, --help                Prints help information
         --no-jsonrpc          Disable the JSON-RPC API server
         --print-to-console    Send sync info to console
@@ -165,8 +165,10 @@ FLAGS:
     -V, --version             Prints version information
 
 OPTIONS:
+        --blocknotify <command>            Execute command when the best block changes (%s in cmd is replaced by block hash)
     -c, --connect <IP>                     Connect only to the specified node
     -d, --data-dir <PATH>                  Specify the database & configuration directory PATH
+        --db-cache <SIZE>                  Sets db cache size
         --jsonrpc-apis <APIS>              Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API name.
         --jsonrpc-cors <URL>               Specify CORS header for JSON-RPC API responses
         --jsonrpc-hosts <HOSTS>            List of allowed Host header values
