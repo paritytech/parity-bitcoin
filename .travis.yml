@@ -38,7 +38,7 @@ script:
   - ./tools/bench.sh
   - echo -en 'travis_fold:end:bench'
 after_success: |
-  [ false ] &&
+  [ true ] &&
   [ $TRAVIS_BRANCH = master ] &&
   [ $TRAVIS_PULL_REQUEST = false ] &&
   [ $TRAVIS_RUST_VERSION = stable ] &&

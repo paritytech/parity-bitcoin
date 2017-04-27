@@ -22,15 +22,15 @@ The Parity Bitcoin client
 - [Project Graph][graph]
 
 [graph]: ./tools/graph.svg
-[travis-image]: https://travis-ci.com/ethcore/parity-bitcoin.svg?token=DMFvZu71iaTbUYx9UypX&branch=master
-[travis-url]: https://travis-ci.com/ethcore/parity-bitcoin
-[doc-url]: https://ethcore.github.io/parity-bitcoin/pbtc/index.html
+[travis-image]: https://travis-ci.com/paritytech/parity-bitcoin.svg?token=DMFvZu71iaTbUYx9UypX&branch=master
+[travis-url]: https://travis-ci.com/paritytech/parity-bitcoin
+[doc-url]: https://paritytech.github.io/parity-bitcoin/pbtc/index.html
 
 ## Install guide
 
 As for now `pbtc` can be installed only from source. It requires `rustc` and `cargo`.
 
-Minimal supported version is `rustc 1.13.0 (2c6933acc 2016-11-07)`
+Minimal supported version is `rustc 1.16.0 (30cf806ef 2017-03-10)`
 
 #### Install rustc and cargo
 
@@ -150,13 +150,13 @@ Full list of cli options, which is available under `pbtc --help`
 
 ```
 pbtc 0.1.0
+Parity Technologies <admin@parity.io>
 Parity bitcoin client
 
 USAGE:
     pbtc [FLAGS] [OPTIONS] [SUBCOMMAND]
 
 FLAGS:
-        --db-cache            Sets db cache size
     -h, --help                Prints help information
         --no-jsonrpc          Disable the JSON-RPC API server
         --print-to-console    Send sync info to console
@@ -165,8 +165,10 @@ FLAGS:
     -V, --version             Prints version information
 
 OPTIONS:
+        --blocknotify <command>            Execute command when the best block changes (%s in cmd is replaced by block hash)
     -c, --connect <IP>                     Connect only to the specified node
     -d, --data-dir <PATH>                  Specify the database & configuration directory PATH
+        --db-cache <SIZE>                  Sets db cache size
         --jsonrpc-apis <APIS>              Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API name.
         --jsonrpc-cors <URL>               Specify CORS header for JSON-RPC API responses
         --jsonrpc-hosts <HOSTS>            List of allowed Host header values
