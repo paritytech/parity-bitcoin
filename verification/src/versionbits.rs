@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use network::Magic;
 use hash::H256;
 use chain::BlockHeader;
-use db::{BlockHeaderProvider, BlockProvider, BlockRef, BlockAncestors};
+use db::{BlockHeaderProvider, BlockProvider, BlockRef, BlockAncestors, BlockIterator};
 use timestamp::median_timestamp;
 
 const VERSIONBITS_TOP_MASK: u32 = 0xe0000000;
@@ -17,23 +17,35 @@ pub enum ThresholdState {
 	Failed,
 }
 
+impl Default for ThresholdState {
+	fn default() -> Self {
+		ThresholdState::Defined
+	}
+}
+
 pub struct ThresholdConditionCache {
 	map: HashMap<&'static str, HashMap<u32, ThresholdState>>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Condition {
+	/// Deployment's name
 	pub name: &'static str,
+	/// Bit
 	pub bit: u8,
+	/// Start time
 	pub start_time: u32,
+	/// Timeout
 	pub timeout: u32,
+	/// Activation block number (if already activated)
+	pub activation: Option<u32>,
 }
 
 impl Condition {
 	pub fn csv(network: Magic) -> Option<Self> {
-		let (start_time, timeout) = match network {
-			Magic::Mainnet => (1462060800, 1493596800),
-			Magic::Testnet => (1456790400, 1493596800),
+		let (start_time, timeout, activation) = match network {
+			Magic::Mainnet => (1462060800, 1493596800, Some(770112)),
+			Magic::Testnet => (1456790400, 1493596800, Some(419328)),
 			_ => { return None }
 		};
 
@@ -42,15 +54,16 @@ impl Condition {
 			bit: 0,
 			start_time: start_time,
 			timeout: timeout,
+			activation: activation,
 		};
 
 		Some(condition)
 	}
 
 	pub fn segwit(network: Magic) -> Option<Self> {
-		let (start_time, timeout) = match network {
-			Magic::Mainnet => (1479168000, 1510704000),
-			Magic::Testnet => (1462060800, 1493596800),
+		let (start_time, timeout, activation) = match network {
+			Magic::Mainnet => (1479168000, 1510704000, None),
+			Magic::Testnet => (1462060800, 1493596800, Some(834624)),
 			_ => { return None },
 		};
 
@@ -59,6 +72,7 @@ impl Condition {
 			bit: 1,
 			start_time: start_time,
 			timeout: timeout,
+			activation: activation,
 		};
 
 		Some(condition)
@@ -69,12 +83,17 @@ impl Condition {
 	}
 }
 
-pub fn threshold_state(cache: &mut ThresholdConditionCache, condition: Condition, block: &H256, headers: &BlockProvider) -> ThresholdState {
+pub fn threshold_state(cache: &mut ThresholdConditionCache, condition: Condition, number: u32, headers: &BlockHeaderProvider, network: Magic) -> ThresholdState {
+	if let Some(activation) = condition.activation {
+		if activation <= number {
+			return ThresholdState::Active;
+		}
+	}
 	// A block's state is always the same as that of the first of its period, so it is computed based on a
 	// pindexPrev whose height equals a multiple of nPeriod - 1.
 
 	// get number of the first block in the period
-	let number = 0;
+	let number = first_of_the_period(number);
 
 	{
 		let condition_cache = cache.map.get(condition.name).expect("condition cache expected to be known");
@@ -83,7 +102,13 @@ pub fn threshold_state(cache: &mut ThresholdConditionCache, condition: Condition
 		}
 	}
 
-	unimplemented!();
+	// TODO: get proper start number
+
+	let (block_number, state) = ThresholdConditionIterator::new(condition, headers, number, network)
+		.last()
+		.unwrap_or_else(|| (number, ThresholdState::default()));
+
+	state
 }
 
 fn first_of_the_period(block: u32) -> u32 {
@@ -118,7 +143,7 @@ impl<'a> ThresholdConditionIterator<'a> {
 }
 
 impl<'a> Iterator for ThresholdConditionIterator<'a> {
-	type Item = ThresholdState;
+	type Item = (u32, ThresholdState);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let header = match self.blocks.block_header(BlockRef::Number(self.to_check)) {
@@ -155,7 +180,8 @@ impl<'a> Iterator for ThresholdConditionIterator<'a> {
 			}
 		}
 
+		let block_number = self.to_check;
 		self.to_check += 2016;
-		Some(self.last_state)
+		Some((block_number, self.last_state))
 	}
 }
