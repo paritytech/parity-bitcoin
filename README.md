@@ -49,7 +49,7 @@ Windows binaries can be downloaded from [rust-lang website](https://www.rust-lan
 Now let's clone `pbtc` and enter it's directory
 
 ```
-git clone git@github.com:ethcore/parity-bitcoin.git
+git clone git@github.com:paritytech/parity-bitcoin.git
 cd parity-bitcoin
 ```
 
