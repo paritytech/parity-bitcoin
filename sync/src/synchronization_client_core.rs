@@ -30,9 +30,13 @@ const MAX_REQUESTED_BLOCKS: BlockHeight = 256;
 /// Approximate maximal number of blocks in verifying queue.
 const MAX_VERIFYING_BLOCKS: BlockHeight = 256;
 /// Minimum number of blocks to request from peer
-const MIN_BLOCKS_IN_REQUEST: BlockHeight = 32;
+const MIN_BLOCKS_IN_REQUEST: BlockHeight = 16;
 /// Maximum number of blocks to request from peer
 const MAX_BLOCKS_IN_REQUEST: BlockHeight = 128;
+/// Maximum number of blocks to request from peer
+const MAX_BLOCKS_IN_REQUEST_WHEN_STARVING: BlockHeight = 16;
+/// Number of blocks to receive since synchronization start to begin duplicating blocks requests
+const STRONG_STARVATION_THRESHOLD_BLOCKS: u32 = 4;
 /// Number of blocks to receive since synchronization start to begin duplicating blocks requests
 const NEAR_EMPTY_VERIFICATION_QUEUE_THRESHOLD_BLOCKS: usize = 20;
 /// Number of seconds left before verification queue will be empty to count it as 'near empty queue'
@@ -614,12 +618,14 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 						// blocks / second * second -> blocks
 						let hashes_requests_to_duplicate_len = synchronization_speed * (synchronization_queue_will_be_full_in - verification_queue_will_be_empty_in);
 						// do not ask for too many blocks
-						let hashes_requests_to_duplicate_len = min(MAX_BLOCKS_IN_REQUEST, hashes_requests_to_duplicate_len as BlockHeight);
+						let hashes_requests_to_duplicate_len = min(MAX_BLOCKS_IN_REQUEST_WHEN_STARVING, hashes_requests_to_duplicate_len as BlockHeight);
 						// ask for at least 1 block
 						let hashes_requests_to_duplicate_len = max(1, min(requested_hashes_len, hashes_requests_to_duplicate_len));
-						blocks_requests = Some(self.chain.best_n_of_blocks_state(BlockState::Requested, hashes_requests_to_duplicate_len));
+						let best_blocks_hashes = self.chain.best_n_of_blocks_state(BlockState::Requested, hashes_requests_to_duplicate_len);
+						let best_block_hash = best_blocks_hashes[0].clone();
+						blocks_requests = Some(best_blocks_hashes);
 
-						trace!(target: "sync", "Duplicating {} blocks requests. Sync speed: {} * {}, blocks speed: {} * {}.", hashes_requests_to_duplicate_len, synchronization_speed, requested_hashes_len, verification_speed, verifying_hashes_len);
+						trace!(target: "sync", "Duplicating {} blocks requests (begin: {}). Sync speed: {:.2} * {}, blocks speed: {:.2} * {}.", hashes_requests_to_duplicate_len, best_block_hash.to_reversed_str(), synchronization_speed, requested_hashes_len, verification_speed, verifying_hashes_len);
 					}
 				}
 
@@ -627,12 +633,18 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 				{
 					let scheduled_hashes_len = self.chain.length_of_blocks_state(BlockState::Scheduled);
 					if requested_hashes_len + verifying_hashes_len < MAX_REQUESTED_BLOCKS + MAX_VERIFYING_BLOCKS && scheduled_hashes_len != 0 {
-						let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(scheduled_hashes_len / blocks_idle_peers_len, MIN_BLOCKS_IN_REQUEST));
-						let hashes_to_request_len = chunk_size * blocks_idle_peers_len;
-						let hashes_to_request = self.chain.request_blocks_hashes(hashes_to_request_len);
-						match blocks_requests {
-							Some(ref mut blocks_requests) => blocks_requests.extend(hashes_to_request),
-							None => blocks_requests = Some(hashes_to_request),
+						let is_verification_queue_starving = blocks_requests.is_some();
+						let is_strong_starvation = is_verification_queue_starving && verifying_hashes_len < STRONG_STARVATION_THRESHOLD_BLOCKS;
+						let max_blocks_in_request = if is_verification_queue_starving { MAX_BLOCKS_IN_REQUEST_WHEN_STARVING } else { MAX_BLOCKS_IN_REQUEST };
+						let max_blocks_in_request = if is_strong_starvation { 0 } else { max_blocks_in_request };
+						if max_blocks_in_request != 0 {
+							let chunk_size = min(max_blocks_in_request, max(scheduled_hashes_len / blocks_idle_peers_len, MIN_BLOCKS_IN_REQUEST));
+							let hashes_to_request_len = chunk_size * blocks_idle_peers_len;
+							let hashes_to_request = self.chain.request_blocks_hashes(hashes_to_request_len);
+							match blocks_requests {
+								Some(ref mut blocks_requests) => blocks_requests.extend(hashes_to_request),
+								None => blocks_requests = Some(hashes_to_request),
+							}
 						}
 					}
 				}

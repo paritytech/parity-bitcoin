@@ -66,7 +66,7 @@ impl LocalSynchronizationTaskExecutor {
 
 	fn execute_getdata(&self, peer_index: PeerIndex, getdata: types::GetData) {
 		if let Some(connection) = self.peers.connection(peer_index) {
-			trace!(target: "sync", "Querying {} unknown items from peer#{}", getdata.inventory.len(), peer_index);
+			trace!(target: "sync", "Querying {} unknown items from peer#{}. First hash: {}", getdata.inventory.len(), peer_index, if getdata.inventory.is_empty() { String::new() } else { getdata.inventory[0].hash.to_reversed_str() });
 			connection.send_getdata(&getdata);
 		}
 	}
