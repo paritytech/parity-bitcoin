@@ -3,7 +3,7 @@ The Parity Bitcoin client
 
 [![Build Status][travis-image]][travis-url] 
 
-Gitter [![Gitter https://gitter.im/parity-bitcoin/Lobby](https://badges.gitter.im/parity-bitcoin/Lobby.svg)](https://gitter.im/parity-bitcoin/Lobby)
+Gitter [![Gitter https://gitter.im/paritytech/parity-bitcoin](https://badges.gitter.im/paritytech/parity-bitcoin.svg)](https://gitter.im/paritytech/parity-bitcoin)
 
 - [Install guide](#install-guide)
 
