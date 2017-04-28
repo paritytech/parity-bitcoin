@@ -1,4 +1,6 @@
 # parity-bitcoin
+
+[![Join the chat at https://gitter.im/paritytech/parity-bitcoin](https://badges.gitter.im/paritytech/parity-bitcoin.svg)](https://gitter.im/paritytech/parity-bitcoin?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 The Parity Bitcoin client
 
 [![Build Status][travis-image]][travis-url] 
