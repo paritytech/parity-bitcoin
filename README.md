@@ -1,7 +1,9 @@
 # parity-bitcoin
 The Parity Bitcoin client
 
-[![Build Status][travis-image]][travis-url] Gitter Channel [![Gitter https://gitter.im/parity-bitcoin/Lobby](https://badges.gitter.im/parity-bitcoin/Lobby.svg)](https://gitter.im/parity-bitcoin/Lobby)
+[![Build Status][travis-image]][travis-url] 
+
+Gitter [![Gitter https://gitter.im/parity-bitcoin/Lobby](https://badges.gitter.im/parity-bitcoin/Lobby.svg)](https://gitter.im/parity-bitcoin/Lobby)
 
 - [Install guide](#install-guide)
 
