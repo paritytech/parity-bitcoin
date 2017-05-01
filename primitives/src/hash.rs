@@ -79,18 +79,6 @@ macro_rules! impl_hash {
 			}
 		}
 
-		impl fmt::Debug for $name {
-			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-				f.write_str(&self.0.to_hex())
-			}
-		}
-
-		impl fmt::Display for $name {
-			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-				f.write_str(&self.0.to_hex())
-			}
-		}
-
 		impl ops::Deref for $name {
 			type Target = [u8; $size];
 
@@ -153,14 +141,44 @@ macro_rules! impl_hash {
 	}
 }
 
+macro_rules! impl_hash_display {
+	($name: ident) => {
+		impl fmt::Debug for $name {
+			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+				f.write_str(&self.0.to_hex())
+			}
+		}
+
+		impl fmt::Display for $name {
+			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+				f.write_str(&self.0.to_hex())
+			}
+		}
+	}
+}
+
 impl_hash!(H32, 4);
+impl_hash_display!(H32);
+
 impl_hash!(H48, 6);
+impl_hash_display!(H48);
+
 impl_hash!(H96, 12);
+impl_hash_display!(H96);
+
 impl_hash!(H160, 20);
+impl_hash_display!(H160);
+
 impl_hash!(H256, 32);
+
 impl_hash!(H264, 33);
+impl_hash_display!(H264);
+
 impl_hash!(H512, 64);
+impl_hash_display!(H512);
+
 impl_hash!(H520, 65);
+impl_hash_display!(H520);
 
 known_heap_size!(0, H32, H48, H96, H160, H256, H264, H512, H520);
 
@@ -173,5 +191,17 @@ impl H256 {
 	#[inline]
 	pub fn to_reversed_str(&self) -> String {
 		self.reversed().to_string()
+	}
+}
+
+impl fmt::Display for H256 {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		f.write_str(&self.reversed().0.to_hex())
+	}
+}
+
+impl fmt::Debug for H256 {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		f.write_str(&self.reversed().0.to_hex())
 	}
 }
