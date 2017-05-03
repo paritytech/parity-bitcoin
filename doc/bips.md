@@ -4,6 +4,7 @@ BIPs that are implemented by pbtc
 - `+` implemented
 - `?` unknown
 - `a` application layer
+- `w` work in progress
 
 | BIPs | pbtc | core | unlimited |
 | ------ | ------ | ------ | ------ |
@@ -13,14 +14,14 @@ BIPs that are implemented by pbtc
 | [BIP 14][BIP14] | - | + | ? |
 | [BIP 16][BIP16] | + | + | ? |
 | [BIP 21][BIP21] | a | + | ? |
-| [BIP 22][BIP22] | ? | + | ? |
-| [BIP 23][BIP23] | ? | + | ? |
+| [BIP 22][BIP22] | + | + | ? |
+| [BIP 23][BIP23] | + | + | ? |
 | [BIP 30][BIP30] | + | + | ? |
 | [BIP 31][BIP31] | + | + | ? |
 | [BIP 32][BIP32] | a | + | ? |
 | [BIP 34][BIP34] | + | + | ? |
-| [BIP 35][BIP35] | ? | + | ? |
-| [BIP 37][BIP37] | ? | + | ? |
+| [BIP 35][BIP35] | + | + | ? |
+| [BIP 37][BIP37] | + | + | ? |
 | [BIP 42][BIP42] | + | + | ? |
 | [BIP 61][BIP61] | ? | + | ? |
 | [BIP 65][BIP65] | + | + | ? |

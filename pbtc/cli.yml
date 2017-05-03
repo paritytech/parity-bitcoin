@@ -1,6 +1,6 @@
 name: pbtc
 version: "0.1.0"
-author: Ethcore <admin@ethcore.io>
+author: Parity Technologies <admin@parity.io>
 about: Parity bitcoin client
 args:
     - testnet:
