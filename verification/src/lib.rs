@@ -54,6 +54,7 @@
 extern crate time;
 #[macro_use]
 extern crate log;
+extern crate parking_lot;
 extern crate rayon;
 
 extern crate db;
@@ -65,11 +66,11 @@ extern crate script;
 
 pub mod constants;
 mod canon;
+mod deployments;
 mod duplex_store;
 mod error;
 mod sigops;
 mod timestamp;
-mod versionbits;
 mod work;
 
 // pre-verification

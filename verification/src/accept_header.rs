@@ -3,6 +3,7 @@ use db::BlockHeaderProvider;
 use canon::CanonHeader;
 use error::Error;
 use work::work_required;
+use deployments::Deployments;
 use timestamp::median_timestamp;
 
 pub struct HeaderAcceptor<'a> {
@@ -12,13 +13,18 @@ pub struct HeaderAcceptor<'a> {
 }
 
 impl<'a> HeaderAcceptor<'a> {
-	pub fn new(store: &'a BlockHeaderProvider, network: Magic, header: CanonHeader<'a>, height: u32) -> Self {
+	pub fn new(
+		store: &'a BlockHeaderProvider,
+		network: Magic,
+		header: CanonHeader<'a>,
+		height: u32,
+		deployments: &'a Deployments,
+		) -> Self {
 		let params = network.consensus_params();
 		HeaderAcceptor {
-			// TODO: check last 1000 blocks instead of hardcoding the value
-			version: HeaderVersion::new(header, height, params),
+			version: HeaderVersion::new(header, height, params.clone()),
 			work: HeaderWork::new(header, store, height, network),
-			median_timestamp: HeaderMedianTimestamp::new(header, store, network),
+			median_timestamp: HeaderMedianTimestamp::new(header, store, height, deployments, params),
 		}
 	}
 
@@ -90,21 +96,21 @@ impl<'a> HeaderWork<'a> {
 pub struct HeaderMedianTimestamp<'a> {
 	header: CanonHeader<'a>,
 	store: &'a BlockHeaderProvider,
-	network: Magic,
+	active: bool,
 }
 
 impl<'a> HeaderMedianTimestamp<'a> {
-	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, network: Magic) -> Self {
+	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, height: u32, deployments: &'a Deployments, params: ConsensusParams) -> Self {
+		let active = deployments.csv(height, store, params);
 		HeaderMedianTimestamp {
 			header: header,
 			store: store,
-			network: network,
+			active: active,
 		}
 	}
 
 	fn check(&self) -> Result<(), Error> {
-		let median = median_timestamp(&self.header.raw, self.store, self.network);
-		if self.header.raw.time <= median {
+		if self.active && self.header.raw.time <= median_timestamp(&self.header.raw, self.store) {
 			Err(Error::Timestamp)
 		} else {
 			Ok(())

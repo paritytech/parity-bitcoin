@@ -1,17 +1,11 @@
 use std::collections::BTreeSet;
 use chain::BlockHeader;
 use db::{BlockHeaderProvider, BlockAncestors};
-use network::Magic;
 
 /// Returns median timestamp, of given header ancestors.
 /// The header should be later expected to have higher timestamp
 /// than this median timestamp
-pub fn median_timestamp(header: &BlockHeader, store: &BlockHeaderProvider, network: Magic) -> u32 {
-	// TODO: timestamp validation on testnet is broken
-	if network == Magic::Testnet {
-		return 0;
-	}
-
+pub fn median_timestamp(header: &BlockHeader, store: &BlockHeaderProvider) -> u32 {
 	let timestamps: BTreeSet<_> = BlockAncestors::new(header.previous_header_hash.clone().into(), store)
 		.take(11)
 		.map(|header| header.time)

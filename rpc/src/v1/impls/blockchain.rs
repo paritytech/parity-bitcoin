@@ -75,11 +75,9 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 					None => -1,
 				};
 				let block_size = block.size();
-				// TODO: use real network
 				let median_time = verification::median_timestamp(
 					&block.header.raw,
-					self.storage.as_block_header_provider(),
-					Magic::Mainnet,
+					self.storage.as_block_header_provider()
 				);
 
 				VerboseBlock {

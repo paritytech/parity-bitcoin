@@ -12,11 +12,13 @@ use verify_header::HeaderVerifier;
 use verify_transaction::MemoryPoolTransactionVerifier;
 use accept_chain::ChainAcceptor;
 use accept_transaction::MemoryPoolTransactionAcceptor;
+use deployments::Deployments;
 use Verify;
 
 pub struct BackwardsCompatibleChainVerifier {
 	store: SharedStore,
 	network: Magic,
+	deployments: Deployments,
 }
 
 impl BackwardsCompatibleChainVerifier {
@@ -24,6 +26,7 @@ impl BackwardsCompatibleChainVerifier {
 		BackwardsCompatibleChainVerifier {
 			store: store,
 			network: network,
+			deployments: Deployments::new(),
 		}
 	}
 
@@ -43,21 +46,21 @@ impl BackwardsCompatibleChainVerifier {
 			},
 			BlockOrigin::CanonChain { block_number } => {
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(self.store.as_store(), self.network, canon_block, block_number);
+				let chain_acceptor = ChainAcceptor::new(self.store.as_store(), self.network, canon_block, block_number, &self.deployments);
 				chain_acceptor.check()?;
 			},
 			BlockOrigin::SideChain(origin) => {
 				let block_number = origin.block_number;
 				let fork = self.store.fork(origin)?;
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number, &self.deployments);
 				chain_acceptor.check()?;
 			},
 			BlockOrigin::SideChainBecomingCanonChain(origin) => {
 				let block_number = origin.block_number;
 				let fork = self.store.fork(origin)?;
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number, &self.deployments);
 				chain_acceptor.check()?;
 			},
 		}
@@ -102,7 +105,9 @@ impl BackwardsCompatibleChainVerifier {
 			self.network,
 			canon_tx,
 			height,
-			time
+			time,
+			&self.deployments,
+			self.store.as_block_header_provider()
 		);
 		tx_acceptor.check()
 	}
