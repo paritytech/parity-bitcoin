@@ -32,9 +32,10 @@ pub fn fetch(benchmark: &mut Benchmark) {
 	}
 
 	for block in blocks.into_iter() {
-		let block = block.into();
-		store.insert(&block).unwrap();
-		store.canonize(block.hash()).unwrap();
+		let block: IndexedBlock = block.into();
+		let hash = block.hash().clone();
+		store.insert(block).unwrap();
+		store.canonize(&hash).unwrap();
 	}
 
 	// bench
@@ -57,7 +58,7 @@ pub fn write(benchmark: &mut Benchmark) {
 
 	let mut rolling_hash = genesis.hash().clone();
 
-	let mut blocks = Vec::new();
+	let mut blocks: Vec<IndexedBlock> = Vec::new();
 
 	for x in 0..BLOCKS {
 		let next_block = test_data::block_builder()
@@ -73,9 +74,10 @@ pub fn write(benchmark: &mut Benchmark) {
 
 	// bench
 	benchmark.start();
-	for idx in 0..BLOCKS {
-		store.insert(&blocks[idx]).unwrap();
-		store.canonize(blocks[idx].hash()).unwrap();
+	for block in blocks {
+		let hash = block.hash().clone();
+		store.insert(block).unwrap();
+		store.canonize(&hash).unwrap();
 	}
 	benchmark.stop();
 }
@@ -144,23 +146,24 @@ pub fn reorg_short(benchmark: &mut Benchmark) {
 	for idx in 0..BLOCKS {
 		total += 1;
 		let block: IndexedBlock = blocks[idx].clone().into();
+		let hash = block.hash().clone();
 
 		match store.block_origin(&block.header).unwrap() {
 			BlockOrigin::KnownBlock => {
 				unreachable!();
 			},
 			BlockOrigin::CanonChain { .. } => {
-				store.insert(&block).unwrap();
-				store.canonize(block.hash()).unwrap();
+				store.insert(block).unwrap();
+				store.canonize(&hash).unwrap();
 			},
 			BlockOrigin::SideChain(_origin) => {
-				store.insert(&block).unwrap();
+				store.insert(block).unwrap();
 			},
 			BlockOrigin::SideChainBecomingCanonChain(origin) => {
 				reorgs += 1;
 				let fork = store.fork(origin).unwrap();
-				fork.store().insert(&block).unwrap();
-				fork.store().canonize(block.hash()).unwrap();
+				fork.store().insert(block).unwrap();
+				fork.store().canonize(&hash).unwrap();
 				store.switch_to_fork(fork).unwrap();
 			},
 		}
@@ -223,17 +226,19 @@ pub fn write_heavy(benchmark: &mut Benchmark) {
 	}
 
 	for block in blocks[..BLOCKS_INITIAL].iter() {
-		let block = block.clone().into();
-		store.insert(&block).expect("cannot insert initial block");
-		store.canonize(block.hash()).unwrap();
+		let block: IndexedBlock = block.clone().into();
+		let hash = block.hash().clone();
+		store.insert(block).expect("cannot insert initial block");
+		store.canonize(&hash).unwrap();
 	}
 
 	// bench
 	benchmark.start();
 	for block in blocks[BLOCKS_INITIAL..].iter() {
-		let block = block.clone().into();
-		store.insert(&block).expect("cannot insert bench block");
-		store.canonize(block.hash()).unwrap();
+		let block: IndexedBlock = block.clone().into();
+		let hash = block.hash().clone();
+		store.insert(block).expect("cannot insert bench block");
+		store.canonize(&hash).unwrap();
 	}
 	benchmark.stop();
 }

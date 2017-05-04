@@ -51,8 +51,9 @@ pub fn main(benchmark: &mut Benchmark) {
 
 	let store = Arc::new(BlockChainDatabase::init_test_chain(vec![genesis.clone().into()]));
 	for block in blocks.iter() {
-		store.insert(block).unwrap();
-		store.canonize(block.hash()).unwrap();
+		let hash = block.hash().clone();
+		store.insert(block.clone()).unwrap();
+		store.canonize(&hash).unwrap();
 	}
 
 	let mut verification_blocks: Vec<IndexedBlock> = Vec::new();
