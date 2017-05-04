@@ -62,7 +62,7 @@ impl Deployments {
 	}
 
 	/// Returns true if csv deployment is active
-	pub fn csv(&self, number: u32, headers: &BlockHeaderProvider, consensus: ConsensusParams) -> bool {
+	pub fn csv(&self, number: u32, headers: &BlockHeaderProvider, consensus: &ConsensusParams) -> bool {
 		match consensus.csv_deployment {
 			Some(csv) => {
 				let mut cache = self.cache.lock();
@@ -74,7 +74,7 @@ impl Deployments {
 }
 
 /// Calculates threshold state of given deployment
-fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, number: u32, headers: &BlockHeaderProvider, consensus: ConsensusParams) -> ThresholdState {
+fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, number: u32, headers: &BlockHeaderProvider, consensus: &ConsensusParams) -> ThresholdState {
 	if let Some(activation) = deployment.activation {
 		if activation <= number {
 			return ThresholdState::Active;
@@ -140,12 +140,12 @@ struct ThresholdIterator<'a> {
 	deployment: Deployment,
 	block_iterator: BlockIterator<'a>,
 	headers: &'a BlockHeaderProvider,
-	consensus: ConsensusParams,
+	consensus: &'a ConsensusParams,
 	last_state: ThresholdState,
 }
 
 impl<'a> ThresholdIterator<'a> {
-	fn new(deployment: Deployment, headers: &'a BlockHeaderProvider, to_check: u32, consensus: ConsensusParams, state: ThresholdState) -> Self {
+	fn new(deployment: Deployment, headers: &'a BlockHeaderProvider, to_check: u32, consensus: &'a ConsensusParams, state: ThresholdState) -> Self {
 		ThresholdIterator {
 			deployment: deployment,
 			block_iterator: BlockIterator::new(to_check, consensus.miner_confirmation_window, headers),

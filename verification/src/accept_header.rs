@@ -19,12 +19,12 @@ impl<'a> HeaderAcceptor<'a> {
 		header: CanonHeader<'a>,
 		height: u32,
 		deployments: &'a Deployments,
-		) -> Self {
+	) -> Self {
 		let params = network.consensus_params();
 		HeaderAcceptor {
-			version: HeaderVersion::new(header, height, params.clone()),
 			work: HeaderWork::new(header, store, height, network),
-			median_timestamp: HeaderMedianTimestamp::new(header, store, height, deployments, params),
+			median_timestamp: HeaderMedianTimestamp::new(header, store, height, deployments, &params),
+			version: HeaderVersion::new(header, height, params),
 		}
 	}
 
@@ -100,7 +100,7 @@ pub struct HeaderMedianTimestamp<'a> {
 }
 
 impl<'a> HeaderMedianTimestamp<'a> {
-	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, height: u32, deployments: &'a Deployments, params: ConsensusParams) -> Self {
+	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, height: u32, deployments: &'a Deployments, params: &ConsensusParams) -> Self {
 		let active = deployments.csv(height, store, params);
 		HeaderMedianTimestamp {
 			header: header,

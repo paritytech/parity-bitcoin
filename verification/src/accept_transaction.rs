@@ -42,7 +42,7 @@ impl<'a> TransactionAcceptor<'a> {
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, output_store),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
-			eval: TransactionEval::new(transaction, output_store, params, height, time, deployments, headers),
+			eval: TransactionEval::new(transaction, output_store, &params, height, time, deployments, headers),
 		}
 	}
 
@@ -88,7 +88,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 			overspent: TransactionOverspent::new(transaction, output_store),
 			sigops: TransactionSigops::new(transaction, output_store, params.clone(), MAX_BLOCK_SIGOPS, time),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
-			eval: TransactionEval::new(transaction, output_store, params, height, time, deployments, headers),
+			eval: TransactionEval::new(transaction, output_store, &params, height, time, deployments, headers),
 		}
 	}
 
@@ -283,7 +283,7 @@ impl<'a> TransactionEval<'a> {
 	fn new(
 		transaction: CanonTransaction<'a>,
 		store: DuplexTransactionOutputProvider<'a>,
-		params: ConsensusParams,
+		params: &ConsensusParams,
 		height: u32,
 		time: u32,
 		deployments: &'a Deployments,

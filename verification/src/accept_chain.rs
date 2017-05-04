@@ -21,7 +21,7 @@ impl<'a> ChainAcceptor<'a> {
 		let output_store = DuplexTransactionOutputProvider::new(store.as_transaction_output_provider(), block.raw());
 		let headers = store.as_block_header_provider();
 		ChainAcceptor {
-			block: BlockAcceptor::new(store.as_transaction_output_provider(), network, block, height),
+			block: BlockAcceptor::new(store.as_transaction_output_provider(), network, block, height, deployments, headers),
 			header: HeaderAcceptor::new(headers, network, block.header(), height, deployments),
 			transactions: block.transactions()
 				.into_iter()
