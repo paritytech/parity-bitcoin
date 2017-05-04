@@ -12,11 +12,13 @@ use verify_header::HeaderVerifier;
 use verify_transaction::MemoryPoolTransactionVerifier;
 use accept_chain::ChainAcceptor;
 use accept_transaction::MemoryPoolTransactionAcceptor;
+use deployments::Deployments;
 use Verify;
 
 pub struct BackwardsCompatibleChainVerifier {
 	store: SharedStore,
 	network: Magic,
+	deployments: Deployments,
 }
 
 impl BackwardsCompatibleChainVerifier {
@@ -24,6 +26,7 @@ impl BackwardsCompatibleChainVerifier {
 		BackwardsCompatibleChainVerifier {
 			store: store,
 			network: network,
+			deployments: Deployments::new(),
 		}
 	}
 
@@ -43,21 +46,21 @@ impl BackwardsCompatibleChainVerifier {
 			},
 			BlockOrigin::CanonChain { block_number } => {
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(self.store.as_store(), self.network, canon_block, block_number);
+				let chain_acceptor = ChainAcceptor::new(self.store.as_store(), self.network, canon_block, block_number, &self.deployments);
 				chain_acceptor.check()?;
 			},
 			BlockOrigin::SideChain(origin) => {
 				let block_number = origin.block_number;
 				let fork = self.store.fork(origin)?;
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number, &self.deployments);
 				chain_acceptor.check()?;
 			},
 			BlockOrigin::SideChainBecomingCanonChain(origin) => {
 				let block_number = origin.block_number;
 				let fork = self.store.fork(origin)?;
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number, &self.deployments);
 				chain_acceptor.check()?;
 			},
 		}
@@ -102,7 +105,9 @@ impl BackwardsCompatibleChainVerifier {
 			self.network,
 			canon_tx,
 			height,
-			time
+			time,
+			&self.deployments,
+			self.store.as_block_header_provider()
 		);
 		tx_acceptor.check()
 	}
@@ -322,13 +327,14 @@ mod tests {
 
 		// waiting 100 blocks for genesis coinbase to become valid
 		for _ in 0..100 {
-			let block = test_data::block_builder()
+			let block: IndexedBlock = test_data::block_builder()
 				.transaction().coinbase().build()
 				.merkled_header().parent(genesis.hash()).build()
 				.build()
 				.into();
-			storage.insert(&block).expect("All dummy blocks should be inserted");
-			storage.canonize(block.hash()).unwrap();
+			let hash = block.hash().clone();
+			storage.insert(block).expect("All dummy blocks should be inserted");
+			storage.canonize(&hash).unwrap();
 		}
 
 		let best_hash = storage.best_block().hash;

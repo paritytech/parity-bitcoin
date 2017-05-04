@@ -13,9 +13,9 @@ fn insert_block() {
 	let b1: IndexedBlock = test_data::block_h1().into();
 	let b2: IndexedBlock = test_data::block_h2().into();
 
-	store.insert(&b0).unwrap();
-	store.insert(&b1).unwrap();
-	store.insert(&b2).unwrap();
+	store.insert(b0.clone()).unwrap();
+	store.insert(b1.clone()).unwrap();
+	store.insert(b2.clone()).unwrap();
 
 	assert_eq!(0, store.best_block().number);
 	assert!(store.best_block().hash.is_zero());
@@ -55,9 +55,9 @@ fn reopen_db() {
 
 	{
 		let store = BlockChainDatabase::open(shared_database.clone());
-		store.insert(&b0).unwrap();
-		store.insert(&b1).unwrap();
-		store.insert(&b2).unwrap();
+		store.insert(b0.clone()).unwrap();
+		store.insert(b1.clone()).unwrap();
+		store.insert(b2.clone()).unwrap();
 
 		store.canonize(b0.hash()).unwrap();
 		store.canonize(b1.hash()).unwrap();
@@ -80,9 +80,9 @@ fn switch_to_simple_fork() {
 	let b1: IndexedBlock = test_data::block_h1().into();
 	let b2: IndexedBlock = test_data::block_h2().into();
 
-	store.insert(&b0).unwrap();
-	store.insert(&b1).unwrap();
-	store.insert(&b2).unwrap();
+	store.insert(b0.clone()).unwrap();
+	store.insert(b1.clone()).unwrap();
+	store.insert(b2.clone()).unwrap();
 
 	store.canonize(b0.hash()).unwrap();
 	store.canonize(b1.hash()).unwrap();

@@ -53,12 +53,12 @@ pub struct VerificationFlags {
 	/// Verify CHECKLOCKTIMEVERIFY
 	///
 	/// See BIP65 for details.
-	pub verify_clocktimeverify: bool,
+	pub verify_locktime: bool,
 
 	/// support CHECKSEQUENCEVERIFY opcode
 	///
 	/// See BIP112 for details
-	pub verify_checksequenceverify: bool,
+	pub verify_checksequence: bool,
 
 	/// Support segregated witness
 	pub verify_witness: bool,
@@ -73,8 +73,13 @@ impl VerificationFlags {
 		self
 	}
 
-	pub fn verify_clocktimeverify(mut self, value: bool) -> Self {
-		self.verify_clocktimeverify = value;
+	pub fn verify_locktime(mut self, value: bool) -> Self {
+		self.verify_locktime = value;
+		self
+	}
+
+	pub fn verify_checksequence(mut self, value: bool) -> Self {
+		self.verify_checksequence = value;
 		self
 	}
 

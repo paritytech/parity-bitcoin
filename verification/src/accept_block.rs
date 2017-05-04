@@ -1,12 +1,14 @@
 use network::{Magic, ConsensusParams};
-use db::TransactionOutputProvider;
+use db::{TransactionOutputProvider, BlockHeaderProvider};
 use script;
 use sigops::transaction_sigops;
 use work::block_reward_satoshi;
 use duplex_store::DuplexTransactionOutputProvider;
+use deployments::Deployments;
 use canon::CanonBlock;
 use constants::MAX_BLOCK_SIGOPS;
 use error::{Error, TransactionError};
+use timestamp::median_timestamp;
 
 /// Flexible verification of ordered block
 pub struct BlockAcceptor<'a> {
@@ -17,10 +19,17 @@ pub struct BlockAcceptor<'a> {
 }
 
 impl<'a> BlockAcceptor<'a> {
-	pub fn new(store: &'a TransactionOutputProvider, network: Magic, block: CanonBlock<'a>, height: u32) -> Self {
+	pub fn new(
+		store: &'a TransactionOutputProvider,
+		network: Magic,
+		block: CanonBlock<'a>,
+		height: u32,
+		deployments: &'a Deployments,
+		headers: &'a BlockHeaderProvider,
+	) -> Self {
 		let params = network.consensus_params();
 		BlockAcceptor {
-			finality: BlockFinality::new(block, height),
+			finality: BlockFinality::new(block, height, deployments, headers, &params),
 			coinbase_script: BlockCoinbaseScript::new(block, &params, height),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store, height),
 			sigops: BlockSigops::new(block, store, params, MAX_BLOCK_SIGOPS),
@@ -39,18 +48,30 @@ impl<'a> BlockAcceptor<'a> {
 pub struct BlockFinality<'a> {
 	block: CanonBlock<'a>,
 	height: u32,
+	csv_active: bool,
+	headers: &'a BlockHeaderProvider,
 }
 
 impl<'a> BlockFinality<'a> {
-	fn new(block: CanonBlock<'a>, height: u32) -> Self {
+	fn new(block: CanonBlock<'a>, height: u32, deployments: &'a Deployments, headers: &'a BlockHeaderProvider, params: &ConsensusParams) -> Self {
+		let csv_active = deployments.csv(height, headers, params);
+
 		BlockFinality {
 			block: block,
 			height: height,
+			csv_active: csv_active,
+			headers: headers,
 		}
 	}
 
 	fn check(&self) -> Result<(), Error> {
-		if self.block.is_final(self.height) {
+		let time_cutoff = if self.csv_active {
+			median_timestamp(&self.block.header.raw, self.headers)
+		} else {
+			self.block.header.raw.time
+		};
+
+		if self.block.transactions.iter().all(|tx| tx.raw.is_final_in_block(self.height, time_cutoff)) {
 			Ok(())
 		} else {
 			Err(Error::NonFinalBlock)

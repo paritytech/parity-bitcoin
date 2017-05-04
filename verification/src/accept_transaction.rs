@@ -1,8 +1,9 @@
 use primitives::hash::H256;
-use db::{TransactionMetaProvider, TransactionOutputProvider};
+use db::{TransactionMetaProvider, TransactionOutputProvider, BlockHeaderProvider};
 use network::{Magic, ConsensusParams};
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner};
 use duplex_store::DuplexTransactionOutputProvider;
+use deployments::Deployments;
 use sigops::transaction_sigops;
 use canon::CanonTransaction;
 use constants::{COINBASE_MATURITY, MAX_BLOCK_SIGOPS};
@@ -30,6 +31,8 @@ impl<'a> TransactionAcceptor<'a> {
 		height: u32,
 		time: u32,
 		transaction_index: usize,
+		deployments: &'a Deployments,
+		headers: &'a BlockHeaderProvider,
 	) -> Self {
 		trace!(target: "verification", "Tx verification {}", transaction.hash.to_reversed_str());
 		let params = network.consensus_params();
@@ -39,7 +42,7 @@ impl<'a> TransactionAcceptor<'a> {
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, output_store),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
-			eval: TransactionEval::new(transaction, output_store, params, height, time),
+			eval: TransactionEval::new(transaction, output_store, &params, height, time, deployments, headers),
 		}
 	}
 
@@ -73,6 +76,8 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		transaction: CanonTransaction<'a>,
 		height: u32,
 		time: u32,
+		deployments: &'a Deployments,
+		headers: &'a BlockHeaderProvider,
 	) -> Self {
 		trace!(target: "verification", "Mempool-Tx verification {}", transaction.hash.to_reversed_str());
 		let params = network.consensus_params();
@@ -83,7 +88,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 			overspent: TransactionOverspent::new(transaction, output_store),
 			sigops: TransactionSigops::new(transaction, output_store, params.clone(), MAX_BLOCK_SIGOPS, time),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
-			eval: TransactionEval::new(transaction, output_store, params, height, time),
+			eval: TransactionEval::new(transaction, output_store, &params, height, time, deployments, headers),
 		}
 	}
 
@@ -269,7 +274,8 @@ pub struct TransactionEval<'a> {
 	transaction: CanonTransaction<'a>,
 	store: DuplexTransactionOutputProvider<'a>,
 	verify_p2sh: bool,
-	verify_clocktime: bool,
+	verify_locktime: bool,
+	verify_checksequence: bool,
 	verify_dersig: bool,
 }
 
@@ -277,19 +283,24 @@ impl<'a> TransactionEval<'a> {
 	fn new(
 		transaction: CanonTransaction<'a>,
 		store: DuplexTransactionOutputProvider<'a>,
-		params: ConsensusParams,
+		params: &ConsensusParams,
 		height: u32,
 		time: u32,
+		deployments: &'a Deployments,
+		headers: &'a BlockHeaderProvider,
 	) -> Self {
 		let verify_p2sh = time >= params.bip16_time;
-		let verify_clocktime = height >= params.bip65_height;
+		let verify_locktime = height >= params.bip65_height;
 		let verify_dersig = height >= params.bip66_height;
+
+		let verify_checksequence = deployments.csv(height, headers, params);
 
 		TransactionEval {
 			transaction: transaction,
 			store: store,
 			verify_p2sh: verify_p2sh,
-			verify_clocktime: verify_clocktime,
+			verify_locktime: verify_locktime,
+			verify_checksequence: verify_checksequence,
 			verify_dersig: verify_dersig,
 		}
 	}
@@ -317,7 +328,8 @@ impl<'a> TransactionEval<'a> {
 
 			let flags = VerificationFlags::default()
 				.verify_p2sh(self.verify_p2sh)
-				.verify_clocktimeverify(self.verify_clocktime)
+				.verify_locktime(self.verify_locktime)
+				.verify_checksequence(self.verify_checksequence)
 				.verify_dersig(self.verify_dersig);
 
 			try!(verify_script(&input, &output, &flags, &checker).map_err(|_| TransactionError::Signature(index)));

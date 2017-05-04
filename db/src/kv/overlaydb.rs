@@ -1,5 +1,5 @@
 use parking_lot::Mutex;
-use kv::{Transaction, Location, Value, KeyValueDatabase, MemoryDatabase};
+use kv::{Transaction, Value, KeyValueDatabase, MemoryDatabase, KeyState, Key};
 
 pub struct OverlayDatabase<'a, T> where T: 'a + KeyValueDatabase {
 	db: &'a T,
@@ -24,11 +24,10 @@ impl<'a, T> KeyValueDatabase for OverlayDatabase<'a, T> where T: 'a + KeyValueDa
 		self.overlay.write(tx)
 	}
 
-	fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
-		if self.overlay.is_known(location, key) {
-			self.overlay.get(location, key)
-		} else {
-			self.db.get(location, key)
+	fn get(&self, key: &Key) -> Result<KeyState<Value>, String> {
+		match self.overlay.get(key)? {
+			KeyState::Unknown => self.db.get(key),
+			exists => Ok(exists)
 		}
 	}
 }
@@ -67,11 +66,10 @@ impl<T> KeyValueDatabase for AutoFlushingOverlayDatabase<T> where T: KeyValueDat
 		Ok(())
 	}
 
-	fn get(&self, location: Location, key: &[u8]) -> Result<Option<Value>, String> {
-		if self.overlay.is_known(location, key) {
-			self.overlay.get(location, key)
-		} else {
-			self.db.get(location, key)
+	fn get(&self, key: &Key) -> Result<KeyState<Value>, String> {
+		match self.overlay.get(key)? {
+			KeyState::Unknown => self.db.get(key),
+			exists => Ok(exists)
 		}
 	}
 }

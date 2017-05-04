@@ -456,7 +456,7 @@ pub fn eval_script(
 			},
 			Opcode::OP_NOP => break,
 			Opcode::OP_CHECKLOCKTIMEVERIFY => {
-				if flags.verify_clocktimeverify {
+				if flags.verify_locktime {
 					// Note that elsewhere numeric opcodes are limited to
 					// operands in the range -2**31+1 to 2**31-1, however it is
 					// legal for opcodes to produce results exceeding that
@@ -488,7 +488,7 @@ pub fn eval_script(
 				}
 			},
 			Opcode::OP_CHECKSEQUENCEVERIFY => {
-				if flags.verify_checksequenceverify {
+				if flags.verify_checksequence {
 					let sequence = try!(Num::from_slice(try!(stack.last()), flags.verify_minimaldata, 5));
 
 					if sequence.is_negative() {
@@ -1916,7 +1916,7 @@ mod tests {
 
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true)
-			.verify_clocktimeverify(true);
+			.verify_locktime(true);
 		assert_eq!(verify_script(&input, &output, &flags, &checker), Err(Error::NumberOverflow));
 	}
 
