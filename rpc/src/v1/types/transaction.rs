@@ -177,31 +177,31 @@ impl Serialize for TransactionOutputs {
 	}
 }
 
-impl Deserialize for TransactionOutputs {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer {
-		use serde::de::{Visitor, MapVisitor};
+impl<'a> Deserialize<'a> for TransactionOutputs {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'a> {
+		use serde::de::{Visitor, MapAccess};
 
 		struct TransactionOutputsVisitor;
 
-		impl Visitor for TransactionOutputsVisitor {
+		impl<'b> Visitor<'b> for TransactionOutputsVisitor {
 			type Value = TransactionOutputs;
 
 			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
 				formatter.write_str("a transaction output object")
 			}
 
-			fn visit_map<V>(self, mut visitor: V) -> Result<TransactionOutputs, V::Error> where V: MapVisitor {
-				let mut outputs: Vec<TransactionOutput> = Vec::with_capacity(visitor.size_hint().0);
+			fn visit_map<V>(self, mut visitor: V) -> Result<TransactionOutputs, V::Error> where V: MapAccess<'b> {
+				let mut outputs: Vec<TransactionOutput> = Vec::with_capacity(visitor.size_hint().unwrap_or(0));
 
-				while let Some(key) = try!(visitor.visit_key::<String>()) {
+				while let Some(key) = try!(visitor.next_key::<String>()) {
 					if &key == "data" {
-						let value: Bytes = try!(visitor.visit_value());
+						let value: Bytes = try!(visitor.next_value());
 						outputs.push(TransactionOutput::ScriptData(TransactionOutputWithScriptData {
 							script_data: value,
 						}));
 					} else {
 						let address = try!(Address::deserialize_from_string(&key, &"an address"));
-						let amount: f64 = try!(visitor.visit_value());
+						let amount: f64 = try!(visitor.next_value());
 						outputs.push(TransactionOutput::Address(TransactionOutputWithAddress {
 							address: address,
 							amount: amount,
@@ -215,7 +215,7 @@ impl Deserialize for TransactionOutputs {
 			}
 		}
 
-		deserializer.deserialize(TransactionOutputsVisitor)
+		deserializer.deserialize_identifier(TransactionOutputsVisitor)
 	}
 }
 

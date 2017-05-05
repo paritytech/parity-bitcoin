@@ -45,13 +45,13 @@ impl Serialize for ScriptType {
 	}
 }
 
-impl Deserialize for ScriptType {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer {
+impl<'a> Deserialize<'a> for ScriptType {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'a> {
 		use serde::de::Visitor;
 
 		struct ScriptTypeVisitor;
 
-		impl Visitor for ScriptTypeVisitor {
+		impl<'b> Visitor<'b> for ScriptTypeVisitor {
 			type Value = ScriptType;
 
 			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -73,7 +73,7 @@ impl Deserialize for ScriptType {
 			}
 		}
 
-		deserializer.deserialize(ScriptTypeVisitor)
+		deserializer.deserialize_identifier(ScriptTypeVisitor)
 	}
 }
 

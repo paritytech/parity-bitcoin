@@ -10,13 +10,13 @@ pub enum AddNodeOperation {
 	OneTry,
 }
 
-impl Deserialize for AddNodeOperation {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer {
+impl<'a> Deserialize<'a> for AddNodeOperation {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'a> {
 		use serde::de::Visitor;
 
 		struct DummyVisitor;
 
-		impl Visitor for DummyVisitor {
+		impl<'b> Visitor<'b> for DummyVisitor {
 			type Value = AddNodeOperation;
 
 			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -33,7 +33,7 @@ impl Deserialize for AddNodeOperation {
 			}
 		}
 
-		deserializer.deserialize(DummyVisitor)
+		deserializer.deserialize_identifier(DummyVisitor)
 	}
 }
 

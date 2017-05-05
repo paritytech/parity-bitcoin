@@ -1,7 +1,8 @@
 #![cfg_attr(asm_available, feature(asm))]
 
 extern crate byteorder;
-#[macro_use] extern crate heapsize;
+#[macro_use]
+extern crate heapsize;
 extern crate rustc_serialize;
 pub extern crate bigint;
 

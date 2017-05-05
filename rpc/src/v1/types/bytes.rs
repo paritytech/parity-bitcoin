@@ -1,6 +1,6 @@
 ///! Serializable wrapper around vector of bytes
 use std::{ops, fmt};
-use rustc_serialize::hex::{ToHex, FromHex};
+use hex::{ToHex, FromHex};
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use serde::de::{Visitor, Error};
 use primitives::bytes::Bytes as GlobalBytes;
@@ -42,16 +42,16 @@ impl Serialize for Bytes {
 	}
 }
 
-impl Deserialize for Bytes {
+impl<'a> Deserialize<'a> for Bytes {
 	fn deserialize<D>(deserializer: D) -> Result<Bytes, D::Error>
-	where D: Deserializer {
-		deserializer.deserialize(BytesVisitor)
+	where D: Deserializer<'a> {
+		deserializer.deserialize_identifier(BytesVisitor)
 	}
 }
 
 struct BytesVisitor;
 
-impl Visitor for BytesVisitor {
+impl<'a> Visitor<'a> for BytesVisitor {
 	type Value = Bytes;
 
 	fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -83,7 +83,7 @@ impl ops::Deref for Bytes {
 mod tests {
 	use super::*;
 	use serde_json;
-	use rustc_serialize::hex::FromHex;
+	use hex::FromHex;
 
 	#[test]
 	fn test_bytes_serialize() {
