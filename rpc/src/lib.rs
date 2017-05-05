@@ -25,6 +25,8 @@ extern crate keys;
 pub mod v1;
 pub mod rpc_server;
 
+pub use rustc_serialize::hex;
+
 pub use jsonrpc_core::{MetaIoHandler, Compatibility};
 pub use jsonrpc_http_server::tokio_core::reactor::{Remote};
 

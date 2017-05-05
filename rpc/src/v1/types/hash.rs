@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use serde;
 use serde::de::Unexpected;
-use rustc_serialize::hex::{ToHex, FromHex};
+use hex::{ToHex, FromHex};
 use primitives::hash::H256 as GlobalH256;
 use primitives::hash::H160 as GlobalH160;
 
@@ -94,11 +94,11 @@ macro_rules! impl_hash {
 			}
 		}
 
-		impl serde::Deserialize for $name {
-			fn deserialize<D>(deserializer: D) -> Result<$name, D::Error> where D: serde::Deserializer {
+		impl<'a> serde::Deserialize<'a> for $name {
+			fn deserialize<D>(deserializer: D) -> Result<$name, D::Error> where D: serde::Deserializer<'a> {
 				struct HashVisitor;
 
-				impl serde::de::Visitor for HashVisitor {
+				impl<'b> serde::de::Visitor<'b> for HashVisitor {
 					type Value = $name;
 
 					fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -127,7 +127,7 @@ macro_rules! impl_hash {
 					}
 				}
 
-				deserializer.deserialize(HashVisitor)
+				deserializer.deserialize_identifier(HashVisitor)
 			}
 		}
 	}

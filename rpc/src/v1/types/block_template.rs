@@ -113,7 +113,7 @@ mod tests {
 	use serde_json;
 	use super::super::hash::H256;
 	use super::super::bytes::Bytes;
-	use rustc_serialize::hex::FromHex;
+	use hex::FromHex;
 	use super::*;
 
 	#[test]

@@ -7,11 +7,11 @@ authors = ["Ethcore <admin@ethcore.io>"]
 
 [dependencies]
 log = "0.3"
-serde = "0.9"
-serde_json = "0.9"
+serde = "1.0"
+serde_json = "1.0"
+serde_derive = "1.0"
 rustc-serialize = "0.3"
 tokio-core = "0.1.1"
-serde_derive = "0.9"
 jsonrpc-core = { git = "https://github.com/ethcore/jsonrpc.git" }
 jsonrpc-macros = { git = "https://github.com/ethcore/jsonrpc.git" }
 jsonrpc-http-server = { git = "https://github.com/ethcore/jsonrpc.git" }

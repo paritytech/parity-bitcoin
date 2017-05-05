@@ -38,11 +38,11 @@ impl Serialize for Address {
 	}
 }
 
-impl Deserialize for Address {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer {
+impl<'a> Deserialize<'a> for Address {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'a> {
 		struct AddressVisitor;
 
-		impl Visitor for AddressVisitor {
+		impl<'b> Visitor<'b> for AddressVisitor {
 			type Value = Address;
 
 			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -54,7 +54,7 @@ impl Deserialize for Address {
 			}
 		}
 
-		deserializer.deserialize(AddressVisitor)
+		deserializer.deserialize_identifier(AddressVisitor)
 	}
 }
 

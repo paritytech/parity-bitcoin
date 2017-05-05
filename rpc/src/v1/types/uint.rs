@@ -39,11 +39,11 @@ macro_rules! impl_uint {
 			}
 		}
 
-		impl serde::Deserialize for $name {
-			fn deserialize<D>(deserializer: D) -> Result<$name, D::Error> where D: serde::Deserializer {
+		impl<'a> serde::Deserialize<'a> for $name {
+			fn deserialize<D>(deserializer: D) -> Result<$name, D::Error> where D: serde::Deserializer<'a> {
 				struct UintVisitor;
 
-				impl serde::de::Visitor for UintVisitor {
+				impl<'b> serde::de::Visitor<'b> for UintVisitor {
 					type Value = $name;
 
 					fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -63,7 +63,7 @@ macro_rules! impl_uint {
 					}
 				}
 
-				deserializer.deserialize(UintVisitor)
+				deserializer.deserialize_identifier(UintVisitor)
 			}
 		}
 	}
