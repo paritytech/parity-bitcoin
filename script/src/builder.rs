@@ -31,6 +31,14 @@ impl Builder {
 			.into_script()
 	}
 
+	/// Builds op_return script
+	pub fn build_nulldata(bytes: &[u8]) -> Script {
+		Builder::default()
+			.push_opcode(Opcode::OP_RETURN)
+			.push_bytes(bytes)
+			.into_script()
+	}
+
 	/// Pushes opcode to the end of script
 	pub fn push_opcode(mut self, opcode: Opcode) -> Self {
 		self.data.push(opcode as u8);
