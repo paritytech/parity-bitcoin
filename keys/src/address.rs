@@ -28,7 +28,7 @@ pub enum Type {
 }
 
 /// `AddressHash` with network identifier and format type
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Address {
 	/// The type of the address.
 	pub kind: Type,

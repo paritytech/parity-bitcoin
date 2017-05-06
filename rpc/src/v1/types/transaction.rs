@@ -1,7 +1,8 @@
 use std::fmt;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use serde::ser::SerializeMap;
-use super::address::Address;
+use keys::Address;
+use v1::types;
 use super::bytes::Bytes;
 use super::hash::H256;
 use super::script::ScriptType;
@@ -75,6 +76,7 @@ pub struct TransactionOutputScript {
 	#[serde(rename = "type")]
 	pub script_type: ScriptType,
 	/// Array of bitcoin addresses
+	#[serde(with = "types::address::vec")]
 	pub addresses: Vec<Address>,
 }
 
@@ -166,7 +168,7 @@ impl Serialize for TransactionOutputs {
 		for output in &self.outputs {
 			match output {
 				&TransactionOutput::Address(ref address_output) => {
-					state.serialize_entry(&address_output.address, &address_output.amount)?;
+					state.serialize_entry(&address_output.address.to_string(), &address_output.amount)?;
 				},
 				&TransactionOutput::ScriptData(ref script_output) => {
 					state.serialize_entry("data", &script_output.script_data)?;
@@ -200,7 +202,7 @@ impl<'a> Deserialize<'a> for TransactionOutputs {
 							script_data: value,
 						}));
 					} else {
-						let address = try!(Address::deserialize_from_string(&key, &"an address"));
+						let address = types::address::AddressVisitor::default().visit_str(&key)?;
 						let amount: f64 = try!(visitor.next_value());
 						outputs.push(TransactionOutput::Address(TransactionOutputWithAddress {
 							address: address,

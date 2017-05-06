@@ -1,4 +1,4 @@
-mod address;
+pub mod address;
 mod block;
 mod block_template;
 mod block_template_request;
@@ -12,7 +12,6 @@ mod transaction;
 mod uint;
 mod nodes;
 
-pub use self::address::Address;
 pub use self::block::RawBlock;
 pub use self::block_template::{BlockTemplate, BlockTemplateTransaction};
 pub use self::block_template_request::{BlockTemplateRequest, BlockTemplateRequestMode};

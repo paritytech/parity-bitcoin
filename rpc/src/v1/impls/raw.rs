@@ -55,9 +55,9 @@ impl RawClientCore {
 			.map(|output| match output {
 					TransactionOutput::Address(with_address) => {
 						let amount_in_satoshis = (with_address.amount * (chain::constants::SATOSHIS_IN_COIN as f64)) as u64;
-						let script = match (*with_address.address).kind {
-							keys::Type::P2PKH => ScriptBuilder::build_p2pkh(&(*with_address.address).hash),
-							keys::Type::P2SH => ScriptBuilder::build_p2sh(&(*with_address.address).hash),
+						let script = match with_address.address.kind {
+							keys::Type::P2PKH => ScriptBuilder::build_p2pkh(&with_address.address.hash),
+							keys::Type::P2SH => ScriptBuilder::build_p2sh(&with_address.address.hash),
 						};
 
 						chain::TransactionOutput {
