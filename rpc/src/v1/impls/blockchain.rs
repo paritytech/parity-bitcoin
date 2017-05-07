@@ -4,7 +4,7 @@ use v1::types::{GetTxOutResponse, TransactionOutputScript};
 use v1::types::GetTxOutSetInfoResponse;
 use v1::types::H256;
 use v1::types::U256;
-use v1::types::Address;
+use keys::{self, Address};
 use v1::helpers::errors::{block_not_found, block_at_height_not_found, transaction_not_found,
 	transaction_output_not_found, transaction_of_side_branch};
 use jsonrpc_macros::Trailing;
@@ -146,7 +146,16 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 				hex: script_bytes.clone().into(),
 				req_sigs: script.num_signatures_required() as u32,
 				script_type: script.script_type().into(),
-				addresses: script_addresses.into_iter().map(|a| Address::new(self.network, a)).collect(),
+				addresses: script_addresses.into_iter().map(|a| Address {
+					network: match self.network {
+						Magic::Mainnet => keys::Network::Mainnet,
+						// there's no correct choices for Regtests && Other networks
+						// => let's just make Testnet key
+						_ => keys::Network::Testnet,
+					},
+					hash: a.hash,
+					kind: a.kind,
+				}).collect(),
 			},
 			version: transaction.version,
 			coinbase: transaction.is_coinbase(),
