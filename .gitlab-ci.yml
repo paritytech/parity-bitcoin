@@ -1,4 +1,5 @@
 stages:
+  - test
   - build
 variables:
   GIT_DEPTH: "3"
@@ -9,6 +10,54 @@ variables:
 cache:
   key: "$CI_BUILD_STAGE/$CI_BUILD_REF_NAME"
   untracked: true
+linux-stable-test:
+  stage: test
+  image: parity/rust:gitlab-ci
+  only:
+    - beta
+    - tags
+    - stable
+    - triggers
+    - master
+  script:
+    - rustup default stable
+    - echo 'Running tests from /tools/test.sh' && echo -en 'gitlab_fold:start:tests'
+    - ./tools/test.sh
+    - echo -en 'gitlab_fold:end:tests'
+  tags:
+    - rust
+linux-beta-test:
+  stage: test
+  image: parity/rust:gitlab-ci
+  only:
+    - beta
+    - tags
+    - stable
+    - triggers
+    - master
+  script:
+    - rustup default beta
+    - echo 'Running check'
+    - cargo check -j $(nproc)
+    - echo 'End check'
+  tags:
+    - rust
+linux-nigthly-test:
+  stage: test
+  image: parity/rust:gitlab-ci
+  only:
+    - beta
+    - tags
+    - stable
+    - triggers
+    - master
+  script:
+    - rustup default beta
+    - echo 'Running check'
+    - cargo check -j $(nproc)
+    - echo 'End check'
+  tags:
+    - rust
 linux-stable:
   stage: build
   image: parity/rust:gitlab-ci
@@ -20,15 +69,12 @@ linux-stable:
     - master
   script:
     - git submodule update --init
-    - echo 'Running tests from /tools/test.sh' && echo -en 'gitlab_fold:start:tests'
-    - ./tools/test.sh
-    - echo -en 'gitlab_fold:end:tests'
     - echo 'Building in release mode' && echo -en 'gitlab_fold:start:build.release'
     - rustup default stable
     - cargo build -j $(nproc) -p pbtc --release
     - strip target/release/pbtc
     #- export SHA3=$(target/release/pbtc tools hash target/release/pbtc)
-    #- md5sum target/release/pbtc > pbtc.md5
+    - md5sum target/release/pbtc > pbtc.md5
     - echo -en 'cargo_fold:end:build.release'
     - echo 'Running regtests from ./tools/compare-tool/pull-tests-be0eef7.jar' && echo -en 'cargo_fold:start:regtests'
     - ./tools/regtests.sh
@@ -41,7 +87,7 @@ linux-stable:
   artifacts:
     paths:
     - target/release/pbtc
-    #- target/release/pbtc.md5
+    - target/release/pbtc.md5
     name: "stable-x86_64-unknown-linux-gnu_parity_bitcoin"
 docker-build:
   stage: build
