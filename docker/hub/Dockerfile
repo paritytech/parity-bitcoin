@@ -30,7 +30,7 @@ RUN apt-get update && \
 	git pull&& \
 	git checkout $BUILD_TAG && \
         cargo build --verbose --release && \
-        strip /build/parity/target/release/pbtc && \
+        strip /build/parity-bitcoin/target/release/pbtc && \
  file /build/parity-bitcoin/target/release/pbtc&&mkdir -p /pbtc-ubuntu&& \
  cp /build/parity-bitcoin/target/release/pbtc /pbtc-ubuntu/pbtc-ubuntu&& \
 #cleanup Docker image
