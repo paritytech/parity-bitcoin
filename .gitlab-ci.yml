@@ -26,8 +26,8 @@ linux-stable:
     - rustup default stable
     - cargo build -j $(nproc) -p pbtc --release
     - strip target/release/pbtc
-    - export SHA3=$(target/release/pbtc tools hash target/release/pbtc)
-    - md5sum target/release/pbtc > pbtc.md5
+    #- export SHA3=$(target/release/pbtc tools hash target/release/pbtc)
+    #- md5sum target/release/pbtc > pbtc.md5
     - echo -en 'cargo_fold:end:build.release'
     - echo 'Running regtests from ./tools/compare-tool/pull-tests-be0eef7.jar' && echo -en 'cargo_fold:start:regtests'
     - ./tools/regtests.sh
@@ -37,7 +37,7 @@ linux-stable:
   artifacts:
     paths:
     - target/release/pbtc
-    - target/release/pbtc.md5
+    #- target/release/pbtc.md5
     name: "stable-x86_64-unknown-linux-gnu_parity_bitcoin"
 docker-build:
   stage: build
