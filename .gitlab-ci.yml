@@ -19,6 +19,10 @@ linux-stable:
     - triggers
     - master
   script:
+    - echo 'Running tests from /tools/test.sh' && echo -en 'gitlab_fold:start:tests'
+    - ./tools/test.sh
+    - echo -en 'gitlab_fold:end:tests'
+    - echo 'Building in release mode' && echo -en 'gitlab_fold:start:build.release'
     - rustup default stable
     - cargo build -j $(nproc) -p pbtc --release
     - strip target/release/pbtc
