@@ -19,6 +19,7 @@ linux-stable:
     - triggers
     - master
   script:
+    - git submodule update --init
     - echo 'Running tests from /tools/test.sh' && echo -en 'gitlab_fold:start:tests'
     - ./tools/test.sh
     - echo -en 'gitlab_fold:end:tests'
@@ -32,6 +33,9 @@ linux-stable:
     - echo 'Running regtests from ./tools/compare-tool/pull-tests-be0eef7.jar' && echo -en 'cargo_fold:start:regtests'
     - ./tools/regtests.sh
     - echo -en 'cargo_fold:end:regtests'
+    - echo 'Running bench from /benhcer' && echo -en 'gitlab_fold:start:bench'
+    - ./tools/bench.sh
+    - echo -en 'gitlab_fold:end:bench'
   tags:
     - rust
   artifacts:
