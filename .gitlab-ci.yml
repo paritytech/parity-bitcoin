@@ -42,7 +42,8 @@ linux-beta-test:
     - echo 'End check'
   tags:
     - rust
-linux-nigthly-test:
+  allow_failure: true
+linux-nightly-test:
   stage: test
   image: parity/rust:gitlab-ci
   only:
@@ -52,12 +53,13 @@ linux-nigthly-test:
     - triggers
     - master
   script:
-    - rustup default nigthly
+    - rustup default nightly
     - echo 'Running check'
     - cargo check -j $(nproc)
     - echo 'End check'
   tags:
     - rust
+  allow_failure: true
 linux-stable:
   stage: build
   image: parity/rust:gitlab-ci
