@@ -14,6 +14,7 @@ RUN apt-get update && \
         git \
         file \
         binutils \
+        openssl \
         libssl-dev \
         pkg-config \
         libudev-dev && \
