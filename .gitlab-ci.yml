@@ -28,6 +28,10 @@ linux-stable:
     - strip target/release/pbtc
     - export SHA3=$(target/release/pbtc tools hash target/release/pbtc)
     - md5sum target/release/pbtc > pbtc.md5
+    - echo -en 'cargo_fold:end:build.release'
+    - echo 'Running regtests from ./tools/compare-tool/pull-tests-be0eef7.jar' && echo -en 'cargo_fold:start:regtests'
+    - ./tools/regtests.sh
+    - echo -en 'cargo_fold:end:regtests'
   tags:
     - rust
   artifacts:
