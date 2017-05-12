@@ -21,11 +21,6 @@ RUN apt-get update && \
  curl https://sh.rustup.rs -sSf | sh -s -- -y && \
 # rustup directory
  PATH=/root/.cargo/bin:$PATH && \
- # show tools
- rustc -vV && \
- cargo -V && \
- gcc -v && \
- g++ -v && \
 # show backtraces
  RUST_BACKTRACE=1 && \
 # build pbtc-ubuntu
