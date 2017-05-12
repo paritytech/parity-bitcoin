@@ -21,11 +21,15 @@ linux-stable:
   script:
     - rustup default stable
     - cargo build -j $(nproc) -p pbtc --release
+    - strip target/release/pbtc
+    - export SHA3=$(target/release/pbtc tools hash target/release/pbtc)
+    - md5sum target/release/pbtc > pbtc.md5
   tags:
     - rust
   artifacts:
     paths:
     - target/release/pbtc
+    - target/release/pbtc.md5
     name: "stable-x86_64-unknown-linux-gnu_parity_bitcoin"
 docker-build:
   stage: build
