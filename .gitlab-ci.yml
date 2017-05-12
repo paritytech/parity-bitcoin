@@ -19,6 +19,7 @@ linux-stable:
     - triggers
     - master
   script:
+    - git submodule update --init
     - echo 'Running tests from /tools/test.sh' && echo -en 'gitlab_fold:start:tests'
     - ./tools/test.sh
     - echo -en 'gitlab_fold:end:tests'
