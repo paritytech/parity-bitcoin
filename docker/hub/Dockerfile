@@ -31,8 +31,8 @@ RUN apt-get update && \
 	git checkout $BUILD_TAG && \
         cargo build --verbose --release && \
         strip /build/parity/target/release/pbtc && \
- file /build/parity/target/release/pbtc&&mkdir -p /pbtc-ubuntu&& \
- cp /build/parity/target/release/pbtc /pbtc-ubuntu/pbtc-ubuntu&& \
+ file /build/parity-bitcoin/target/release/pbtc&&mkdir -p /pbtc-ubuntu&& \
+ cp /build/parity-bitcoin/target/release/pbtc /pbtc-ubuntu/pbtc-ubuntu&& \
 #cleanup Docker image
  rm -rf /root/.cargo&&rm -rf /root/.multirust&&rm -rf /root/.rustup&&rm -rf /build&&\
  apt-get purge -y  \
