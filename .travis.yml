@@ -42,7 +42,7 @@ after_success: |
   [ $TRAVIS_BRANCH = master ] &&
   [ $TRAVIS_PULL_REQUEST = false ] &&
   [ $TRAVIS_RUST_VERSION = stable ] &&
-  cargo doc &&
+  ./tools/doc.sh &&
   echo '<meta http-equiv=refresh content=0;url=pbtc/index.html>' > target/doc/index.html &&
   pip install --user ghp-import &&
   /home/travis/.local/bin/ghp-import -n target/doc &&
