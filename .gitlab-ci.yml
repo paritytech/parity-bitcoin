@@ -1,1 +1,121 @@
-
+stages:
+  - test
+  - build
+variables:
+  GIT_DEPTH: "3"
+  SIMPLECOV: "true"
+  RUST_BACKTRACE: "1"
+  RUSTFLAGS: ""
+  CARGOFLAGS: ""
+cache:
+  key: "$CI_BUILD_STAGE/$CI_BUILD_REF_NAME"
+  untracked: true
+linux-stable-test:
+  stage: test
+  image: parity/rust:gitlab-ci
+  only:
+    - beta
+    - tags
+    - stable
+    - triggers
+    - master
+  script:
+    - rustup default stable
+    - echo 'Running tests from /tools/test.sh' && echo -en 'gitlab_fold:start:tests'
+    - ./tools/test.sh
+    - echo -en 'gitlab_fold:end:tests'
+  tags:
+    - rust
+linux-beta-test:
+  stage: test
+  image: parity/rust:gitlab-ci
+  only:
+    - beta
+    - tags
+    - stable
+    - triggers
+    - master
+  script:
+    - rustup default beta
+    - echo 'Running check'
+    - cargo check -j $(nproc)
+    - echo 'End check'
+  tags:
+    - rust
+  allow_failure: true
+linux-nightly-test:
+  stage: test
+  image: parity/rust:gitlab-ci
+  only:
+    - beta
+    - tags
+    - stable
+    - triggers
+    - master
+  script:
+    - rustup default nightly
+    - echo 'Running check'
+    - cargo check -j $(nproc)
+    - echo 'End check'
+  tags:
+    - rust
+  allow_failure: true
+linux-stable:
+  stage: build
+  image: parity/rust:gitlab-ci
+  only:
+    - beta
+    - tags
+    - stable
+    - triggers
+    - master
+  script:
+    - git submodule update --init
+    - echo 'Building in release mode' && echo -en 'gitlab_fold:start:build.release'
+    - rustup default stable
+    - cargo build -j $(nproc) -p pbtc --release
+    - strip target/release/pbtc
+    #- export SHA3=$(target/release/pbtc tools hash target/release/pbtc)
+    - md5sum target/release/pbtc > pbtc.md5
+    - echo -en 'gitlab_fold:end:build.release'
+    - echo 'Running regtests from ./tools/compare-tool/pull-tests-be0eef7.jar' && echo -en 'gitlab_fold:start:regtests'
+    - ./tools/regtests.sh
+    - echo -en 'gitlab_fold:end:regtests'
+    - echo 'Running bench from /benhcer' && echo -en 'gitlab_fold:start:bench'
+    - ./tools/bench.sh
+    - echo -en 'gitlab_fold:end:bench'
+    - sh tools/deb_build.sh amd64
+    - cp target/release/pbtc deb/usr/bin/pbtc
+    - export VER=$(grep -m 1 version Cargo.toml | awk '{print $3}' | tr -d '"' | tr -d "\n")
+    - dpkg-deb -b deb "pbtc_"$VER"_amd64.deb"
+    - md5sum "pbtc_"$VER"_amd64.deb" > "pbtc_"$VER"_amd64.deb.md5"
+    - aws configure set aws_access_key_id $s3_key
+    - aws configure set aws_secret_access_key $s3_secret
+    - if [[ $CI_BUILD_REF_NAME =~ ^(master|beta|stable|nightly)$ ]]; then export S3_BUCKET=parity-bitcoin-published; else export S3_BUCKET=parity-bitcoin-builds; fi
+    - aws s3 rm --recursive s3://$S3_BUCKET/$CI_BUILD_REF_NAME/x86_64-unknown-linux-gnu
+    - aws s3api put-object --bucket $S3_BUCKET --key $CI_BUILD_REF_NAME/x86_64-unknown-linux-gnu/pbtc --body target/release/pbtc
+    - aws s3api put-object --bucket $S3_BUCKET --key $CI_BUILD_REF_NAME/x86_64-unknown-linux-gnu/pbtc.md5 --body pbtc.md5
+    - aws s3api put-object --bucket $S3_BUCKET --key $CI_BUILD_REF_NAME/x86_64-unknown-linux-gnu/"pbtc_"$VER"_amd64.deb" --body "pbtc_"$VER"_amd64.deb"
+    - aws s3api put-object --bucket $S3_BUCKET --key $CI_BUILD_REF_NAME/x86_64-unknown-linux-gnu/"pbtc_"$VER"_amd64.deb.md5" --body "pbtc_"$VER"_amd64.deb.md5"
+  tags:
+    - rust
+  artifacts:
+    paths:
+    - target/release/pbtc
+    - pbtc.md5
+    name: "stable-x86_64-unknown-linux-gnu_parity_bitcoin"
+docker-build:
+  stage: build
+  only:
+    - master
+    - tags
+    - triggers
+  before_script:
+    - docker info
+  script:
+    - if [ "$CI_BUILD_REF_NAME" == "beta-release" ]; then DOCKER_TAG="latest"; else DOCKER_TAG=$CI_BUILD_REF_NAME; fi
+    - docker login -u $Docker_Hub_User_Parity -p $Docker_Hub_Pass_Parity
+    - sh tools/docker_build.sh $DOCKER_TAG parity
+    - docker logout
+  tags:
+    - docker
