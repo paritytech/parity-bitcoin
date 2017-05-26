@@ -48,7 +48,7 @@ Windows binaries can be downloaded from [rust-lang website](https://www.rust-lan
 
 #### Install C and C++ compilers
 
-You will need the gcc and cc compilers to build some of the dependencies
+You will need the cc and gcc compilers to build some of the dependencies
 
 ```
 sudo apt-get update
