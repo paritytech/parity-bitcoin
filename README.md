@@ -46,6 +46,15 @@ curl -sSf https://static.rust-lang.org/rustup.sh | sh
 
 Windows binaries can be downloaded from [rust-lang website](https://www.rust-lang.org/en-US/downloads.html).
 
+#### Install C and C++ compilers
+
+You will need the cc and gcc compilers to build some of the dependencies
+
+```
+sudo apt-get update
+sudo apt-get install build-essential
+```
+
 #### Clone and build pbtc
 
 Now let's clone `pbtc` and enter it's directory
