@@ -23,6 +23,7 @@ pub struct BlockChainClient<T: BlockChainClientCoreApi> {
 
 pub trait BlockChainClientCoreApi: Send + Sync + 'static {
 	fn best_block_hash(&self) -> GlobalH256;
+	fn block_count(&self) -> u32;
 	fn block_hash(&self, height: u32) -> Option<GlobalH256>;
 	fn difficulty(&self) -> f64;
 	fn raw_block(&self, hash: GlobalH256) -> Option<RawBlock>;
@@ -48,6 +49,10 @@ impl BlockChainClientCore {
 impl BlockChainClientCoreApi for BlockChainClientCore {
 	fn best_block_hash(&self) -> GlobalH256 {
 		self.storage.best_block().hash
+	}
+
+	fn block_count(&self) -> u32 {
+		self.storage.best_block().number
 	}
 
 	fn block_hash(&self, height: u32) -> Option<GlobalH256> {
@@ -175,6 +180,10 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 	fn best_block_hash(&self) -> Result<H256, Error> {
 		Ok(self.core.best_block_hash().reversed().into())
 	}
+
+    fn block_count(&self) -> Result<u32, Error> {
+        Ok(self.core.block_count())
+    }
 
 	fn block_hash(&self, height: u32) -> Result<H256, Error> {
 		self.core.block_hash(height)

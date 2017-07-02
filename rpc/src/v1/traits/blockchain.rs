@@ -14,6 +14,10 @@ build_rpc_trait! {
 		/// @curl-example: curl --data-binary '{"jsonrpc": "2.0", "method": "getbestblockhash", "params": [], "id":1 }' -H 'content-type: application/json;' http://127.0.0.1:8332/
 		#[rpc(name = "getbestblockhash")]
 		fn best_block_hash(&self) -> Result<H256, Error>;
+		/// Get height of best block.
+		/// @curl-example: curl --data-binary '{"jsonrpc": "2.0", "method": "getblockcount", "params": [], "id":1 }' -H 'content-type: application/json;' http://127.0.0.1:8332/
+		#[rpc(name = "getblockcount")]
+		fn block_count(&self) -> Result<u32, Error>;
 		/// Get hash of block at given height.
 		/// @curl-example: curl --data-binary '{"jsonrpc": "2.0", "method": "getblockhash", "params": [0], "id":1 }' -H 'content-type: application/json;' http://127.0.0.1:8332/
 		#[rpc(name = "getblockhash")]
