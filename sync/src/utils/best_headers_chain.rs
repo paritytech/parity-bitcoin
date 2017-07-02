@@ -73,11 +73,6 @@ impl BestHeadersChain {
 			.expect("storage_best_hash is always known")
 	}
 
-	/// Get height of best block
-	pub fn block_count(&self) -> u32 {
-		self.best.len()
-	}
-
 	/// Insert new block header
 	pub fn insert(&mut self, header: IndexedBlockHeader) {
 		// append to the best chain
