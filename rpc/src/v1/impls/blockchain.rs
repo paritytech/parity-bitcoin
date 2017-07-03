@@ -23,6 +23,7 @@ pub struct BlockChainClient<T: BlockChainClientCoreApi> {
 
 pub trait BlockChainClientCoreApi: Send + Sync + 'static {
 	fn best_block_hash(&self) -> GlobalH256;
+	fn block_count(&self) -> u32;
 	fn block_hash(&self, height: u32) -> Option<GlobalH256>;
 	fn difficulty(&self) -> f64;
 	fn raw_block(&self, hash: GlobalH256) -> Option<RawBlock>;
@@ -48,6 +49,10 @@ impl BlockChainClientCore {
 impl BlockChainClientCoreApi for BlockChainClientCore {
 	fn best_block_hash(&self) -> GlobalH256 {
 		self.storage.best_block().hash
+	}
+
+	fn block_count(&self) -> u32 {
+		self.storage.best_block().number
 	}
 
 	fn block_hash(&self, height: u32) -> Option<GlobalH256> {
@@ -176,6 +181,10 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 		Ok(self.core.best_block_hash().reversed().into())
 	}
 
+    fn block_count(&self) -> Result<u32, Error> {
+        Ok(self.core.block_count())
+    }
+
 	fn block_hash(&self, height: u32) -> Result<H256, Error> {
 		self.core.block_hash(height)
 			.map(|h| h.reversed().into())
@@ -253,6 +262,10 @@ pub mod tests {
 			test_data::genesis().hash()
 		}
 
+		fn block_count(&self) -> u32 {
+			1
+		}
+
 		fn block_hash(&self, _height: u32) -> Option<GlobalH256> {
 			Some(test_data::genesis().hash())
 		}
@@ -315,6 +328,10 @@ pub mod tests {
 			test_data::genesis().hash()
 		}
 
+		fn block_count(&self) -> u32 {
+			1
+		}
+
 		fn block_hash(&self, _height: u32) -> Option<GlobalH256> {
 			None
 		}
@@ -353,6 +370,23 @@ pub mod tests {
 		// direct hash is 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000
 		// but client expects reverse hash
 		assert_eq!(&sample, r#"{"jsonrpc":"2.0","result":"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f","id":1}"#);
+	}
+
+	#[test]
+	fn block_count_success() {
+		let client = BlockChainClient::new(SuccessBlockChainClientCore::default());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
+
+		let sample = handler.handle_request_sync(&(r#"
+			{
+				"jsonrpc": "2.0",
+				"method": "getblockcount",
+				"params": [],
+				"id": 1
+			}"#)).unwrap();
+
+		assert_eq!(&sample, r#"{"jsonrpc":"2.0","result":1,"id":1}"#);
 	}
 
 	#[test]
