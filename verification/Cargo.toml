@@ -6,7 +6,7 @@ authors = ["Nikolay Volf <nikvolf@gmail.com>"]
 [dependencies]
 time = "0.1"
 log = "0.3"
-rayon = "0.6"
+rayon = "0.7"
 parking_lot = "0.4"
 primitives = { path = "../primitives" }
 chain = { path = "../chain"  }

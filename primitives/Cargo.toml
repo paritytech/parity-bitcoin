@@ -2,13 +2,9 @@
 name = "primitives"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
-build = "build.rs"
 
 [dependencies]
 heapsize = "0.3"
 rustc-serialize = "0.3"
 byteorder = "1.0"
 bigint = "1.0"
-
-[build-dependencies]
-rustc_version = "0.1"
