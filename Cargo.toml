@@ -45,4 +45,4 @@ path = "pbtc/main.rs"
 name = "pbtc"
 
 [workspace]
-members = ["bencher"]
+members = ["bencher", "serialization_derive"]
