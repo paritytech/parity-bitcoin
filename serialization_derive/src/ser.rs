@@ -1,20 +1,20 @@
 use {syn, quote};
 
-pub fn impl_raw_serialize(ast: &syn::DeriveInput) -> quote::Tokens {
+pub fn impl_serializable(ast: &syn::DeriveInput) -> quote::Tokens {
 	let body = match ast.body {
 		syn::Body::Struct(ref s) => s,
-		_ => panic!("#[derive(RawSerialize)] is only defined for structs."),
+		_ => panic!("#[derive(Serializable)] is only defined for structs."),
 	};
 
 	let stmts: Vec<_> = match *body {
 		syn::VariantData::Struct(ref fields) => fields.iter().enumerate().map(serialize_field_map).collect(),
 		syn::VariantData::Tuple(ref fields) => fields.iter().enumerate().map(serialize_field_map).collect(),
-		syn::VariantData::Unit => panic!("#[derive(RawSerialize)] is not defined for Unit structs."),
+		syn::VariantData::Unit => panic!("#[derive(Serializable)] is not defined for Unit structs."),
 	};
 
 	let name = &ast.ident;
 
-	let dummy_const = syn::Ident::new(format!("_IMPL_RAW_SERIALIZE_FOR_{}", name));
+	let dummy_const = syn::Ident::new(format!("_IMPL_SERIALIZABLE_FOR_{}", name));
 	let impl_block = quote! {
 		impl serialization::Serializable for #name {
 			fn serialize(&self, stream: &mut serialization::Stream) {

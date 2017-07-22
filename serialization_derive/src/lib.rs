@@ -7,22 +7,22 @@ mod ser;
 mod de;
 
 use proc_macro::TokenStream;
-use ser::impl_raw_serialize;
-use de::impl_raw_deserialize;
+use ser::impl_serializable;
+use de::impl_deserializable;
 
-#[proc_macro_derive(RawSerialize)]
+#[proc_macro_derive(Serializable)]
 pub fn raw_serialize(input: TokenStream) -> TokenStream {
 	let s = input.to_string();
 	let ast = syn::parse_derive_input(&s).unwrap();
-	let gen = impl_raw_serialize(&ast);
+	let gen = impl_serializable(&ast);
 	gen.parse().unwrap()
 }
 
-#[proc_macro_derive(RawDeserialize)]
-pub fn raw_deserialize(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(Deserializable)]
+pub fn deserializable(input: TokenStream) -> TokenStream {
 	let s = input.to_string();
 	let ast = syn::parse_derive_input(&s).unwrap();
-	let gen = impl_raw_deserialize(&ast);
+	let gen = impl_deserializable(&ast);
 	gen.parse().unwrap()
 }
 

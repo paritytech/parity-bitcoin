@@ -4,7 +4,7 @@ extern crate serialization_derive;
 
 use serialization::{serialize, deserialize};
 
-#[derive(Debug, PartialEq, RawSerialize, RawDeserialize)]
+#[derive(Debug, PartialEq, Serializable, Deserializable)]
 struct Foo {
 	a: u8,
 	b: u16,
@@ -12,7 +12,7 @@ struct Foo {
 	d: u64,
 }
 
-#[derive(Debug, PartialEq, RawSerialize, RawDeserialize)]
+#[derive(Debug, PartialEq, Serializable, Deserializable)]
 struct Bar {
 	a: Vec<Foo>,
 }
