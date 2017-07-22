@@ -50,15 +50,14 @@ fn deserialize_field(index: usize, field: &syn::Field) -> quote::Tokens {
 	let id = syn::Ident::new(ident.to_string());
 
 	match field.ty {
-		syn::Ty::Array(_, _) => quote! { #id: reader.read_list()?, },
-		syn::Ty::Slice(_) => quote! { #id: reader.read_list()?, },
 		syn::Ty::Path(_, ref path) => {
 			let ident = &path.segments.first().expect("there must be at least 1 segment").ident;
-			match &ident.to_string() as &str {
-				"Vec" => quote! { #id: reader.read_list()?, },
-				_ => quote! { #id: reader.read()?, },
+			if &ident.to_string() == "Vec" {
+				quote! { #id: reader.read_list()?, }
+			} else {
+				quote! { #id: reader.read()?, }
 			}
 		},
-		_ => quote! { #id: reader.read()?, },
+		_ => panic!("serialization not supported"),
 	}
 }

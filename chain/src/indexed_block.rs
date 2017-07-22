@@ -1,17 +1,14 @@
-use std::{io, cmp};
+use std::cmp;
 use hash::H256;
 use hex::FromHex;
-use ser::{
-	Serializable, serialized_list_size,
-	Deserializable, Reader, Error as ReaderError, deserialize
-};
+use ser::{Serializable, serialized_list_size, deserialize};
 use block::Block;
 use transaction::Transaction;
 use merkle_root::merkle_root;
 use indexed_header::IndexedBlockHeader;
 use indexed_transaction::IndexedTransaction;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserializable)]
 pub struct IndexedBlock {
 	pub header: IndexedBlockHeader,
 	pub transactions: Vec<IndexedTransaction>,
@@ -63,17 +60,6 @@ impl IndexedBlock {
 
 	pub fn is_final(&self, height: u32) -> bool {
 		self.transactions.iter().all(|tx| tx.raw.is_final_in_block(height, self.header.raw.time))
-	}
-}
-
-impl Deserializable for IndexedBlock {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let block = IndexedBlock {
-			header: try!(reader.read()),
-			transactions: try!(reader.read_list()),
-		};
-
-		Ok(block)
 	}
 }
 
