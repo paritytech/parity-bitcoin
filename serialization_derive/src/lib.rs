@@ -11,7 +11,7 @@ use ser::impl_serializable;
 use de::impl_deserializable;
 
 #[proc_macro_derive(Serializable)]
-pub fn raw_serialize(input: TokenStream) -> TokenStream {
+pub fn serializable(input: TokenStream) -> TokenStream {
 	let s = input.to_string();
 	let ast = syn::parse_derive_input(&s).unwrap();
 	let gen = impl_serializable(&ast);
