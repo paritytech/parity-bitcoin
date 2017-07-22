@@ -1,10 +1,9 @@
-use std::{str, fmt, io};
+use std::{str, fmt};
 use std::ascii::AsciiExt;
 use hash::H96;
-use ser::{Serializable, Stream, Deserializable, Reader, Error as ReaderError};
 use Error;
 
-#[derive(Debug, PartialEq, Clone, Hash, Eq)]
+#[derive(Debug, PartialEq, Clone, Hash, Eq, Serializable, Deserializable)]
 pub struct Command(H96);
 
 impl str::FromStr for Command {
@@ -51,18 +50,6 @@ impl From<Command> for String {
 impl fmt::Display for Command {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		f.write_str(&self.as_string())
-	}
-}
-
-impl Serializable for Command {
-	fn serialize(&self, stream: &mut Stream) {
-		stream.append(&self.0);
-	}
-}
-
-impl Deserializable for Command {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		reader.read().map(Command)
 	}
 }
 

@@ -1,46 +1,18 @@
 //! Bitcoin trainsaction.
 //! https://en.bitcoin.it/wiki/Protocol_documentation#tx
 
-use std::io;
 use heapsize::HeapSizeOf;
 use hex::FromHex;
 use bytes::Bytes;
-use ser::{
-	Deserializable, Reader, Error as ReaderError, deserialize,
-	Serializable, Stream, serialize, serialized_list_size
-};
+use ser::{deserialize, serialize};
 use crypto::dhash256;
 use hash::H256;
 use constants::{SEQUENCE_FINAL, LOCKTIME_THRESHOLD};
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Serializable, Deserializable)]
 pub struct OutPoint {
 	pub hash: H256,
 	pub index: u32,
-}
-
-impl Serializable for OutPoint {
-	fn serialize(&self, stream: &mut Stream) {
-		stream
-			.append(&self.hash)
-			.append(&self.index);
-	}
-
-	#[inline]
-	fn serialized_size(&self) -> usize {
-		self.hash.serialized_size() + self.index.serialized_size()
-	}
-}
-
-impl Deserializable for OutPoint {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let result = OutPoint {
-			hash: try!(reader.read()),
-			index: try!(reader.read()),
-		};
-
-		Ok(result)
-	}
 }
 
 impl OutPoint {
@@ -56,7 +28,7 @@ impl OutPoint {
 	}
 }
 
-#[derive(Debug, PartialEq, Default, Clone)]
+#[derive(Debug, PartialEq, Default, Clone, Serializable, Deserializable)]
 pub struct TransactionInput {
 	pub previous_output: OutPoint,
 	pub script_sig: Bytes,
@@ -77,69 +49,16 @@ impl TransactionInput {
 	}
 }
 
-impl Serializable for TransactionInput {
-	fn serialize(&self, stream: &mut Stream) {
-		stream
-			.append(&self.previous_output)
-			.append(&self.script_sig)
-			.append(&self.sequence);
-	}
-
-	#[inline]
-	fn serialized_size(&self) -> usize {
-		self.previous_output.serialized_size() +
-			self.script_sig.serialized_size() +
-			self.sequence.serialized_size()
-	}
-}
-
-impl Deserializable for TransactionInput {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let result = TransactionInput {
-			previous_output: try!(reader.read()),
-			script_sig: try!(reader.read()),
-			sequence: try!(reader.read()),
-		};
-
-		Ok(result)
-	}
-}
-
 impl HeapSizeOf for TransactionInput {
 	fn heap_size_of_children(&self) -> usize {
 		self.script_sig.heap_size_of_children()
 	}
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serializable, Deserializable)]
 pub struct TransactionOutput {
 	pub value: u64,
 	pub script_pubkey: Bytes,
-}
-
-impl Serializable for TransactionOutput {
-	fn serialize(&self, stream: &mut Stream) {
-		stream
-			.append(&self.value)
-			.append(&self.script_pubkey);
-	}
-
-	#[inline]
-	fn serialized_size(&self) -> usize {
-		self.value.serialized_size() +
-			self.script_pubkey.serialized_size()
-	}
-}
-
-impl Deserializable for TransactionOutput {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let result = TransactionOutput {
-			value: try!(reader.read()),
-			script_pubkey: try!(reader.read()),
-		};
-
-		Ok(result)
-	}
 }
 
 impl Default for TransactionOutput {
@@ -157,43 +76,12 @@ impl HeapSizeOf for TransactionOutput {
 	}
 }
 
-#[derive(Debug, PartialEq, Default, Clone)]
+#[derive(Debug, PartialEq, Default, Clone, Serializable, Deserializable)]
 pub struct Transaction {
 	pub version: i32,
 	pub inputs: Vec<TransactionInput>,
 	pub outputs: Vec<TransactionOutput>,
 	pub lock_time: u32,
-}
-
-impl Serializable for Transaction {
-	fn serialize(&self, stream: &mut Stream) {
-		stream
-			.append(&self.version)
-			.append_list(&self.inputs)
-			.append_list(&self.outputs)
-			.append(&self.lock_time);
-	}
-
-	#[inline]
-	fn serialized_size(&self) -> usize {
-		self.version.serialized_size() +
-			serialized_list_size(&self.inputs) +
-			serialized_list_size(&self.outputs) +
-			self.lock_time.serialized_size()
-	}
-}
-
-impl Deserializable for Transaction {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let result = Transaction {
-			version: try!(reader.read()),
-			inputs: try!(reader.read_list()),
-			outputs: try!(reader.read_list()),
-			lock_time: try!(reader.read()),
-		};
-
-		Ok(result)
-	}
 }
 
 impl From<&'static str> for Transaction {
