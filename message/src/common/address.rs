@@ -1,36 +1,12 @@
-use std::io;
 use bytes::Bytes;
-use ser::{
-	Stream, Serializable,
-	Reader, Deserializable, Error as ReaderError, deserialize,
-};
+use ser::deserialize;
 use common::{Port, IpAddress, Services};
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone, Serializable, Deserializable)]
 pub struct NetAddress {
 	pub services: Services,
 	pub address: IpAddress,
 	pub port: Port,
-}
-
-impl Serializable for NetAddress {
-	fn serialize(&self, stream: &mut Stream) {
-		stream
-			.append(&self.services)
-			.append(&self.address)
-			.append(&self.port);
-	}
-}
-
-impl Deserializable for NetAddress {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let net = NetAddress {
-			services: try!(reader.read()),
-			address: try!(reader.read()),
-			port: try!(reader.read()),
-		};
-		Ok(net)
-	}
 }
 
 impl From<&'static str> for NetAddress {

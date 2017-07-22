@@ -518,6 +518,7 @@ dependencies = [
  "network 0.1.0",
  "primitives 0.1.0",
  "serialization 0.1.0",
+ "serialization_derive 0.1.0",
 ]
 
 [[package]]
