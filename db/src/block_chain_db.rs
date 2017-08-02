@@ -26,11 +26,9 @@ use {
 	SideChainOrigin, ForkChain, Forkable, CanonStore
 };
 
-const KEY_VERSION: &'static str = "version";
 const KEY_BEST_BLOCK_NUMBER: &'static str = "best_block_number";
 const KEY_BEST_BLOCK_HASH: &'static str = "best_block_hash";
 
-const DB_VERSION: u32 = 1;
 const MAX_FORK_ROUTE_PRESET: usize = 2048;
 
 pub struct BlockChainDatabase<T> where T: KeyValueDatabase {
