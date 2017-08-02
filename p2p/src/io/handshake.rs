@@ -9,6 +9,7 @@ use io::{write_message, WriteMessage, ReadMessage, read_message};
 pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> Handshake<A> where A: AsyncWrite + AsyncRead {
 	Handshake {
 		version: version.version(),
+		nonce: version.nonce(),
 		state: HandshakeState::SendVersion(write_message(a, version_message(magic, version))),
 		magic: magic,
 		min_version: min_version,
@@ -18,6 +19,7 @@ pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> H
 pub fn accept_handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> AcceptHandshake<A> where A: AsyncWrite + AsyncRead {
 	AcceptHandshake {
 		version: version.version(),
+		nonce: version.nonce(),
 		state: AcceptHandshakeState::ReceiveVersion {
 			local_version: Some(version),
 			future: read_message(a, magic, 0),
@@ -75,6 +77,7 @@ pub struct Handshake<A> {
 	state: HandshakeState<A>,
 	magic: Magic,
 	version: u32,
+	nonce: Option<u64>,
 	min_version: u32,
 }
 
@@ -82,6 +85,7 @@ pub struct AcceptHandshake<A> {
 	state: AcceptHandshakeState<A>,
 	magic: Magic,
 	version: u32,
+	nonce: Option<u64>,
 	min_version: u32,
 }
 
@@ -104,6 +108,11 @@ impl<A> Future for Handshake<A> where A: AsyncRead + AsyncWrite {
 
 				if version.version() < self.min_version {
 					return Ok((stream, Err(Error::InvalidVersion)).into());
+				}
+				if let (Some(self_nonce), Some(nonce)) = (self.nonce, version.nonce()) {
+					if self_nonce == nonce {
+						return Ok((stream, Err(Error::InvalidVersion)).into());
+					}
 				}
 
 				let next = HandshakeState::ReceiveVerack {
@@ -151,6 +160,11 @@ impl<A> Future for AcceptHandshake<A> where A: AsyncRead + AsyncWrite {
 
 				if version.version() < self.min_version {
 					return Ok((stream, Err(Error::InvalidVersion)).into());
+				}
+				if let (Some(self_nonce), Some(nonce)) = (self.nonce, version.nonce()) {
+					if self_nonce == nonce {
+						return Ok((stream, Err(Error::InvalidVersion)).into());
+					}
 				}
 
 				let local_version = local_version.take().expect("local version must be set");
@@ -202,7 +216,7 @@ mod tests {
 	use bytes::Bytes;
 	use ser::Stream;
 	use network::Magic;
-	use message::Message;
+	use message::{Message, Error};
 	use message::types::Verack;
 	use message::types::version::{Version, V0, V106, V70001};
 	use super::{handshake, accept_handshake, HandshakeResult};
@@ -267,7 +281,7 @@ mod tests {
 			// remote address, port
 			// and supported protocols
 			from: "050000000000000000000000000000000000ffff2f5a0808208d".into(),
-			nonce: 0x3c76a409eb48a227,
+			nonce: 0x3c76a409eb48a228,
 			user_agent: "/Satoshi:0.12.1/".into(),
 			start_height: 0,
 		}, V70001 {
@@ -331,5 +345,47 @@ mod tests {
 		let hs = accept_handshake(test_io, magic, local_version, 0).wait().unwrap();
 		assert_eq!(hs.0.write, expected_stream.out());
 		assert_eq!(hs.1.unwrap(), expected);
+	}
+
+	#[test]
+	fn test_self_handshake() {
+		let magic = Magic::Mainnet;
+		let version = 70012;
+		let remote_version = local_version();
+		let local_version = local_version();
+
+		let mut remote_stream = Stream::new();
+		remote_stream.append_slice(Message::new(magic, version, &remote_version).unwrap().as_ref());
+
+		let test_io = TestIo {
+			read: io::Cursor::new(remote_stream.out()),
+			write: Bytes::default(),
+		};
+
+		let expected = Error::InvalidVersion;
+
+		let hs = handshake(test_io, magic, local_version, 0).wait().unwrap();
+		assert_eq!(hs.1.unwrap_err(), expected);
+	}
+
+	#[test]
+	fn test_accept_self_handshake() {
+		let magic = Magic::Mainnet;
+		let version = 70012;
+		let remote_version = local_version();
+		let local_version = local_version();
+
+		let mut remote_stream = Stream::new();
+		remote_stream.append_slice(Message::new(magic, version, &remote_version).unwrap().as_ref());
+
+		let test_io = TestIo {
+			read: io::Cursor::new(remote_stream.out()),
+			write: Bytes::default(),
+		};
+
+		let expected = Error::InvalidVersion;
+
+		let hs = accept_handshake(test_io, magic, local_version, 0).wait().unwrap();
+		assert_eq!(hs.1.unwrap_err(), expected);
 	}
 }
