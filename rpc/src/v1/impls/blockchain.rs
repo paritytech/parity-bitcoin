@@ -197,7 +197,7 @@ impl<T> BlockChain for BlockChainClient<T> where T: BlockChainClientCoreApi {
 
 	fn block(&self, hash: H256, verbose: Trailing<bool>) -> Result<GetBlockResponse, Error> {
 		let global_hash: GlobalH256 = hash.clone().into();
-		if verbose.0 {
+		if verbose.unwrap_or_default() {
 			let verbose_block = self.core.verbose_block(global_hash.reversed());
 			if let Some(mut verbose_block) = verbose_block {
 				verbose_block.previousblockhash = verbose_block.previousblockhash.map(|h| h.reversed());

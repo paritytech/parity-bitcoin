@@ -36,7 +36,7 @@ impl RawClientCore {
 		use global_script::Builder as ScriptBuilder;
 
 		// to make lock_time work at least one input must have sequnce < SEQUENCE_FINAL
-		let lock_time = lock_time.0;
+		let lock_time = lock_time.unwrap_or_default();
 		let default_sequence = if lock_time != 0 { chain::constants::SEQUENCE_FINAL - 1 } else { chain::constants::SEQUENCE_FINAL };
 
 		// prepare inputs
@@ -209,32 +209,6 @@ pub mod tests {
 		).unwrap();
 
 		assert_eq!(r#"{"jsonrpc":"2.0","error":{"code":-32015,"message":"Execution error.","data":"\"error\""},"id":1}"#, &sample);
-	}
-
-	#[test]
-	fn createrawtransaction_contents() {
-		use chain;
-		use primitives::bytes::Bytes as GlobalBytes;
-		use v1::types::{TransactionInput, TransactionOutput, TransactionOutputs, TransactionOutputWithAddress};
-
-		// https://webbtc.com/tx/4dbbc65cf8eff9a04752bf493232e0b82488308f72f2afb497f36bbddada500c
-		let mut original_transaction: chain::Transaction = "0100000001ad9d38823d95f31dc6c0cb0724c11a3cf5a466ca4147254a10cd94aade6eb5b3230000006b483045022100b7683165c3ecd57b0c44bf6a0fb258dc08c328458321c8fadc2b9348d4e66bd502204fd164c58d1a949a4d39bb380f8f05c9f6b3e9417f06bf72e5c068428ca3578601210391c35ac5ee7cf82c5015229dcff89507f83f9b8c952b8fecfa469066c1cb44ccffffffff0170f30500000000001976a914801da3cb2ed9e44540f4b982bde07cd3fbae264288ac00000000".into();
-		// since createrawtransction creates unsigned transaction:
-		original_transaction.inputs[0].script_sig = GlobalBytes::new();
-
-		let inputs = vec![TransactionInput {
-			txid: "b3b56edeaa94cd104a254741ca66a4f53c1ac12407cbc0c61df3953d82389dad".into(),
-			vout: 35,
-			sequence: None,
-		}];
-		let outputs = TransactionOutputs {
-			outputs: vec![TransactionOutput::Address(TransactionOutputWithAddress {
-				address: "1CgQzxyMMrtoDEBJPtFUkZ5zHcZiDSFtC8".into(),
-				amount: 0.00390000,
-			})]
-		};
-		let raw_transaction = RawClientCore::do_create_raw_transaction(inputs, outputs, Trailing(0)).unwrap();
-		assert_eq!(raw_transaction, original_transaction);
 	}
 
 	#[test]
