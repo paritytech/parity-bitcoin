@@ -35,18 +35,19 @@ impl<T> NetworkRpc for NetworkClient<T> where T: NetworkApi {
 	}
 
 	fn node_info(&self, _dns: bool, node_addr: Trailing<String>) -> Result<Vec<NodeInfo>, Error> {
+		let node_addr: Option<String> = node_addr.into();
 		Ok(
-			if node_addr.0.is_empty() {
-				self.api.nodes_info()
-			}
-			else {
-				let addr = try!(node_addr.0.parse().map_err(
-					|_| errors::invalid_params("node", "Invalid ip address format, should be ip address (127.0.0.1)")));
-				let node_info = try!(
-					self.api.node_info(addr)
-						.map_err(|_| errors::node_not_added())
-				);
-				vec![node_info]
+			match node_addr {
+				None => self.api.nodes_info(),
+				Some(node_addr) => {
+					let addr = try!(node_addr.parse().map_err(
+						|_| errors::invalid_params("node", "Invalid ip address format, should be ip address (127.0.0.1)")));
+					let node_info = try!(
+						self.api.node_info(addr)
+							.map_err(|_| errors::node_not_added())
+					);
+					vec![node_info]
+				},
 			}
 		)
 	}

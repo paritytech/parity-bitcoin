@@ -281,10 +281,7 @@ impl BlockAssembler {
 
 #[cfg(test)]
 mod tests {
-	use chain::{IndexedTransaction};
-	use verification::constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
-	use memory_pool::Entry;
-	use super::{SizePolicy, NextStep, FittingTransactionsIterator};
+	use super::{SizePolicy, NextStep};
 
 	#[test]
 	fn test_size_policy() {
