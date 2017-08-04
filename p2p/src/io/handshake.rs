@@ -50,6 +50,10 @@ fn verack_message(magic: Magic) -> Message<Verack> {
 enum HandshakeState<A> {
 	SendVersion(WriteMessage<Version, A>),
 	ReceiveVersion(ReadMessage<Version, A>),
+	SendVerack {
+		version: Option<Version>,
+		future: WriteMessage<Verack, A>,
+	},
 	ReceiveVerack {
 		version: Option<Version>,
 		future: ReadMessage<Verack, A>,
@@ -114,6 +118,18 @@ impl<A> Future for Handshake<A> where A: AsyncRead + AsyncWrite {
 						return Ok((stream, Err(Error::InvalidVersion)).into());
 					}
 				}
+
+				let next = HandshakeState::SendVerack {
+					version: Some(version),
+					future: write_message(stream, verack_message(self.magic)),
+				};
+
+				(next, Async::NotReady)
+			},
+			HandshakeState::SendVerack { ref mut version, ref mut future } => {
+				let (stream, _) = try_ready!(future.poll());
+
+				let version = version.take().expect("verack must be preceded by version");
 
 				let next = HandshakeState::ReceiveVerack {
 					version: Some(version),
@@ -307,6 +323,7 @@ mod tests {
 
 		let mut expected_stream = Stream::new();
 		expected_stream.append_slice(Message::new(magic, version, &local_version).unwrap().as_ref());
+		expected_stream.append_slice(Message::new(magic, version, &Verack).unwrap().as_ref());
 
 		let test_io = TestIo {
 			read: io::Cursor::new(remote_stream.out()),
