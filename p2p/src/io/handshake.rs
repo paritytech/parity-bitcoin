@@ -58,7 +58,6 @@ enum HandshakeState<A> {
 		version: Option<Version>,
 		future: ReadMessage<Verack, A>,
 	},
-	Finished,
 }
 
 enum AcceptHandshakeState<A> {
@@ -74,7 +73,6 @@ enum AcceptHandshakeState<A> {
 		version: Option<Version>,
 		future: WriteMessage<Verack, A>,
 	},
-	Finished,
 }
 
 pub struct Handshake<A> {
@@ -98,65 +96,56 @@ impl<A> Future for Handshake<A> where A: AsyncRead + AsyncWrite {
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-		let (next, result) = match self.state {
-			HandshakeState::SendVersion(ref mut future) => {
-				let (stream, _) = try_ready!(future.poll());
-				(HandshakeState::ReceiveVersion(read_message(stream, self.magic, 0)), Async::NotReady)
-			},
-			HandshakeState::ReceiveVersion(ref mut future) => {
-				let (stream, version) = try_ready!(future.poll());
-				let version = match version {
-					Ok(version) => version,
-					Err(err) => return Ok((stream, Err(err.into())).into()),
-				};
+		loop {
+			let next_state = match self.state {
+				HandshakeState::SendVersion(ref mut future) => {
+					let (stream, _) = try_ready!(future.poll());
+					HandshakeState::ReceiveVersion(read_message(stream, self.magic, 0))
+				},
+				HandshakeState::ReceiveVersion(ref mut future) => {
+					let (stream, version) = try_ready!(future.poll());
+					let version = match version {
+						Ok(version) => version,
+						Err(err) => return Ok((stream, Err(err.into())).into()),
+					};
 
-				if version.version() < self.min_version {
-					return Ok((stream, Err(Error::InvalidVersion)).into());
-				}
-				if let (Some(self_nonce), Some(nonce)) = (self.nonce, version.nonce()) {
-					if self_nonce == nonce {
+					if version.version() < self.min_version {
 						return Ok((stream, Err(Error::InvalidVersion)).into());
 					}
-				}
+					if let (Some(self_nonce), Some(nonce)) = (self.nonce, version.nonce()) {
+						if self_nonce == nonce {
+							return Ok((stream, Err(Error::InvalidVersion)).into());
+						}
+					}
 
-				let next = HandshakeState::SendVerack {
-					version: Some(version),
-					future: write_message(stream, verack_message(self.magic)),
-				};
+					HandshakeState::SendVerack {
+						version: Some(version),
+						future: write_message(stream, verack_message(self.magic)),
+					}
+				},
+				HandshakeState::SendVerack { ref mut version, ref mut future } => {
+					let (stream, _) = try_ready!(future.poll());
 
-				(next, Async::NotReady)
-			},
-			HandshakeState::SendVerack { ref mut version, ref mut future } => {
-				let (stream, _) = try_ready!(future.poll());
+					let version = version.take().expect("verack must be preceded by version");
 
-				let version = version.take().expect("verack must be preceded by version");
+					HandshakeState::ReceiveVerack {
+						version: Some(version),
+						future: read_message(stream, self.magic, 0),
+					}
+				},
+				HandshakeState::ReceiveVerack { ref mut version, ref mut future } => {
+					let (stream, _verack) = try_ready!(future.poll());
+					let version = version.take().expect("verack must be preceded by version");
 
-				let next = HandshakeState::ReceiveVerack {
-					version: Some(version),
-					future: read_message(stream, self.magic, 0),
-				};
+					let result = HandshakeResult {
+						negotiated_version: negotiate_version(self.version, version.version()),
+						version: version,
+					};
 
-				(next, Async::NotReady)
-			},
-			HandshakeState::ReceiveVerack { ref mut version, ref mut future } => {
-				let (stream, _verack) = try_ready!(future.poll());
-				let version = version.take().expect("verack must be preceded by version");
-
-				let result = HandshakeResult {
-					negotiated_version: negotiate_version(self.version, version.version()),
-					version: version,
-				};
-
-				(HandshakeState::Finished, Async::Ready((stream, Ok(result))))
-			},
-			HandshakeState::Finished => panic!("poll Handshake after it's done"),
-		};
-
-		self.state = next;
-		match result {
-			// by polling again, we register new future
-			Async::NotReady => self.poll(),
-			result => Ok(result)
+					return Ok(Async::Ready((stream, Ok(result))));
+				},
+			};
+			self.state = next_state;
 		}
 	}
 }
@@ -166,60 +155,51 @@ impl<A> Future for AcceptHandshake<A> where A: AsyncRead + AsyncWrite {
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-		let (next, result) = match self.state {
-			AcceptHandshakeState::ReceiveVersion { ref mut local_version, ref mut future } => {
-				let (stream, version) = try_ready!(future.poll());
-				let version = match version {
-					Ok(version) => version,
-					Err(err) => return Ok((stream, Err(err.into())).into()),
-				};
+		loop {
+			let next_state = match self.state {
+				AcceptHandshakeState::ReceiveVersion { ref mut local_version, ref mut future } => {
+					let (stream, version) = try_ready!(future.poll());
+					let version = match version {
+						Ok(version) => version,
+						Err(err) => return Ok((stream, Err(err.into())).into()),
+					};
 
-				if version.version() < self.min_version {
-					return Ok((stream, Err(Error::InvalidVersion)).into());
-				}
-				if let (Some(self_nonce), Some(nonce)) = (self.nonce, version.nonce()) {
-					if self_nonce == nonce {
+					if version.version() < self.min_version {
 						return Ok((stream, Err(Error::InvalidVersion)).into());
 					}
-				}
+					if let (Some(self_nonce), Some(nonce)) = (self.nonce, version.nonce()) {
+						if self_nonce == nonce {
+							return Ok((stream, Err(Error::InvalidVersion)).into());
+						}
+					}
 
-				let local_version = local_version.take().expect("local version must be set");
-				let next = AcceptHandshakeState::SendVersion {
-					version: Some(version),
-					future: write_message(stream, version_message(self.magic, local_version)),
-				};
+					let local_version = local_version.take().expect("local version must be set");
+					AcceptHandshakeState::SendVersion {
+						version: Some(version),
+						future: write_message(stream, version_message(self.magic, local_version)),
+					}
+				},
+				AcceptHandshakeState::SendVersion { ref mut version, ref mut future } => {
+					let (stream, _) = try_ready!(future.poll());
+					AcceptHandshakeState::SendVerack {
+						version: version.take(),
+						future: write_message(stream, verack_message(self.magic)),
+					}
+				},
+				AcceptHandshakeState::SendVerack { ref mut version, ref mut future } => {
+					let (stream, _) = try_ready!(future.poll());
 
-				(next, Async::NotReady)
-			},
-			AcceptHandshakeState::SendVersion { ref mut version, ref mut future } => {
-				let (stream, _) = try_ready!(future.poll());
-				let next = AcceptHandshakeState::SendVerack {
-					version: version.take(),
-					future: write_message(stream, verack_message(self.magic)),
-				};
+					let version = version.take().expect("verack must be preceded by version");
 
-				(next, Async::NotReady)
-			},
-			AcceptHandshakeState::SendVerack { ref mut version, ref mut future } => {
-				let (stream, _) = try_ready!(future.poll());
+					let result = HandshakeResult {
+						negotiated_version: negotiate_version(self.version, version.version()),
+						version: version,
+					};
 
-				let version = version.take().expect("verack must be preceded by version");
-
-				let result = HandshakeResult {
-					negotiated_version: negotiate_version(self.version, version.version()),
-					version: version,
-				};
-
-				(AcceptHandshakeState::Finished, Async::Ready((stream, Ok(result))))
-			},
-			AcceptHandshakeState::Finished => panic!("poll AcceptHandshake after it's done"),
-		};
-
-		self.state = next;
-		match result {
-			// by polling again, we register new future
-			Async::NotReady => self.poll(),
-			result => Ok(result)
+					return Ok(Async::Ready((stream, Ok(result))));
+				},
+			};
+			self.state = next_state;
 		}
 	}
 }
