@@ -20,7 +20,6 @@ pub enum ReadAnyMessageState<A> {
 		header: MessageHeader,
 		future: ReadExact<A, Bytes>
 	},
-	Finished,
 }
 
 pub struct ReadAnyMessage<A> {
@@ -32,36 +31,30 @@ impl<A> Future for ReadAnyMessage<A> where A: AsyncRead {
 	type Error = io::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-		let (next, result) = match self.state {
-			ReadAnyMessageState::ReadHeader(ref mut header) => {
-				let (stream, header) = try_ready!(header.poll());
-				let header = match header {
-					Ok(header) => header,
-					Err(err) => return Ok(Err(err).into()),
-				};
-				let future = read_exact(stream, Bytes::new_with_len(header.len as usize));
-				let next = ReadAnyMessageState::ReadPayload {
-					header: header,
-					future: future,
-				};
-				(next, Async::NotReady)
-			},
-			ReadAnyMessageState::ReadPayload { ref mut header, ref mut future } => {
-				let (_stream, bytes) = try_ready!(future.poll());
-				if checksum(&bytes) != header.checksum {
-					return Ok(Err(Error::InvalidChecksum).into());
-				}
-				let next = ReadAnyMessageState::Finished;
-				(next, Ok((header.command.clone(), bytes)).into())
-			},
-			ReadAnyMessageState::Finished => panic!("poll ReadAnyMessage after it's done"),
-		};
+		loop {
+			let next_state = match self.state {
+				ReadAnyMessageState::ReadHeader(ref mut header) => {
+					let (stream, header) = try_ready!(header.poll());
+					let header = match header {
+						Ok(header) => header,
+						Err(err) => return Ok(Err(err).into()),
+					};
+					ReadAnyMessageState::ReadPayload {
+						future: read_exact(stream, Bytes::new_with_len(header.len as usize)),
+						header: header,
+					}
+				},
+				ReadAnyMessageState::ReadPayload { ref mut header, ref mut future } => {
+					let (_stream, bytes) = try_ready!(future.poll());
+					if checksum(&bytes) != header.checksum {
+						return Ok(Err(Error::InvalidChecksum).into());
+					}
 
-		self.state = next;
-		match result {
-			// by polling again, we register new future
-			Async::NotReady => self.poll(),
-			result => Ok(result)
+					return Ok(Async::Ready(Ok((header.command.clone(), bytes))));
+				},
+			};
+
+			self.state = next_state;
 		}
 	}
 }
