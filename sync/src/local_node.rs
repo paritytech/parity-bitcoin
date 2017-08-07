@@ -65,8 +65,8 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 	}
 
 	/// When new peer connects to the node
-	pub fn on_connect(&self, peer_index: PeerIndex, version: types::Version) {
-		trace!(target: "sync", "Starting new sync session with peer#{}", peer_index);
+	pub fn on_connect(&self, peer_index: PeerIndex, peer_name: String, version: types::Version) {
+		trace!(target: "sync", "Starting new sync session with peer#{}: {}", peer_index, peer_name);
 
 		// light clients may not want transactions broadcasting until filter for connection is set
 		if !version.relay_transactions() {
@@ -389,7 +389,7 @@ pub mod tests {
 	#[test]
 	fn local_node_serves_block() {
 		let (_, server, local_node) = create_local_node(None);
-		let peer_index = 0; local_node.on_connect(peer_index, types::Version::default());
+		let peer_index = 0; local_node.on_connect(peer_index, "test".into(), types::Version::default());
 		// peer requests genesis block
 		let genesis_block_hash = test_data::genesis().hash();
 		let inventory = vec![
@@ -411,7 +411,7 @@ pub mod tests {
 		let (executor, _, local_node) = create_local_node(None);
 
 		// transaction will be relayed to this peer
-		let peer_index1 = 0; local_node.on_connect(peer_index1, types::Version::default());
+		let peer_index1 = 0; local_node.on_connect(peer_index1, "test".into(), types::Version::default());
 		executor.take_tasks();
 
 		let genesis = test_data::genesis();
@@ -436,7 +436,7 @@ pub mod tests {
 
 		let (executor, _, local_node) = create_local_node(Some(verifier));
 
-		let peer_index1 = 0; local_node.on_connect(peer_index1, types::Version::default());
+		let peer_index1 = 0; local_node.on_connect(peer_index1, "test".into(), types::Version::default());
 		executor.take_tasks();
 
 		let result = local_node.accept_transaction(transaction);

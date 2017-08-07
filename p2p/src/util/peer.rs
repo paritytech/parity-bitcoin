@@ -14,6 +14,7 @@ pub enum Direction {
 pub struct PeerInfo {
 	pub id: PeerId,
 	pub address: SocketAddr,
+	pub user_agent: String,
 	pub direction: Direction,
 	pub version: u32,
 	pub version_message: types::Version,

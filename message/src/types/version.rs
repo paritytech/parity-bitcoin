@@ -100,6 +100,14 @@ impl Version {
 			Version::V70001(_, _, ref v) => v.relay,
 		}
 	}
+
+	pub fn user_agent(&self) -> Option<String> {
+		match *self {
+			Version::V0(_) => None,
+			Version::V106(_, ref v) |
+			Version::V70001(_, ref v, _) => Some(v.user_agent.clone()),
+		}
+	}
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
