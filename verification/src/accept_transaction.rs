@@ -281,6 +281,7 @@ pub struct TransactionEval<'a> {
 	transaction: CanonTransaction<'a>,
 	store: DuplexTransactionOutputProvider<'a>,
 	verify_p2sh: bool,
+	verify_strictenc: bool,
 	verify_locktime: bool,
 	verify_checksequence: bool,
 	verify_dersig: bool,
@@ -298,6 +299,10 @@ impl<'a> TransactionEval<'a> {
 		headers: &'a BlockHeaderProvider,
 	) -> Self {
 		let verify_p2sh = time >= params.bip16_time;
+		let verify_strictenc = match params.fork {
+			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height => true,
+			_ => false,
+		};
 		let verify_locktime = height >= params.bip65_height;
 		let verify_dersig = height >= params.bip66_height;
 		let signature_version = match params.fork {
@@ -311,6 +316,7 @@ impl<'a> TransactionEval<'a> {
 			transaction: transaction,
 			store: store,
 			verify_p2sh: verify_p2sh,
+			verify_strictenc: verify_strictenc,
 			verify_locktime: verify_locktime,
 			verify_checksequence: verify_checksequence,
 			verify_dersig: verify_dersig,
@@ -343,6 +349,7 @@ impl<'a> TransactionEval<'a> {
 
 			let flags = VerificationFlags::default()
 				.verify_p2sh(self.verify_p2sh)
+				.verify_strictenc(self.verify_strictenc)
 				.verify_locktime(self.verify_locktime)
 				.verify_checksequence(self.verify_checksequence)
 				.verify_dersig(self.verify_dersig);
