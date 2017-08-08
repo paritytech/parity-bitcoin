@@ -1180,7 +1180,7 @@ pub mod tests {
 	use message::common::InventoryVector;
 	use message::types;
 	use miner::MemoryPool;
-	use network::{ConsensusParams, Magic};
+	use network::{ConsensusParams, ConsensusFork, Magic};
 	use primitives::hash::H256;
 	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 	use inbound_connection::tests::DummyOutboundSyncConnection;
@@ -1235,7 +1235,7 @@ pub mod tests {
 		let executor = DummyTaskExecutor::new();
 		let config = Config { close_connection_on_bad_block: true };
 
-		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Magic::Unitest, None)));
+		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Magic::Unitest, ConsensusFork::NoFork)));
 		let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier.clone());
 		{
 			client_core.lock().set_verify_headers(false);

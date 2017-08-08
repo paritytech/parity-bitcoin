@@ -4,6 +4,8 @@ use {Magic, Deployment};
 #[derive(Debug, Clone, Copy)]
 /// Concurrent consensus rule forks.
 pub enum ConsensusFork {
+	/// No fork.
+	NoFork,
 	/// SegWit2x (aka The New York Agreement).
 	/// Briefly: SegWit + blocks up to 2MB.
 	/// Technical specification:
@@ -36,7 +38,7 @@ pub struct ConsensusParams {
 	/// See https://github.com/bitcoin/bips/blob/master/bip-0066.mediawiki
 	pub bip66_height: u32,
 	/// Selected consensus fork.
-	pub fork: Option<ConsensusFork>,
+	pub fork: ConsensusFork,
 	/// Version bits activation
 	pub rule_change_activation_threshold: u32,
 	/// Number of blocks with the same set of rules
@@ -48,7 +50,7 @@ pub struct ConsensusParams {
 }
 
 impl ConsensusParams {
-	pub fn new(magic: Magic, fork: Option<ConsensusFork>) -> Self {
+	pub fn new(magic: Magic, fork: ConsensusFork) -> Self {
 		match magic {
 			Magic::Mainnet | Magic::Other(_) => ConsensusParams {
 				magic: magic,
@@ -113,43 +115,86 @@ impl ConsensusParams {
 	}
 }
 
+impl ConsensusFork {
+	pub fn min_block_size(&self, height: u32) -> usize {
+		match *self {
+			ConsensusFork::SegWit2x(fork_height) if height == fork_height => 0,
+			// size of first fork block must be larger than 1MB
+			ConsensusFork::BitcoinCash(fork_height) if height == fork_height => 1_000_001,
+			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) | ConsensusFork::SegWit2x(_) => 0,
+		}
+	}
+
+	pub fn max_block_size(&self, height: u32) -> usize {
+		match *self {
+			ConsensusFork::SegWit2x(fork_height) if height >= fork_height => 2_000_000,
+			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height => 8_000_000,
+			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) | ConsensusFork::SegWit2x(_) => 1_000_000,
+		}
+	}
+
+	pub fn max_transaction_size(&self, height: u32) -> usize {
+		self.max_block_size(height)
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::super::Magic;
-	use super::ConsensusParams;
+	use super::{ConsensusParams, ConsensusFork};
 
 	#[test]
 	fn test_consensus_params_bip34_height() {
-		assert_eq!(ConsensusParams::new(Magic::Mainnet, None).bip34_height, 227931);
-		assert_eq!(ConsensusParams::new(Magic::Testnet, None).bip34_height, 21111);
-		assert_eq!(ConsensusParams::new(Magic::Regtest, None).bip34_height, 100000000);
+		assert_eq!(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork).bip34_height, 227931);
+		assert_eq!(ConsensusParams::new(Magic::Testnet, ConsensusFork::NoFork).bip34_height, 21111);
+		assert_eq!(ConsensusParams::new(Magic::Regtest, ConsensusFork::NoFork).bip34_height, 100000000);
 	}
 
 	#[test]
 	fn test_consensus_params_bip65_height() {
-		assert_eq!(ConsensusParams::new(Magic::Mainnet, None).bip65_height, 388381);
-		assert_eq!(ConsensusParams::new(Magic::Testnet, None).bip65_height, 581885);
-		assert_eq!(ConsensusParams::new(Magic::Regtest, None).bip65_height, 1351);
+		assert_eq!(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork).bip65_height, 388381);
+		assert_eq!(ConsensusParams::new(Magic::Testnet, ConsensusFork::NoFork).bip65_height, 581885);
+		assert_eq!(ConsensusParams::new(Magic::Regtest, ConsensusFork::NoFork).bip65_height, 1351);
 	}
 
 	#[test]
 	fn test_consensus_params_bip66_height() {
-		assert_eq!(ConsensusParams::new(Magic::Mainnet, None).bip66_height, 363725);
-		assert_eq!(ConsensusParams::new(Magic::Testnet, None).bip66_height, 330776);
-		assert_eq!(ConsensusParams::new(Magic::Regtest, None).bip66_height, 1251);
+		assert_eq!(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork).bip66_height, 363725);
+		assert_eq!(ConsensusParams::new(Magic::Testnet, ConsensusFork::NoFork).bip66_height, 330776);
+		assert_eq!(ConsensusParams::new(Magic::Regtest, ConsensusFork::NoFork).bip66_height, 1251);
 	}
 
 	#[test]
 	fn test_consensus_activation_threshold() {
-		assert_eq!(ConsensusParams::new(Magic::Mainnet, None).rule_change_activation_threshold, 1916);
-		assert_eq!(ConsensusParams::new(Magic::Testnet, None).rule_change_activation_threshold, 1512);
-		assert_eq!(ConsensusParams::new(Magic::Regtest, None).rule_change_activation_threshold, 108);
+		assert_eq!(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork).rule_change_activation_threshold, 1916);
+		assert_eq!(ConsensusParams::new(Magic::Testnet, ConsensusFork::NoFork).rule_change_activation_threshold, 1512);
+		assert_eq!(ConsensusParams::new(Magic::Regtest, ConsensusFork::NoFork).rule_change_activation_threshold, 108);
 	}
 
 	#[test]
 	fn test_consensus_miner_confirmation_window() {
-		assert_eq!(ConsensusParams::new(Magic::Mainnet, None).miner_confirmation_window, 2016);
-		assert_eq!(ConsensusParams::new(Magic::Testnet, None).miner_confirmation_window, 2016);
-		assert_eq!(ConsensusParams::new(Magic::Regtest, None).miner_confirmation_window, 144);
+		assert_eq!(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork).miner_confirmation_window, 2016);
+		assert_eq!(ConsensusParams::new(Magic::Testnet, ConsensusFork::NoFork).miner_confirmation_window, 2016);
+		assert_eq!(ConsensusParams::new(Magic::Regtest, ConsensusFork::NoFork).miner_confirmation_window, 144);
+	}
+
+	#[test]
+	fn test_consensus_fork_min_block_size() {
+		assert_eq!(ConsensusFork::NoFork.min_block_size(0), 0);
+		assert_eq!(ConsensusFork::SegWit2x(100).min_block_size(0), 0);
+		assert_eq!(ConsensusFork::SegWit2x(100).min_block_size(100), 0);
+		assert_eq!(ConsensusFork::BitcoinCash(100).min_block_size(0), 0);
+		assert_eq!(ConsensusFork::BitcoinCash(100).min_block_size(100), 1_000_001);
+	}
+
+	#[test]
+	fn test_consensus_fork_max_block_size() {
+		assert_eq!(ConsensusFork::NoFork.max_block_size(0), 1_000_000);
+		assert_eq!(ConsensusFork::SegWit2x(100).max_block_size(0), 1_000_000);
+		assert_eq!(ConsensusFork::SegWit2x(100).max_block_size(100), 2_000_000);
+		assert_eq!(ConsensusFork::SegWit2x(100).max_block_size(200), 2_000_000);
+		assert_eq!(ConsensusFork::BitcoinCash(100).max_block_size(0), 1_000_000);
+		assert_eq!(ConsensusFork::BitcoinCash(100).max_block_size(100), 8_000_000);
+		assert_eq!(ConsensusFork::BitcoinCash(100).max_block_size(200), 8_000_000);
 	}
 }

@@ -6,7 +6,6 @@ use db::{SharedStore, TransactionOutputProvider};
 use network::Magic;
 use memory_pool::{MemoryPool, OrderingStrategy, Entry};
 use verification::{work_required, block_reward_satoshi, transaction_sigops};
-pub use verification::constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 
 const BLOCK_VERSION: u32 = 0x20000000;
 const BLOCK_HEADER_SIZE: u32 = 4 + 32 + 32 + 4 + 4 + 4;
@@ -119,15 +118,6 @@ impl SizePolicy {
 pub struct BlockAssembler {
 	pub max_block_size: u32,
 	pub max_block_sigops: u32,
-}
-
-impl Default for BlockAssembler {
-	fn default() -> Self {
-		BlockAssembler {
-			max_block_size: MAX_BLOCK_SIZE as u32,
-			max_block_sigops: MAX_BLOCK_SIGOPS as u32,
-		}
-	}
 }
 
 /// Iterator iterating over mempool transactions and yielding only those which fit the block

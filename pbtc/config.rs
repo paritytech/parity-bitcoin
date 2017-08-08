@@ -37,9 +37,9 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	};
 
 	let consensus = ConsensusParams::new(magic, match (matches.value_of("segwit2x"), matches.value_of("bitcoin-cash")) {
-		(Some(block), None) => Some(ConsensusFork::SegWit2x(block.parse().map_err(|_| "Invalid block number".to_owned())?)),
-		(None, Some(block)) => Some(ConsensusFork::BitcoinCash(block.parse().map_err(|_| "Invalid block number".to_owned())?)),
-		(None, None) => None,
+		(Some(block), None) => ConsensusFork::SegWit2x(block.parse().map_err(|_| "Invalid block number".to_owned())?),
+		(None, Some(block)) => ConsensusFork::BitcoinCash(block.parse().map_err(|_| "Invalid block number".to_owned())?),
+		(None, None) => ConsensusFork::NoFork,
 		(Some(_), Some(_)) => return Err("Only one fork can be used".into()),
 	});
 

@@ -98,14 +98,14 @@ pub fn create_local_sync_node(consensus: ConsensusParams, db: db::SharedStore, p
 	let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
 	let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(db.clone()));
 	let sync_chain = SyncChain::new(db.clone(), memory_pool.clone());
-	let chain_verifier = Arc::new(ChainVerifier::new(db.clone(), consensus));
+	let chain_verifier = Arc::new(ChainVerifier::new(db.clone(), consensus.clone()));
 	let sync_executor = SyncExecutor::new(peers.clone());
 	let sync_server = Arc::new(ServerImpl::new(peers.clone(), db.clone(), memory_pool.clone(), sync_executor.clone()));
 	let sync_client_core = SynchronizationClientCore::new(sync_client_config, sync_state.clone(), peers.clone(), sync_executor.clone(), sync_chain, chain_verifier.clone());
 	let verifier_sink = Arc::new(CoreVerificationSink::new(sync_client_core.clone()));
 	let verifier = AsyncVerifier::new(chain_verifier, db.clone(), memory_pool.clone(), verifier_sink);
 	let sync_client = SynchronizationClient::new(sync_state.clone(), sync_client_core, verifier);
-	Arc::new(SyncNode::new(network, db, memory_pool, peers, sync_state, sync_executor, sync_client, sync_server))
+	Arc::new(SyncNode::new(consensus, db, memory_pool, peers, sync_state, sync_executor, sync_client, sync_server))
 }
 
 /// Create inbound synchronization connections factory for given local sync node.

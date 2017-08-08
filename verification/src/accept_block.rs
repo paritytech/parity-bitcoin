@@ -13,6 +13,7 @@ use timestamp::median_timestamp;
 /// Flexible verification of ordered block
 pub struct BlockAcceptor<'a> {
 	pub finality: BlockFinality<'a>,
+	pub serialized_size: BlockSerializedSize<'a>,
 	pub sigops: BlockSigops<'a>,
 	pub coinbase_claim: BlockCoinbaseClaim<'a>,
 	pub coinbase_script: BlockCoinbaseScript<'a>,
@@ -29,6 +30,7 @@ impl<'a> BlockAcceptor<'a> {
 	) -> Self {
 		BlockAcceptor {
 			finality: BlockFinality::new(block, height, deployments, headers, consensus),
+			serialized_size: BlockSerializedSize::new(block, consensus, height),
 			coinbase_script: BlockCoinbaseScript::new(block, consensus, height),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store, height),
 			sigops: BlockSigops::new(block, store, consensus, MAX_BLOCK_SIGOPS),
@@ -38,6 +40,7 @@ impl<'a> BlockAcceptor<'a> {
 	pub fn check(&self) -> Result<(), Error> {
 		self.finality.check()?;
 		self.sigops.check()?;
+		self.serialized_size.check()?;
 		self.coinbase_claim.check()?;
 		self.coinbase_script.check()?;
 		Ok(())
@@ -74,6 +77,32 @@ impl<'a> BlockFinality<'a> {
 			Ok(())
 		} else {
 			Err(Error::NonFinalBlock)
+		}
+	}
+}
+
+pub struct BlockSerializedSize<'a> {
+	block: CanonBlock<'a>,
+	consensus: &'a ConsensusParams,
+	height: u32,
+}
+
+impl<'a> BlockSerializedSize<'a> {
+	fn new(block: CanonBlock<'a>, consensus: &'a ConsensusParams, height: u32) -> Self {
+		BlockSerializedSize {
+			block: block,
+			consensus: consensus,
+			height: height,
+		}
+	}
+
+	fn check(&self) -> Result<(), Error> {
+		let size = self.block.size();
+		if size < self.consensus.fork.min_block_size(self.height) ||
+			size > self.consensus.fork.max_block_size(self.height) {
+			Err(Error::Size(size))
+		} else {
+			Ok(())
 		}
 	}
 }
