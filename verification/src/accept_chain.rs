@@ -1,6 +1,6 @@
 use rayon::prelude::{IntoParallelRefIterator, IndexedParallelIterator, ParallelIterator};
 use db::Store;
-use network::Magic;
+use network::ConsensusParams;
 use error::Error;
 use canon::CanonBlock;
 use accept_block::BlockAcceptor;
@@ -16,20 +16,20 @@ pub struct ChainAcceptor<'a> {
 }
 
 impl<'a> ChainAcceptor<'a> {
-	pub fn new(store: &'a Store, network: Magic, block: CanonBlock<'a>, height: u32, deployments: &'a Deployments) -> Self {
+	pub fn new(store: &'a Store, consensus: &'a ConsensusParams, block: CanonBlock<'a>, height: u32, deployments: &'a Deployments) -> Self {
 		trace!(target: "verification", "Block verification {}", block.hash().to_reversed_str());
 		let output_store = DuplexTransactionOutputProvider::new(store.as_transaction_output_provider(), block.raw());
 		let headers = store.as_block_header_provider();
 		ChainAcceptor {
-			block: BlockAcceptor::new(store.as_transaction_output_provider(), network, block, height, deployments, headers),
-			header: HeaderAcceptor::new(headers, network, block.header(), height, deployments),
+			block: BlockAcceptor::new(store.as_transaction_output_provider(), consensus, block, height, deployments, headers),
+			header: HeaderAcceptor::new(headers, consensus, block.header(), height, deployments),
 			transactions: block.transactions()
 				.into_iter()
 				.enumerate()
 				.map(|(tx_index, tx)| TransactionAcceptor::new(
 						store.as_transaction_meta_provider(),
 						output_store,
-						network,
+						consensus,
 						tx,
 						block.hash(),
 						height,

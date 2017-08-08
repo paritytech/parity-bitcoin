@@ -5,7 +5,7 @@ use std::thread;
 use parking_lot::Mutex;
 use time::get_time;
 use chain::{IndexedBlock, IndexedTransaction};
-use network::Magic;
+use network::ConsensusParams;
 use primitives::hash::H256;
 use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify as VerificationVerify};
 use types::{BlockHeight, StorageRef, MemoryPoolRef};
@@ -182,8 +182,8 @@ pub struct SyncVerifier<T: VerificationSink> {
 
 impl<T> SyncVerifier<T> where T: VerificationSink {
 	/// Create new sync verifier
-	pub fn new(network: Magic, storage: StorageRef, sink: Arc<T>) -> Self {
-		let verifier = ChainVerifier::new(storage.clone(), network);
+	pub fn new(consensus: ConsensusParams, storage: StorageRef, sink: Arc<T>) -> Self {
+		let verifier = ChainVerifier::new(storage.clone(), consensus);
 		SyncVerifier {
 			verifier: verifier,
 			sink: sink,

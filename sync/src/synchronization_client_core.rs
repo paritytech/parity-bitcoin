@@ -9,7 +9,6 @@ use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
 use message::types;
 use message::common::{InventoryType, InventoryVector};
 use miner::transaction_fee_rate;
-use network::Magic;
 use primitives::hash::H256;
 use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 use synchronization_chain::{Chain, BlockState, TransactionState, BlockInsertionResult};
@@ -77,8 +76,6 @@ pub trait ClientCore {
 /// Synchronization client configuration options.
 #[derive(Debug)]
 pub struct Config {
-	/// Network
-	pub network: Magic,
 	/// If true, connection to peer who has provided us with bad block is closed
 	pub close_connection_on_bad_block: bool,
 }
@@ -1183,7 +1180,7 @@ pub mod tests {
 	use message::common::InventoryVector;
 	use message::types;
 	use miner::MemoryPool;
-	use network::Magic;
+	use network::{ConsensusParams, Magic};
 	use primitives::hash::H256;
 	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 	use inbound_connection::tests::DummyOutboundSyncConnection;
@@ -1236,9 +1233,9 @@ pub mod tests {
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
 		let chain = Chain::new(storage.clone(), memory_pool.clone());
 		let executor = DummyTaskExecutor::new();
-		let config = Config { network: Magic::Mainnet, close_connection_on_bad_block: true };
+		let config = Config { close_connection_on_bad_block: true };
 
-		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Unitest));
+		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Magic::Unitest, None)));
 		let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier.clone());
 		{
 			client_core.lock().set_verify_headers(false);

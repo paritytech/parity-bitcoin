@@ -1,4 +1,4 @@
-use network::{Magic, ConsensusParams};
+use network::ConsensusParams;
 use db::{TransactionOutputProvider, BlockHeaderProvider};
 use script;
 use sigops::transaction_sigops;
@@ -21,18 +21,17 @@ pub struct BlockAcceptor<'a> {
 impl<'a> BlockAcceptor<'a> {
 	pub fn new(
 		store: &'a TransactionOutputProvider,
-		network: Magic,
+		consensus: &'a ConsensusParams,
 		block: CanonBlock<'a>,
 		height: u32,
 		deployments: &'a Deployments,
 		headers: &'a BlockHeaderProvider,
 	) -> Self {
-		let params = network.consensus_params();
 		BlockAcceptor {
-			finality: BlockFinality::new(block, height, deployments, headers, &params),
-			coinbase_script: BlockCoinbaseScript::new(block, &params, height),
+			finality: BlockFinality::new(block, height, deployments, headers, consensus),
+			coinbase_script: BlockCoinbaseScript::new(block, consensus, height),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store, height),
-			sigops: BlockSigops::new(block, store, params, MAX_BLOCK_SIGOPS),
+			sigops: BlockSigops::new(block, store, consensus, MAX_BLOCK_SIGOPS),
 		}
 	}
 
@@ -82,12 +81,12 @@ impl<'a> BlockFinality<'a> {
 pub struct BlockSigops<'a> {
 	block: CanonBlock<'a>,
 	store: &'a TransactionOutputProvider,
-	consensus_params: ConsensusParams,
+	consensus_params: &'a ConsensusParams,
 	max_sigops: usize,
 }
 
 impl<'a> BlockSigops<'a> {
-	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus_params: ConsensusParams, max_sigops: usize) -> Self {
+	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus_params: &'a ConsensusParams, max_sigops: usize) -> Self {
 		BlockSigops {
 			block: block,
 			store: store,

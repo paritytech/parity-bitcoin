@@ -1,6 +1,6 @@
 use primitives::hash::H256;
 use db::{TransactionMetaProvider, TransactionOutputProvider, BlockHeaderProvider};
-use network::{Magic, ConsensusParams};
+use network::ConsensusParams;
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner};
 use duplex_store::DuplexTransactionOutputProvider;
 use deployments::Deployments;
@@ -25,7 +25,7 @@ impl<'a> TransactionAcceptor<'a> {
 		// previous transaction outputs
 		// in case of block validation, that's database and currently processed block
 		output_store: DuplexTransactionOutputProvider<'a>,
-		network: Magic,
+		consensus: &'a ConsensusParams,
 		transaction: CanonTransaction<'a>,
 		block_hash: &'a H256,
 		height: u32,
@@ -35,14 +35,13 @@ impl<'a> TransactionAcceptor<'a> {
 		headers: &'a BlockHeaderProvider,
 	) -> Self {
 		trace!(target: "verification", "Tx verification {}", transaction.hash.to_reversed_str());
-		let params = network.consensus_params();
 		TransactionAcceptor {
-			bip30: TransactionBip30::new_for_sync(transaction, meta_store, params.clone(), block_hash, height),
+			bip30: TransactionBip30::new_for_sync(transaction, meta_store, consensus, block_hash, height),
 			missing_inputs: TransactionMissingInputs::new(transaction, output_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, output_store),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
-			eval: TransactionEval::new(transaction, output_store, &params, height, time, deployments, headers),
+			eval: TransactionEval::new(transaction, output_store, consensus, height, time, deployments, headers),
 		}
 	}
 
@@ -72,7 +71,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		meta_store: &'a TransactionMetaProvider,
 		// in case of memory pool it should be db and memory pool
 		output_store: DuplexTransactionOutputProvider<'a>,
-		network: Magic,
+		consensus: &'a ConsensusParams,
 		transaction: CanonTransaction<'a>,
 		height: u32,
 		time: u32,
@@ -80,15 +79,14 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		headers: &'a BlockHeaderProvider,
 	) -> Self {
 		trace!(target: "verification", "Mempool-Tx verification {}", transaction.hash.to_reversed_str());
-		let params = network.consensus_params();
 		let transaction_index = 0;
 		MemoryPoolTransactionAcceptor {
 			missing_inputs: TransactionMissingInputs::new(transaction, output_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, output_store),
-			sigops: TransactionSigops::new(transaction, output_store, params.clone(), MAX_BLOCK_SIGOPS, time),
+			sigops: TransactionSigops::new(transaction, output_store, consensus, MAX_BLOCK_SIGOPS, time),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
-			eval: TransactionEval::new(transaction, output_store, &params, height, time, deployments, headers),
+			eval: TransactionEval::new(transaction, output_store, consensus, height, time, deployments, headers),
 		}
 	}
 
@@ -124,7 +122,7 @@ impl<'a> TransactionBip30<'a> {
 	fn new_for_sync(
 		transaction: CanonTransaction<'a>,
 		store: &'a TransactionMetaProvider,
-		consensus_params: ConsensusParams,
+		consensus_params: &'a ConsensusParams,
 		block_hash: &'a H256,
 		height: u32
 	) -> Self {
@@ -243,13 +241,13 @@ impl<'a> TransactionOverspent<'a> {
 pub struct TransactionSigops<'a> {
 	transaction: CanonTransaction<'a>,
 	store: DuplexTransactionOutputProvider<'a>,
-	consensus_params: ConsensusParams,
+	consensus_params: &'a ConsensusParams,
 	max_sigops: usize,
 	time: u32,
 }
 
 impl<'a> TransactionSigops<'a> {
-	fn new(transaction: CanonTransaction<'a>, store: DuplexTransactionOutputProvider<'a>, consensus_params: ConsensusParams, max_sigops: usize, time: u32) -> Self {
+	fn new(transaction: CanonTransaction<'a>, store: DuplexTransactionOutputProvider<'a>, consensus_params: &'a ConsensusParams, max_sigops: usize, time: u32) -> Self {
 		TransactionSigops {
 			transaction: transaction,
 			store: store,

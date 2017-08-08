@@ -335,7 +335,7 @@ pub mod tests {
 	use synchronization_chain::Chain;
 	use message::types;
 	use message::common::{InventoryVector, InventoryType};
-	use network::Magic;
+	use network::{ConsensusParams, Magic};
 	use chain::Transaction;
 	use db::{BlockChainDatabase};
 	use miner::MemoryPool;
@@ -373,8 +373,8 @@ pub mod tests {
 		let sync_peers = Arc::new(PeersImpl::default());
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
-		let config = Config { network: Magic::Mainnet, close_connection_on_bad_block: true };
-		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Mainnet));
+		let config = Config { close_connection_on_bad_block: true };
+		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Magic::Mainnet, None)));
 		let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier);
 		let mut verifier = match verifier {
 			Some(verifier) => verifier,

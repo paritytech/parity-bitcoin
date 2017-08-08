@@ -8,7 +8,7 @@ mod magic;
 
 pub use primitives::{hash, compact};
 
-pub use consensus::ConsensusParams;
+pub use consensus::{ConsensusParams, ConsensusFork};
 pub use deployments::Deployment;
 pub use magic::Magic;
 

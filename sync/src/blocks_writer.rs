@@ -3,7 +3,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use chain;
 use db;
-use network::Magic;
+use network::ConsensusParams;
 use primitives::hash::H256;
 use super::Error;
 use synchronization_verifier::{Verifier, SyncVerifier, VerificationTask,
@@ -44,10 +44,10 @@ struct BlocksWriterSinkData {
 
 impl BlocksWriter {
 	/// Create new synchronous blocks writer
-	pub fn new(storage: StorageRef, network: Magic, verification: bool) -> BlocksWriter {
+	pub fn new(storage: StorageRef, consensus: ConsensusParams, verification: bool) -> BlocksWriter {
 		let sink_data = Arc::new(BlocksWriterSinkData::new(storage.clone()));
 		let sink = Arc::new(BlocksWriterSink::new(sink_data.clone()));
-		let verifier = SyncVerifier::new(network, storage.clone(), sink);
+		let verifier = SyncVerifier::new(consensus, storage.clone(), sink);
 		BlocksWriter {
 			storage: storage,
 			orphaned_blocks_pool: OrphanBlocksPool::new(),
@@ -156,14 +156,14 @@ mod tests {
 
 	use std::sync::Arc;
 	use db::{BlockChainDatabase};
-	use network::Magic;
+	use network::{ConsensusParams, Magic};
 	use super::super::Error;
 	use super::{BlocksWriter, MAX_ORPHANED_BLOCKS};
 
 	#[test]
 	fn blocks_writer_appends_blocks() {
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
-		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, true);
+		let mut blocks_target = BlocksWriter::new(db.clone(), ConsensusParams::new(Magic::Testnet, None), true);
 		blocks_target.append_block(test_data::block_h1().into()).expect("Expecting no error");
 		assert_eq!(db.best_block().number, 1);
 	}
@@ -172,7 +172,7 @@ mod tests {
 	fn blocks_writer_verification_error() {
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let blocks = test_data::build_n_empty_blocks_from_genesis((MAX_ORPHANED_BLOCKS + 2) as u32, 1);
-		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, true);
+		let mut blocks_target = BlocksWriter::new(db.clone(), ConsensusParams::new(Magic::Testnet, None), true);
 		for (index, block) in blocks.into_iter().skip(1).enumerate() {
 			match blocks_target.append_block(block.into()) {
 				Err(Error::TooManyOrphanBlocks) if index == MAX_ORPHANED_BLOCKS => (),
@@ -186,7 +186,7 @@ mod tests {
 	#[test]
 	fn blocks_writer_out_of_order_block() {
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
-		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, true);
+		let mut blocks_target = BlocksWriter::new(db.clone(), ConsensusParams::new(Magic::Testnet, None), true);
 
 		let wrong_block = test_data::block_builder()
 			.header().parent(test_data::genesis().hash()).build()
@@ -201,7 +201,7 @@ mod tests {
 	#[test]
 	fn blocks_writer_append_to_existing_db() {
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
-		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, true);
+		let mut blocks_target = BlocksWriter::new(db.clone(), ConsensusParams::new(Magic::Testnet, None), true);
 
 		assert!(blocks_target.append_block(test_data::genesis().into()).is_ok());
 		assert_eq!(db.best_block().number, 0);
