@@ -2,25 +2,6 @@ use std::cmp::max;
 use hash::H256;
 use {Magic, Deployment};
 
-#[derive(Debug, Clone, Copy)]
-/// Concurrent consensus rule forks.
-pub enum ConsensusFork {
-	/// No fork.
-	NoFork,
-	/// SegWit2x (aka The New York Agreement).
-	/// Briefly: SegWit + blocks up to 2MB.
-	/// Technical specification:
-	/// Segregated Witness (Consensus layer) - https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki
-	/// Block size increase to 2MB - https://github.com/bitcoin/bips/blob/master/bip-0102.mediawiki
-	SegWit2x(u32),
-	/// Bitcoin Cash (aka UAHF).
-	/// Briefly: no SegWit + blocks up to 8MB + replay protection.
-	/// Technical specification:
-	/// UAHF Technical Specification - https://github.com/Bitcoin-UAHF/spec/blob/master/uahf-technical-spec.md
-	/// BUIP-HF Digest for replay protected signature verification across hard forks - https://github.com/Bitcoin-UAHF/spec/blob/master/replay-protected-sighash.md
-	BitcoinCash(u32),
-}
-
 #[derive(Debug, Clone)]
 /// Parameters that influence chain consensus.
 pub struct ConsensusParams {
@@ -48,6 +29,25 @@ pub struct ConsensusParams {
 	pub csv_deployment: Option<Deployment>,
 	/// BIP141, BIP143, BIP147 deployment
 	pub segwit_deployment: Option<Deployment>,
+}
+
+#[derive(Debug, Clone, Copy)]
+/// Concurrent consensus rule forks.
+pub enum ConsensusFork {
+	/// No fork.
+	NoFork,
+	/// SegWit2x (aka The New York Agreement).
+	/// Briefly: SegWit + blocks up to 2MB.
+	/// Technical specification:
+	/// Segregated Witness (Consensus layer) - https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki
+	/// Block size increase to 2MB - https://github.com/bitcoin/bips/blob/master/bip-0102.mediawiki
+	SegWit2x(u32),
+	/// Bitcoin Cash (aka UAHF).
+	/// Briefly: no SegWit + blocks up to 8MB + replay protection.
+	/// Technical specification:
+	/// UAHF Technical Specification - https://github.com/Bitcoin-UAHF/spec/blob/master/uahf-technical-spec.md
+	/// BUIP-HF Digest for replay protected signature verification across hard forks - https://github.com/Bitcoin-UAHF/spec/blob/master/replay-protected-sighash.md
+	BitcoinCash(u32),
 }
 
 impl ConsensusParams {

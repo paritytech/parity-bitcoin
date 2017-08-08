@@ -1,9 +1,11 @@
 use primitives::hash::H256;
+use primitives::bytes::Bytes;
 use db::{TransactionMetaProvider, TransactionOutputProvider, BlockHeaderProvider};
-use network::ConsensusParams;
+use network::{ConsensusParams, ConsensusFork};
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner};
 use duplex_store::DuplexTransactionOutputProvider;
 use deployments::Deployments;
+use script::Builder;
 use sigops::transaction_sigops;
 use canon::CanonTransaction;
 use constants::{COINBASE_MATURITY};
@@ -15,6 +17,7 @@ pub struct TransactionAcceptor<'a> {
 	pub maturity: TransactionMaturity<'a>,
 	pub overspent: TransactionOverspent<'a>,
 	pub double_spent: TransactionDoubleSpend<'a>,
+	pub return_replay_protection: TransactionReturnReplayProtection<'a>,
 	pub eval: TransactionEval<'a>,
 }
 
@@ -41,6 +44,7 @@ impl<'a> TransactionAcceptor<'a> {
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, output_store),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
+			return_replay_protection: TransactionReturnReplayProtection::new(transaction, consensus, height),
 			eval: TransactionEval::new(transaction, output_store, consensus, height, time, deployments, headers),
 		}
 	}
@@ -51,6 +55,7 @@ impl<'a> TransactionAcceptor<'a> {
 		try!(self.maturity.check());
 		try!(self.overspent.check());
 		try!(self.double_spent.check());
+		try!(self.return_replay_protection.check());
 		try!(self.eval.check());
 		Ok(())
 	}
@@ -62,6 +67,7 @@ pub struct MemoryPoolTransactionAcceptor<'a> {
 	pub overspent: TransactionOverspent<'a>,
 	pub sigops: TransactionSigops<'a>,
 	pub double_spent: TransactionDoubleSpend<'a>,
+	pub return_replay_protection: TransactionReturnReplayProtection<'a>,
 	pub eval: TransactionEval<'a>,
 }
 
@@ -87,6 +93,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 			overspent: TransactionOverspent::new(transaction, output_store),
 			sigops: TransactionSigops::new(transaction, output_store, consensus, max_block_sigops, time),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
+			return_replay_protection: TransactionReturnReplayProtection::new(transaction, consensus, height),
 			eval: TransactionEval::new(transaction, output_store, consensus, height, time, deployments, headers),
 		}
 	}
@@ -99,6 +106,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		try!(self.overspent.check());
 		try!(self.sigops.check());
 		try!(self.double_spent.check());
+		try!(self.return_replay_protection.check());
 		try!(self.eval.check());
 		Ok(())
 	}
@@ -360,6 +368,42 @@ impl<'a> TransactionDoubleSpend<'a> {
 				))
 			}
 		}
+		Ok(())
+	}
+}
+
+pub struct TransactionReturnReplayProtection<'a> {
+	transaction: CanonTransaction<'a>,
+	consensus: &'a ConsensusParams,
+	height: u32,
+}
+
+lazy_static! {
+	pub static ref BITCOIN_CASH_RETURN_REPLAY_PROTECTION_SCRIPT: Bytes = Builder::default()
+		.return_bytes(b"Bitcoin: A Peer-to-Peer Electronic Cash System") // TODO: check that data.size() == 46
+		.into_bytes();
+}
+
+impl<'a> TransactionReturnReplayProtection<'a> {
+	fn new(transaction: CanonTransaction<'a>, consensus: &'a ConsensusParams, height: u32) -> Self {
+		TransactionReturnReplayProtection {
+			transaction: transaction,
+			consensus: consensus,
+			height: height,
+		}
+	}
+
+	fn check(&self) -> Result<(), TransactionError> {
+		if let ConsensusFork::BitcoinCash(fork_block) = self.consensus.fork {
+			// Transactions with such OP_RETURNs shall be considered valid again for block 530,001 and onwards
+			if self.height >= fork_block && self.height <= 530_000 {
+				if (*self.transaction).raw.outputs.iter()
+					.any(|out| out.script_pubkey == *BITCOIN_CASH_RETURN_REPLAY_PROTECTION_SCRIPT) {
+					return Err(TransactionError::ReturnReplayProtection)
+				}
+			}
+		}
+
 		Ok(())
 	}
 }
