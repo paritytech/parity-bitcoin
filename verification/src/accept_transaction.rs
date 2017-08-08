@@ -2,7 +2,7 @@ use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use db::{TransactionMetaProvider, TransactionOutputProvider, BlockHeaderProvider};
 use network::{ConsensusParams, ConsensusFork};
-use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner};
+use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner, SignatureVersion};
 use duplex_store::DuplexTransactionOutputProvider;
 use deployments::Deployments;
 use script::Builder;
@@ -284,6 +284,7 @@ pub struct TransactionEval<'a> {
 	verify_locktime: bool,
 	verify_checksequence: bool,
 	verify_dersig: bool,
+	signature_version: SignatureVersion,
 }
 
 impl<'a> TransactionEval<'a> {
@@ -299,6 +300,10 @@ impl<'a> TransactionEval<'a> {
 		let verify_p2sh = time >= params.bip16_time;
 		let verify_locktime = height >= params.bip65_height;
 		let verify_dersig = height >= params.bip66_height;
+		let signature_version = match params.fork {
+			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height => SignatureVersion::ForkId,
+			_ => SignatureVersion::Base,
+		};
 
 		let verify_checksequence = deployments.csv(height, headers, params);
 
@@ -309,6 +314,7 @@ impl<'a> TransactionEval<'a> {
 			verify_locktime: verify_locktime,
 			verify_checksequence: verify_checksequence,
 			verify_dersig: verify_dersig,
+			signature_version: signature_version,
 		}
 	}
 
@@ -322,6 +328,7 @@ impl<'a> TransactionEval<'a> {
 		let mut checker = TransactionSignatureChecker {
 			signer: signer,
 			input_index: 0,
+			input_amount: 0,
 		};
 
 		for (index, input) in self.transaction.raw.inputs.iter().enumerate() {
@@ -329,6 +336,7 @@ impl<'a> TransactionEval<'a> {
 				.ok_or_else(|| TransactionError::UnknownReference(input.previous_output.hash.clone()))?;
 
 			checker.input_index = index;
+			checker.input_amount = output.value;
 
 			let input: Script = input.script_sig.clone().into();
 			let output: Script = output.script_pubkey.into();
@@ -339,7 +347,8 @@ impl<'a> TransactionEval<'a> {
 				.verify_checksequence(self.verify_checksequence)
 				.verify_dersig(self.verify_dersig);
 
-			try!(verify_script(&input, &output, &flags, &checker).map_err(|_| TransactionError::Signature(index)));
+			try!(verify_script(&input, &output, &flags, &checker, self.signature_version)
+				.map_err(|_| TransactionError::Signature(index)));
 		}
 
 		Ok(())

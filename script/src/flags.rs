@@ -65,6 +65,9 @@ pub struct VerificationFlags {
 
 	/// Making v1-v16 witness program non-standard
 	pub verify_discourage_upgradable_witness_program: bool,
+
+	/// Only verify transactions with SIGHASH_FORKID signatures.
+	pub enforce_sighash_fork_id: bool,
 }
 
 impl VerificationFlags {
@@ -85,6 +88,11 @@ impl VerificationFlags {
 
 	pub fn verify_dersig(mut self, value: bool) -> Self {
 		self.verify_dersig = value;
+		self
+	}
+
+	pub fn enforce_sighash_fork_id(mut self, value: bool) -> Self {
+		self.enforce_sighash_fork_id = value;
 		self
 	}
 }

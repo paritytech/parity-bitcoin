@@ -230,7 +230,8 @@ pub fn verify_script(
 	script_sig: &Script,
 	script_pubkey: &Script,
 	flags: &VerificationFlags,
-	checker: &SignatureChecker
+	checker: &SignatureChecker,
+	version: SignatureVersion,
 ) -> Result<(), Error> {
 	if flags.verify_sigpushonly && !script_sig.is_push_only() {
 		return Err(Error::SignaturePushOnly);
@@ -239,13 +240,13 @@ pub fn verify_script(
 	let mut stack = Stack::new();
 	let mut stack_copy = Stack::new();
 
-	try!(eval_script(&mut stack, script_sig, flags, checker, SignatureVersion::Base));
+	try!(eval_script(&mut stack, script_sig, flags, checker, version));
 
 	if flags.verify_p2sh {
 		stack_copy = stack.clone();
 	}
 
-	let res = try!(eval_script(&mut stack, script_pubkey, flags, checker, SignatureVersion::Base));
+	let res = try!(eval_script(&mut stack, script_pubkey, flags, checker, version));
 	if !res {
 		return Err(Error::EvalFalse);
 	}
@@ -265,7 +266,7 @@ pub fn verify_script(
 
 		let pubkey2: Script = try!(stack.pop()).into();
 
-		let res = try!(eval_script(&mut stack, &pubkey2, flags, checker, SignatureVersion::Base));
+		let res = try!(eval_script(&mut stack, &pubkey2, flags, checker, version));
 		if !res {
 			return Err(Error::EvalFalse);
 		}
@@ -1842,12 +1843,13 @@ mod tests {
 		let checker = TransactionSignatureChecker {
 			signer: signer,
 			input_index: 0,
+			input_amount: 0,
 		};
 		let input: Script = "47304402202cb265bf10707bf49346c3515dd3d16fc454618c58ec0a0ff448a676c54ff71302206c6624d762a1fcef4618284ead8f08678ac05b13c84235f1654e6ad168233e8201410414e301b2328f17442c0b8310d787bf3d8a404cfbd0704f135b6ad4b2d3ee751310f981926e53a6e8c39bd7d3fefd576c543cce493cbac06388f2651d1aacbfcd".into();
 		let output: Script = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+		assert_eq!(verify_script(&input, &output, &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 
 	// https://blockchain.info/rawtx/02b082113e35d5386285094c2829e7e2963fa0b5369fb7f4b79c4c90877dcd3d
@@ -1858,12 +1860,13 @@ mod tests {
 		let checker = TransactionSignatureChecker {
 			signer: signer,
 			input_index: 0,
+			input_amount: 0,
 		};
 		let input: Script = "00483045022100deeb1f13b5927b5e32d877f3c42a4b028e2e0ce5010fdb4e7f7b5e2921c1dcd2022068631cb285e8c1be9f061d2968a18c3163b780656f30a049effee640e80d9bff01483045022100ee80e164622c64507d243bd949217d666d8b16486e153ac6a1f8e04c351b71a502203691bef46236ca2b4f5e60a82a853a33d6712d6a1e7bf9a65e575aeb7328db8c014cc9524104a882d414e478039cd5b52a92ffb13dd5e6bd4515497439dffd691a0f12af9575fa349b5694ed3155b136f09e63975a1700c9f4d4df849323dac06cf3bd6458cd41046ce31db9bdd543e72fe3039a1f1c047dab87037c36a669ff90e28da1848f640de68c2fe913d363a51154a0c62d7adea1b822d05035077418267b1a1379790187410411ffd36c70776538d079fbae117dc38effafb33304af83ce4894589747aee1ef992f63280567f52f5ba870678b4ab4ff6c8ea600bd217870a8b4f1f09f3a8e8353ae".into();
 		let output: Script = "a9141a8b0026343166625c7475f01e48b5ede8c0252e87".into();
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+		assert_eq!(verify_script(&input, &output, &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 
 	// https://blockchain.info/en/tx/12b5633bad1f9c167d523ad1aa1947b2732a865bf5414eab2f9e5ae5d5c191ba?show_adv=true
@@ -1874,12 +1877,13 @@ mod tests {
 		let checker = TransactionSignatureChecker {
 			signer: signer,
 			input_index: 0,
+			input_amount: 0,
 		};
 		let input: Script = "483045022052ffc1929a2d8bd365c6a2a4e3421711b4b1e1b8781698ca9075807b4227abcb0221009984107ddb9e3813782b095d0d84361ed4c76e5edaf6561d252ae162c2341cfb01".into();
 		let output: Script = "410411db93e1dcdb8a016b49840f8c53bc1eb68a382e97b1482ecad7b148a6909a5cb2e0eaddfb84ccf9744464f82e160bfa9b8b64f9d4c03f999b8643f656b412a3ac".into();
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+		assert_eq!(verify_script(&input, &output, &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 
 	// https://blockchain.info/rawtx/fb0a1d8d34fa5537e461ac384bac761125e1bfa7fec286fa72511240fa66864d
@@ -1890,12 +1894,13 @@ mod tests {
 		let checker = TransactionSignatureChecker {
 			signer: signer,
 			input_index: 0,
+			input_amount: 0,
 		};
 		let input: Script = "4b3048022200002b83d59c1d23c08efd82ee0662fec23309c3adbcbd1f0b8695378db4b14e736602220000334a96676e58b1bb01784cb7c556dd8ce1c220171904da22e18fe1e7d1510db5014104d0fe07ff74c9ef5b00fed1104fad43ecf72dbab9e60733e4f56eacf24b20cf3b8cd945bcabcc73ba0158bf9ce769d43e94bd58c5c7e331a188922b3fe9ca1f5a".into();
 		let output: Script = "76a9147a2a3b481ca80c4ba7939c54d9278e50189d94f988ac".into();
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+		assert_eq!(verify_script(&input, &output, &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 
 	// https://blockchain.info/rawtx/eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb
@@ -1906,18 +1911,19 @@ mod tests {
 		let checker = TransactionSignatureChecker {
 			signer: signer,
 			input_index: 1,
+			input_amount: 0,
 		};
 		let input: Script = "004730440220276d6dad3defa37b5f81add3992d510d2f44a317fd85e04f93a1e2daea64660202200f862a0da684249322ceb8ed842fb8c859c0cb94c81e1c5308b4868157a428ee01ab51210232abdc893e7f0631364d7fd01cb33d24da45329a00357b3a7886211ab414d55a51ae".into();
 		let output: Script = "142a9bc5447d664c1d0141392a842d23dba45c4f13b175".into();
 
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+		assert_eq!(verify_script(&input, &output, &flags, &checker, SignatureVersion::Base), Ok(()));
 
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true)
 			.verify_locktime(true);
-		assert_eq!(verify_script(&input, &output, &flags, &checker), Err(Error::NumberOverflow));
+		assert_eq!(verify_script(&input, &output, &flags, &checker, SignatureVersion::Base), Err(Error::NumberOverflow));
 	}
 
 	// https://blockchain.info/rawtx/54fabd73f1d20c980a0686bf0035078e07f69c58437e4d586fb29aa0bee9814f
@@ -1928,11 +1934,12 @@ mod tests {
 		let checker = TransactionSignatureChecker {
 			signer: signer,
 			input_index: 0,
+			input_amount: 0,
 		};
 		let input: Script = "483045022100d92e4b61452d91a473a43cde4b469a472467c0ba0cbd5ebba0834e4f4762810402204802b76b7783db57ac1f61d2992799810e173e91055938750815b6d8a675902e014f".into();
 		let output: Script = "76009f69905160a56b210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71ad6c".into();
 		let flags = VerificationFlags::default();
-		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+		assert_eq!(verify_script(&input, &output, &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 
 	#[test]
@@ -1978,13 +1985,14 @@ mod tests {
 		let checker = TransactionSignatureChecker {
 			signer: signer,
 			input_index: 1,
+			input_amount: 0,
 		};
 		let input: Script = "00483045022015BD0139BCCCF990A6AF6EC5C1C52ED8222E03A0D51C334DF139968525D2FCD20221009F9EFE325476EB64C3958E4713E9EEFE49BF1D820ED58D2112721B134E2A1A53034930460221008431BDFA72BC67F9D41FE72E94C88FB8F359FFA30B33C72C121C5A877D922E1002210089EF5FC22DD8BFC6BF9FFDB01A9862D27687D424D1FEFBAB9E9C7176844A187A014C9052483045022015BD0139BCCCF990A6AF6EC5C1C52ED8222E03A0D51C334DF139968525D2FCD20221009F9EFE325476EB64C3958E4713E9EEFE49BF1D820ED58D2112721B134E2A1A5303210378D430274F8C5EC1321338151E9F27F4C676A008BDF8638D07C0B6BE9AB35C71210378D430274F8C5EC1321338151E9F27F4C676A008BDF8638D07C0B6BE9AB35C7153AE".into();
 		let output: Script = "A914D8DACDADB7462AE15CD906F1878706D0DA8660E687".into();
 
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &flags, &checker), Ok(()));
+		assert_eq!(verify_script(&input, &output, &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 }
 
