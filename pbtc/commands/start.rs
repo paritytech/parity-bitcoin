@@ -5,6 +5,7 @@ use std::sync::mpsc::{channel, Sender, Receiver};
 use std::sync::atomic::{AtomicBool, Ordering};
 use sync::{create_sync_peers, create_local_sync_node, create_sync_connection_factory, SyncListener};
 use message::Services;
+use network::ConsensusFork;
 use primitives::hash::H256;
 use util::{open_db, init_db, node_table_path};
 use {config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM};
@@ -90,6 +91,12 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 
 	let nodes_path = node_table_path(&cfg);
 
+	let services = Services::default().with_network(true);
+	let services = match cfg.consensus.fork {
+		ConsensusFork::BitcoinCash(_) => services.with_bitcoin_cash(true),
+		ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => services,
+	};
+
 	let p2p_cfg = p2p::Config {
 		threads: cfg.p2p_threads,
 		inbound_connections: cfg.inbound_connections,
@@ -99,7 +106,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 			protocol_minimum: PROTOCOL_MINIMUM,
 			magic: cfg.magic,
 			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
-			services: Services::default().with_network(true),
+			services: services,
 			user_agent: cfg.user_agent,
 			start_height: 0,
 			relay: true,
@@ -107,6 +114,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 		peers: cfg.connect.map_or_else(|| vec![], |x| vec![x]),
 		seeds: cfg.seednodes,
 		node_table_path: nodes_path,
+		preferable_services: services,
 		internet_protocol: cfg.internet_protocol,
 	};
 
