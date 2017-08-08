@@ -1,11 +1,11 @@
 use std::ops;
 use ser::Serializable;
 use chain::IndexedTransaction;
-use network::ConsensusParams;
+use network::{ConsensusParams, ConsensusFork};
 use duplex_store::NoopStore;
 use sigops::transaction_sigops;
 use error::TransactionError;
-use constants::{MAX_BLOCK_SIGOPS, MIN_COINBASE_SIZE, MAX_COINBASE_SIZE};
+use constants::{MIN_COINBASE_SIZE, MAX_COINBASE_SIZE};
 
 pub struct TransactionVerifier<'a> {
 	pub empty: TransactionEmpty<'a>,
@@ -47,7 +47,7 @@ impl<'a> MemoryPoolTransactionVerifier<'a> {
 			null_non_coinbase: TransactionNullNonCoinbase::new(transaction),
 			is_coinbase: TransactionMemoryPoolCoinbase::new(transaction),
 			size: TransactionSize::new(transaction, consensus, height),
-			sigops: TransactionSigops::new(transaction, MAX_BLOCK_SIGOPS),
+			sigops: TransactionSigops::new(transaction, ConsensusFork::absolute_maximum_block_sigops()),
 		}
 	}
 

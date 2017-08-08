@@ -352,7 +352,7 @@ mod tests {
 	}
 
 	#[test]
-	fn sigops_overflow_block() {
+	fn absoulte_sigops_overflow_block() {
 		let genesis = test_data::block_builder()
 			.transaction()
 				.coinbase()
@@ -367,12 +367,12 @@ mod tests {
 		let reference_tx = genesis.transactions()[1].hash();
 
 		let mut builder_tx1 = script::Builder::default();
-		for _ in 0..11000 {
+		for _ in 0..81000 {
 			builder_tx1 = builder_tx1.push_opcode(script::Opcode::OP_CHECKSIG)
 		}
 
 		let mut builder_tx2 = script::Builder::default();
-		for _ in 0..11001 {
+		for _ in 0..81001 {
 			builder_tx2 = builder_tx2.push_opcode(script::Opcode::OP_CHECKSIG)
 		}
 

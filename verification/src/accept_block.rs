@@ -6,7 +6,6 @@ use work::block_reward_satoshi;
 use duplex_store::DuplexTransactionOutputProvider;
 use deployments::Deployments;
 use canon::CanonBlock;
-use constants::MAX_BLOCK_SIGOPS;
 use error::{Error, TransactionError};
 use timestamp::median_timestamp;
 
@@ -33,7 +32,7 @@ impl<'a> BlockAcceptor<'a> {
 			serialized_size: BlockSerializedSize::new(block, consensus, height),
 			coinbase_script: BlockCoinbaseScript::new(block, consensus, height),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store, height),
-			sigops: BlockSigops::new(block, store, consensus, MAX_BLOCK_SIGOPS),
+			sigops: BlockSigops::new(block, store, consensus, height),
 		}
 	}
 
@@ -110,28 +109,29 @@ impl<'a> BlockSerializedSize<'a> {
 pub struct BlockSigops<'a> {
 	block: CanonBlock<'a>,
 	store: &'a TransactionOutputProvider,
-	consensus_params: &'a ConsensusParams,
-	max_sigops: usize,
+	consensus: &'a ConsensusParams,
+	height: u32,
 }
 
 impl<'a> BlockSigops<'a> {
-	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus_params: &'a ConsensusParams, max_sigops: usize) -> Self {
+	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus: &'a ConsensusParams, height: u32) -> Self {
 		BlockSigops {
 			block: block,
 			store: store,
-			consensus_params: consensus_params,
-			max_sigops: max_sigops,
+			consensus: consensus,
+			height: height,
 		}
 	}
 
 	fn check(&self) -> Result<(), Error> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
-		let bip16_active = self.block.header.raw.time >= self.consensus_params.bip16_time;
+		let bip16_active = self.block.header.raw.time >= self.consensus.bip16_time;
 		let sigops = self.block.transactions.iter()
 			.map(|tx| transaction_sigops(&tx.raw, &store, bip16_active))
 			.sum::<usize>();
 
-		if sigops > self.max_sigops {
+		let size = self.block.size();
+		if sigops > self.consensus.fork.max_block_sigops(self.height, size) {
 			Err(Error::MaximumSigops)
 		} else {
 			Ok(())

@@ -1,3 +1,4 @@
+use std::cmp::max;
 use hash::H256;
 use {Magic, Deployment};
 
@@ -116,6 +117,16 @@ impl ConsensusParams {
 }
 
 impl ConsensusFork {
+	/// Absolute (across all forks) maximum block size. Currently is 8MB for post-HF BitcoinCash
+	pub fn absolute_maximum_block_size() -> usize {
+		8_000_000
+	}
+
+	// Absolute (across all forks) maximum number of sigops in single block. Currently is max(sigops) for 8MB post-HF BitcoinCash block
+	pub fn absolute_maximum_block_sigops() -> usize {
+		160_000
+	}
+
 	pub fn min_block_size(&self, height: u32) -> usize {
 		match *self {
 			ConsensusFork::SegWit2x(fork_height) if height == fork_height => 0,
@@ -133,8 +144,18 @@ impl ConsensusFork {
 		}
 	}
 
-	pub fn max_transaction_size(&self, height: u32) -> usize {
-		self.max_block_size(height)
+	pub fn max_transaction_size(&self, _height: u32) -> usize {
+		// BitcoinCash: according to REQ-5: max size of tx is still 1_000_000
+		1_000_000
+	}
+
+	pub fn max_block_sigops(&self, height: u32, block_size: usize) -> usize {
+		match *self {
+			// according to REQ-5: max_block_sigops = 20000 * ceil((max(blocksize_bytes, 1000000) / 1000000))
+			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height && block_size > 1_000_000 =>
+				20_000 * (max(block_size, 1_000_000) / 1_000_000),
+			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) | ConsensusFork::BitcoinCash(_) => 20_000,
+		}
 	}
 }
 
@@ -188,13 +209,20 @@ mod tests {
 	}
 
 	#[test]
-	fn test_consensus_fork_max_block_size() {
-		assert_eq!(ConsensusFork::NoFork.max_block_size(0), 1_000_000);
-		assert_eq!(ConsensusFork::SegWit2x(100).max_block_size(0), 1_000_000);
-		assert_eq!(ConsensusFork::SegWit2x(100).max_block_size(100), 2_000_000);
-		assert_eq!(ConsensusFork::SegWit2x(100).max_block_size(200), 2_000_000);
-		assert_eq!(ConsensusFork::BitcoinCash(100).max_block_size(0), 1_000_000);
-		assert_eq!(ConsensusFork::BitcoinCash(100).max_block_size(100), 8_000_000);
-		assert_eq!(ConsensusFork::BitcoinCash(100).max_block_size(200), 8_000_000);
+	fn test_consensus_fork_max_transaction_size() {
+		assert_eq!(ConsensusFork::NoFork.max_transaction_size(0), 1_000_000);
+		assert_eq!(ConsensusFork::SegWit2x(100).max_transaction_size(0), 1_000_000);
+		assert_eq!(ConsensusFork::BitcoinCash(100).max_transaction_size(0), 1_000_000);
+	}
+
+	#[test]
+	fn test_consensus_fork_max_block_sigops() {
+		assert_eq!(ConsensusFork::NoFork.max_block_sigops(0, 1_000_000), 20_000);
+		assert_eq!(ConsensusFork::SegWit2x(100).max_block_sigops(0, 1_000_000), 20_000);
+		assert_eq!(ConsensusFork::SegWit2x(100).max_block_sigops(100, 2_000_000), 20_000);
+		assert_eq!(ConsensusFork::SegWit2x(100).max_block_sigops(200, 3_000_000), 20_000);
+		assert_eq!(ConsensusFork::BitcoinCash(100).max_block_sigops(0, 1_000_000), 20_000);
+		assert_eq!(ConsensusFork::BitcoinCash(100).max_block_sigops(100, 2_000_000), 40_000);
+		assert_eq!(ConsensusFork::BitcoinCash(100).max_block_sigops(200, 3_000_000), 60_000);
 	}
 }

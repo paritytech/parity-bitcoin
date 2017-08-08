@@ -1,13 +1,14 @@
 use std::collections::HashSet;
 use chain::IndexedBlock;
+use network::ConsensusFork;
 use sigops::transaction_sigops;
 use duplex_store::NoopStore;
 use error::{Error, TransactionError};
-use constants::MAX_BLOCK_SIGOPS;
 
 pub struct BlockVerifier<'a> {
 	pub empty: BlockEmpty<'a>,
 	pub coinbase: BlockCoinbase<'a>,
+	pub serialized_size: BlockSerializedSize<'a>,
 	pub extra_coinbases: BlockExtraCoinbases<'a>,
 	pub transactions_uniqueness: BlockTransactionsUniqueness<'a>,
 	pub sigops: BlockSigops<'a>,
@@ -19,9 +20,10 @@ impl<'a> BlockVerifier<'a> {
 		BlockVerifier {
 			empty: BlockEmpty::new(block),
 			coinbase: BlockCoinbase::new(block),
+			serialized_size: BlockSerializedSize::new(block, ConsensusFork::absolute_maximum_block_size()),
 			extra_coinbases: BlockExtraCoinbases::new(block),
 			transactions_uniqueness: BlockTransactionsUniqueness::new(block),
-			sigops: BlockSigops::new(block, MAX_BLOCK_SIGOPS),
+			sigops: BlockSigops::new(block, ConsensusFork::absolute_maximum_block_sigops()),
 			merkle_root: BlockMerkleRoot::new(block),
 		}
 	}
@@ -29,6 +31,7 @@ impl<'a> BlockVerifier<'a> {
 	pub fn check(&self) -> Result<(), Error> {
 		try!(self.empty.check());
 		try!(self.coinbase.check());
+		try!(self.serialized_size.check());
 		try!(self.extra_coinbases.check());
 		try!(self.transactions_uniqueness.check());
 		try!(self.sigops.check());
@@ -51,6 +54,29 @@ impl<'a> BlockEmpty<'a> {
 	fn check(&self) -> Result<(), Error> {
 		if self.block.transactions.is_empty() {
 			Err(Error::Empty)
+		} else {
+			Ok(())
+		}
+	}
+}
+
+pub struct BlockSerializedSize<'a> {
+	block: &'a IndexedBlock,
+	max_size: usize,
+}
+
+impl<'a> BlockSerializedSize<'a> {
+	fn new(block: &'a IndexedBlock, max_size: usize) -> Self {
+		BlockSerializedSize {
+			block: block,
+			max_size: max_size,
+		}
+	}
+
+	fn check(&self) -> Result<(), Error> {
+		let size = self.block.size();
+		if size > self.max_size {
+			Err(Error::Size(size))
 		} else {
 			Ok(())
 		}

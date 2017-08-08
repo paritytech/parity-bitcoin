@@ -12,7 +12,6 @@ use synchronization_server::{Server, ServerTask};
 use synchronization_verifier::{TransactionVerificationSink};
 use primitives::hash::H256;
 use miner::BlockTemplate;
-use verification::constants::MAX_BLOCK_SIGOPS;
 use synchronization_peers::{TransactionAnnouncementType, BlockAnnouncementType};
 use types::{PeerIndex, RequestId, StorageRef, MemoryPoolRef, PeersRef, ExecutorRef,
 	ClientRef, ServerRef, SynchronizationStateRef, SyncListenerRef};
@@ -276,9 +275,11 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 
 	/// Get block template for mining
 	pub fn get_block_template(&self) -> BlockTemplate {
+		let height = self.storage.best_block().number;
+		let max_block_size = self.consensus.fork.max_block_size(height);
 		let block_assembler = BlockAssembler {
-			max_block_size: self.consensus.fork.max_block_size(self.storage.best_block().number) as u32,
-			max_block_sigops: MAX_BLOCK_SIGOPS as u32,
+			max_block_size: max_block_size as u32,
+			max_block_sigops: self.consensus.fork.max_block_sigops(height, max_block_size) as u32,
 		};
 		let memory_pool = &*self.memory_pool.read();
 		block_assembler.create_new_block(&self.storage, memory_pool, time::get_time().sec as u32, self.consensus.magic)
