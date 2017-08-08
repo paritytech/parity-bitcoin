@@ -2,8 +2,9 @@ use std::cmp;
 use primitives::compact::Compact;
 use primitives::hash::H256;
 use primitives::bigint::U256;
-use network::Magic;
+use network::{Magic, ConsensusParams, ConsensusFork};
 use db::{BlockHeaderProvider, BlockRef};
+use timestamp::median_timestamp;
 
 use constants::{
 	DOUBLE_SPACING_SECONDS,
@@ -55,9 +56,10 @@ pub fn retarget_timespan(retarget_timestamp: u32, last_timestamp: u32) -> u32 {
 }
 
 /// Returns work required for given header
-pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, network: Magic) -> Compact {
+pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, consensus: &ConsensusParams) -> Compact {
+	let max_bits = consensus.magic.max_bits();
 	if height == 0 {
-		return network.max_bits();
+		return max_bits;
 	}
 
 	let parent_header = store.block_header(parent_hash.clone().into()).expect("self.height != 0; qed");
@@ -73,14 +75,43 @@ pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHea
 		// bits of last block
 		let last_bits = parent_header.bits;
 
-		return work_required_retarget(network.max_bits(), retarget_timestamp, last_timestamp, last_bits);
+		return work_required_retarget(max_bits, retarget_timestamp, last_timestamp, last_bits);
 	}
 
-	if network == Magic::Testnet {
-		return work_required_testnet(parent_hash, time, height, store, network)
+	if consensus.magic == Magic::Testnet {
+		return work_required_testnet(parent_hash, time, height, store, Magic::Testnet)
 	}
 
-	parent_header.bits
+	match consensus.fork {
+		_ if parent_header.bits == max_bits => parent_header.bits,
+		ConsensusFork::BitcoinCash(fork_height) if height >= fork_height => {
+			// REQ-7 Difficulty adjustement in case of hashrate drop
+			// In case the MTP of the tip of the chain is 12h or more after the MTP 6 block before the tip,
+			// the proof of work target is increased by a quarter, or 25%, which corresponds to a difficulty
+			// reduction of 20%.
+			let ancient_block_ref = (height - 6 - 1).into();
+			let ancient_header = store.block_header(ancient_block_ref)
+				.expect("parent_header.bits != max_bits; difficulty is max_bits for first RETARGETING_INTERVAL height; RETARGETING_INTERVAL > 7; qed");
+
+			let ancient_timestamp = median_timestamp(&ancient_header, store);
+			let parent_timestamp = median_timestamp(&parent_header, store);
+			let timestamp_diff = parent_timestamp.checked_sub(ancient_timestamp).unwrap_or_default();
+			if timestamp_diff < 43_200 {
+				// less than 12h => no difficulty change needed
+				return parent_header.bits;
+			}
+
+			let mut new_bits: U256 = parent_header.bits.into();
+			let max_bits: U256 = max_bits.into();
+			new_bits = new_bits + (new_bits >> 2);
+			if new_bits > max_bits {
+				new_bits = max_bits
+			}
+
+			new_bits.into()
+		},
+		_ => parent_header.bits,
+	}
 }
 
 pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, network: Magic) -> Compact {

@@ -3,7 +3,7 @@ use primitives::hash::H256;
 use primitives::compact::Compact;
 use chain::{OutPoint, TransactionOutput, IndexedTransaction};
 use db::{SharedStore, TransactionOutputProvider};
-use network::Magic;
+use network::ConsensusParams;
 use memory_pool::{MemoryPool, OrderingStrategy, Entry};
 use verification::{work_required, block_reward_satoshi, transaction_sigops};
 
@@ -233,13 +233,13 @@ impl<'a, T> Iterator for FittingTransactionsIterator<'a, T> where T: Iterator<It
 }
 
 impl BlockAssembler {
-	pub fn create_new_block(&self, store: &SharedStore, mempool: &MemoryPool, time: u32, network: Magic) -> BlockTemplate {
+	pub fn create_new_block(&self, store: &SharedStore, mempool: &MemoryPool, time: u32, consensus: &ConsensusParams) -> BlockTemplate {
 		// get best block
 		// take it's hash && height
 		let best_block = store.best_block();
 		let previous_header_hash = best_block.hash;
 		let height = best_block.number + 1;
-		let bits = work_required(previous_header_hash.clone(), time, height, store.as_block_header_provider(), network);
+		let bits = work_required(previous_header_hash.clone(), time, height, store.as_block_header_provider(), consensus);
 		let version = BLOCK_VERSION;
 
 		let mut coinbase_value = block_reward_satoshi(height);
