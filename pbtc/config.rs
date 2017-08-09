@@ -36,12 +36,13 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		(true, true) => return Err("Only one testnet option can be used".into()),
 	};
 
-	let consensus = ConsensusParams::new(magic, match (matches.is_present("segwit2x"), matches.is_present("bitcoin-cash")) {
-		(true, false) => ConsensusFork::SegWit2x(SEGWIT2X_FORK_BLOCK),
-		(false, true) => ConsensusFork::BitcoinCash(BITCOIN_CASH_FORK_BLOCK),
-		(false, false) => ConsensusFork::NoFork,
+	let (consensus_fork, user_agent_suffix) = match (matches.is_present("segwit2x"), matches.is_present("bitcoin-cash")) {
+		(true, false) => (ConsensusFork::SegWit2x(SEGWIT2X_FORK_BLOCK), "/SegWit2x"),
+		(false, true) => (ConsensusFork::BitcoinCash(BITCOIN_CASH_FORK_BLOCK), "/UAHF"),
+		(false, false) => (ConsensusFork::NoFork, ""),
 		(true, true) => return Err("Only one fork can be used".into()),
-	});
+	};
+	let consensus = ConsensusParams::new(magic, consensus_fork);
 
 	let (in_connections, out_connections) = match magic {
 		Magic::Testnet | Magic::Mainnet | Magic::Other(_) => (10, 10),
@@ -55,8 +56,8 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 
 	// to skip idiotic 30 seconds delay in test-scripts
 	let user_agent = match magic {
-		Magic::Testnet | Magic::Mainnet | Magic::Unitest | Magic::Other(_) => USER_AGENT,
-		Magic::Regtest => REGTEST_USER_AGENT,
+		Magic::Testnet | Magic::Mainnet | Magic::Unitest | Magic::Other(_) => format!("{}{}", USER_AGENT, user_agent_suffix),
+		Magic::Regtest => REGTEST_USER_AGENT.into(),
 	};
 
 	let port = match matches.value_of("port") {
@@ -117,7 +118,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		p2p_threads: p2p_threads,
 		db_cache: db_cache,
 		data_dir: data_dir,
-		user_agent: user_agent.to_string(),
+		user_agent: user_agent,
 		internet_protocol: only_net,
 		rpc_config: rpc_config,
 		block_notify_command: block_notify_command,
