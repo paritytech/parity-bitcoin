@@ -1994,5 +1994,80 @@ mod tests {
 			.verify_p2sh(true);
 		assert_eq!(verify_script(&input, &output, &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
-}
 
+
+	#[test]
+	fn test_script_with_forkid_signature() {
+		use keys::{KeyPair, Private, Network};
+		use sign::UnsignedTransactionInput;
+		use chain::{OutPoint, TransactionOutput};
+
+		let key_pair = KeyPair::from_private(Private { network: Network::Mainnet, secret: 1.into(), compressed: false, }).unwrap();
+		let redeem_script = Builder::default()
+			.push_data(key_pair.public())
+			.push_opcode(Opcode::OP_CHECKSIG)
+			.into_script();
+
+
+		let amount = 12345000000000;
+		let sighashtype = 0x41; // All + ForkId
+		let checker = TransactionSignatureChecker {
+			input_index: 0,
+			input_amount: amount,
+			signer: TransactionInputSigner {
+				version: 1,
+				inputs: vec![
+					UnsignedTransactionInput {
+						previous_output: OutPoint {
+							hash: 0u8.into(),
+							index: 0xffffffff,
+						},
+						sequence: 0xffffffff,
+					},
+				],
+				outputs: vec![
+					TransactionOutput {
+						value: amount,
+						script_pubkey: redeem_script.to_bytes(),
+					},
+				],
+				lock_time: 0,
+			},
+		};
+
+		let script_pubkey = redeem_script;
+		let flags = VerificationFlags::default();
+
+		// valid signature
+		{
+			let signed_input = checker.signer.signed_input(&key_pair, 0, amount, &script_pubkey, SignatureVersion::ForkId, sighashtype);
+			let script_sig = signed_input.script_sig.into();
+
+			assert_eq!(verify_script(&script_sig, &script_pubkey, &flags, &checker, SignatureVersion::ForkId), Ok(()));
+		}
+
+		// signature with wrong amount
+		{
+			let signed_input = checker.signer.signed_input(&key_pair, 0, amount + 1, &script_pubkey, SignatureVersion::ForkId, sighashtype);
+			let script_sig = signed_input.script_sig.into();
+
+			assert_eq!(verify_script(&script_sig, &script_pubkey, &flags, &checker, SignatureVersion::ForkId), Err(Error::EvalFalse));
+		}
+
+		// fork-id signature passed when not expected
+		{
+			let signed_input = checker.signer.signed_input(&key_pair, 0, amount + 1, &script_pubkey, SignatureVersion::ForkId, sighashtype);
+			let script_sig = signed_input.script_sig.into();
+
+			assert_eq!(verify_script(&script_sig, &script_pubkey, &flags, &checker, SignatureVersion::Base), Err(Error::EvalFalse));
+		}
+
+		// non-fork-id signature passed when expected
+		{
+			let signed_input = checker.signer.signed_input(&key_pair, 0, amount + 1, &script_pubkey, SignatureVersion::Base, 1);
+			let script_sig = signed_input.script_sig.into();
+
+			assert_eq!(verify_script(&script_sig, &script_pubkey, &flags, &checker, SignatureVersion::ForkId), Err(Error::EvalFalse));
+		}
+	}
+}

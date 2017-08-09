@@ -1,11 +1,12 @@
 //! Transaction signer
 
 use bytes::Bytes;
+use keys::KeyPair;
 use crypto::dhash256;
 use hash::H256;
 use ser::Stream;
 use chain::{Transaction, TransactionOutput, OutPoint, TransactionInput};
-use Script;
+use {Script, Builder};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SignatureVersion {
@@ -62,7 +63,7 @@ impl From<u32> for Sighash {
 				1 | _ => SighashBase::All,
 			},
 			u & 0x80 == 0x80,
-			u & 0x40 == 0x40)
+			u & 0x40 == 0x40 && u & 0xFFFFFF00 == 0)
 	}
 }
 
@@ -76,6 +77,11 @@ impl Sighash {
 	}
 
 	pub fn is_defined(u: u32) -> bool {
+		// fork id must be zero
+		if u & 0x40 == 0x40 && u & 0xFFFFFF00 != 0 {
+			return false;
+		}
+
 		// use 0xdf istead of 0x1f to catch 0x40 | 0x80
 		match u & 0xdf {
 			1 | 2 | 3 |
@@ -152,6 +158,34 @@ impl TransactionInputSigner {
 			true if sigversion == SignatureVersion::ForkId => self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash),
 			false if sigversion == SignatureVersion::Base => self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash),
 			_ => 1u8.into(),
+		}
+	}
+
+	/// input_index - index of input to sign
+	/// script_pubkey - script_pubkey of input's previous_output pubkey
+	pub fn signed_input(
+		&self,
+		keypair: &KeyPair,
+		input_index: usize,
+		input_amount: u64,
+		script_pubkey: &Script,
+		sigversion: SignatureVersion,
+		sighash: u32,
+	) -> TransactionInput {
+		let hash = self.signature_hash(input_index, input_amount, script_pubkey, sigversion, sighash);
+
+		let mut signature: Vec<u8> = keypair.private().sign(&hash).unwrap().into();
+		signature.push(sighash as u8);
+		let script_sig = Builder::default()
+			.push_data(&signature)
+			//.push_data(keypair.public())
+			.into_script();
+
+		let unsigned_input = &self.inputs[input_index];
+		TransactionInput {
+			previous_output: unsigned_input.previous_output.clone(),
+			sequence: unsigned_input.sequence,
+			script_sig: script_sig.to_bytes(),
 		}
 	}
 
@@ -273,7 +307,7 @@ mod tests {
 	use keys::{KeyPair, Private, Address};
 	use chain::{OutPoint, TransactionOutput, Transaction};
 	use script::Script;
-	use super::{UnsignedTransactionInput, TransactionInputSigner, SighashBase, SignatureVersion};
+	use super::{Sighash, UnsignedTransactionInput, TransactionInputSigner, SighashBase, SignatureVersion};
 
 	// http://www.righto.com/2014/02/bitcoins-hard-way-using-raw-bitcoin.html
 	// https://blockchain.info/rawtx/81b4c832d70cb56ff957589752eb4125a4cab78a25a8fc52d6a09e5bd4404d48
@@ -839,5 +873,12 @@ mod tests {
 		run_test_sighash("e1cfd73b0125add9e9d699f5a45dca458355af175a7bd4486ebef28f1928d87864384d02df02000000036a0051ffffffff0357df030100000000036a5365777e2d04000000000763ab6a00005265f434a601000000000351655100000000", "ab53ab", 0, -1936500914, "950f4b4f72ccdf8a6a0f381265d6c8842fdb7e8b3df3e9742905f643b2432b69");
 		run_test_sighash("cf781855040a755f5ba85eef93837236b34a5d3daeb2dbbdcf58bb811828d806ed05754ab8010000000351ac53ffffffffda1e264727cf55c67f06ebcc56dfe7fa12ac2a994fecd0180ce09ee15c480f7d00000000096351516a51acac00ab53dd49ff9f334befd6d6f87f1a832cddfd826a90b78fd8cf19a52cb8287788af94e939d6020000000700525251ac526310d54a7e8900ed633f0f6f0841145aae7ee0cbbb1e2a0cae724ee4558dbabfdc58ba6855010000000552536a53abfd1b101102c51f910500000000096300656a525252656a300bee010000000009ac52005263635151abe19235c9", "53005365", 2, 1422854188, "d5981bd4467817c1330da72ddb8760d6c2556cd809264b2d85e6d274609fc3a3");
 		run_test_sighash("fea256ce01272d125e577c0a09570a71366898280dda279b021000db1325f27edda41a53460100000002ab53c752c21c013c2b3a01000000000000000000", "65", 0, 1145543262, "076b9f844f6ae429de228a2c337c704df1652c292b6c6494882190638dad9efd");
+	}
+
+	#[test]
+	fn test_sighash_forkid_from_u32() {
+		assert!(!Sighash::is_defined(0b11111111111111111111111101000010)); // non-zero fork id
+		assert!(!Sighash::is_defined(0b00000000000000000000000101000010)); // non-zero fork id
+		assert!(Sighash::is_defined(0b00000000000000000000000001000010)); // zero fork id
 	}
 }
