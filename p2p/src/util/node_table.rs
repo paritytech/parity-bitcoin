@@ -186,7 +186,7 @@ impl NodeTable {
 	/// Creates empty node table with preferable services.
 	pub fn new(preferable_services: Services) -> Self {
 		NodeTable {
-			preferable_services: preferable_services,
+			preferable_services,
 			..Default::default()
 		}
 	}

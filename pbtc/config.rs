@@ -1,5 +1,6 @@
 use std::net;
 use clap;
+use message::Services;
 use network::{Magic, ConsensusParams, ConsensusFork, SEGWIT2X_FORK_BLOCK, BITCOIN_CASH_FORK_BLOCK};
 use p2p::InternetProtocol;
 use seednodes::{mainnet_seednodes, testnet_seednodes};
@@ -10,6 +11,7 @@ use rpc::HttpConfiguration as RpcHttpConfig;
 pub struct Config {
 	pub magic: Magic,
 	pub consensus: ConsensusParams,
+	pub services: Services,
 	pub port: u16,
 	pub connect: Option<net::SocketAddr>,
 	pub seednodes: Vec<String>,
@@ -106,10 +108,17 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => None,
 	};
 
+	let services = Services::default().with_network(true);
+	let services = match consensus.fork {
+		ConsensusFork::BitcoinCash(_) => services.with_bitcoin_cash(true),
+		ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => services,
+	};
+
 	let config = Config {
 		print_to_console: print_to_console,
 		magic: magic,
 		consensus: consensus,
+		services: services,
 		port: port,
 		connect: connect,
 		seednodes: seednodes,
