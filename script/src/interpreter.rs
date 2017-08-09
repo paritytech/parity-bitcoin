@@ -149,15 +149,15 @@ fn is_low_der_signature(sig: &[u8]) -> Result<(), Error> {
 	Ok(())
 }
 
-fn is_defined_hashtype_signature(sig: &[u8]) -> bool {
+fn is_defined_hashtype_signature(version: SignatureVersion, sig: &[u8]) -> bool {
 	if sig.is_empty() {
 		return false;
 	}
 
-	Sighash::is_defined(sig[sig.len() -1] as u32)
+	Sighash::is_defined(version, sig[sig.len() -1] as u32)
 }
 
-fn check_signature_encoding(sig: &[u8], flags: &VerificationFlags) -> Result<(), Error> {
+fn check_signature_encoding(sig: &[u8], flags: &VerificationFlags, version: SignatureVersion) -> Result<(), Error> {
 	// Empty signature. Not strictly DER encoded, but allowed to provide a
 	// compact way to provide an invalid signature for use with CHECK(MULTI)SIG
 
@@ -173,7 +173,7 @@ fn check_signature_encoding(sig: &[u8], flags: &VerificationFlags) -> Result<(),
 		try!(is_low_der_signature(sig));
 	}
 
-	if flags.verify_strictenc && !is_defined_hashtype_signature(sig) {
+	if flags.verify_strictenc && !is_defined_hashtype_signature(version, sig) {
 		Err(Error::SignatureHashtype)
 	} else {
 		Ok(())
@@ -778,7 +778,7 @@ pub fn eval_script(
 					subscript = subscript.find_and_delete(&*signature_script);
 				}
 
-				try!(check_signature_encoding(&signature, flags));
+				try!(check_signature_encoding(&signature, flags, version));
 				try!(check_pubkey_encoding(&pubkey, flags));
 
 				let success = check_signature(checker, signature.into(), pubkey.into(), &subscript, version);
@@ -830,7 +830,7 @@ pub fn eval_script(
 					let key = keys[k].clone();
 					let sig = sigs[s].clone();
 
-					try!(check_signature_encoding(&sig, flags));
+					try!(check_signature_encoding(&sig, flags, version));
 					try!(check_pubkey_encoding(&key, flags));
 
 					let ok = check_signature(checker, sig.into(), key.into(), &subscript, version);
