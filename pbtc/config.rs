@@ -1,6 +1,6 @@
 use std::net;
 use clap;
-use network::{Magic, ConsensusParams, ConsensusFork};
+use network::{Magic, ConsensusParams, ConsensusFork, SEGWIT2X_FORK_BLOCK, BITCOIN_CASH_FORK_BLOCK};
 use p2p::InternetProtocol;
 use seednodes::{mainnet_seednodes, testnet_seednodes};
 use rpc_apis::ApiSet;
@@ -36,11 +36,11 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		(true, true) => return Err("Only one testnet option can be used".into()),
 	};
 
-	let consensus = ConsensusParams::new(magic, match (matches.value_of("segwit2x"), matches.value_of("bitcoin-cash")) {
-		(Some(block), None) => ConsensusFork::SegWit2x(block.parse().map_err(|_| "Invalid block number".to_owned())?),
-		(None, Some(block)) => ConsensusFork::BitcoinCash(block.parse().map_err(|_| "Invalid block number".to_owned())?),
-		(None, None) => ConsensusFork::NoFork,
-		(Some(_), Some(_)) => return Err("Only one fork can be used".into()),
+	let consensus = ConsensusParams::new(magic, match (matches.is_present("segwit2x"), matches.is_present("bitcoin-cash")) {
+		(true, false) => ConsensusFork::SegWit2x(SEGWIT2X_FORK_BLOCK),
+		(false, true) => ConsensusFork::BitcoinCash(BITCOIN_CASH_FORK_BLOCK),
+		(false, false) => ConsensusFork::NoFork,
+		(true, true) => return Err("Only one fork can be used".into()),
 	});
 
 	let (in_connections, out_connections) = match magic {

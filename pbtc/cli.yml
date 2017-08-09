@@ -11,14 +11,10 @@ args:
         help: Use private network for regtest
     - segwit2x:
         long: segwit2x
-        value_name: BLOCK
         help: Enable SegWit2x verification rules, starting from given block height
-        takes_value: true
     - bitcoin-cash:
         long: bitcoin-cash
-        value_name: BLOCK
         help: Use Bitcoin Cash verification rules, starting from given block height
-        takes_value: true
     - connect:
         short: c
         long: connect
