@@ -33,7 +33,7 @@ impl BackwardsCompatibleChainVerifier {
 	fn verify_block(&self, block: &IndexedBlock) -> Result<(), Error> {
 		let current_time = ::time::get_time().sec as u32;
 		// first run pre-verification
-		let chain_verifier = ChainVerifier::new(block, self.consensus.magic, current_time);
+		let chain_verifier = ChainVerifier::new(block, self.consensus.network, current_time);
 		chain_verifier.check()?;
 
 		assert_eq!(Some(self.store.best_block().hash), self.store.block_hash(self.store.best_block().number));
@@ -79,7 +79,7 @@ impl BackwardsCompatibleChainVerifier {
 		// TODO: full verification
 		let current_time = ::time::get_time().sec as u32;
 		let header = IndexedBlockHeader::new(hash.clone(), header.clone());
-		let header_verifier = HeaderVerifier::new(&header, self.consensus.magic, current_time);
+		let header_verifier = HeaderVerifier::new(&header, self.consensus.network, current_time);
 		header_verifier.check()
 	}
 

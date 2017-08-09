@@ -89,7 +89,7 @@ pub fn create_local_sync_node(consensus: ConsensusParams, db: db::SharedStore, p
 	use utils::SynchronizationState;
 	use types::SynchronizationStateRef;
 
-	let network = consensus.magic;
+	let network = consensus.network;
 	let sync_client_config = SynchronizationConfig {
 		// during regtests, peer is providing us with bad blocks => we shouldn't close connection because of this
 		close_connection_on_bad_block: network != Magic::Regtest,

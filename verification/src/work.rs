@@ -57,7 +57,7 @@ pub fn retarget_timespan(retarget_timestamp: u32, last_timestamp: u32) -> u32 {
 
 /// Returns work required for given header
 pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, consensus: &ConsensusParams) -> Compact {
-	let max_bits = consensus.magic.max_bits();
+	let max_bits = consensus.network.max_bits();
 	if height == 0 {
 		return max_bits;
 	}
@@ -78,7 +78,7 @@ pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHea
 		return work_required_retarget(max_bits, retarget_timestamp, last_timestamp, last_bits);
 	}
 
-	if consensus.magic == Magic::Testnet {
+	if consensus.network == Magic::Testnet {
 		return work_required_testnet(parent_hash, time, height, store, Magic::Testnet)
 	}
 

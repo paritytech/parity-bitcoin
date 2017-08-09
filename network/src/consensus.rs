@@ -11,7 +11,7 @@ pub const BITCOIN_CASH_FORK_BLOCK: u32 = 478559; // https://blockchair.com/bitco
 /// Parameters that influence chain consensus.
 pub struct ConsensusParams {
 	/// Network.
-	pub magic: Magic,
+	pub network: Magic,
 	/// Time when BIP16 becomes active.
 	/// See https://github.com/bitcoin/bips/blob/master/bip-0016.mediawiki
 	pub bip16_time: u32,
@@ -59,7 +59,7 @@ impl ConsensusParams {
 	pub fn new(magic: Magic, fork: ConsensusFork) -> Self {
 		match magic {
 			Magic::Mainnet | Magic::Other(_) => ConsensusParams {
-				magic: magic,
+				network: magic,
 				bip16_time: 1333238400,	// Apr 1 2012
 				bip34_height: 227931,	// 000000000000024b89b42a942fe0d9fea3bb44ab7bd1b19115dd6a759c0808b8
 				bip65_height: 388381,	// 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
@@ -77,7 +77,7 @@ impl ConsensusParams {
 				segwit_deployment: None,
 			},
 			Magic::Testnet => ConsensusParams {
-				magic: magic,
+				network: magic,
 				bip16_time: 1333238400,	// Apr 1 2012
 				bip34_height: 21111,	// 0000000023b3a96d3484e5abb3755c413e7d41500f8e2a5c3f0dd01299cd8ef8
 				bip65_height: 581885,	// 00000000007f6655f22f98e72ed80d8b06dc761d5da09df0fa1dc4be4f861eb6
@@ -95,7 +95,7 @@ impl ConsensusParams {
 				segwit_deployment: None,
 			},
 			Magic::Regtest | Magic::Unitest => ConsensusParams {
-				magic: magic,
+				network: magic,
 				bip16_time: 1333238400,	// Apr 1 2012
 				bip34_height: 100000000,	// not activated on regtest
 				bip65_height: 1351,
