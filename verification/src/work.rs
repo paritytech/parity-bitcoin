@@ -4,7 +4,7 @@ use primitives::hash::H256;
 use primitives::bigint::U256;
 use network::{Magic, ConsensusParams, ConsensusFork};
 use db::{BlockHeaderProvider, BlockRef};
-use timestamp::median_timestamp;
+use timestamp::median_timestamp_inclusive;
 
 use constants::{
 	DOUBLE_SPACING_SECONDS,
@@ -93,8 +93,8 @@ pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHea
 			let ancient_header = store.block_header(ancient_block_ref)
 				.expect("parent_header.bits != max_bits; difficulty is max_bits for first RETARGETING_INTERVAL height; RETARGETING_INTERVAL > 7; qed");
 
-			let ancient_timestamp = median_timestamp(&ancient_header, store);
-			let parent_timestamp = median_timestamp(&parent_header, store);
+			let ancient_timestamp = median_timestamp_inclusive(ancient_header.hash(), store);
+			let parent_timestamp = median_timestamp_inclusive(parent_header.hash(), store);
 			let timestamp_diff = parent_timestamp.checked_sub(ancient_timestamp).unwrap_or_default();
 			if timestamp_diff < 43_200 {
 				// less than 12h => no difficulty change needed
@@ -168,10 +168,14 @@ pub fn block_reward_satoshi(block_height: u32) -> u64 {
 
 #[cfg(test)]
 mod tests {
+	use std::collections::HashMap;
+	use primitives::bytes::Bytes;
 	use primitives::hash::H256;
 	use primitives::compact::Compact;
-	use network::Magic;
-	use super::{is_valid_proof_of_work_hash, is_valid_proof_of_work, block_reward_satoshi};
+	use network::{Magic, ConsensusParams, ConsensusFork};
+	use db::{BlockHeaderProvider, BlockRef};
+	use chain::BlockHeader;
+	use super::{work_required, is_valid_proof_of_work_hash, is_valid_proof_of_work, block_reward_satoshi};
 
 	fn is_valid_pow(max: Compact, bits: u32, hash: &'static str) -> bool {
 		is_valid_proof_of_work_hash(bits.into(), &H256::from_reversed_str(hash)) &&
@@ -201,5 +205,81 @@ mod tests {
 		assert_eq!(block_reward_satoshi(629999), 1250000000);
 		assert_eq!(block_reward_satoshi(630000), 625000000);
 		assert_eq!(block_reward_satoshi(630001), 625000000);
+	}
+
+	// original test link:
+	// https://github.com/bitcoinclassic/bitcoinclassic/blob/8bf1fb856df44d1b790b0b835e4c1969be736e25/src/test/pow_tests.cpp#L108
+	#[test]
+	fn bitcoin_cash_req7() {
+		#[derive(Default)]
+		struct MemoryBlockHeaderProvider {
+			pub by_height: Vec<BlockHeader>,
+			pub by_hash: HashMap<H256, usize>,
+		}
+
+		impl MemoryBlockHeaderProvider {
+			pub fn insert(&mut self, header: BlockHeader) {
+				self.by_hash.insert(header.hash(), self.by_height.len());
+				self.by_height.push(header);
+			}
+		}
+
+		impl BlockHeaderProvider for MemoryBlockHeaderProvider {
+			fn block_header_bytes(&self, _block_ref: BlockRef) -> Option<Bytes> {
+				unimplemented!()
+			}
+
+			fn block_header(&self, block_ref: BlockRef) -> Option<BlockHeader> {
+				match block_ref {
+					BlockRef::Hash(ref hash) => self.by_hash.get(hash).map(|h| &self.by_height[*h]).cloned(),
+					BlockRef::Number(height) => self.by_height.get(height as usize).cloned(),
+				}
+			}
+		}
+
+		let main_consensus = ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork);
+		let uahf_consensus = ConsensusParams::new(Magic::Mainnet, ConsensusFork::BitcoinCash(1000));
+		let mut header_provider = MemoryBlockHeaderProvider::default();
+		header_provider.insert(BlockHeader {
+				version: 0,
+				previous_header_hash: 0.into(),
+				merkle_root_hash: 0.into(),
+				time: 1269211443,
+				bits: 0x207fffff.into(),
+				nonce: 0,
+			});
+
+		// create x100 pre-HF blocks
+		for height in 1..1000 {
+			let mut header = header_provider.block_header((height - 1).into()).unwrap();
+			header.previous_header_hash = header.hash();
+			header.time = header.time + 10 * 60;
+			header_provider.insert(header);
+		}
+
+		// create x10 post-HF blocks every 2 hours
+		// MTP still less than 12h
+		for height in 1000..1010 {
+			let mut header = header_provider.block_header((height - 1).into()).unwrap();
+			header.previous_header_hash = header.hash();
+			header.time = header.time + 2 * 60 * 60;
+			header_provider.insert(header.clone());
+
+			let main_bits: u32 = work_required(header.hash(), 0, height as u32, &header_provider, &main_consensus).into();
+			assert_eq!(main_bits, 0x207fffff_u32);
+			let uahf_bits: u32 = work_required(header.hash(), 0, height as u32, &header_provider, &uahf_consensus).into();
+			assert_eq!(uahf_bits, 0x207fffff_u32);
+		}
+
+		// MTP becames greater than 12h
+		let mut header = header_provider.block_header(1009.into()).unwrap();
+		header.previous_header_hash = header.hash();
+		header.time = header.time + 2 * 60 * 60;
+		header_provider.insert(header.clone());
+
+		let main_bits: u32 = work_required(header.hash(), 0, 1010, &header_provider, &main_consensus).into();
+		assert_eq!(main_bits, 0x207fffff_u32);
+		let uahf_bits: u32 = work_required(header.hash(), 0, 1010, &header_provider, &uahf_consensus).into();
+		assert_eq!(uahf_bits, 0x1d00ffff_u32);
 	}
 }
