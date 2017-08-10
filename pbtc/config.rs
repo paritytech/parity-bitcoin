@@ -5,7 +5,10 @@ use p2p::InternetProtocol;
 use seednodes::{mainnet_seednodes, testnet_seednodes};
 use rpc_apis::ApiSet;
 use {USER_AGENT, REGTEST_USER_AGENT};
+use primitives::hash::H256;
 use rpc::HttpConfiguration as RpcHttpConfig;
+use verification::VerificationLevel;
+use sync::VerificationParameters;
 
 pub struct Config {
 	pub magic: Magic,
@@ -22,6 +25,7 @@ pub struct Config {
 	pub internet_protocol: InternetProtocol,
 	pub rpc_config: RpcHttpConfig,
 	pub block_notify_command: Option<String>,
+	pub verification_params: VerificationParameters,
 }
 
 pub const DEFAULT_DB_CACHE: usize = 512;
@@ -97,6 +101,22 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => None,
 	};
 
+	let verification_level = match matches.value_of("verification-level") {
+		Some(s) if s == "full" => VerificationLevel::Full,
+		Some(s) if s == "header" => VerificationLevel::Header,
+		Some(s) if s == "none" => VerificationLevel::NoVerification,
+		Some(s) => return Err(format!("Invalid verification level: {}", s)),
+		None => VerificationLevel::Full,
+	};
+
+	let verification_edge = match matches.value_of("verification-edge") {
+		Some(s) if verification_level != VerificationLevel::Full => {
+			let edge: H256 = s.parse().map_err(|_| "Invalid verification edge".to_owned())?;
+			edge.reversed()
+		},
+		_ => magic.default_verification_edge(),
+	};
+
 	let config = Config {
 		print_to_console: print_to_console,
 		magic: magic,
@@ -112,6 +132,10 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		internet_protocol: only_net,
 		rpc_config: rpc_config,
 		block_notify_command: block_notify_command,
+		verification_params: VerificationParameters {
+			verification_level: verification_level,
+			verification_edge: verification_edge,
+		},
 	};
 
 	Ok(config)

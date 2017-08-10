@@ -111,7 +111,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 	};
 
 	let sync_peers = create_sync_peers();
-	let local_sync_node = create_local_sync_node(cfg.magic, db.clone(), sync_peers.clone());
+	let local_sync_node = create_local_sync_node(cfg.magic, db.clone(), sync_peers.clone(), cfg.verification_params);
 	let sync_connection_factory = create_sync_connection_factory(sync_peers.clone(), local_sync_node.clone());
 
 	if let Some(block_notify_command) = cfg.block_notify_command {

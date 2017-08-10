@@ -20,6 +20,7 @@ extern crate sync;
 extern crate import;
 extern crate rpc as ethcore_rpc;
 extern crate primitives;
+extern crate verification;
 
 mod commands;
 mod config;
