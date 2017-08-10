@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use db::BlockChainDatabase;
 use chain::IndexedBlock;
-use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify};
+use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify, VerificationLevel};
 use network::Magic;
 use test_data;
 use byteorder::{LittleEndian, ByteOrder};
@@ -99,7 +99,7 @@ pub fn main(benchmark: &mut Benchmark) {
 	// bench
 	benchmark.start();
 	for block in verification_blocks.iter() {
-		chain_verifier.verify(block).unwrap();
+		chain_verifier.verify(VerificationLevel::Full, block).unwrap();
 	 }
 	benchmark.stop();
 }
