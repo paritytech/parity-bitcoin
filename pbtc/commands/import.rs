@@ -9,9 +9,8 @@ pub fn import(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 	try!(init_db(&cfg, &db));
 
 	let blk_path = matches.value_of("PATH").expect("PATH is required in cli.yml; qed");
-	let skip_verification = matches.is_present("skip-verification");
 
-	let mut writer = create_sync_blocks_writer(db, cfg.magic, !skip_verification);
+	let mut writer = create_sync_blocks_writer(db, cfg.magic, cfg.verification_params);
 
 	let blk_dir = try!(::import::open_blk_dir(blk_path).map_err(|_| "Import directory does not exist".to_owned()));
 	let mut counter = 0;

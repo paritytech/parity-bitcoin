@@ -10,6 +10,7 @@ use synchronization_verifier::{Verifier, SyncVerifier, VerificationTask,
 	VerificationSink, BlockVerificationSink, TransactionVerificationSink};
 use types::StorageRef;
 use utils::OrphanBlocksPool;
+use VerificationParameters;
 
 /// Maximum number of orphaned in-memory blocks
 pub const MAX_ORPHANED_BLOCKS: usize = 1024;
@@ -24,8 +25,6 @@ pub struct BlocksWriter {
 	verifier: SyncVerifier<BlocksWriterSink>,
 	/// Verification events receiver
 	sink: Arc<BlocksWriterSinkData>,
-	/// True if verification is enabled
-	verification: bool,
 }
 
 /// Verification events receiver
@@ -44,16 +43,15 @@ struct BlocksWriterSinkData {
 
 impl BlocksWriter {
 	/// Create new synchronous blocks writer
-	pub fn new(storage: StorageRef, network: Magic, verification: bool) -> BlocksWriter {
+	pub fn new(storage: StorageRef, network: Magic, verification_params: VerificationParameters) -> BlocksWriter {
 		let sink_data = Arc::new(BlocksWriterSinkData::new(storage.clone()));
 		let sink = Arc::new(BlocksWriterSink::new(sink_data.clone()));
-		let verifier = SyncVerifier::new(network, storage.clone(), sink);
+		let verifier = SyncVerifier::new(network, storage.clone(), sink, verification_params);
 		BlocksWriter {
 			storage: storage,
 			orphaned_blocks_pool: OrphanBlocksPool::new(),
 			verifier: verifier,
 			sink: sink_data,
-			verification: verification,
 		}
 	}
 
@@ -78,16 +76,9 @@ impl BlocksWriter {
 		let mut verification_queue: VecDeque<chain::IndexedBlock> = self.orphaned_blocks_pool.remove_blocks_for_parent(block.hash());
 		verification_queue.push_front(block);
 		while let Some(block) = verification_queue.pop_front() {
-			if self.verification {
-				self.verifier.verify_block(block);
-
-				if let Some(err) = self.sink.error() {
-					return Err(err);
-				}
-			} else {
-				let hash = block.hash().clone();
-				self.storage.insert(block).map_err(Error::Database)?;
-				self.storage.canonize(&hash).map_err(Error::Database)?;
+			self.verifier.verify_block(block);
+			if let Some(err) = self.sink.error() {
+				return Err(err);
 			}
 		}
 
@@ -157,13 +148,22 @@ mod tests {
 	use std::sync::Arc;
 	use db::{BlockChainDatabase};
 	use network::Magic;
+	use verification::VerificationLevel;
 	use super::super::Error;
 	use super::{BlocksWriter, MAX_ORPHANED_BLOCKS};
+	use VerificationParameters;
+
+	fn default_verification_params() -> VerificationParameters {
+		VerificationParameters {
+			verification_level: VerificationLevel::Full,
+			verification_edge: 0u8.into(),
+		}
+	}
 
 	#[test]
 	fn blocks_writer_appends_blocks() {
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
-		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, true);
+		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, default_verification_params());
 		blocks_target.append_block(test_data::block_h1().into()).expect("Expecting no error");
 		assert_eq!(db.best_block().number, 1);
 	}
@@ -172,7 +172,7 @@ mod tests {
 	fn blocks_writer_verification_error() {
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let blocks = test_data::build_n_empty_blocks_from_genesis((MAX_ORPHANED_BLOCKS + 2) as u32, 1);
-		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, true);
+		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, default_verification_params());
 		for (index, block) in blocks.into_iter().skip(1).enumerate() {
 			match blocks_target.append_block(block.into()) {
 				Err(Error::TooManyOrphanBlocks) if index == MAX_ORPHANED_BLOCKS => (),
@@ -186,7 +186,7 @@ mod tests {
 	#[test]
 	fn blocks_writer_out_of_order_block() {
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
-		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, true);
+		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, default_verification_params());
 
 		let wrong_block = test_data::block_builder()
 			.header().parent(test_data::genesis().hash()).build()
@@ -201,7 +201,7 @@ mod tests {
 	#[test]
 	fn blocks_writer_append_to_existing_db() {
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
-		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, true);
+		let mut blocks_target = BlocksWriter::new(db.clone(), Magic::Testnet, default_verification_params());
 
 		assert!(blocks_target.append_block(test_data::genesis().into()).is_ok());
 		assert_eq!(db.best_block().number, 0);

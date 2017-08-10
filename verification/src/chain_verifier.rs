@@ -13,7 +13,7 @@ use verify_transaction::MemoryPoolTransactionVerifier;
 use accept_chain::ChainAcceptor;
 use accept_transaction::MemoryPoolTransactionAcceptor;
 use deployments::Deployments;
-use Verify;
+use {Verify, VerificationLevel};
 
 pub struct BackwardsCompatibleChainVerifier {
 	store: SharedStore,
@@ -30,7 +30,11 @@ impl BackwardsCompatibleChainVerifier {
 		}
 	}
 
-	fn verify_block(&self, block: &IndexedBlock) -> Result<(), Error> {
+	fn verify_block(&self, verification_level: VerificationLevel, block: &IndexedBlock) -> Result<(), Error> {
+		if verification_level == VerificationLevel::NoVerification {
+			return Ok(());
+		}
+
 		let current_time = ::time::get_time().sec as u32;
 		// first run pre-verification
 		let chain_verifier = ChainVerifier::new(block, self.network, current_time);
@@ -46,21 +50,21 @@ impl BackwardsCompatibleChainVerifier {
 			},
 			BlockOrigin::CanonChain { block_number } => {
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(self.store.as_store(), self.network, canon_block, block_number, &self.deployments);
+				let chain_acceptor = ChainAcceptor::new(self.store.as_store(), self.network, verification_level, canon_block, block_number, &self.deployments);
 				chain_acceptor.check()?;
 			},
 			BlockOrigin::SideChain(origin) => {
 				let block_number = origin.block_number;
 				let fork = self.store.fork(origin)?;
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number, &self.deployments);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, verification_level, canon_block, block_number, &self.deployments);
 				chain_acceptor.check()?;
 			},
 			BlockOrigin::SideChainBecomingCanonChain(origin) => {
 				let block_number = origin.block_number;
 				let fork = self.store.fork(origin)?;
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, canon_block, block_number, &self.deployments);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), self.network, verification_level, canon_block, block_number, &self.deployments);
 				chain_acceptor.check()?;
 			},
 		}
@@ -114,8 +118,8 @@ impl BackwardsCompatibleChainVerifier {
 }
 
 impl Verify for BackwardsCompatibleChainVerifier {
-	fn verify(&self, block: &IndexedBlock) -> Result<(), Error> {
-		let result = self.verify_block(block);
+	fn verify(&self, level: VerificationLevel, block: &IndexedBlock) -> Result<(), Error> {
+		let result = self.verify_block(level, block);
 		trace!(
 			target: "verification", "Block {} (transactions: {}) verification finished. Result {:?}",
 			block.hash().to_reversed_str(),
@@ -136,14 +140,14 @@ mod tests {
 	use network::Magic;
 	use script;
 	use super::BackwardsCompatibleChainVerifier as ChainVerifier;
-	use {Verify, Error, TransactionError};
+	use {Verify, Error, TransactionError, VerificationLevel};
 
 	#[test]
 	fn verify_orphan() {
 		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let b2 = test_data::block_h2().into();
 		let verifier = ChainVerifier::new(storage, Magic::Unitest);
-		assert_eq!(Err(Error::Database(DBError::UnknownParent)), verifier.verify(&b2));
+		assert_eq!(Err(Error::Database(DBError::UnknownParent)), verifier.verify(VerificationLevel::Full, &b2));
 	}
 
 	#[test]
@@ -151,7 +155,7 @@ mod tests {
 		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let b1 = test_data::block_h1();
 		let verifier = ChainVerifier::new(storage, Magic::Unitest);
-		assert!(verifier.verify(&b1.into()).is_ok());
+		assert!(verifier.verify(VerificationLevel::Full, &b1.into()).is_ok());
 	}
 
 
@@ -164,7 +168,7 @@ mod tests {
 			]);
 		let b1 = test_data::block_h2();
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
-		assert!(verifier.verify(&b1.into()).is_ok());
+		assert!(verifier.verify(VerificationLevel::Full, &b1.into()).is_ok());
 	}
 
 	#[test]
@@ -199,7 +203,7 @@ mod tests {
 			TransactionError::Maturity,
 		));
 
-		assert_eq!(expected, verifier.verify(&block.into()));
+		assert_eq!(expected, verifier.verify(VerificationLevel::Full, &block.into()));
 	}
 
 	#[test]
@@ -231,7 +235,7 @@ mod tests {
 			.build();
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
-		assert!(verifier.verify(&block.into()).is_ok());
+		assert!(verifier.verify(VerificationLevel::Full, &block.into()).is_ok());
 	}
 
 	#[test]
@@ -267,7 +271,7 @@ mod tests {
 			.build();
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
-		assert!(verifier.verify(&block.into()).is_ok());
+		assert!(verifier.verify(VerificationLevel::Full, &block.into()).is_ok());
 	}
 
 	#[test]
@@ -308,7 +312,7 @@ mod tests {
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 
 		let expected = Err(Error::Transaction(2, TransactionError::Overspend));
-		assert_eq!(expected, verifier.verify(&block.into()));
+		assert_eq!(expected, verifier.verify(VerificationLevel::Full, &block.into()));
 	}
 
 	#[test]
@@ -348,7 +352,7 @@ mod tests {
 			.build();
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
-		assert!(verifier.verify(&block.into()).is_ok());
+		assert!(verifier.verify(VerificationLevel::Full, &block.into()).is_ok());
 	}
 
 	#[test]
@@ -396,7 +400,7 @@ mod tests {
 
 		let verifier = ChainVerifier::new(Arc::new(storage), Magic::Unitest);
 		let expected = Err(Error::MaximumSigops);
-		assert_eq!(expected, verifier.verify(&block.into()));
+		assert_eq!(expected, verifier.verify(VerificationLevel::Full, &block.into()));
 	}
 
 	#[test]
@@ -423,6 +427,6 @@ mod tests {
 			actual: 5000000001
 		});
 
-		assert_eq!(expected, verifier.verify(&block.into()));
+		assert_eq!(expected, verifier.verify(VerificationLevel::Full, &block.into()));
 	}
 }
