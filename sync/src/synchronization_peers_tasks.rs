@@ -229,6 +229,7 @@ impl PeersTasks {
 		self.stats.get_mut(&peer_index).map(|br| br.speed.stop());
 
 		// mark this peer as idle for blocks request
+		self.blocks_requests.remove(&peer_index);
 		self.idle_for_blocks.insert(peer_index);
 		// also mark as available for headers request if not yet
 		if !self.headers_requests.contains_key(&peer_index) {
