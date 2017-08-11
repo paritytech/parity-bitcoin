@@ -540,11 +540,15 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		// display information if processed many blocks || enough time has passed since sync start
 		self.print_synchronization_information();
 
-		// prepare limits
-		let verifying_hashes_len = self.chain.length_of_blocks_state(BlockState::Verifying);
-		let limits = BlocksRequestLimits::default(); // TODO: must be updated using retrieval && verification speed
+		// prepare limits. TODO: must be updated using current retrieval && verification speed && blocks size
+		let mut limits = BlocksRequestLimits::default();
+		if self.chain.length_of_blocks_state(BlockState::Stored) > 150_000 {
+			limits.min_blocks_in_request = 8;
+			limits.max_blocks_in_request = 16;
+		}
 
 		// if some blocks requests are forced => we should ask peers even if there are no idle peers
+		let verifying_hashes_len = self.chain.length_of_blocks_state(BlockState::Verifying);
 		if let Some(forced_blocks_requests) = forced_blocks_requests {
 			let useful_peers = self.peers_tasks.useful_peers();
 			// if we have to request blocks && there are no useful peers at all => switch to saturated state
