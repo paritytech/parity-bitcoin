@@ -490,7 +490,9 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 			// for now, let's exclude peer from synchronization - we are relying on full nodes for synchronization
 			let removed_tasks = self.peers_tasks.reset_blocks_tasks(peer_index);
 			self.peers_tasks.unuseful_peer(peer_index);
-			self.peers.misbehaving(peer_index, &format!("Responded with NotFound(unrequested_block)"));
+			if self.state.is_synchronizing() {
+				self.peers.misbehaving(peer_index, &format!("Responded with NotFound(unrequested_block)"));
+			}
 
 			// if peer has had some blocks tasks, rerequest these blocks
 			self.execute_synchronization_tasks(Some(removed_tasks), None);
