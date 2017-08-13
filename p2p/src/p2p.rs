@@ -89,6 +89,12 @@ impl Context {
 		self.node_table.write().insert_many(nodes);
 	}
 
+	/// Penalize node.
+	pub fn penalize_node(&self, addr: &SocketAddr) {
+		trace!("Penalizing node {}", addr);
+		self.node_table.write().note_failure(addr);
+	}
+
 	/// Adds node to table.
 	pub fn add_node(&self, addr: SocketAddr) -> Result<(), NodeTableError> {
 		trace!("Adding node {} to node table", &addr);

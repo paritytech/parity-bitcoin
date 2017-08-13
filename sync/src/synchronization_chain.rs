@@ -681,7 +681,7 @@ impl db::BlockHeaderProvider for Chain {
 
 impl fmt::Debug for Information {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "[sch:{} / bh:{} -> req:{} -> vfy:{} -> stored: {}]", self.scheduled, self.headers.best, self.requested, self.verifying, self.stored)
+		write!(f, "[sch:{} -> req:{} -> vfy:{} -> stored: {}]", self.scheduled, self.requested, self.verifying, self.stored)
 	}
 }
 
