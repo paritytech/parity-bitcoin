@@ -93,6 +93,7 @@ impl Sighash {
 	}
 }
 
+#[derive(Debug)]
 pub struct UnsignedTransactionInput {
 	pub previous_output: OutPoint,
 	pub sequence: u32,
@@ -108,6 +109,7 @@ impl From<TransactionInput> for UnsignedTransactionInput {
 	}
 }
 
+#[derive(Debug)]
 pub struct TransactionInputSigner {
 	pub version: i32,
 	pub inputs: Vec<UnsignedTransactionInput>,

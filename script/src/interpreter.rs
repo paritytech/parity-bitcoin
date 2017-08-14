@@ -108,7 +108,7 @@ fn is_valid_signature_encoding(sig: &[u8]) -> bool {
 
 	// Null bytes at the start of R are not allowed, unless R would
 	// otherwise be interpreted as a negative number.
-	if len_r > 1 && sig[4] == 0 && (!(sig[5] & 0x80)) != 0 {
+	if len_r > 1 && sig[4] == 0 && (sig[5] & 0x80) == 0 {
 		return false;
 	}
 
@@ -129,7 +129,7 @@ fn is_valid_signature_encoding(sig: &[u8]) -> bool {
 
 	// Null bytes at the start of S are not allowed, unless S would otherwise be
 	// interpreted as a negative number.
-	if len_s > 1 && (sig[len_r + 6] == 0) && (!(sig[len_r + 7] & 0x80)) != 0 {
+	if len_s > 1 && (sig[len_r + 6] == 0) && (sig[len_r + 7] & 0x80) == 0 {
 		return false;
 	}
 
@@ -251,7 +251,7 @@ pub fn verify_script(
 		return Err(Error::EvalFalse);
 	}
 
-    // Additional validation for spend-to-script-hash transactions:
+	// Additional validation for spend-to-script-hash transactions:
 	if flags.verify_p2sh && script_pubkey.is_pay_to_script_hash() {
 		if !script_sig.is_push_only() {
 			return Err(Error::SignaturePushOnly);
@@ -259,10 +259,10 @@ pub fn verify_script(
 
 		mem::swap(&mut stack, &mut stack_copy);
 
-        // stack cannot be empty here, because if it was the
-        // P2SH  HASH <> EQUAL  scriptPubKey would be evaluated with
-        // an empty stack and the EvalScript above would return false.
-        assert!(!stack.is_empty());
+		// stack cannot be empty here, because if it was the
+		// P2SH  HASH <> EQUAL  scriptPubKey would be evaluated with
+		// an empty stack and the EvalScript above would return false.
+		assert!(!stack.is_empty());
 
 		let pubkey2: Script = try!(stack.pop()).into();
 
