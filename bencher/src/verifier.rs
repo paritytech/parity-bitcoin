@@ -1,13 +1,8 @@
 use std::sync::Arc;
 use db::BlockChainDatabase;
 use chain::IndexedBlock;
-<<<<<<< HEAD
-use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify};
-use network::{Magic, ConsensusParams, ConsensusFork};
-=======
 use verification::{BackwardsCompatibleChainVerifier as ChainVerifier, Verify, VerificationLevel};
-use network::Magic;
->>>>>>> master
+use network::{Magic, ConsensusParams, ConsensusFork};
 use test_data;
 use byteorder::{LittleEndian, ByteOrder};
 

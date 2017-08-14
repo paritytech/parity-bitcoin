@@ -295,8 +295,8 @@ impl<'a> TransactionEval<'a> {
 	fn new(
 		transaction: CanonTransaction<'a>,
 		store: DuplexTransactionOutputProvider<'a>,
-		verification_level: VerificationLevel,
 		params: &ConsensusParams,
+		verification_level: VerificationLevel,
 		height: u32,
 		time: u32,
 		deployments: &'a Deployments,

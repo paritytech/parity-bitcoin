@@ -4,6 +4,7 @@
 use compact::Compact;
 use ser::{Stream, Serializable};
 use chain::Block;
+use primitives::hash::H256;
 
 const MAGIC_MAINNET: u32 = 0xD9B4BEF9;
 const MAGIC_TESTNET: u32 = 0x0709110B;
