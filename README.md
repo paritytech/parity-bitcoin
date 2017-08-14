@@ -1,11 +1,13 @@
 # parity-bitcoin
 The Parity Bitcoin client
 
-[![Build Status][travis-image]][travis-url] 
+[![Build Status][travis-image]][travis-url] [![Snap Status](https://build.snapcraft.io/badge/paritytech/parity-bitcoin.svg)](https://build.snapcraft.io/user/paritytech/parity-bitcoin)
 
 Gitter [![Gitter https://gitter.im/paritytech/parity-bitcoin](https://badges.gitter.im/paritytech/parity-bitcoin.svg)](https://gitter.im/paritytech/parity-bitcoin)
 
-- [Install guide](#install-guide)
+- [Installing from source](#installing-from-source)
+
+- [Installing the snap](#installing-the-snap)
 
 - [Running tests](#running-tests)
 
@@ -28,9 +30,9 @@ Gitter [![Gitter https://gitter.im/paritytech/parity-bitcoin](https://badges.git
 [travis-url]: https://travis-ci.com/paritytech/parity-bitcoin
 [doc-url]: https://paritytech.github.io/parity-bitcoin/pbtc/index.html
 
-## Install guide
+## Installing from source
 
-As for now `pbtc` can be installed only from source. It requires `rustc` and `cargo`.
+Installing `pbtc` from source requires `rustc` and `cargo`.
 
 Minimal supported version is `rustc 1.16.0 (30cf806ef 2017-03-10)`
 
@@ -77,6 +79,14 @@ cargo build -p pbtc --release
 ```
 
 `pbtc` is now available at either `./target/debug/pbtc` or `./target/release/pbtc`
+
+## Installing the snap
+
+In any of the [supported Linux distros](https://snapcraft.io/docs/core/install):
+
+```
+sudo snap install parity-bitcoin --edge
+```
 
 ## Running tests
 

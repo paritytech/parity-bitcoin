@@ -56,6 +56,16 @@ pub enum Error {
 	Verification(String),
 }
 
+#[derive(Debug)]
+/// Verification parameters.
+pub struct VerificationParameters {
+	/// Blocks verification level.
+	pub verification_level: verification::VerificationLevel,
+	/// Blocks verification edge: all blocks before this are validated using verification_level.
+	/// All blocks after this (inclusive) are validated using VerificationLevel::Full level.
+	pub verification_edge: H256,
+}
+
 /// Synchronization events listener
 pub trait SyncListener: Send + 'static {
 	/// Called when node switches to synchronization state
@@ -65,8 +75,8 @@ pub trait SyncListener: Send + 'static {
 }
 
 /// Create blocks writer.
-pub fn create_sync_blocks_writer(db: db::SharedStore, consensus: ConsensusParams, verification: bool) -> blocks_writer::BlocksWriter {
-	blocks_writer::BlocksWriter::new(db, consensus, verification)
+pub fn create_sync_blocks_writer(db: db::SharedStore, consensus: ConsensusParams, verification_params: VerificationParameters) -> blocks_writer::BlocksWriter {
+	blocks_writer::BlocksWriter::new(db, consensus, verification_params)
 }
 
 /// Create synchronization peers
@@ -77,7 +87,7 @@ pub fn create_sync_peers() -> PeersRef {
 }
 
 /// Creates local sync node for given `db`
-pub fn create_local_sync_node(consensus: ConsensusParams, db: db::SharedStore, peers: PeersRef) -> LocalNodeRef {
+pub fn create_local_sync_node(consensus: ConsensusParams, db: db::SharedStore, peers: PeersRef, verification_params: VerificationParameters) -> LocalNodeRef {
 	use miner::MemoryPool;
 	use synchronization_chain::Chain as SyncChain;
 	use synchronization_executor::LocalSynchronizationTaskExecutor as SyncExecutor;
@@ -103,7 +113,7 @@ pub fn create_local_sync_node(consensus: ConsensusParams, db: db::SharedStore, p
 	let sync_server = Arc::new(ServerImpl::new(peers.clone(), db.clone(), memory_pool.clone(), sync_executor.clone()));
 	let sync_client_core = SynchronizationClientCore::new(sync_client_config, sync_state.clone(), peers.clone(), sync_executor.clone(), sync_chain, chain_verifier.clone());
 	let verifier_sink = Arc::new(CoreVerificationSink::new(sync_client_core.clone()));
-	let verifier = AsyncVerifier::new(chain_verifier, db.clone(), memory_pool.clone(), verifier_sink);
+	let verifier = AsyncVerifier::new(chain_verifier, db.clone(), memory_pool.clone(), verifier_sink, verification_params);
 	let sync_client = SynchronizationClient::new(sync_state.clone(), sync_client_core, verifier);
 	Arc::new(SyncNode::new(consensus, db, memory_pool, peers, sync_state, sync_executor, sync_client, sync_server))
 }

@@ -53,6 +53,7 @@ impl Connections {
 		let peer_info = PeerInfo {
 			id: id,
 			address: connection.address,
+			user_agent: connection.version_message.user_agent().unwrap_or("unknown".into()),
 			direction: direction,
 			version: connection.version,
 			version_message: connection.version_message,

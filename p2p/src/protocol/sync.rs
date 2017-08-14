@@ -13,7 +13,7 @@ pub trait LocalSyncNode : Send + Sync {
 }
 
 pub trait InboundSyncConnection : Send + Sync {
-	fn start_sync_session(&self, version: types::Version);
+	fn start_sync_session(&self, peer_name: String, version: types::Version);
 	fn close_session(&self);
 	fn on_inventory(&self, message: types::Inv);
 	fn on_getdata(&self, message: types::GetData);
@@ -159,6 +159,7 @@ impl OutboundSyncConnection for OutboundSync {
 	}
 
 	fn close(&self) {
+		self.context.global().penalize_node(&self.context.info().address);
 		self.context.close()
 	}
 }
@@ -181,7 +182,11 @@ impl SyncProtocol {
 
 impl Protocol for SyncProtocol {
 	fn initialize(&mut self) {
-		self.inbound_connection.start_sync_session(self.context.info().version_message.clone());
+		let info = self.context.info();
+		self.inbound_connection.start_sync_session(
+			format!("{}/{}", info.address, info.user_agent),
+			info.version_message.clone()
+		);
 	}
 
 	fn on_message(&mut self, command: &Command, payload: &Bytes) -> Result<(), Error> {

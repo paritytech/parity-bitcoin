@@ -5,6 +5,7 @@ use std::sync::Arc;
 use futures::Future;
 use parking_lot::Mutex;
 use time;
+use time::precise_time_s;
 use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
 use message::types;
 use message::common::{InventoryType, InventoryVector};
@@ -18,7 +19,6 @@ use synchronization_peers_tasks::PeersTasks;
 use synchronization_verifier::{VerificationSink, BlockVerificationSink, TransactionVerificationSink, VerificationTask};
 use types::{BlockHeight, ClientCoreRef, PeersRef, PeerIndex, SynchronizationStateRef, EmptyBoxFuture, SyncListenerRef};
 use utils::{AverageSpeedMeter, MessageBlockHeadersProvider, OrphanBlocksPool, OrphanTransactionsPool, HashPosition};
-#[cfg(test)] use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers_tasks::{Information as PeersTasksInformation};
 #[cfg(test)] use synchronization_chain::{Information as ChainInformation};
 
@@ -40,6 +40,12 @@ const NEAR_EMPTY_VERIFICATION_QUEUE_THRESHOLD_S: f64 = 20_f64;
 const SYNC_SPEED_BLOCKS_TO_INSPECT: usize = 512;
 /// Number of blocks to inspect when calculating average blocks speed
 const BLOCKS_SPEED_BLOCKS_TO_INSPECT: usize = 512;
+/// Minimal time between duplicated blocks requests.
+const MIN_BLOCK_DUPLICATION_INTERVAL_S: f64 = 10_f64;
+/// Maximal number of blocks in duplicate requests.
+const MAX_BLOCKS_IN_DUPLICATE_REQUEST: BlockHeight = 4;
+/// Minimal number of blocks in duplicate requests.
+const MIN_BLOCKS_IN_DUPLICATE_REQUEST: BlockHeight = 8;
 
 /// Information on current synchronization state.
 #[cfg(test)]
@@ -120,6 +126,8 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	config: Config,
 	/// Synchronization events listener
 	listener: Option<SyncListenerRef>,
+	/// Time of last duplicated blocks request.
+	last_dup_time: f64,
 }
 
 /// Verification sink for synchronization client core
@@ -137,6 +145,20 @@ pub enum State {
 	NearlySaturated,
 	/// We have downloaded all blocks of the blockchain of which we have ever heard
 	Saturated,
+}
+
+/// Blocks request limits.
+pub struct BlocksRequestLimits {
+	/// Approximate maximal number of blocks hashes in scheduled queue.
+	pub max_scheduled_hashes: BlockHeight,
+	/// Approximate maximal number of blocks hashes in requested queue.
+	pub max_requested_blocks: BlockHeight,
+	/// Approximate maximal number of blocks in verifying queue.
+	pub max_verifying_blocks: BlockHeight,
+	/// Minimum number of blocks to request from peer
+	pub min_blocks_in_request: BlockHeight,
+	/// Maximum number of blocks to request from peer
+	pub max_blocks_in_request: BlockHeight,
 }
 
 /// Transaction append error
@@ -186,6 +208,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		self.executor.execute(Task::GetHeaders(peer_index, types::GetHeaders::with_block_locator_hashes(block_locator_hashes)));
 		// unuseful until respond with headers message
 		self.peers_tasks.unuseful_peer(peer_index);
+		self.peers_tasks.on_headers_requested(peer_index);
 	}
 
 	fn on_disconnect(&mut self, peer_index: PeerIndex) {
@@ -464,6 +487,9 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 			// for now, let's exclude peer from synchronization - we are relying on full nodes for synchronization
 			let removed_tasks = self.peers_tasks.reset_blocks_tasks(peer_index);
 			self.peers_tasks.unuseful_peer(peer_index);
+			if self.state.is_synchronizing() {
+				self.peers.misbehaving(peer_index, &format!("Responded with NotFound(unrequested_block)"));
+			}
 
 			// if peer has had some blocks tasks, rerequest these blocks
 			self.execute_synchronization_tasks(Some(removed_tasks), None);
@@ -513,7 +539,15 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		// display information if processed many blocks || enough time has passed since sync start
 		self.print_synchronization_information();
 
+		// prepare limits. TODO: must be updated using current retrieval && verification speed && blocks size
+		let mut limits = BlocksRequestLimits::default();
+		if self.chain.length_of_blocks_state(BlockState::Stored) > 150_000 {
+			limits.min_blocks_in_request = 8;
+			limits.max_blocks_in_request = 16;
+		}
+
 		// if some blocks requests are forced => we should ask peers even if there are no idle peers
+		let verifying_hashes_len = self.chain.length_of_blocks_state(BlockState::Verifying);
 		if let Some(forced_blocks_requests) = forced_blocks_requests {
 			let useful_peers = self.peers_tasks.useful_peers();
 			// if we have to request blocks && there are no useful peers at all => switch to saturated state
@@ -523,7 +557,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 				return;
 			}
 
-			let forced_tasks = self.prepare_blocks_requests_tasks(useful_peers, forced_blocks_requests);
+			let forced_tasks = self.prepare_blocks_requests_tasks(&limits, useful_peers, forced_blocks_requests);
 			tasks.extend(forced_tasks);
 		}
 
@@ -531,7 +565,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		if let Some(final_blocks_requests) = final_blocks_requests {
 			let useful_peers = self.peers_tasks.useful_peers();
 			if !useful_peers.is_empty() { // if empty => not a problem, just forget these blocks
-				let forced_tasks = self.prepare_blocks_requests_tasks(useful_peers, final_blocks_requests);
+				let forced_tasks = self.prepare_blocks_requests_tasks(&limits, useful_peers, final_blocks_requests);
 				tasks.extend(forced_tasks);
 			}
 		}
@@ -572,7 +606,6 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 				//    => we could ask idle peer2 about [B1, B2, B3, B4]
 				// these requests has priority over new blocks requests below
 				let requested_hashes_len = self.chain.length_of_blocks_state(BlockState::Requested);
-				let verifying_hashes_len = self.chain.length_of_blocks_state(BlockState::Verifying);
 				if requested_hashes_len != 0 {
 					let verification_speed: f64 = self.block_speed_meter.speed();
 					let synchronization_speed: f64 = self.sync_speed_meter.speed();
@@ -606,15 +639,19 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 					// if verification queue will be empty before all synchronization requests will be completed
 					// + do not spam with duplicated blocks requests if blocks are too big && there are still blocks left for NEAR_EMPTY_VERIFICATION_QUEUE_THRESHOLD_S
 					// => duplicate blocks requests
+					let now = precise_time_s();
 					if synchronization_queue_will_be_full_in > verification_queue_will_be_empty_in &&
-						verification_queue_will_be_empty_in < NEAR_EMPTY_VERIFICATION_QUEUE_THRESHOLD_S {
+						verification_queue_will_be_empty_in < NEAR_EMPTY_VERIFICATION_QUEUE_THRESHOLD_S &&
+						now - self.last_dup_time > MIN_BLOCK_DUPLICATION_INTERVAL_S {
+						// do not duplicate too often
+						self.last_dup_time = now;
 						// blocks / second * second -> blocks
-						let hashes_requests_to_duplicate_len = synchronization_speed * (synchronization_queue_will_be_full_in - verification_queue_will_be_empty_in);
+						let hashes_requests_to_duplicate_len = (synchronization_speed * (synchronization_queue_will_be_full_in - verification_queue_will_be_empty_in)) as BlockHeight;
 						// do not ask for too many blocks
-						let hashes_requests_to_duplicate_len = min(MAX_BLOCKS_IN_REQUEST, hashes_requests_to_duplicate_len as BlockHeight);
+						let hashes_requests_to_duplicate_len = min(MAX_BLOCKS_IN_DUPLICATE_REQUEST, hashes_requests_to_duplicate_len);
 						// ask for at least 1 block
-						let hashes_requests_to_duplicate_len = max(1, min(requested_hashes_len, hashes_requests_to_duplicate_len));
-						blocks_requests = Some(self.chain.best_n_of_blocks_state(BlockState::Requested, hashes_requests_to_duplicate_len));
+						let hashes_requests_to_duplicate_len = max(MIN_BLOCKS_IN_DUPLICATE_REQUEST, min(requested_hashes_len, hashes_requests_to_duplicate_len));
+						blocks_requests = Some(self.chain.best_n_of_blocks_state(BlockState::Requested, hashes_requests_to_duplicate_len as BlockHeight));
 
 						trace!(target: "sync", "Duplicating {} blocks requests. Sync speed: {} * {}, blocks speed: {} * {}.", hashes_requests_to_duplicate_len, synchronization_speed, requested_hashes_len, verification_speed, verifying_hashes_len);
 					}
@@ -622,9 +659,10 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 				// check if we can move some blocks from scheduled to requested queue
 				{
+					// TODO: only request minimal number of blocks, if other urgent blocks are requested
 					let scheduled_hashes_len = self.chain.length_of_blocks_state(BlockState::Scheduled);
 					if requested_hashes_len + verifying_hashes_len < MAX_REQUESTED_BLOCKS + MAX_VERIFYING_BLOCKS && scheduled_hashes_len != 0 {
-						let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(scheduled_hashes_len / blocks_idle_peers_len, MIN_BLOCKS_IN_REQUEST));
+						let chunk_size = min(limits.max_blocks_in_request, max(scheduled_hashes_len / blocks_idle_peers_len, limits.min_blocks_in_request));
 						let hashes_to_request_len = chunk_size * blocks_idle_peers_len;
 						let hashes_to_request = self.chain.request_blocks_hashes(hashes_to_request_len);
 						match blocks_requests {
@@ -638,7 +676,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 		// append blocks requests tasks
 		if let Some(blocks_requests) = blocks_requests {
-			tasks.extend(self.prepare_blocks_requests_tasks(blocks_idle_peers, blocks_requests));
+			tasks.extend(self.prepare_blocks_requests_tasks(&limits, blocks_idle_peers, blocks_requests));
 		}
 
 		// execute synchronization tasks
@@ -721,6 +759,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				sync_speed_meter: AverageSpeedMeter::with_inspect_items(BLOCKS_SPEED_BLOCKS_TO_INSPECT),
 				config: config,
 				listener: None,
+				last_dup_time: 0f64,
 			}
 		));
 
@@ -755,6 +794,11 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		&mut self.chain
 	}
 
+	/// Return peers reference
+	pub fn peers(&self) -> PeersRef {
+		self.peers.clone()
+	}
+
 	/// Return peers tasks reference
 	pub fn peers_tasks(&mut self) -> &mut PeersTasks {
 		&mut self.peers_tasks
@@ -776,12 +820,6 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		self.verify_headers = verify;
 	}
 
-	/// Return peers reference
-	#[cfg(test)]
-	pub fn peers(&mut self) -> &Peers {
-		&*self.peers
-	}
-
 	/// Print synchronization information
 	pub fn print_synchronization_information(&mut self) {
 		if let State::Synchronizing(timestamp, num_of_blocks) = self.state {
@@ -793,9 +831,10 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				self.state = State::Synchronizing(time::precise_time_s(), new_num_of_blocks);
 
 				use time;
-				info!(target: "sync", "{:?} @ Processed {} blocks in {} seconds. Chain information: {:?}"
+				info!(target: "sync", "{:?} Processed {} blocks in {:.2} seconds. Peers: {:?}. Chain: {:?}"
 					, time::strftime("%H:%M:%S", &time::now()).unwrap()
 					, blocks_diff, timestamp_diff
+					, self.peers_tasks.information()
 					, self.chain.information());
 			}
 		}
@@ -901,13 +940,13 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		Ok(transactions)
 	}
 
-	fn prepare_blocks_requests_tasks(&mut self, mut peers: Vec<PeerIndex>, mut hashes: Vec<H256>) -> Vec<Task> {
+	fn prepare_blocks_requests_tasks(&mut self, limits: &BlocksRequestLimits, mut peers: Vec<PeerIndex>, mut hashes: Vec<H256>) -> Vec<Task> {
 		use std::mem::swap;
 
 		// ask fastest peers for hashes at the beginning of `hashes`
 		self.peers_tasks.sort_peers_for_blocks(&mut peers);
 
-		let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(hashes.len() as BlockHeight, MIN_BLOCKS_IN_REQUEST));
+		let chunk_size = min(limits.max_blocks_in_request, max(hashes.len() as BlockHeight, limits.min_blocks_in_request));
 		let last_peer_index = peers.len() - 1;
 		let mut tasks: Vec<Task> = Vec::new();
 		for (peer_index, peer) in peers.into_iter().enumerate() {
@@ -1165,6 +1204,18 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				}
 			}
 			block_entry.remove_entry();
+		}
+	}
+}
+
+impl Default for BlocksRequestLimits {
+	fn default() -> Self {
+		BlocksRequestLimits {
+			max_scheduled_hashes: MAX_SCHEDULED_HASHES,
+			max_requested_blocks: MAX_REQUESTED_BLOCKS,
+			max_verifying_blocks: MAX_VERIFYING_BLOCKS,
+			min_blocks_in_request: MIN_BLOCKS_IN_REQUEST,
+			max_blocks_in_request: MAX_BLOCKS_IN_REQUEST,
 		}
 	}
 }

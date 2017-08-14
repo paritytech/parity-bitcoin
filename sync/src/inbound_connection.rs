@@ -31,8 +31,8 @@ impl InboundConnection {
 }
 
 impl InboundSyncConnection for InboundConnection {
-	fn start_sync_session(&self, version: types::Version) {
-		self.node.on_connect(self.peer_index, version);
+	fn start_sync_session(&self, peer_name: String, version: types::Version) {
+		self.node.on_connect(self.peer_index, peer_name, version);
 	}
 
 	fn close_session(&self) {

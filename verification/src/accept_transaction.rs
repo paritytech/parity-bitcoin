@@ -10,6 +10,7 @@ use sigops::transaction_sigops;
 use canon::CanonTransaction;
 use constants::{COINBASE_MATURITY};
 use error::TransactionError;
+use VerificationLevel;
 
 pub struct TransactionAcceptor<'a> {
 	pub bip30: TransactionBip30<'a>,
@@ -30,6 +31,7 @@ impl<'a> TransactionAcceptor<'a> {
 		output_store: DuplexTransactionOutputProvider<'a>,
 		consensus: &'a ConsensusParams,
 		transaction: CanonTransaction<'a>,
+		verification_level: VerificationLevel,
 		block_hash: &'a H256,
 		height: u32,
 		time: u32,
@@ -45,7 +47,7 @@ impl<'a> TransactionAcceptor<'a> {
 			overspent: TransactionOverspent::new(transaction, output_store),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
 			return_replay_protection: TransactionReturnReplayProtection::new(transaction, consensus, height),
-			eval: TransactionEval::new(transaction, output_store, consensus, height, time, deployments, headers),
+			eval: TransactionEval::new(transaction, output_store, consensus, verification_level, height, time, deployments, headers),
 		}
 	}
 
@@ -94,7 +96,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 			sigops: TransactionSigops::new(transaction, output_store, consensus, max_block_sigops, time),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
 			return_replay_protection: TransactionReturnReplayProtection::new(transaction, consensus, height),
-			eval: TransactionEval::new(transaction, output_store, consensus, height, time, deployments, headers),
+			eval: TransactionEval::new(transaction, output_store, consensus, VerificationLevel::Full, height, time, deployments, headers),
 		}
 	}
 
@@ -280,6 +282,7 @@ impl<'a> TransactionSigops<'a> {
 pub struct TransactionEval<'a> {
 	transaction: CanonTransaction<'a>,
 	store: DuplexTransactionOutputProvider<'a>,
+	verification_level: VerificationLevel,
 	verify_p2sh: bool,
 	verify_strictenc: bool,
 	verify_locktime: bool,
@@ -292,6 +295,7 @@ impl<'a> TransactionEval<'a> {
 	fn new(
 		transaction: CanonTransaction<'a>,
 		store: DuplexTransactionOutputProvider<'a>,
+		verification_level: VerificationLevel,
 		params: &ConsensusParams,
 		height: u32,
 		time: u32,
@@ -315,6 +319,7 @@ impl<'a> TransactionEval<'a> {
 		TransactionEval {
 			transaction: transaction,
 			store: store,
+			verification_level: verification_level,
 			verify_p2sh: verify_p2sh,
 			verify_strictenc: verify_strictenc,
 			verify_locktime: verify_locktime,
@@ -325,6 +330,11 @@ impl<'a> TransactionEval<'a> {
 	}
 
 	fn check(&self) -> Result<(), TransactionError> {
+		if self.verification_level == VerificationLevel::Header
+			|| self.verification_level == VerificationLevel::NoVerification {
+			return Ok(());
+		}
+
 		if self.transaction.raw.is_coinbase() {
 			return Ok(());
 		}

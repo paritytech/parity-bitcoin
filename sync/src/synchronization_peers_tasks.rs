@@ -1,3 +1,4 @@
+use std::fmt;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use linked_hash_map::LinkedHashMap;
@@ -7,15 +8,13 @@ use types::PeerIndex;
 use utils::AverageSpeedMeter;
 
 /// Max peer failures # before excluding from sync process
-const MAX_PEER_FAILURES: usize = 2;
+const MAX_PEER_FAILURES: usize = 4;
 /// Max blocks failures # before forgetiing this block and restarting sync
 const MAX_BLOCKS_FAILURES: usize = 6;
 /// Number of blocks to inspect while calculating average response time
 const BLOCKS_TO_INSPECT: usize = 32;
 
 /// Information on synchronization peers
-#[cfg(test)]
-#[derive(Debug)]
 pub struct Information {
 	/// # of peers that are marked as useful for current synchronization session && have no pending requests.
 	pub idle: usize,
@@ -62,13 +61,24 @@ pub struct BlocksRequest {
 	pub blocks: HashSet<H256>,
 }
 
+/// Peer trust level.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum TrustLevel {
+	/// Suspicios peer (either it is fresh peer, or it has failed to respond to last requests).
+	Suspicious,
+	/// This peer is responding to requests.
+	Trusted,
+}
+
 /// Peer statistics
-#[derive(Debug, Default)]
-struct PeerStats {
+#[derive(Debug)]
+pub struct PeerStats {
 	/// Number of blocks requests failures
 	failures: usize,
 	/// Average block response time meter
 	speed: AverageSpeedMeter,
+	/// Peer trust level.
+	trust: TrustLevel,
 }
 
 /// Block statistics
@@ -80,7 +90,6 @@ struct BlockStats {
 
 impl PeersTasks {
 	/// Get information on synchronization peers
-	#[cfg(test)]
 	pub fn information(&self) -> Information {
 		let active_for_headers: HashSet<_> = self.headers_requests.keys().cloned().collect();
 		Information {
@@ -135,6 +144,11 @@ impl PeersTasks {
 		self.blocks_requests
 			.get(&peer_index)
 			.map(|br| &br.blocks)
+	}
+
+	/// Get peer statistics
+	pub fn get_peer_stats(&self, peer_index: PeerIndex) -> Option<&PeerStats> {
+		self.stats.get(&peer_index)
 	}
 
 	/// Mark peer as useful.
@@ -194,10 +208,20 @@ impl PeersTasks {
 		};
 
 		// it was requested block => update block response time
-		self.stats.get_mut(&peer_index).map(|br| br.speed.checkpoint());
+		self.stats.get_mut(&peer_index)
+			.map(|br| {
+				if br.failures > 0 {
+					br.failures -= 1;
+				}
+				br.trust = TrustLevel::Trusted;
+				br.speed.checkpoint()
+			});
 
 		// if it hasn't been last requested block => just return
 		if !is_last_requested_block_received {
+			let mut peer_blocks_requests = self.blocks_requests.remove(&peer_index).expect("checked above; qed");
+			peer_blocks_requests.timestamp = precise_time_s();
+			self.blocks_requests.insert(peer_index, peer_blocks_requests);
 			return;
 		}
 
@@ -286,10 +310,17 @@ impl PeersTasks {
 	}
 
 	/// We have failed to get headers from peer during given period
-	pub fn on_peer_headers_failure(&mut self, peer_index: PeerIndex) {
+	pub fn on_peer_headers_failure(&mut self, peer_index: PeerIndex) -> bool {
 		// we never penalize peers for header requests failures
 		self.headers_requests.remove(&peer_index);
 		self.idle_for_headers.insert(peer_index);
+
+		self.stats.get_mut(&peer_index)
+			.map(|s| {
+				s.failures += 1;
+				s.failures > MAX_PEER_FAILURES
+			})
+			.unwrap_or_default()
 	}
 
 	/// Reset all peers state to the unuseful
@@ -333,7 +364,18 @@ impl PeerStats {
 		PeerStats {
 			failures: 0,
 			speed: AverageSpeedMeter::with_inspect_items(BLOCKS_TO_INSPECT),
+			trust: TrustLevel::Suspicious,
 		}
+	}
+
+	pub fn trust(&self) -> TrustLevel {
+		self.trust
+	}
+}
+
+impl fmt::Debug for Information {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "[active:{}, idle:{}, bad:{}]", self.active, self.idle, self.unuseful)
 	}
 }
 

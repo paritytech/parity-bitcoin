@@ -109,7 +109,18 @@ pub use sigops::transaction_sigops;
 pub use timestamp::median_timestamp;
 pub use work::{work_required, is_valid_proof_of_work, is_valid_proof_of_work_hash, block_reward_satoshi};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+/// Blocks verification level.
+pub enum VerificationLevel {
+	/// Full verification.
+	Full,
+	/// Transaction scripts are not checked.
+	Header,
+	/// No verification at all.
+	NoVerification,
+}
+
 /// Interface for block verification
 pub trait Verify : Send + Sync {
-	fn verify(&self, block: &chain::IndexedBlock) -> Result<(), Error>;
+	fn verify(&self, level: VerificationLevel, block: &chain::IndexedBlock) -> Result<(), Error>;
 }
