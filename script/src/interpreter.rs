@@ -2083,7 +2083,7 @@ mod tests {
 			let signed_input = checker.signer.signed_input(&key_pair, 0, amount + 1, &script_pubkey, SignatureVersion::Base, 1);
 			let script_sig = signed_input.script_sig.into();
 
-			assert_eq!(verify_script(&script_sig, &script_pubkey, &flags, &checker, SignatureVersion::ForkId), Err(Error::EvalFalse));
+			assert_eq!(verify_script(&script_sig, &script_pubkey, &flags.verify_strictenc(true), &checker, SignatureVersion::ForkId), Err(Error::SignatureMustUseForkId));
 		}
 	}
 }
