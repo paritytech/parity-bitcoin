@@ -154,7 +154,11 @@ fn is_defined_hashtype_signature(version: SignatureVersion, sig: &[u8]) -> bool 
 		return false;
 	}
 
-	Sighash::is_defined(version, sig[sig.len() -1] as u32)
+	Sighash::is_defined(version, sig[sig.len() - 1] as u32)
+}
+
+fn parse_hash_type(version: SignatureVersion, sig: &[u8]) -> Sighash {
+	Sighash::from_u32(version, if sig.is_empty() { 0 } else { sig[sig.len() - 1] as u32 })
 }
 
 fn check_signature_encoding(sig: &[u8], flags: &VerificationFlags, version: SignatureVersion) -> Result<(), Error> {
@@ -174,10 +178,21 @@ fn check_signature_encoding(sig: &[u8], flags: &VerificationFlags, version: Sign
 	}
 
 	if flags.verify_strictenc && !is_defined_hashtype_signature(version, sig) {
-		Err(Error::SignatureHashtype)
-	} else {
-		Ok(())
+		return Err(Error::SignatureHashtype)
 	}
+
+	// verify_strictenc is currently enabled for BitcoinCash only
+	if flags.verify_strictenc {
+		let uses_fork_id = parse_hash_type(version, sig).fork_id;
+		let enabled_fork_id = version == SignatureVersion::ForkId;
+		if uses_fork_id && !enabled_fork_id {
+			return Err(Error::SignatureIllegalForkId)
+		} else if !uses_fork_id && enabled_fork_id {
+			return Err(Error::SignatureMustUseForkId);
+		}
+	}
+
+	Ok(())
 }
 
 fn check_pubkey_encoding(v: &[u8], flags: &VerificationFlags) -> Result<(), Error> {
@@ -772,8 +787,9 @@ pub fn eval_script(
 			Opcode::OP_CHECKSIG | Opcode::OP_CHECKSIGVERIFY => {
 				let pubkey = try!(stack.pop());
 				let signature = try!(stack.pop());
+				let sighash = parse_hash_type(version, &signature);
 				let mut subscript = script.subscript(begincode);
-				if version == SignatureVersion::Base {
+				if version != SignatureVersion::ForkId || !sighash.fork_id {
 					let signature_script = Builder::default().push_data(&*signature).into_script();
 					subscript = subscript.find_and_delete(&*signature_script);
 				}

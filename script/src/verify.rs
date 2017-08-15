@@ -38,6 +38,7 @@ impl SignatureChecker for NoopSignatureChecker {
 	}
 }
 
+#[derive(Debug)]
 pub struct TransactionSignatureChecker {
 	pub signer: TransactionInputSigner,
 	pub input_index: usize,

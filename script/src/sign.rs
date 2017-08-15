@@ -141,8 +141,8 @@ impl TransactionInputSigner {
 		}
 
 		match sigversion {
-			SignatureVersion::Base => self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash),
 			SignatureVersion::ForkId if sighash.fork_id => self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash),
+			SignatureVersion::Base | SignatureVersion::ForkId => self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash),
 			_ => 1u8.into(),
 		}
 	}
@@ -275,7 +275,7 @@ impl TransactionInputSigner {
 		stream.append(&hash_prevouts);
 		stream.append(&hash_sequence);
 		stream.append(&self.inputs[input_index].previous_output);
-		stream.append_slice(&**script_pubkey);
+		stream.append_list(&**script_pubkey);
 		stream.append(&input_amount);
 		stream.append(&self.inputs[input_index].sequence);
 		stream.append(&hash_outputs);

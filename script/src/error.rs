@@ -40,6 +40,8 @@ pub enum Error {
 	// BIP62
 	SignatureHashtype,
 	SignatureDer,
+	SignatureIllegalForkId,
+	SignatureMustUseForkId,
 	Minimaldata,
 	SignaturePushOnly,
 	SignatureHighS,
@@ -88,6 +90,8 @@ impl fmt::Display for Error {
 			// BIP62
 			Error::SignatureHashtype => "Invalid Signature Hashtype".fmt(f),
 			Error::SignatureDer => "Invalid Signature".fmt(f),
+			Error::SignatureIllegalForkId => "Illegal use of SIGHASH_FORKID".fmt(f),
+			Error::SignatureMustUseForkId => "Signature must use SIGHASH_FORKID".fmt(f),
 			Error::Minimaldata => "Check minimaldata failed".fmt(f),
 			Error::SignaturePushOnly => "Only push opcodes are allowed in this signature".fmt(f),
 			Error::SignatureHighS => "Invalid High S in Signature".fmt(f),
