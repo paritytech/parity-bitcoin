@@ -2,6 +2,7 @@
 
 use std::{ops, str, fmt, io, marker};
 use hex::{ToHex, FromHex, FromHexError};
+use heapsize::HeapSizeOf;
 
 /// Wrapper around `Vec<u8>`
 #[derive(Default, PartialEq, Clone, Eq, Hash)]
@@ -22,6 +23,12 @@ impl Bytes {
 
 	pub fn len(&self) -> usize {
 		self.0.len()
+	}
+}
+
+impl HeapSizeOf for Bytes {
+	fn heap_size_of_children(&self) -> usize {
+		self.0.heap_size_of_children()
 	}
 }
 

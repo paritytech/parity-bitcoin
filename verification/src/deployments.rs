@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use parking_lot::Mutex;
-use network::{ConsensusParams, Deployment};
+use network::{ConsensusParams, Deployment, Deployments as NetworkDeployments};
 use hash::H256;
 use db::{BlockHeaderProvider, BlockRef, BlockAncestors, BlockIterator};
 use timestamp::median_timestamp;
@@ -51,9 +51,17 @@ struct DeploymentState {
 /// Last known deployment states
 type DeploymentStateCache = HashMap<&'static str, DeploymentState>;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Deployments {
 	cache: Mutex<DeploymentStateCache>,
+}
+
+#[derive(Clone, Copy)]
+pub struct ActiveDeployments<'a> {
+	pub deployments: &'a Deployments,
+	number: u32,
+	headers: &'a BlockHeaderProvider,
+	consensus: &'a ConsensusParams,
 }
 
 impl Deployments {
@@ -67,6 +75,17 @@ impl Deployments {
 			Some(csv) => {
 				let mut cache = self.cache.lock();
 				threshold_state(&mut cache, csv, number, headers, consensus).is_active()
+			},
+			None => false
+		}
+	}
+
+	/// Returns true if SegWit deployment is active
+	pub fn segwit(&self, number: u32, headers: &BlockHeaderProvider, consensus: &ConsensusParams) -> bool {
+		match consensus.segwit_deployment {
+			Some(segwit) => {
+				let mut cache = self.cache.lock();
+				threshold_state(&mut cache, segwit, number, headers, consensus).is_active()
 			},
 			None => false
 		}
@@ -119,6 +138,27 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 		},
 	}
 
+}
+
+impl<'a> ActiveDeployments<'a> {
+	pub fn new(deployments: &'a Deployments, number: u32, headers: &'a BlockHeaderProvider, consensus: &'a ConsensusParams) -> Self {
+		ActiveDeployments {
+			deployments: deployments,
+			number: number,
+			headers: headers,
+			consensus: consensus,
+		}
+	}
+}
+
+impl<'a> NetworkDeployments for ActiveDeployments<'a> {
+	fn is_active(&self, name: &str) -> bool {
+		match name {
+			"csv" => self.deployments.segwit(self.number, self.headers, self.consensus),
+			"segwit" => self.deployments.segwit(self.number, self.headers, self.consensus),
+			_ => false,
+		}
+	}
 }
 
 fn first_of_the_period(block: u32, miner_confirmation_window: u32) -> u32 {

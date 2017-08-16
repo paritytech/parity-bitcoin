@@ -320,11 +320,11 @@ impl Context {
 	}
 
 	/// Send message to a channel with given peer id.
-	pub fn send_to_peer<T>(context: Arc<Context>, peer: PeerId, payload: &T) -> IoFuture<()> where T: Payload {
+	pub fn send_to_peer<T>(context: Arc<Context>, peer: PeerId, payload: &T, serialization_flags: u32) -> IoFuture<()> where T: Payload {
 		match context.connections.channel(peer) {
 			Some(channel) => {
 				let info = channel.peer_info();
-				let message = Message::new(info.magic, info.version, payload).expect("failed to create outgoing message");
+				let message = Message::with_flags(info.magic, info.version, payload, serialization_flags).expect("failed to create outgoing message");
 				channel.session().stats().lock().report_send(T::command().into(), message.len());
 				Context::send(context, channel, message)
 			},

@@ -2,7 +2,7 @@ use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use db::{TransactionMetaProvider, TransactionOutputProvider, BlockHeaderProvider};
 use network::{ConsensusParams, ConsensusFork};
-use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner, SignatureVersion};
+use script::{Script, ScriptWitness, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner, SignatureVersion};
 use duplex_store::DuplexTransactionOutputProvider;
 use deployments::Deployments;
 use script::Builder;
@@ -356,6 +356,7 @@ impl<'a> TransactionEval<'a> {
 
 			let input: Script = input.script_sig.clone().into();
 			let output: Script = output.script_pubkey.into();
+			let script_witness = ScriptWitness;
 
 			let flags = VerificationFlags::default()
 				.verify_p2sh(self.verify_p2sh)
@@ -364,7 +365,7 @@ impl<'a> TransactionEval<'a> {
 				.verify_checksequence(self.verify_checksequence)
 				.verify_dersig(self.verify_dersig);
 
-			try!(verify_script(&input, &output, &flags, &checker, self.signature_version)
+			try!(verify_script(&input, &output, &script_witness, &flags, &checker, self.signature_version)
 				.map_err(|_| TransactionError::Signature(index)));
 		}
 

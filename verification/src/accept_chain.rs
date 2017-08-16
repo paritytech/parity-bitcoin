@@ -6,7 +6,7 @@ use canon::CanonBlock;
 use accept_block::BlockAcceptor;
 use accept_header::HeaderAcceptor;
 use accept_transaction::TransactionAcceptor;
-use deployments::Deployments;
+use deployments::{Deployments, ActiveDeployments};
 use duplex_store::DuplexTransactionOutputProvider;
 use VerificationLevel;
 
@@ -21,9 +21,10 @@ impl<'a> ChainAcceptor<'a> {
 		trace!(target: "verification", "Block verification {}", block.hash().to_reversed_str());
 		let output_store = DuplexTransactionOutputProvider::new(store.as_transaction_output_provider(), block.raw());
 		let headers = store.as_block_header_provider();
+		let active_deployments = ActiveDeployments::new(deployments, height, headers, consensus);
 
 		ChainAcceptor {
-			block: BlockAcceptor::new(store.as_transaction_output_provider(), consensus, block, height, deployments, headers),
+			block: BlockAcceptor::new(store.as_transaction_output_provider(), consensus, block, height, active_deployments, headers),
 			header: HeaderAcceptor::new(headers, consensus, block.header(), height, deployments),
 			transactions: block.transactions()
 				.into_iter()

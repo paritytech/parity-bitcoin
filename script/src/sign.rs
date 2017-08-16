@@ -143,7 +143,7 @@ impl TransactionInputSigner {
 		match sigversion {
 			SignatureVersion::ForkId if sighash.fork_id => self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash),
 			SignatureVersion::Base | SignatureVersion::ForkId => self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash),
-			_ => 1u8.into(),
+			SignatureVersion::WitnessV0 => self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash),
 		}
 	}
 
@@ -172,6 +172,7 @@ impl TransactionInputSigner {
 			previous_output: unsigned_input.previous_output.clone(),
 			sequence: unsigned_input.sequence,
 			script_sig: script_sig.to_bytes(),
+			script_witness: vec![],
 		}
 	}
 
@@ -184,6 +185,7 @@ impl TransactionInputSigner {
 				previous_output: input.previous_output.clone(),
 				script_sig: script_pubkey.to_bytes(),
 				sequence: input.sequence,
+				script_witness: vec![],
 			}]
 		} else {
 			self.inputs.iter()
@@ -199,6 +201,7 @@ impl TransactionInputSigner {
 						SighashBase::Single | SighashBase::None if n != input_index => 0,
 						_ => input.sequence,
 					},
+					script_witness: vec![],
 				})
 				.collect()
 		};
@@ -231,44 +234,14 @@ impl TransactionInputSigner {
 		dhash256(&out)
 	}
 
+	fn signature_hash_witness0(&self, input_index: usize, input_amount: u64, script_pubkey: &Script, sighashtype: u32, sighash: Sighash) -> H256 {
+		self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash)
+	}
+
 	fn signature_hash_fork_id(&self, input_index: usize, input_amount: u64, script_pubkey: &Script, sighashtype: u32, sighash: Sighash) -> H256 {
-		let hash_prevouts = match sighash.anyone_can_pay {
-			false => {
-				let mut stream = Stream::default();
-				for input in &self.inputs {
-					stream.append(&input.previous_output);
-				}
-				dhash256(&stream.out())
-			},
-			true => 0u8.into(),
-		};
-
-		let hash_sequence = match sighash.base {
-			SighashBase::All if !sighash.anyone_can_pay => {
-				let mut stream = Stream::default();
-				for input in &self.inputs {
-					stream.append(&input.sequence);
-				}
-				dhash256(&stream.out())
-			},
-			_ => 0u8.into(),
-		};
-
-		let hash_outputs = match sighash.base {
-			SighashBase::All => {
-				let mut stream = Stream::default();
-				for output in &self.outputs {
-					stream.append(output);
-				}
-				dhash256(&stream.out())
-			},
-			SighashBase::Single if input_index < self.outputs.len() => {
-				let mut stream = Stream::default();
-				stream.append(&self.outputs[input_index]);
-				dhash256(&stream.out())
-			},
-			_ => 0u8.into(),
-		};
+		let hash_prevouts = compute_hash_prevouts(sighash, &self.inputs);
+		let hash_sequence = compute_hash_sequence(sighash, &self.inputs);
+		let hash_outputs = compute_hash_outputs(sighash, input_index, &self.outputs);
 
 		let mut stream = Stream::default();
 		stream.append(&self.version);
@@ -283,6 +256,50 @@ impl TransactionInputSigner {
 		stream.append(&sighashtype); // this also includes 24-bit fork id. which is 0 for BitcoinCash
 		let out = stream.out();
 		dhash256(&out)
+	}
+}
+
+fn compute_hash_prevouts(sighash: Sighash, inputs: &[UnsignedTransactionInput]) -> H256 {
+	match sighash.anyone_can_pay {
+		false => {
+			let mut stream = Stream::default();
+			for input in inputs {
+				stream.append(&input.previous_output);
+			}
+			dhash256(&stream.out())
+		},
+		true => 0u8.into(),
+	}
+}
+
+fn compute_hash_sequence(sighash: Sighash, inputs: &[UnsignedTransactionInput]) -> H256 {
+	match sighash.base {
+		SighashBase::All if !sighash.anyone_can_pay => {
+			let mut stream = Stream::default();
+			for input in inputs {
+				stream.append(&input.sequence);
+			}
+			dhash256(&stream.out())
+		},
+		_ => 0u8.into(),
+	}
+}
+
+fn compute_hash_outputs(sighash: Sighash, input_index: usize, outputs: &[TransactionOutput]) -> H256 {
+	match sighash.base {
+		SighashBase::All => {
+			let mut stream = Stream::default();
+			for output in outputs {
+				stream.append(output);
+			}
+			dhash256(&stream.out())
+		},
+		SighashBase::Single if input_index < outputs.len() => {
+			let mut stream = Stream::default();
+			stream.append(&outputs[input_index]);
+			dhash256(&stream.out())
+		},
+		_ => 0u8.into(),
 	}
 }
 

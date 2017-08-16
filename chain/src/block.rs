@@ -11,6 +11,12 @@ pub struct Block {
 	pub transactions: Vec<Transaction>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct WitnessBlock<'a> {
+	pub block_header: BlockHeader,
+	pub transactions: Vec<&'a Transaction>,
+}
+
 impl From<&'static str> for Block {
 	fn from(s: &'static str) -> Self {
 		deserialize(&s.from_hex().unwrap() as &[u8]).unwrap()
@@ -32,6 +38,17 @@ impl Block {
 		merkle_root(&hashes)
 	}
 
+	/// Returns block's witness merkle root.
+	pub fn witness_merkle_root(&self) -> H256 {
+		let hashes = self.transactions.iter()
+			.enumerate()
+			.map(|(i, tx)| match i {
+				0 => H256::from(0),
+				_ => tx.witness_hash()
+			}).collect::<Vec<H256>>();
+		merkle_root(&hashes)
+	}
+
 	pub fn transactions(&self) -> &[Transaction] {
 		&self.transactions
 	}
@@ -42,6 +59,10 @@ impl Block {
 
 	pub fn hash(&self) -> H256 {
 		self.block_header.hash()
+	}
+
+	pub fn cost(&self) -> u64 {
+		unimplemented!()
 	}
 }
 

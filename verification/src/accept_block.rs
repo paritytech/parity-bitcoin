@@ -1,10 +1,10 @@
-use network::ConsensusParams;
+use network::{ConsensusParams, Deployments as NetworkDeployments};
 use db::{TransactionOutputProvider, BlockHeaderProvider};
 use script;
 use sigops::transaction_sigops;
 use work::block_reward_satoshi;
 use duplex_store::DuplexTransactionOutputProvider;
-use deployments::Deployments;
+use deployments::{Deployments, ActiveDeployments};
 use canon::CanonBlock;
 use error::{Error, TransactionError};
 use timestamp::median_timestamp;
@@ -24,12 +24,12 @@ impl<'a> BlockAcceptor<'a> {
 		consensus: &'a ConsensusParams,
 		block: CanonBlock<'a>,
 		height: u32,
-		deployments: &'a Deployments,
+		deployments: ActiveDeployments<'a>,
 		headers: &'a BlockHeaderProvider,
 	) -> Self {
 		BlockAcceptor {
-			finality: BlockFinality::new(block, height, deployments, headers, consensus),
-			serialized_size: BlockSerializedSize::new(block, consensus, height),
+			finality: BlockFinality::new(block, height, deployments.deployments, headers, consensus),
+			serialized_size: BlockSerializedSize::new(block, consensus, deployments, height),
 			coinbase_script: BlockCoinbaseScript::new(block, consensus, height),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store, height),
 			sigops: BlockSigops::new(block, store, consensus, height),
@@ -83,26 +83,29 @@ impl<'a> BlockFinality<'a> {
 pub struct BlockSerializedSize<'a> {
 	block: CanonBlock<'a>,
 	consensus: &'a ConsensusParams,
+	deployments: ActiveDeployments<'a>,
 	height: u32,
 }
 
 impl<'a> BlockSerializedSize<'a> {
-	fn new(block: CanonBlock<'a>, consensus: &'a ConsensusParams, height: u32) -> Self {
+	fn new(block: CanonBlock<'a>, consensus: &'a ConsensusParams, deployments: ActiveDeployments<'a>, height: u32) -> Self {
 		BlockSerializedSize {
 			block: block,
 			consensus: consensus,
+			deployments: deployments,
 			height: height,
 		}
 	}
 
 	fn check(&self) -> Result<(), Error> {
 		let size = self.block.size();
-		if size < self.consensus.fork.min_block_size(self.height) ||
-			size > self.consensus.fork.max_block_size(self.height) {
-			Err(Error::Size(size))
-		} else {
-			Ok(())
+		if !self.consensus.fork.check_block_size(size, self.height, &self.deployments) {
+			return Err(Error::Size(size))
 		}
+		if self.deployments.is_active("segwit") {
+			// TODO: block.vtx.size() * WITNESS_SCALE_FACTOR > MAX_BLOCK_WEIGHT
+		}
+		Ok(())
 	}
 }
 

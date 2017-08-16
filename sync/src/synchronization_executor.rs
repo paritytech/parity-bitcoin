@@ -28,8 +28,12 @@ pub enum Task {
 	MerkleBlock(PeerIndex, types::MerkleBlock),
 	/// Send cmpcmblock
 	CompactBlock(PeerIndex, types::CompactBlock),
+	/// Send block with witness data
+	WitnessBlock(PeerIndex, IndexedBlock),
 	/// Send transaction
 	Transaction(PeerIndex, IndexedTransaction),
+	/// Send transaction with witness data
+	WitnessTransaction(PeerIndex, IndexedTransaction),
 	/// Send block transactions
 	BlockTxn(PeerIndex, types::BlockTxn),
 	/// Send notfound
@@ -117,6 +121,17 @@ impl LocalSynchronizationTaskExecutor {
 		}
 	}
 
+	fn execute_witness_block(&self, peer_index: PeerIndex, block: IndexedBlock) {
+		if let Some(connection) = self.peers.connection(peer_index) {
+			trace!(target: "sync", "Sending witness block {} to peer#{}", block.hash().to_reversed_str(), peer_index);
+			self.peers.hash_known_as(peer_index, block.hash().clone(), KnownHashType::Block);
+			let block = types::Block {
+				block: block.to_raw_block(),
+			};
+			connection.send_witness_block(&block);
+		}
+	}
+
 	fn execute_transaction(&self, peer_index: PeerIndex, transaction: IndexedTransaction) {
 		if let Some(connection) = self.peers.connection(peer_index) {
 			trace!(target: "sync", "Sending transaction {} to peer#{}", transaction.hash.to_reversed_str(), peer_index);
@@ -125,6 +140,17 @@ impl LocalSynchronizationTaskExecutor {
 				transaction: transaction.raw,
 			};
 			connection.send_transaction(&transaction);
+		}
+	}
+
+	fn execute_witness_transaction(&self, peer_index: PeerIndex, transaction: IndexedTransaction) {
+		if let Some(connection) = self.peers.connection(peer_index) {
+			trace!(target: "sync", "Sending witness transaction {} to peer#{}", transaction.hash.to_reversed_str(), peer_index);
+			self.peers.hash_known_as(peer_index, transaction.hash, KnownHashType::Transaction);
+			let transaction = types::Tx {
+				transaction: transaction.raw,
+			};
+			connection.send_witness_transaction(&transaction);
 		}
 	}
 
@@ -202,7 +228,9 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 			Task::Block(peer_index, block) => self.execute_block(peer_index, block),
 			Task::MerkleBlock(peer_index, block) => self.execute_merkleblock(peer_index, block),
 			Task::CompactBlock(peer_index, block) => self.execute_compact_block(peer_index, block),
+			Task::WitnessBlock(peer_index, block) => self.execute_witness_block(peer_index, block),
 			Task::Transaction(peer_index, transaction) => self.execute_transaction(peer_index, transaction),
+			Task::WitnessTransaction(peer_index, transaction) => self.execute_witness_transaction(peer_index, transaction),
 			Task::BlockTxn(peer_index, blocktxn) => self.execute_block_txn(peer_index, blocktxn),
 			Task::NotFound(peer_index, notfound) => self.execute_notfound(peer_index, notfound),
 			Task::Inventory(peer_index, inventory) => self.execute_inventory(peer_index, inventory),

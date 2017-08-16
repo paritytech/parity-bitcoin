@@ -12,7 +12,7 @@ use verify_header::HeaderVerifier;
 use verify_transaction::MemoryPoolTransactionVerifier;
 use accept_chain::ChainAcceptor;
 use accept_transaction::MemoryPoolTransactionAcceptor;
-use deployments::Deployments;
+use deployments::{Deployments, ActiveDeployments};
 use {Verify, VerificationLevel};
 
 pub struct BackwardsCompatibleChainVerifier {
@@ -89,6 +89,7 @@ impl BackwardsCompatibleChainVerifier {
 
 	pub fn verify_mempool_transaction<T>(
 		&self,
+		block_header_provider: &BlockHeaderProvider,
 		prevout_provider: &T,
 		height: u32,
 		time: u32,
@@ -96,7 +97,8 @@ impl BackwardsCompatibleChainVerifier {
 	) -> Result<(), TransactionError> where T: TransactionOutputProvider {
 		let indexed_tx = transaction.clone().into();
 		// let's do preverification first
-		let tx_verifier = MemoryPoolTransactionVerifier::new(&indexed_tx, &self.consensus, height);
+		let deployments = ActiveDeployments::new(&self.deployments, height, block_header_provider, &self.consensus);
+		let tx_verifier = MemoryPoolTransactionVerifier::new(&indexed_tx, &self.consensus, deployments);
 		try!(tx_verifier.check());
 
 		let canon_tx = CanonTransaction::new(&indexed_tx);

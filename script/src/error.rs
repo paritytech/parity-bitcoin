@@ -51,6 +51,15 @@ pub enum Error {
 
 	// Softfork safeness
 	DiscourageUpgradableNops,
+
+	// SegWit-related errors
+	WitnessProgramWrongLength,
+	WitnessProgramWitnessEmpty,
+	WitnessProgramMismatch,
+	WitnessMalleated,
+	WitnessMalleatedP2SH,
+	WitnessUnexpected,
+	WitnessPubKeyType,
 }
 
 impl fmt::Display for Error {
@@ -101,6 +110,15 @@ impl fmt::Display for Error {
 
 			// Softfork safeness
 			Error::DiscourageUpgradableNops => "Discourage Upgradable Nops".fmt(f),
+
+			// SegWit-related errors
+			Error::WitnessProgramWrongLength => "Witness program has incorrect length".fmt(f),
+			Error::WitnessProgramWitnessEmpty => "Witness program was passed an empty witness".fmt(f),
+			Error::WitnessProgramMismatch => "Witness program hash mismatch".fmt(f),
+			Error::WitnessMalleated => "Witness requires empty scriptSig".fmt(f),
+			Error::WitnessMalleatedP2SH => "Witness requires only-redeemscript scriptSig".fmt(f),
+			Error::WitnessUnexpected => "Witness provided for non-witness script".fmt(f),
+			Error::WitnessPubKeyType => "Using non-compressed keys in segwit".fmt(f),
 		}
 	}
 }

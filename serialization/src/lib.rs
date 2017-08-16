@@ -12,5 +12,8 @@ pub use primitives::{hash, bytes, compact};
 pub use compact_integer::CompactInteger;
 pub use list::List;
 pub use reader::{Reader, Deserializable, deserialize, deserialize_iterator, ReadIterator, Error};
-pub use stream::{Stream, Serializable, serialize, serialize_list, serialized_list_size};
+pub use stream::{
+	Stream, Serializable, serialize, serialize_with_flags, serialize_list, serialized_list_size,
+	SERIALIZE_TRANSACTION_WITNESS,
+};
 

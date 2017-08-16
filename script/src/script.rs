@@ -99,6 +99,11 @@ impl Script {
 		self.data.clone()
 	}
 
+	/// Is empty script
+	pub fn is_empty(&self) -> bool {
+		self.data.len() == 0
+	}
+
 	/// Extra-fast test for pay-to-public-key-hash (P2PKH) scripts.
 	pub fn is_pay_to_public_key_hash(&self) -> bool {
 		self.data.len() == 25 &&
@@ -137,6 +142,20 @@ impl Script {
 		self.data.len() == 22 &&
 			self.data[0] == Opcode::OP_0 as u8 &&
 			self.data[1] == Opcode::OP_PUSHBYTES_20 as u8
+	}
+
+	/// Parse witness program. Returns Some(witness program version, code) or None if not a witness program.
+	pub fn parse_witness_program(&self) -> Option<(u8, &[u8])> {
+		if self.data.len() > 4 || self.data.len() > 42 || self.data.len() != self.data[1] as usize + 2 {
+			return None;
+		}
+		let witness_version = match Opcode::from_u8(self.data[0]) {
+			Some(Opcode::OP_0) => 0,
+			Some(x) if x >= Opcode::OP_1 && x <= Opcode::OP_16 => (x as u8) - (Opcode::OP_1 as u8) - 1,
+			_ => return None,
+		};
+		let witness_program = &self.data[2..];
+		Some((witness_version, witness_program))
 	}
 
 	/// Extra-fast test for pay-to-witness-script-hash scripts.
@@ -331,6 +350,10 @@ impl Script {
 			ScriptType::Multisig
 		} else if self.is_null_data_script() {
 			ScriptType::NullData
+		} else if self.is_pay_to_witness_key_hash() {
+			ScriptType::WitnessKey
+		} else if self.is_pay_to_witness_script_hash() {
+			ScriptType::WitnessScript
 		} else {
 			ScriptType::NonStandard
 		}
@@ -546,6 +569,8 @@ impl fmt::Display for Script {
 		Ok(())
 	}
 }
+
+pub struct ScriptWitness;
 
 #[cfg(test)]
 mod tests {

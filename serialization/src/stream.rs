@@ -4,8 +4,17 @@ use std::borrow::Borrow;
 use compact_integer::CompactInteger;
 use bytes::Bytes;
 
+/// Do not serialize transaction witness data.
+pub const SERIALIZE_TRANSACTION_WITNESS: u32 = 0x40000000;
+
 pub fn serialize<T>(t: &T) -> Bytes where T: Serializable{
 	let mut stream = Stream::default();
+	stream.append(t);
+	stream.out()
+}
+
+pub fn serialize_with_flags<T>(t: &T, flags: u32) -> Bytes where T: Serializable{
+	let mut stream = Stream::with_flags(flags);
 	stream.append(t);
 	stream.out()
 }
@@ -36,12 +45,23 @@ pub trait Serializable {
 #[derive(Default)]
 pub struct Stream {
 	buffer: Vec<u8>,
+	flags: u32,
 }
 
 impl Stream {
 	/// New stream
 	pub fn new() -> Self {
-		Stream { buffer: Vec::new() }
+		Stream { buffer: Vec::new(), flags: 0 }
+	}
+
+	/// Create stream with given flags,
+	pub fn with_flags(flags: u32) -> Self {
+		Stream { buffer: Vec::new(), flags: flags }
+	}
+
+	/// Are transactions written to this stream with witness data?
+	pub fn include_transaction_witness(&self) -> bool {
+		(self.flags & SERIALIZE_TRANSACTION_WITNESS) != 0
 	}
 
 	/// Serializes the struct and appends it to the end of stream.

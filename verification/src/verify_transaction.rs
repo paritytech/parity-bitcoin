@@ -6,6 +6,7 @@ use duplex_store::NoopStore;
 use sigops::transaction_sigops;
 use error::TransactionError;
 use constants::{MIN_COINBASE_SIZE, MAX_COINBASE_SIZE};
+use deployments::ActiveDeployments;
 
 pub struct TransactionVerifier<'a> {
 	pub empty: TransactionEmpty<'a>,
@@ -40,13 +41,13 @@ pub struct MemoryPoolTransactionVerifier<'a> {
 }
 
 impl<'a> MemoryPoolTransactionVerifier<'a> {
-	pub fn new(transaction: &'a IndexedTransaction, consensus: &'a ConsensusParams, height: u32) -> Self {
+	pub fn new(transaction: &'a IndexedTransaction, consensus: &'a ConsensusParams, deployments: ActiveDeployments<'a>) -> Self {
 		trace!(target: "verification", "Mempool-Tx pre-verification {}", transaction.hash.to_reversed_str());
 		MemoryPoolTransactionVerifier {
 			empty: TransactionEmpty::new(transaction),
 			null_non_coinbase: TransactionNullNonCoinbase::new(transaction),
 			is_coinbase: TransactionMemoryPoolCoinbase::new(transaction),
-			size: TransactionSize::new(transaction, consensus, height),
+			size: TransactionSize::new(transaction, deployments, consensus),
 			sigops: TransactionSigops::new(transaction, ConsensusFork::absolute_maximum_block_sigops()),
 		}
 	}
@@ -147,21 +148,21 @@ impl<'a> TransactionMemoryPoolCoinbase<'a> {
 
 pub struct TransactionSize<'a> {
 	transaction: &'a IndexedTransaction,
+	deployments: ActiveDeployments<'a>,
 	consensus: &'a ConsensusParams,
-	height: u32,
 }
 
 impl<'a> TransactionSize<'a> {
-	fn new(transaction: &'a IndexedTransaction, consensus: &'a ConsensusParams, height: u32) -> Self {
+	fn new(transaction: &'a IndexedTransaction, deployments: ActiveDeployments<'a>, consensus: &'a ConsensusParams) -> Self {
 		TransactionSize {
 			transaction: transaction,
+			deployments: deployments,
 			consensus: consensus,
-			height: height,
 		}
 	}
 
 	fn check(&self) -> Result<(), TransactionError> {
-		if self.transaction.raw.serialized_size() > self.consensus.fork.max_transaction_size(self.height) {
+		if !self.consensus.fork.check_transaction_size(self.transaction.raw.serialized_size(), &self.deployments) {
 			Err(TransactionError::MaxSize)
 		} else {
 			Ok(())
