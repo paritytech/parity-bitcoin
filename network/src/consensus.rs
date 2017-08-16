@@ -42,12 +42,14 @@ pub enum ConsensusFork {
 	/// No fork.
 	NoFork,
 	/// SegWit2x (aka The New York Agreement).
+	/// `u32` is height of the first block, for which new consensus rules are applied.
 	/// Briefly: SegWit + blocks up to 2MB.
 	/// Technical specification:
 	/// Segregated Witness (Consensus layer) - https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki
 	/// Block size increase to 2MB - https://github.com/bitcoin/bips/blob/master/bip-0102.mediawiki
 	SegWit2x(u32),
 	/// Bitcoin Cash (aka UAHF).
+	/// `u32` is height of the first block, for which new consensus rules are applied.
 	/// Briefly: no SegWit + blocks up to 8MB + replay protection.
 	/// Technical specification:
 	/// UAHF Technical Specification - https://github.com/Bitcoin-UAHF/spec/blob/master/uahf-technical-spec.md
