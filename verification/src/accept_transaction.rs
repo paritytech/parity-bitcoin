@@ -1,10 +1,10 @@
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use db::{TransactionMetaProvider, TransactionOutputProvider, BlockHeaderProvider};
-use network::{ConsensusParams, ConsensusFork};
+use network::{ConsensusParams, ConsensusFork, Deployments as NetworkDeployments};
 use script::{Script, ScriptWitness, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner, SignatureVersion};
 use duplex_store::DuplexTransactionOutputProvider;
-use deployments::Deployments;
+use deployments::{Deployments, ActiveDeployments};
 use script::Builder;
 use sigops::transaction_sigops;
 use canon::CanonTransaction;
@@ -13,6 +13,7 @@ use error::TransactionError;
 use VerificationLevel;
 
 pub struct TransactionAcceptor<'a> {
+	pub premature_witness: TransactionPrematureWitness<'a>,
 	pub bip30: TransactionBip30<'a>,
 	pub missing_inputs: TransactionMissingInputs<'a>,
 	pub maturity: TransactionMaturity<'a>,
@@ -36,22 +37,24 @@ impl<'a> TransactionAcceptor<'a> {
 		height: u32,
 		time: u32,
 		transaction_index: usize,
-		deployments: &'a Deployments,
+		deployments: ActiveDeployments<'a>,
 		headers: &'a BlockHeaderProvider,
 	) -> Self {
 		trace!(target: "verification", "Tx verification {}", transaction.hash.to_reversed_str());
 		TransactionAcceptor {
+			premature_witness: TransactionPrematureWitness::new(transaction, deployments.is_active("segwit")),
 			bip30: TransactionBip30::new_for_sync(transaction, meta_store, consensus, block_hash, height),
 			missing_inputs: TransactionMissingInputs::new(transaction, output_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, output_store),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
 			return_replay_protection: TransactionReturnReplayProtection::new(transaction, consensus, height),
-			eval: TransactionEval::new(transaction, output_store, consensus, verification_level, height, time, deployments, headers),
+			eval: TransactionEval::new(transaction, output_store, consensus, verification_level, height, time, deployments.deployments, headers),
 		}
 	}
 
 	pub fn check(&self) -> Result<(), TransactionError> {
+		try!(self.premature_witness.check());
 		try!(self.bip30.check());
 		try!(self.missing_inputs.check());
 		try!(self.maturity.check());
@@ -432,6 +435,28 @@ impl<'a> TransactionReturnReplayProtection<'a> {
 		}
 
 		Ok(())
+	}
+}
+
+pub struct TransactionPrematureWitness<'a> {
+	transaction: CanonTransaction<'a>,
+	is_segwit_active: bool,
+}
+
+impl<'a> TransactionPrematureWitness<'a> {
+	pub fn new(transaction: CanonTransaction<'a>, is_segwit_active: bool) -> Self {
+		TransactionPrematureWitness {
+			transaction: transaction,
+			is_segwit_active: is_segwit_active,
+		}
+	}
+
+	pub fn check(&self) -> Result<(), TransactionError> {
+		if !self.is_segwit_active && (*self.transaction).raw.has_witness() {
+			Err(TransactionError::PrematureWitness)
+		} else {
+			Ok(())
+		}
 	}
 }
 

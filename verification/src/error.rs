@@ -95,5 +95,7 @@ pub enum TransactionError {
 	UsingSpentOutput(H256, u32),
 	/// Transaction, protected using BitcoinCash OP_RETURN replay protection (REQ-6-1).
 	ReturnReplayProtection,
+	/// Transaction with witness is received before SegWit is activated.
+	PrematureWitness,
 }
 

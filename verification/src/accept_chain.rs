@@ -39,7 +39,7 @@ impl<'a> ChainAcceptor<'a> {
 						height,
 						block.header.raw.time,
 						tx_index,
-						deployments,
+						active_deployments,
 						headers,
 				))
 				.collect(),

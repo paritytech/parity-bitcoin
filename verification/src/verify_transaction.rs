@@ -1,7 +1,7 @@
 use std::ops;
 use ser::Serializable;
 use chain::IndexedTransaction;
-use network::{ConsensusParams, ConsensusFork};
+use network::{ConsensusParams, ConsensusFork, Deployments};
 use duplex_store::NoopStore;
 use sigops::transaction_sigops;
 use error::TransactionError;
@@ -37,6 +37,7 @@ pub struct MemoryPoolTransactionVerifier<'a> {
 	pub null_non_coinbase: TransactionNullNonCoinbase<'a>,
 	pub is_coinbase: TransactionMemoryPoolCoinbase<'a>,
 	pub size: TransactionSize<'a>,
+	pub premature_witness: TransactionPrematureWitness<'a>,
 	pub sigops: TransactionSigops<'a>,
 }
 
@@ -48,6 +49,7 @@ impl<'a> MemoryPoolTransactionVerifier<'a> {
 			null_non_coinbase: TransactionNullNonCoinbase::new(transaction),
 			is_coinbase: TransactionMemoryPoolCoinbase::new(transaction),
 			size: TransactionSize::new(transaction, deployments, consensus),
+			premature_witness: TransactionPrematureWitness::new(transaction, deployments),
 			sigops: TransactionSigops::new(transaction, ConsensusFork::absolute_maximum_block_sigops()),
 		}
 	}
@@ -57,6 +59,7 @@ impl<'a> MemoryPoolTransactionVerifier<'a> {
 		try!(self.null_non_coinbase.check());
 		try!(self.is_coinbase.check());
 		try!(self.size.check());
+		try!(self.premature_witness.check());
 		try!(self.sigops.check());
 		Ok(())
 	}
@@ -187,6 +190,28 @@ impl<'a> TransactionSigops<'a> {
 		let sigops = transaction_sigops(&self.transaction.raw, &NoopStore, false);
 		if sigops > self.max_sigops {
 			Err(TransactionError::MaxSigops)
+		} else {
+			Ok(())
+		}
+	}
+}
+
+pub struct TransactionPrematureWitness<'a> {
+	transaction: &'a IndexedTransaction,
+	deployments: ActiveDeployments<'a>,
+}
+
+impl<'a> TransactionPrematureWitness<'a> {
+	pub fn new(transaction: &'a IndexedTransaction, deployments: ActiveDeployments<'a>) -> Self {
+		TransactionPrematureWitness {
+			transaction: transaction,
+			deployments: deployments,
+		}
+	}
+
+	pub fn check(&self) -> Result<(), TransactionError> {
+		if self.transaction.raw.has_witness() && !self.deployments.is_active("segwit") {
+			Err(TransactionError::PrematureWitness)
 		} else {
 			Ok(())
 		}
