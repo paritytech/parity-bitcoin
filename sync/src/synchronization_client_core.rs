@@ -830,7 +830,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			let timestamp_diff = new_timestamp - timestamp;
 			let new_num_of_blocks = self.chain.best_storage_block().number;
 			let blocks_diff = if new_num_of_blocks > num_of_blocks { new_num_of_blocks - num_of_blocks } else { 0 };
-			if timestamp_diff >= 60.0 || blocks_diff > 1000 {
+			if timestamp_diff >= 60.0 || blocks_diff >= 1000 {
 				self.state = State::Synchronizing(time::precise_time_s(), new_num_of_blocks);
         let blocks_speed :f64 = blocks_diff as f64 / timestamp_diff;
 				use time;
