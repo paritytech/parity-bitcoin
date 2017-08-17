@@ -887,9 +887,13 @@ pub fn eval_script(
 				let signature = try!(stack.pop());
 				let sighash = parse_hash_type(version, &signature);
 				let mut subscript = script.subscript(begincode);
-				if version != SignatureVersion::ForkId || !sighash.fork_id {
-					let signature_script = Builder::default().push_data(&*signature).into_script();
-					subscript = subscript.find_and_delete(&*signature_script);
+				match version {
+					SignatureVersion::ForkId if sighash.fork_id => (),
+					SignatureVersion::WitnessV0 => (),
+					SignatureVersion::Base | SignatureVersion::ForkId => {
+						let signature_script = Builder::default().push_data(&*signature).into_script();
+						subscript = subscript.find_and_delete(&*signature_script);
+					},
 				}
 
 				try!(check_signature_encoding(&signature, flags, version));

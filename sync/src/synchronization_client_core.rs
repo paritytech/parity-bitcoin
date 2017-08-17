@@ -262,6 +262,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		// ask for unknown items
+// TODO: if segwit is active, ask with witness data
 		let message = types::GetData::with_inventory(unknown_inventory);
 		self.executor.execute(Task::GetData(peer_index, message));
 	}
@@ -963,6 +964,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			// remember that peer is asked for these blocks
 			self.peers_tasks.on_blocks_requested(peer, &chunk_hashes);
 
+// TODO: if block is believed to have witness, ask with witness data
 			// request blocks
 			let getdata = types::GetData {
 				inventory: chunk_hashes.into_iter().map(InventoryVector::block).collect(),
@@ -1045,6 +1047,9 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		// update block processing speed
 		self.block_speed_meter.checkpoint();
 
+// TODO: if segwit activates after this block, disconnect from all nodes without NODE_WITNESS support
+// TODO: no more connections to !NODE_WITNESS nodes
+
 		// remove flags
 		let needs_relay = !self.do_not_relay.remove(block.hash());
 
@@ -1102,7 +1107,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			Err(e) => {
 				// process as irrecoverable failure
 				panic!("Block {} insertion failed with error {:?}", block_hash.to_reversed_str(), e);
-			}
+			},
 		}
 	}
 
