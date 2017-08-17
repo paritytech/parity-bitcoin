@@ -302,6 +302,19 @@ pub fn verify_script(
 		if !res {
 			return Err(Error::EvalFalse);
 		}
+
+		if flags.verify_witness {
+			if let Some((witness_version, witness_program)) = pubkey2.parse_witness_program() {
+				if script_sig != Builder::default().push_data(&pubkey2) {
+					return Err(Error::WitnessMalleatedP2SH);
+				}
+
+				verify_cleanstack = false;
+				if !verify_witness_program(witness, witness_version, witness_program, flags, checker, version)? {
+					return Err(Error::EvalFalse);
+				}
+			}
+		}
 	}
 
     // The CLEANSTACK check is only performed after potential P2SH evaluation,
