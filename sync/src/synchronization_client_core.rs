@@ -4,7 +4,6 @@ use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use futures::Future;
 use parking_lot::Mutex;
-use time;
 use time::precise_time_s;
 use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
 use message::types;
@@ -826,17 +825,17 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	/// Print synchronization information
 	pub fn print_synchronization_information(&mut self) {
 		if let State::Synchronizing(timestamp, num_of_blocks) = self.state {
-			let new_timestamp = time::precise_time_s();
+			let new_timestamp = precise_time_s();
 			let timestamp_diff = new_timestamp - timestamp;
 			let new_num_of_blocks = self.chain.best_storage_block().number;
 			let blocks_diff = if new_num_of_blocks > num_of_blocks { new_num_of_blocks - num_of_blocks } else { 0 };
-			if timestamp_diff >= 60.0 || blocks_diff > 1000 {
-				self.state = State::Synchronizing(time::precise_time_s(), new_num_of_blocks);
-
-				use time;
-				info!(target: "sync", "{:?} Processed {} blocks in {:.2} seconds. Peers: {:?}. Chain: {:?}"
-					, time::strftime("%H:%M:%S", &time::now()).unwrap()
-					, blocks_diff, timestamp_diff
+			if timestamp_diff >= 60.0 || blocks_diff >= 1000 {
+				self.state = State::Synchronizing(precise_time_s(), new_num_of_blocks);
+				let blocks_speed = blocks_diff as f64 / timestamp_diff;
+				info!(target: "sync", "Processed {} blocks in {:.2} seconds ({:.2} blk/s).\tPeers: {:?}.\tChain: {:?}"
+					, blocks_diff
+					, timestamp_diff
+					, blocks_speed
 					, self.peers_tasks.information()
 					, self.chain.information());
 			}
@@ -987,7 +986,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		self.shared_state.update_synchronizing(true);
-		self.state = State::Synchronizing(time::precise_time_s(), self.chain.best_storage_block().number);
+		self.state = State::Synchronizing(precise_time_s(), self.chain.best_storage_block().number);
 	}
 
 	/// Switch to nearly saturated state
@@ -1027,9 +1026,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			self.chain.forget_all_blocks_with_state(BlockState::Requested);
 			self.chain.forget_all_blocks_with_state(BlockState::Scheduled);
 
-			use time;
-			info!(target: "sync", "{:?} @ Switched to saturated state. Chain information: {:?}",
-				time::strftime("%H:%M:%S", &time::now()).unwrap(),
+			info!(target: "sync", "Switched to saturated state.\tChain: {:?}",
 				self.chain.information());
 		}
 

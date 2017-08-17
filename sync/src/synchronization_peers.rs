@@ -145,14 +145,14 @@ impl PeersContainer for PeersImpl {
 
 	fn misbehaving(&self, peer_index: PeerIndex, reason: &str) {
 		if let Some(peer) = self.peers.write().remove(&peer_index) {
-			warn!(target: "sync", "Disconnecting from peer#{} due to misbehaving: {}", peer_index, reason);
+			warn!(target: "sync", "Disconnecting from peer#{} due to misbehavior: {}", peer_index, reason);
 			peer.connection.close();
 		}
 	}
 
 	fn dos(&self, peer_index: PeerIndex, reason: &str) {
 		if let Some(peer) = self.peers.write().remove(&peer_index) {
-			warn!(target: "sync", "Disconnecting from peer#{} due to DOS: {}", peer_index, reason);
+			warn!(target: "sync", "Disconnecting from peer#{} due to DoS: {}", peer_index, reason);
 			peer.connection.close();
 		}
 	}

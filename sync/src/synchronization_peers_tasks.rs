@@ -16,6 +16,8 @@ const BLOCKS_TO_INSPECT: usize = 32;
 
 /// Information on synchronization peers
 pub struct Information {
+	/// total # of peers.
+	pub all: usize,
 	/// # of peers that are marked as useful for current synchronization session && have no pending requests.
 	pub idle: usize,
 	/// # of peers that are marked as non-useful for current synchronization session && have no pending requests.
@@ -93,6 +95,7 @@ impl PeersTasks {
 	pub fn information(&self) -> Information {
 		let active_for_headers: HashSet<_> = self.headers_requests.keys().cloned().collect();
 		Information {
+			all: self.all.len(),
 			idle: self.idle_for_blocks.difference(&active_for_headers).count(),
 			unuseful: self.unuseful.len(),
 			active: active_for_headers.union(&self.blocks_requests.keys().cloned().collect()).count(),
@@ -375,7 +378,7 @@ impl PeerStats {
 
 impl fmt::Debug for Information {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "[active:{}, idle:{}, bad:{}]", self.active, self.idle, self.unuseful)
+		write!(f, "{} (act: {}, idl: {}, bad: {})", self.all, self.active, self.idle, self.unuseful)
 	}
 }
 
