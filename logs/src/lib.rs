@@ -4,7 +4,7 @@ extern crate env_logger;
 extern crate time;
 
 use ansi_term::Colour as Color;
-use log::LogRecord;
+use log::{LogRecord, LogLevel};
 use env_logger::LogBuilder;
 
 fn strftime() -> String {
@@ -29,7 +29,43 @@ pub struct DateAndColorLogFormatter;
 impl LogFormatter for DateAndColorLogFormatter {
 	fn format(&self, record: &LogRecord) -> String {
 		let timestamp = strftime();
-		format!("{} {} {} {}", Color::Black.bold().paint(timestamp), record.level(), record.target(), record.args())
+		match record.level() {
+			LogLevel::Error => format!(
+				"{} {} {} {}",
+				 Color::Black.bold().paint(timestamp),
+				 Color::Red.bold().paint(record.level().to_string()),
+				 record.target(),
+				 record.args()
+			),
+			LogLevel::Warn  => format!(
+				"{} {} {} {}",
+				 Color::Black.bold().paint(timestamp),
+				 Color::Yellow.bold().paint(record.level().to_string()),
+				 record.target(),
+				 record.args()
+			),
+			LogLevel::Info  => format!(
+				"{} {} {} {}",
+				 Color::Black.bold().paint(timestamp),
+				 Color::Green.paint(record.level().to_string()),
+				 record.target(),
+				 record.args()
+			),
+			LogLevel::Debug => format!(
+				"{} {} {} {}",
+				 Color::Black.bold().paint(timestamp),
+				 Color::Cyan.paint(record.level().to_string()),
+				 record.target(),
+				 record.args()
+			),
+			LogLevel::Trace => format!(
+				"{} {} {} {}",
+				 Color::Black.bold().paint(timestamp),
+				 Color::Blue.paint(record.level().to_string()),
+				 record.target(),
+				 record.args()
+			),
+		}
 	}
 }
 
