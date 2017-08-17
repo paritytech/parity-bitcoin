@@ -4,7 +4,6 @@ use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use futures::Future;
 use parking_lot::Mutex;
-use time;
 use time::precise_time_s;
 use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
 use message::types;
