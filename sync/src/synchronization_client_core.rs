@@ -1027,8 +1027,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			self.chain.forget_all_blocks_with_state(BlockState::Scheduled);
 
 			use time;
-			info!(target: "sync", "{:?} @ Switched to saturated state. Chain information: {:?}",
-				time::strftime("%H:%M:%S", &time::now()).unwrap(),
+			info!(target: "sync", "Switched to saturated state.\tChain: {:?}",
 				self.chain.information());
 		}
 
