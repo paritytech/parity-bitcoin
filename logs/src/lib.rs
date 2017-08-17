@@ -29,14 +29,13 @@ pub struct DateAndColorLogFormatter;
 impl LogFormatter for DateAndColorLogFormatter {
 	fn format(&self, record: &LogRecord) -> String {
 		let timestamp = strftime();
-		let log_level;
-		match record.level() {
-			LogLevel::Error => log_level = Color::Fixed(9).bold().paint(record.level().to_string()),
-			LogLevel::Warn  => log_level = Color::Fixed(11).bold().paint(record.level().to_string()),
-			LogLevel::Info  => log_level = Color::Fixed(10).paint(record.level().to_string()),
-			LogLevel::Debug => log_level = Color::Fixed(14).paint(record.level().to_string()),
-			LogLevel::Trace => log_level = Color::Fixed(12).paint(record.level().to_string()),
-		}
+		let log_level = match record.level() {
+			LogLevel::Error => Color::Fixed(9).bold().paint(record.level().to_string()),
+			LogLevel::Warn  => Color::Fixed(11).bold().paint(record.level().to_string()),
+			LogLevel::Info  => Color::Fixed(10).paint(record.level().to_string()),
+			LogLevel::Debug => Color::Fixed(14).paint(record.level().to_string()),
+			LogLevel::Trace => Color::Fixed(12).paint(record.level().to_string()),
+		};
 		format!("{} {} {} {}", Color::Black.bold().paint(timestamp), log_level, record.target(), record.args())
 	}
 }
