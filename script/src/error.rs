@@ -51,6 +51,7 @@ pub enum Error {
 
 	// Softfork safeness
 	DiscourageUpgradableNops,
+	DiscourageUpgradableWitnessProgram,
 
 	// SegWit-related errors
 	WitnessProgramWrongLength,
@@ -110,6 +111,7 @@ impl fmt::Display for Error {
 
 			// Softfork safeness
 			Error::DiscourageUpgradableNops => "Discourage Upgradable Nops".fmt(f),
+			Error::DiscourageUpgradableWitnessProgram => "Discourage Upgradable Witness Program".fmt(f),
 
 			// SegWit-related errors
 			Error::WitnessProgramWrongLength => "Witness program has incorrect length".fmt(f),

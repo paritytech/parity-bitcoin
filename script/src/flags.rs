@@ -97,5 +97,10 @@ impl VerificationFlags {
 		self.verify_witness = value;
 		self
 	}
+
+	pub fn verify_nulldummy(mut self, value: bool) -> Self {
+		self.verify_nulldummy = value;
+		self
+	}
 }
 

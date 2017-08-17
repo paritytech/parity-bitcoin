@@ -3,7 +3,7 @@
 use std::{fmt, ops};
 use bytes::Bytes;
 use keys::{self, AddressHash, Public};
-use {Opcode, Error};
+use {Opcode, Error, Stack};
 
 /// Maximum number of bytes pushable to the stack
 pub const MAX_SCRIPT_ELEMENT_SIZE: usize = 520;
@@ -570,7 +570,10 @@ impl fmt::Display for Script {
 	}
 }
 
-pub struct ScriptWitness;
+#[derive(Default)]
+pub struct ScriptWitness {
+	pub stack: Stack<Bytes>,
+}
 
 /// Passed bytes array is a commitment script?
 /// https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#Commitment_structure

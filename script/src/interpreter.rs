@@ -4,6 +4,7 @@ use keys::{Signature, Public};
 use chain::constants::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crypto::{sha1, sha256, dhash160, dhash256, ripemd160};
 use sign::{SignatureVersion, Sighash};
+use script::MAX_SCRIPT_ELEMENT_SIZE;
 use {
 	script, Builder, Script, ScriptWitness, Num, VerificationFlags, Opcode, Error, SignatureChecker, Stack
 };
@@ -274,8 +275,11 @@ pub fn verify_script(
 			if !script_sig.is_empty() {
 				return Err(Error::WitnessMalleated);
 			}
-			verify_witness_program(witness, witness_version, witness_program, flags, checker)?;
+
 			verify_cleanstack = false;
+			if !verify_witness_program(witness, witness_version, witness_program, flags, checker, version)? {
+				return Err(Error::EvalFalse);
+			}
 		}
 	}
 
@@ -317,13 +321,71 @@ pub fn verify_script(
 }
 
 fn verify_witness_program(
-	_witness: &ScriptWitness,
-	_witness_version: u8,
-	_witness_program: &[u8],
-	_flags: &VerificationFlags,
-	_checker: &SignatureChecker
-) -> Result<(), Error> {
-	unimplemented!()
+	witness: &ScriptWitness,
+	witness_version: u8,
+	witness_program: &[u8],
+	flags: &VerificationFlags,
+	checker: &SignatureChecker,
+	version: SignatureVersion,
+) -> Result<bool, Error> {
+	if witness_version != 0 {
+		if flags.verify_discourage_upgradable_witness_program {
+			return Err(Error::DiscourageUpgradableWitnessProgram);
+		}
+
+		return Ok(true);
+	}
+
+	let witness_stack = &witness.stack;
+	let witness_stack_len = witness.stack.len();
+	let (mut stack, script_pubkey) = match witness_program.len() {
+		32 => {
+			if witness_stack_len == 0 {
+				return Err(Error::WitnessProgramWitnessEmpty);
+			}
+
+			let stack = &witness_stack[0..witness_stack_len - 1];
+			let script_pubkey = Script::new(stack[witness_stack_len - 1].clone());
+
+			let script_pubkey_hash = dhash256(&script_pubkey);
+			if script_pubkey_hash != witness_program[0..64].into() {
+				return Err(Error::WitnessProgramMismatch);
+			}
+
+			(stack.iter().cloned().collect::<Vec<_>>().into(), script_pubkey)
+		},
+		20 => {
+			if witness_stack_len != 2 {
+				return Err(Error::WitnessProgramMismatch);
+			}
+
+			let script_pubkey = Builder::default()
+				.push_opcode(Opcode::OP_DUP)
+				.push_opcode(Opcode::OP_HASH160)
+				.push_data(witness_program)
+				.push_opcode(Opcode::OP_EQUALVERIFY)
+				.push_opcode(Opcode::OP_CHECKSIG)
+				.into_script();
+
+			(witness_stack.clone(), script_pubkey)
+		},
+		_ => return Err(Error::WitnessProgramWrongLength),
+	};
+
+	if stack.iter().any(|s| s.len() > MAX_SCRIPT_ELEMENT_SIZE) {
+		return Err(Error::PushSize);
+	}
+
+	if !eval_script(&mut stack, &script_pubkey, flags, checker, version)? {
+		return Ok(false);
+	}
+
+	let success = !stack.is_empty() && {
+		let last = stack.last()?;
+		cast_to_bool(last)
+	};
+
+	Ok(success)
 }
 
 /// Evaluautes the script
@@ -1893,7 +1955,7 @@ mod tests {
 		let output: Script = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &ScriptWitness, &flags, &checker, SignatureVersion::Base), Ok(()));
+		assert_eq!(verify_script(&input, &output, &ScriptWitness::default(), &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 
 	// https://blockchain.info/rawtx/02b082113e35d5386285094c2829e7e2963fa0b5369fb7f4b79c4c90877dcd3d
@@ -1910,7 +1972,7 @@ mod tests {
 		let output: Script = "a9141a8b0026343166625c7475f01e48b5ede8c0252e87".into();
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &ScriptWitness, &flags, &checker, SignatureVersion::Base), Ok(()));
+		assert_eq!(verify_script(&input, &output, &ScriptWitness::default(), &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 
 	// https://blockchain.info/en/tx/12b5633bad1f9c167d523ad1aa1947b2732a865bf5414eab2f9e5ae5d5c191ba?show_adv=true
@@ -1927,7 +1989,7 @@ mod tests {
 		let output: Script = "410411db93e1dcdb8a016b49840f8c53bc1eb68a382e97b1482ecad7b148a6909a5cb2e0eaddfb84ccf9744464f82e160bfa9b8b64f9d4c03f999b8643f656b412a3ac".into();
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &ScriptWitness, &flags, &checker, SignatureVersion::Base), Ok(()));
+		assert_eq!(verify_script(&input, &output, &ScriptWitness::default(), &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 
 	// https://blockchain.info/rawtx/fb0a1d8d34fa5537e461ac384bac761125e1bfa7fec286fa72511240fa66864d
@@ -1944,7 +2006,7 @@ mod tests {
 		let output: Script = "76a9147a2a3b481ca80c4ba7939c54d9278e50189d94f988ac".into();
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &ScriptWitness, &flags, &checker, SignatureVersion::Base), Ok(()));
+		assert_eq!(verify_script(&input, &output, &ScriptWitness::default(), &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 
 	// https://blockchain.info/rawtx/eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb
@@ -1962,12 +2024,12 @@ mod tests {
 
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &ScriptWitness, &flags, &checker, SignatureVersion::Base), Ok(()));
+		assert_eq!(verify_script(&input, &output, &ScriptWitness::default(), &flags, &checker, SignatureVersion::Base), Ok(()));
 
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true)
 			.verify_locktime(true);
-		assert_eq!(verify_script(&input, &output, &ScriptWitness, &flags, &checker, SignatureVersion::Base), Err(Error::NumberOverflow));
+		assert_eq!(verify_script(&input, &output, &ScriptWitness::default(), &flags, &checker, SignatureVersion::Base), Err(Error::NumberOverflow));
 	}
 
 	// https://blockchain.info/rawtx/54fabd73f1d20c980a0686bf0035078e07f69c58437e4d586fb29aa0bee9814f
@@ -1983,7 +2045,7 @@ mod tests {
 		let input: Script = "483045022100d92e4b61452d91a473a43cde4b469a472467c0ba0cbd5ebba0834e4f4762810402204802b76b7783db57ac1f61d2992799810e173e91055938750815b6d8a675902e014f".into();
 		let output: Script = "76009f69905160a56b210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71ad6c".into();
 		let flags = VerificationFlags::default();
-		assert_eq!(verify_script(&input, &output, &ScriptWitness, &flags, &checker, SignatureVersion::Base), Ok(()));
+		assert_eq!(verify_script(&input, &output, &ScriptWitness::default(), &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 
 	#[test]
@@ -2036,7 +2098,7 @@ mod tests {
 
 		let flags = VerificationFlags::default()
 			.verify_p2sh(true);
-		assert_eq!(verify_script(&input, &output, &ScriptWitness, &flags, &checker, SignatureVersion::Base), Ok(()));
+		assert_eq!(verify_script(&input, &output, &ScriptWitness::default(), &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 
 
@@ -2087,7 +2149,7 @@ mod tests {
 			let signed_input = checker.signer.signed_input(&key_pair, 0, amount, &script_pubkey, SignatureVersion::ForkId, sighashtype);
 			let script_sig = signed_input.script_sig.into();
 
-			assert_eq!(verify_script(&script_sig, &script_pubkey, &ScriptWitness, &flags, &checker, SignatureVersion::ForkId), Ok(()));
+			assert_eq!(verify_script(&script_sig, &script_pubkey, &ScriptWitness::default(), &flags, &checker, SignatureVersion::ForkId), Ok(()));
 		}
 
 		// signature with wrong amount
@@ -2095,7 +2157,7 @@ mod tests {
 			let signed_input = checker.signer.signed_input(&key_pair, 0, amount + 1, &script_pubkey, SignatureVersion::ForkId, sighashtype);
 			let script_sig = signed_input.script_sig.into();
 
-			assert_eq!(verify_script(&script_sig, &script_pubkey, &ScriptWitness, &flags, &checker, SignatureVersion::ForkId), Err(Error::EvalFalse));
+			assert_eq!(verify_script(&script_sig, &script_pubkey, &ScriptWitness::default(), &flags, &checker, SignatureVersion::ForkId), Err(Error::EvalFalse));
 		}
 
 		// fork-id signature passed when not expected
@@ -2103,7 +2165,7 @@ mod tests {
 			let signed_input = checker.signer.signed_input(&key_pair, 0, amount + 1, &script_pubkey, SignatureVersion::ForkId, sighashtype);
 			let script_sig = signed_input.script_sig.into();
 
-			assert_eq!(verify_script(&script_sig, &script_pubkey, &ScriptWitness, &flags, &checker, SignatureVersion::Base), Err(Error::EvalFalse));
+			assert_eq!(verify_script(&script_sig, &script_pubkey, &ScriptWitness::default(), &flags, &checker, SignatureVersion::Base), Err(Error::EvalFalse));
 		}
 
 		// non-fork-id signature passed when expected
@@ -2111,7 +2173,7 @@ mod tests {
 			let signed_input = checker.signer.signed_input(&key_pair, 0, amount + 1, &script_pubkey, SignatureVersion::Base, 1);
 			let script_sig = signed_input.script_sig.into();
 
-			assert_eq!(verify_script(&script_sig, &script_pubkey, &ScriptWitness, &flags.verify_strictenc(true), &checker, SignatureVersion::ForkId), Err(Error::SignatureMustUseForkId));
+			assert_eq!(verify_script(&script_sig, &script_pubkey, &ScriptWitness::default(), &flags.verify_strictenc(true), &checker, SignatureVersion::ForkId), Err(Error::SignatureMustUseForkId));
 		}
 	}
 }

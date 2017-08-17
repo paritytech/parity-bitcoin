@@ -292,6 +292,7 @@ pub struct TransactionEval<'a> {
 	verify_checksequence: bool,
 	verify_dersig: bool,
 	verify_witness: bool,
+	verify_nulldummy: bool,
 	signature_version: SignatureVersion,
 }
 
@@ -320,6 +321,7 @@ impl<'a> TransactionEval<'a> {
 
 		let verify_checksequence = deployments.csv(height, headers, params);
 		let verify_witness = deployments.segwit(height, headers, params);
+		let verify_nulldummy = verify_witness;
 
 		TransactionEval {
 			transaction: transaction,
@@ -331,6 +333,7 @@ impl<'a> TransactionEval<'a> {
 			verify_checksequence: verify_checksequence,
 			verify_dersig: verify_dersig,
 			verify_witness: verify_witness,
+			verify_nulldummy: verify_nulldummy,
 			signature_version: signature_version,
 		}
 	}
@@ -360,9 +363,11 @@ impl<'a> TransactionEval<'a> {
 			checker.input_index = index;
 			checker.input_amount = output.value;
 
+			let script_witness = ScriptWitness {
+				stack: input.script_witness.clone().into(), // TODO
+			};
 			let input: Script = input.script_sig.clone().into();
 			let output: Script = output.script_pubkey.into();
-			let script_witness = ScriptWitness;
 
 			let flags = VerificationFlags::default()
 				.verify_p2sh(self.verify_p2sh)
@@ -370,6 +375,7 @@ impl<'a> TransactionEval<'a> {
 				.verify_locktime(self.verify_locktime)
 				.verify_checksequence(self.verify_checksequence)
 				.verify_dersig(self.verify_dersig)
+				.verify_nulldummy(self.verify_nulldummy)
 				.verify_witness(self.verify_witness);
 
 			try!(verify_script(&input, &output, &script_witness, &flags, &checker, self.signature_version)
