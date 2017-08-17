@@ -1,7 +1,7 @@
 use std::cmp;
 use hash::H256;
 use hex::FromHex;
-use ser::{Serializable, serialized_list_size, deserialize};
+use ser::{Serializable, serialized_list_size, deserialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use block::Block;
 use transaction::Transaction;
 use merkle_root::merkle_root;
@@ -54,8 +54,25 @@ impl IndexedBlock {
 		header_size + txs_size
 	}
 
+	pub fn size_with_witness(&self) -> usize {
+		// TODO: optimize me
+		serialize_with_flags(&Block {
+			block_header: self.header.raw.clone(),
+			transactions: self.transactions.iter().map(|tx| tx.raw.clone()).collect(),
+		}, SERIALIZE_TRANSACTION_WITNESS).len()
+	}
+
 	pub fn merkle_root(&self) -> H256 {
 		merkle_root(&self.transactions.iter().map(|tx| &tx.hash).collect::<Vec<&H256>>())
+	}
+
+	pub fn witness_merkle_root(&self) -> H256 {
+		merkle_root(&self.transactions.iter()
+			.enumerate()
+			.map(|(i, tx)| match i {
+				0 => H256::from(0),
+				_ => tx.raw.witness_hash(),
+			}).collect::<Vec<H256>>())
 	}
 
 	pub fn is_final(&self, height: u32) -> bool {

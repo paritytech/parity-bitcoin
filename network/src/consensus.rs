@@ -7,7 +7,8 @@ pub const SEGWIT2X_FORK_BLOCK: u32 = 0xFFFFFFFF; // not known (yet?)
 /// First block of BitcoinCash fork.
 pub const BITCOIN_CASH_FORK_BLOCK: u32 = 478559; // https://blockchair.com/bitcoin-cash/block/478559
 
-mod segwit {
+/// Segwit-related constants.
+pub mod segwit {
 	/// The maximum allowed weight for a block, see BIP 141 (network rule)
 	pub const MAX_BLOCK_WEIGHT: usize = 4_000_000;
 
@@ -172,6 +173,7 @@ impl ConsensusFork {
 	pub fn max_block_size(&self, height: u32) -> usize {
 		match *self {
 			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height => 8_000_000,
+			ConsensusFork::SegWit2x(fork_height) if height >= fork_height => 2_000_000,
 			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) | ConsensusFork::SegWit2x(_) => 1_000_000,
 		}
 	}
@@ -184,6 +186,9 @@ impl ConsensusFork {
 			// bitcoin cash support blocks up to 8_000_000
 			ConsensusFork::BitcoinCash(fork_height) if height > fork_height =>
 				size <= 8_000_000,
+			// max size of SegWit2x block is 2MB
+			ConsensusFork::SegWit2x(fork_height) if height >= fork_height =>
+				size <= 2_000_000,
 			// when segwit is deployed, this expression is used. which, in turn, also allows block size <= 1_000_000
 			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) if deployments.is_active("segwit") =>
 				size.saturating_mul(segwit::WITNESS_SCALE_FACTOR) <= segwit::MAX_BLOCK_WEIGHT,

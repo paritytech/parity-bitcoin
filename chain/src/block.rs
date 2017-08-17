@@ -44,7 +44,7 @@ impl Block {
 			.enumerate()
 			.map(|(i, tx)| match i {
 				0 => H256::from(0),
-				_ => tx.witness_hash()
+				_ => tx.witness_hash(),
 			}).collect::<Vec<H256>>();
 		merkle_root(&hashes)
 	}

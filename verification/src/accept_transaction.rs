@@ -291,6 +291,7 @@ pub struct TransactionEval<'a> {
 	verify_locktime: bool,
 	verify_checksequence: bool,
 	verify_dersig: bool,
+	verify_witness: bool,
 	signature_version: SignatureVersion,
 }
 
@@ -318,6 +319,7 @@ impl<'a> TransactionEval<'a> {
 		};
 
 		let verify_checksequence = deployments.csv(height, headers, params);
+		let verify_witness = deployments.segwit(height, headers, params);
 
 		TransactionEval {
 			transaction: transaction,
@@ -328,6 +330,7 @@ impl<'a> TransactionEval<'a> {
 			verify_locktime: verify_locktime,
 			verify_checksequence: verify_checksequence,
 			verify_dersig: verify_dersig,
+			verify_witness: verify_witness,
 			signature_version: signature_version,
 		}
 	}
@@ -366,7 +369,8 @@ impl<'a> TransactionEval<'a> {
 				.verify_strictenc(self.verify_strictenc)
 				.verify_locktime(self.verify_locktime)
 				.verify_checksequence(self.verify_checksequence)
-				.verify_dersig(self.verify_dersig);
+				.verify_dersig(self.verify_dersig)
+				.verify_witness(self.verify_witness);
 
 			try!(verify_script(&input, &output, &script_witness, &flags, &checker, self.signature_version)
 				.map_err(|_| TransactionError::Signature(index)));
@@ -444,14 +448,14 @@ pub struct TransactionPrematureWitness<'a> {
 }
 
 impl<'a> TransactionPrematureWitness<'a> {
-	pub fn new(transaction: CanonTransaction<'a>, is_segwit_active: bool) -> Self {
+	fn new(transaction: CanonTransaction<'a>, is_segwit_active: bool) -> Self {
 		TransactionPrematureWitness {
 			transaction: transaction,
 			is_segwit_active: is_segwit_active,
 		}
 	}
 
-	pub fn check(&self) -> Result<(), TransactionError> {
+	fn check(&self) -> Result<(), TransactionError> {
 		if !self.is_segwit_active && (*self.transaction).raw.has_witness() {
 			Err(TransactionError::PrematureWitness)
 		} else {

@@ -572,6 +572,18 @@ impl fmt::Display for Script {
 
 pub struct ScriptWitness;
 
+/// Passed bytes array is a commitment script?
+/// https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#Commitment_structure
+pub fn is_witness_commitment_script(script: &[u8]) -> bool {
+	script.len() >= 36 &&
+		script[0] == Opcode::OP_RETURN as u8 &&
+		script[1] == 0x24 &&
+		script[2] == 0xAA &&
+		script[3] == 0x21 &&
+		script[4] == 0xA9 &&
+		script[5] == 0xED
+}
+
 #[cfg(test)]
 mod tests {
 	use {Builder, Opcode};

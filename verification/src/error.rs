@@ -36,6 +36,8 @@ pub enum Error {
 	CoinbaseSignatureLength(usize),
 	/// Block size is invalid
 	Size(usize),
+	/// Block weight is invalid
+	Weight(usize),
 	/// Block transactions are not final.
 	NonFinalBlock,
 	/// Old version block.
@@ -46,6 +48,12 @@ pub enum Error {
 	TransactionFeesOverflow,
 	/// Sum of all referenced outputs in block transactions resulted in the overflow
 	ReferencedInputsSumOverflow,
+	/// SegWit: bad witess nonce size
+	WitnessInvalidNonceSize,
+	/// SegWit: witness merkle mismatch
+	WitnessMerkleCommitmentMismatch,
+	/// SegWit: unexpected witness
+	UnexpectedWitness,
 	/// Database error
 	Database(DBError),
 }
