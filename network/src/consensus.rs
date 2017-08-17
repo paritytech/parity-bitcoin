@@ -230,6 +230,15 @@ impl ConsensusFork {
 				sigops <= 20_000,
 		}
 	}
+
+	pub fn check_block_sigops_cost(&self, sigops_cost: usize, deployments: &Deployments) -> bool {
+		match *self {
+			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) if deployments.is_active("segwit") =>
+				sigops_cost <= segwit::MAX_BLOCK_SIGOPS_COST,
+			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) | ConsensusFork::BitcoinCash(_) =>
+				true,
+		}
+	}
 }
 
 #[cfg(test)]

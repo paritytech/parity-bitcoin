@@ -305,7 +305,7 @@ pub fn verify_script(
 
 		if flags.verify_witness {
 			if let Some((witness_version, witness_program)) = pubkey2.parse_witness_program() {
-				if script_sig != Builder::default().push_data(&pubkey2) {
+				if script_sig != &Builder::default().push_data(&pubkey2).into_script() {
 					return Err(Error::WitnessMalleatedP2SH);
 				}
 

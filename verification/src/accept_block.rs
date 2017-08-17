@@ -3,7 +3,7 @@ use crypto::dhash256;
 use db::{TransactionOutputProvider, BlockHeaderProvider};
 use script;
 use ser::Stream;
-use sigops::transaction_sigops;
+use sigops::{transaction_sigops, transaction_sigops_cost}	;
 use work::block_reward_satoshi;
 use duplex_store::DuplexTransactionOutputProvider;
 use deployments::{Deployments, ActiveDeployments};
@@ -35,7 +35,7 @@ impl<'a> BlockAcceptor<'a> {
 			serialized_size: BlockSerializedSize::new(block, consensus, deployments, height),
 			coinbase_script: BlockCoinbaseScript::new(block, consensus, height),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store, height),
-			sigops: BlockSigops::new(block, store, consensus, height),
+			sigops: BlockSigops::new(block, store, consensus, deployments, height),
 			witness: BlockWitness::new(block, deployments),
 		}
 	}
@@ -128,15 +128,17 @@ pub struct BlockSigops<'a> {
 	block: CanonBlock<'a>,
 	store: &'a TransactionOutputProvider,
 	consensus: &'a ConsensusParams,
+	deployments: ActiveDeployments<'a>,
 	height: u32,
 }
 
 impl<'a> BlockSigops<'a> {
-	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus: &'a ConsensusParams, height: u32) -> Self {
+	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus: &'a ConsensusParams, deployments: ActiveDeployments<'a>, height: u32) -> Self {
 		BlockSigops {
 			block: block,
 			store: store,
 			consensus: consensus,
+			deployments: deployments,
 			height: height,
 		}
 	}
@@ -150,6 +152,14 @@ impl<'a> BlockSigops<'a> {
 
 		let size = self.block.size();
 		if sigops > self.consensus.fork.max_block_sigops(self.height, size) {
+			return Err(Error::MaximumSigops)
+		}
+
+		// TODO: when segwit is enabled, only sigop_cost must be checked!!!
+		let sigops_cost = self.block.transactions.iter()
+			.map(|tx| transaction_sigops_cost(&tx.raw, &store, bip16_active))
+			.sum::<usize>();
+		if !self.consensus.fork.check_block_sigops_cost(sigops_cost, &self.deployments) {
 			Err(Error::MaximumSigops)
 		} else {
 			Ok(())

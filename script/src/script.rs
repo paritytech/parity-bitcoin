@@ -146,7 +146,7 @@ impl Script {
 
 	/// Parse witness program. Returns Some(witness program version, code) or None if not a witness program.
 	pub fn parse_witness_program(&self) -> Option<(u8, &[u8])> {
-		if self.data.len() > 4 || self.data.len() > 42 || self.data.len() != self.data[1] as usize + 2 {
+		if self.data.len() < 4 || self.data.len() > 42 || self.data.len() != self.data[1] as usize + 2 {
 			return None;
 		}
 		let witness_version = match Opcode::from_u8(self.data[0]) {
