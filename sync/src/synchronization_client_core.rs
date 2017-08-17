@@ -834,8 +834,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				self.state = State::Synchronizing(time::precise_time_s(), new_num_of_blocks);
 
 				use time;
-				info!(target: "sync", "{:?} Processed {} blocks in {:.2} seconds. Peers: {:?}. Chain: {:?}"
-					, time::strftime("%H:%M:%S", &time::now()).unwrap()
+				info!(target: "sync", "Processed {} blocks in {:.2} seconds. Peers: {:?}. Chain: {:?}"
 					, blocks_diff, timestamp_diff
 					, self.peers_tasks.information()
 					, self.chain.information());
