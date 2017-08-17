@@ -192,7 +192,7 @@ pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: Pe
 		}
 
 		// decrease score && move to the idle queue
-		warn!(target: "sync", "Failed to get requested block from peer#{} in {} seconds", worst_peer_index, time_diff);
+		warn!(target: "sync", "Failed to get requested block from peer#{} in {:.2} seconds.", worst_peer_index, time_diff);
 		let failed_blocks = peers_tasks.reset_blocks_tasks(worst_peer_index);
 
 		// mark blocks as failed
@@ -202,9 +202,9 @@ pub fn manage_synchronization_peers_blocks(config: &ManagePeersConfig, peers: Pe
 
 		// if peer failed many times => forget it
 		if peers_tasks.on_peer_block_failure(worst_peer_index) {
-			warn!(target: "sync", "Too many failures for peer#{}. Excluding from synchronization", worst_peer_index);
+			warn!(target: "sync", "Too many failures for peer#{}. Excluding from synchronization.", worst_peer_index);
 			peers_tasks.unuseful_peer(worst_peer_index);
-			peers.misbehaving(worst_peer_index, &format!("Too many failures"));
+			peers.misbehaving(worst_peer_index, &format!("Too many failures."));
 		}
 	}
 
@@ -232,8 +232,8 @@ pub fn manage_synchronization_peers_headers(config: &ManagePeersConfig, peers: P
 
 		// if peer failed many times => forget it
 		if peers_tasks.on_peer_headers_failure(worst_peer_index) {
-			warn!(target: "sync", "Too many headers failures for peer#{}. Excluding from synchronization", worst_peer_index);
-			peers.misbehaving(worst_peer_index, &format!("Too many headers failures"));
+			warn!(target: "sync", "Too many header failures for peer#{}. Excluding from synchronization.", worst_peer_index);
+			peers.misbehaving(worst_peer_index, &format!("Too many header failures."));
 		}
 	}
 }
