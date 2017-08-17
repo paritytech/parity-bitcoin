@@ -835,7 +835,9 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
         let blocks_speed = blocks_diff as f64 / timestamp_diff;
 				use time;
 				info!(target: "sync", "Processed {} blocks in {:.2} seconds ({:.2} blk/s).\tPeers: {:?}.\tChain: {:?}"
-					, blocks_diff, timestamp_diff, blocks_speed
+					, blocks_diff
+          , timestamp_diff
+          , blocks_speed
 					, self.peers_tasks.information()
 					, self.chain.information());
 			}
