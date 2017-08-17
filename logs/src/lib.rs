@@ -36,7 +36,11 @@ impl LogFormatter for DateAndColorLogFormatter {
 			LogLevel::Debug => Color::Fixed(14).paint(record.level().to_string()),
 			LogLevel::Trace => Color::Fixed(12).paint(record.level().to_string()),
 		};
-		format!("{} {} {} {}", Color::Black.bold().paint(timestamp), log_level, record.target(), record.args())
+		format!("{} {} {} {}"
+			, Color::Fixed(8).bold().paint(timestamp)
+			, log_level
+			, Color::Fixed(8).paint(record.target())
+			, record.args())
 	}
 }
 
