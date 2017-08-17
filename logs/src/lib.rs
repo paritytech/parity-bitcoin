@@ -29,43 +29,15 @@ pub struct DateAndColorLogFormatter;
 impl LogFormatter for DateAndColorLogFormatter {
 	fn format(&self, record: &LogRecord) -> String {
 		let timestamp = strftime();
+		let log_level;
 		match record.level() {
-			LogLevel::Error => format!(
-				"{} {} {} {}",
-				 Color::Black.bold().paint(timestamp),
-				 Color::Red.bold().paint(record.level().to_string()),
-				 record.target(),
-				 record.args()
-			),
-			LogLevel::Warn  => format!(
-				"{} {} {} {}",
-				 Color::Black.bold().paint(timestamp),
-				 Color::Yellow.bold().paint(record.level().to_string()),
-				 record.target(),
-				 record.args()
-			),
-			LogLevel::Info  => format!(
-				"{} {} {} {}",
-				 Color::Black.bold().paint(timestamp),
-				 Color::Green.paint(record.level().to_string()),
-				 record.target(),
-				 record.args()
-			),
-			LogLevel::Debug => format!(
-				"{} {} {} {}",
-				 Color::Black.bold().paint(timestamp),
-				 Color::Cyan.paint(record.level().to_string()),
-				 record.target(),
-				 record.args()
-			),
-			LogLevel::Trace => format!(
-				"{} {} {} {}",
-				 Color::Black.bold().paint(timestamp),
-				 Color::Blue.paint(record.level().to_string()),
-				 record.target(),
-				 record.args()
-			),
+			LogLevel::Error => log_level = Color::Fixed(9).bold().paint(record.level().to_string()),
+			LogLevel::Warn  => log_level = Color::Fixed(11).bold().paint(record.level().to_string()),
+			LogLevel::Info  => log_level = Color::Fixed(10).paint(record.level().to_string()),
+			LogLevel::Debug => log_level = Color::Fixed(14).paint(record.level().to_string()),
+			LogLevel::Trace => log_level = Color::Fixed(12).paint(record.level().to_string()),
 		}
+		format!("{} {} {} {}", Color::Black.bold().paint(timestamp), log_level, record.target(), record.args())
 	}
 }
 
