@@ -832,12 +832,12 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			let blocks_diff = if new_num_of_blocks > num_of_blocks { new_num_of_blocks - num_of_blocks } else { 0 };
 			if timestamp_diff >= 60.0 || blocks_diff >= 1000 {
 				self.state = State::Synchronizing(time::precise_time_s(), new_num_of_blocks);
-        let blocks_speed = blocks_diff as f64 / timestamp_diff;
+				let blocks_speed = blocks_diff as f64 / timestamp_diff;
 				use time;
 				info!(target: "sync", "Processed {} blocks in {:.2} seconds ({:.2} blk/s).\tPeers: {:?}.\tChain: {:?}"
 					, blocks_diff
-          , timestamp_diff
-          , blocks_speed
+					, timestamp_diff
+					, blocks_speed
 					, self.peers_tasks.information()
 					, self.chain.information());
 			}
