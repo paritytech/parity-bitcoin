@@ -37,7 +37,7 @@ pub enum Error {
 	/// Block size is invalid
 	Size(usize),
 	/// Block weight is invalid
-	Weight(usize),
+	Weight,
 	/// Block transactions are not final.
 	NonFinalBlock,
 	/// Old version block.

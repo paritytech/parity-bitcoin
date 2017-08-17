@@ -11,7 +11,8 @@ pub const BITCOIN_CASH_FORK_BLOCK: u32 = 478559; // https://blockchair.com/bitco
 pub mod segwit {
 	/// The maximum allowed weight for a block, see BIP 141 (network rule)
 	pub const MAX_BLOCK_WEIGHT: usize = 4_000_000;
-
+	/// The maximum allowed number of signature check operations in a block (network rule)
+	pub const MAX_BLOCK_SIGOPS_COST: usize = 80_000;
 	/// Witness scale factor.
 	pub const WITNESS_SCALE_FACTOR: usize = 4;
 }
@@ -215,6 +216,18 @@ impl ConsensusFork {
 			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height && block_size > 1_000_000 =>
 				20_000 * (max(block_size, 1_000_000) / 1_000_000),
 			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) | ConsensusFork::BitcoinCash(_) => 20_000,
+		}
+	}
+
+	pub fn check_block_sigops(&self, sigops: usize, height: u32, block_size: usize, deployments: &Deployments) -> bool {
+		match *self {
+			// according to REQ-5: max_block_sigops = 20000 * ceil((max(blocksize_bytes, 1000000) / 1000000))
+			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height && block_size > 1_000_000 =>
+				sigops <= 20_000 * (max(block_size, 1_000_000) / 1_000_000),
+			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) if deployments.is_active("segwit") =>
+				sigops * segwit::WITNESS_SCALE_FACTOR <= segwit::MAX_BLOCK_SIGOPS_COST,
+			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) | ConsensusFork::BitcoinCash(_) =>
+				sigops <= 20_000,
 		}
 	}
 }

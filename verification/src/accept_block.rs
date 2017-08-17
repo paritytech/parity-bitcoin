@@ -110,11 +110,14 @@ impl<'a> BlockSerializedSize<'a> {
 
 		let is_segwit_active = self.deployments.is_active("segwit");
 		if is_segwit_active {
-			// TODO: block.vtx.size() * WITNESS_SCALE_FACTOR > MAX_BLOCK_WEIGHT
+			if self.block.transactions.len() * segwit::WITNESS_SCALE_FACTOR > segwit::MAX_BLOCK_WEIGHT {
+				return Err(Error::Weight);
+			}
+
 			let size_with_witness = self.block.size_with_witness();
 			let weight = size * (segwit::WITNESS_SCALE_FACTOR - 1) + size_with_witness;
 			if weight > segwit::MAX_BLOCK_WEIGHT {
-				return Err(Error::Weight(weight));
+				return Err(Error::Weight);
 			}
 		}
 		Ok(())
