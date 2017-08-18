@@ -250,7 +250,7 @@ pub mod tests {
 	use std::time;
 	use parking_lot::{Mutex, Condvar};
 	use chain::Transaction;
-	use message::types;
+	use message::{Services, types};
 	use inbound_connection::tests::DummyOutboundSyncConnection;
 	use local_node::tests::{default_filterload, make_filteradd};
 	use synchronization_peers::{PeersImpl, PeersContainer, PeersFilters, PeersOptions, BlockAnnouncementType};
@@ -303,9 +303,9 @@ pub mod tests {
 		let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
 
 		let c1 = DummyOutboundSyncConnection::new();
-		peers.insert(1, c1.clone());
+		peers.insert(1, Services::default(), c1.clone());
 		let c2 = DummyOutboundSyncConnection::new();
-		peers.insert(2, c2.clone());
+		peers.insert(2, Services::default(), c2.clone());
 		peers.set_block_announcement_type(2, BlockAnnouncementType::SendCompactBlock);
 
 		executor.execute(Task::RelayNewBlock(test_data::genesis().into()));
@@ -319,9 +319,9 @@ pub mod tests {
 		let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
 
 		let c1 = DummyOutboundSyncConnection::new();
-		peers.insert(1, c1.clone());
+		peers.insert(1, Services::default(), c1.clone());
 		let c2 = DummyOutboundSyncConnection::new();
-		peers.insert(2, c2.clone());
+		peers.insert(2, Services::default(), c2.clone());
 		peers.set_block_announcement_type(2, BlockAnnouncementType::SendHeaders);
 
 		executor.execute(Task::RelayNewBlock(test_data::genesis().into()));
@@ -343,26 +343,26 @@ pub mod tests {
 
 		// peer#1 wants tx1
 		let c1 = DummyOutboundSyncConnection::new();
-		peers.insert(1, c1.clone());
+		peers.insert(1, Services::default(), c1.clone());
 		peers.set_bloom_filter(1, default_filterload());
 		peers.update_bloom_filter(1, make_filteradd(&*tx1_hash));
 		// peer#2 wants tx2
 		let c2 = DummyOutboundSyncConnection::new();
-		peers.insert(2, c2.clone());
+		peers.insert(2, Services::default(), c2.clone());
 		peers.set_bloom_filter(2, default_filterload());
 		peers.update_bloom_filter(2, make_filteradd(&*tx2_hash));
 		// peer#3 wants tx1 + tx2 transactions
 		let c3 = DummyOutboundSyncConnection::new();
-		peers.insert(3, c3.clone());
+		peers.insert(3, Services::default(), c3.clone());
 		peers.set_bloom_filter(3, default_filterload());
 		peers.update_bloom_filter(3, make_filteradd(&*tx1_hash));
 		peers.update_bloom_filter(3, make_filteradd(&*tx2_hash));
 		// peer#4 has default behaviour (no filter)
 		let c4 = DummyOutboundSyncConnection::new();
-		peers.insert(4, c4.clone());
+		peers.insert(4, Services::default(), c4.clone());
 		// peer#5 wants some other transactions
 		let c5 = DummyOutboundSyncConnection::new();
-		peers.insert(5, c5.clone());
+		peers.insert(5, Services::default(), c5.clone());
 		peers.set_bloom_filter(5, default_filterload());
 		peers.update_bloom_filter(5, make_filteradd(&*tx3_hash));
 
@@ -389,13 +389,13 @@ pub mod tests {
 		let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
 
 		let c2 = DummyOutboundSyncConnection::new();
-		peers.insert(2, c2.clone());
+		peers.insert(2, Services::default(), c2.clone());
 		peers.set_fee_filter(2, types::FeeFilter::with_fee_rate(3000));
 		let c3 = DummyOutboundSyncConnection::new();
-		peers.insert(3, c3.clone());
+		peers.insert(3, Services::default(), c3.clone());
 		peers.set_fee_filter(3, types::FeeFilter::with_fee_rate(4000));
 		let c4 = DummyOutboundSyncConnection::new();
-		peers.insert(4, c4.clone());
+		peers.insert(4, Services::default(), c4.clone());
 
 		executor.execute(Task::RelayNewTransaction(test_data::genesis().transactions[0].clone().into(), 3500));
 

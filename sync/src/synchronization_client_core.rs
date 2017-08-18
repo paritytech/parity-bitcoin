@@ -6,7 +6,7 @@ use futures::Future;
 use parking_lot::Mutex;
 use time::precise_time_s;
 use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
-use message::types;
+use message::{types, Services};
 use message::common::{InventoryType, InventoryVector};
 use miner::transaction_fee_rate;
 use primitives::hash::H256;
@@ -226,6 +226,8 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		// else ask for all unknown transactions and blocks
+		let is_segwit_active = self.chain.is_segwit_active();
+		let ask_for_witness = is_segwit_active && self.peers.is_segwit_enabled(peer_index);
 		let unknown_inventory: Vec<_> = message.inventory.into_iter()
 			.filter(|item| {
 				match item.inv_type {
@@ -253,6 +255,24 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 					}
 				}
 			})
+			// we are not synchronizing =>
+			// 1) either segwit is active and we are connected to segwit-enabled nodes => we could ask for witness
+			// 2) or segwit is inactive => we shall not ask for witness
+			.map(|item| if !ask_for_witness {
+					item
+				} else {
+					match item.inv_type {
+						InventoryType::MessageTx => InventoryVector {
+							inv_type: InventoryType::MessageWitnessTx,
+							hash: item.hash,
+						},
+						InventoryType::MessageBlock => InventoryVector {
+							inv_type: InventoryType::MessageWitnessBlock,
+							hash: item.hash,
+						},
+						_ => item,
+					}
+				})
 			.collect();
 
 		// if everything is known => ignore this message
@@ -262,7 +282,6 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		// ask for unknown items
-// TODO: if segwit is active, ask with witness data
 		let message = types::GetData::with_inventory(unknown_inventory);
 		self.executor.execute(Task::GetData(peer_index, message));
 	}
@@ -964,10 +983,13 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			// remember that peer is asked for these blocks
 			self.peers_tasks.on_blocks_requested(peer, &chunk_hashes);
 
-// TODO: if block is believed to have witness, ask with witness data
-			// request blocks
+			// request blocks. If block is believed to have witness - ask for witness
+			let is_segwit_active = self.chain.is_segwit_active();
 			let getdata = types::GetData {
-				inventory: chunk_hashes.into_iter().map(InventoryVector::block).collect(),
+				inventory: chunk_hashes.into_iter().map(|h| InventoryVector {
+					inv_type: if is_segwit_active { InventoryType::MessageWitnessBlock } else { InventoryType::MessageBlock },
+					hash: h,
+				}).collect(),
 			};
 			tasks.push(Task::GetData(peer, getdata));
 		}
@@ -1047,8 +1069,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		// update block processing speed
 		self.block_speed_meter.checkpoint();
 
-// TODO: if segwit activates after this block, disconnect from all nodes without NODE_WITNESS support
-// TODO: no more connections to !NODE_WITNESS nodes
+		// remember if SegWit was active before this block
+		let segwit_was_active = self.chain.is_segwit_active();
 
 		// remove flags
 		let needs_relay = !self.do_not_relay.remove(block.hash());
@@ -1069,6 +1091,13 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			Ok(insert_result) => {
 				// update shared state
 				self.shared_state.update_best_storage_block_height(self.chain.best_storage_block().number);
+
+				// if SegWit activated after this block insertion:
+				// 1) no more connections to !NODE_WITNESS nodes
+				// 2) disconnect from all nodes without NODE_WITNESS support
+				if !segwit_was_active && self.chain.is_segwit_active() {
+					self.peers.require_peer_services(Services::default().with_witness(true));
+				}
 
 				// notify listener
 				if let Some(best_block_hash) = insert_result.canonized_blocks_hashes.last() {
@@ -1233,7 +1262,7 @@ pub mod tests {
 	use chain::{Block, Transaction};
 	use db::BlockChainDatabase;
 	use message::common::InventoryVector;
-	use message::types;
+	use message::{Services, types};
 	use miner::MemoryPool;
 	use network::{ConsensusParams, ConsensusFork, Magic};
 	use primitives::hash::H256;
@@ -1286,7 +1315,7 @@ pub mod tests {
 		};
 		let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
-		let chain = Chain::new(storage.clone(), memory_pool.clone());
+		let chain = Chain::new(storage.clone(), ConsensusParams::new(Magic::Unitest, ConsensusFork::NoFork), memory_pool.clone());
 		let executor = DummyTaskExecutor::new();
 		let config = Config { close_connection_on_bad_block: true };
 
@@ -2087,7 +2116,7 @@ pub mod tests {
 
 		let (_, core, sync) = create_sync(None, Some(dummy_verifier));
 
-		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
 		sync.on_block(0, b0.into());
@@ -2108,7 +2137,7 @@ pub mod tests {
 			chain.mark_dead_end_block(&b0.hash());
 		}
 
-		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
 		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
@@ -2130,7 +2159,7 @@ pub mod tests {
 		}
 
 		core.lock().set_verify_headers(true);
-		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
 		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
@@ -2149,7 +2178,7 @@ pub mod tests {
 			chain.mark_dead_end_block(&b0.hash());
 		}
 
-		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
 		sync.on_block(0, b0.into());
@@ -2169,7 +2198,7 @@ pub mod tests {
 			chain.mark_dead_end_block(&b0.hash());
 		}
 
-		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
 		sync.on_block(0, b1.into());

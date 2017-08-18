@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use bytes::Bytes;
-use message::{Command, Error, Payload, types, deserialize_payload};
+use message::{Command, Error, Payload, Services, types, deserialize_payload};
 use protocol::Protocol;
 use net::PeerContext;
 use ser::SERIALIZE_TRANSACTION_WITNESS;
@@ -10,7 +10,7 @@ pub type OutboundSyncConnectionRef = Arc<OutboundSyncConnection>;
 pub type LocalSyncNodeRef = Box<LocalSyncNode>;
 
 pub trait LocalSyncNode : Send + Sync {
-	fn create_sync_session(&self, height: i32, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;
+	fn create_sync_session(&self, height: i32, services: Services, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;
 }
 
 pub trait InboundSyncConnection : Send + Sync {
@@ -183,7 +183,7 @@ pub struct SyncProtocol {
 impl SyncProtocol {
 	pub fn new(context: Arc<PeerContext>) -> Self {
 		let outbound_connection = Arc::new(OutboundSync::new(context.clone()));
-		let inbound_connection = context.global().create_sync_session(0, outbound_connection);
+		let inbound_connection = context.global().create_sync_session(0, context.info().version_message.services(), outbound_connection);
 		SyncProtocol {
 			inbound_connection: inbound_connection,
 			context: context,

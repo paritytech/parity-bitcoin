@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use parking_lot::RwLock;
 use chain::{IndexedBlock, IndexedTransaction};
-use message::types;
+use message::{types, Services};
 use p2p::OutboundSyncConnectionRef;
 use primitives::hash::H256;
 use types::PeerIndex;
@@ -40,6 +40,8 @@ pub struct MerkleBlockArtefacts {
 
 /// Connected peers
 pub trait Peers : Send + Sync + PeersContainer + PeersFilters + PeersOptions {
+	/// Require peers services.
+	fn require_peer_services(&self, services: Services);
 	/// Get peer connection
 	fn connection(&self, peer_index: PeerIndex) -> Option<OutboundSyncConnectionRef>;
 }
@@ -49,7 +51,7 @@ pub trait PeersContainer {
 	/// Enumerate all known peers (TODO: iterator + separate entity 'Peer')
 	fn enumerate(&self) -> Vec<PeerIndex>;
 	/// Insert new peer connection
-	fn insert(&self, peer_index: PeerIndex, connection: OutboundSyncConnectionRef);
+	fn insert(&self, peer_index: PeerIndex, services: Services, connection: OutboundSyncConnectionRef);
 	/// Remove peer connection
 	fn remove(&self, peer_index: PeerIndex);
 	/// Close and remove peer connection due to misbehaving
@@ -84,6 +86,8 @@ pub trait PeersFilters {
 
 /// Options for peers connections
 pub trait PeersOptions {
+	/// Is node supporting SegWit?
+	fn is_segwit_enabled(&self, peer_index: PeerIndex) -> bool;
 	/// Set up new block announcement type for the connection
 	fn set_block_announcement_type(&self, peer_index: PeerIndex, announcement_type: BlockAnnouncementType);
 	/// Set up new transaction announcement type for the connection
@@ -94,6 +98,8 @@ pub trait PeersOptions {
 struct Peer {
 	/// Connection to this peer
 	pub connection: OutboundSyncConnectionRef,
+	/// Peer services
+	pub services: Services,
 	/// Connection filter
 	pub filter: ConnectionFilter,
 	/// Block announcement type
@@ -111,9 +117,10 @@ pub struct PeersImpl {
 }
 
 impl Peer {
-	pub fn with_connection(connection: OutboundSyncConnectionRef) -> Self {
+	pub fn new(services: Services, connection: OutboundSyncConnectionRef) -> Self {
 		Peer {
 			connection: connection,
+			services: services,
 			filter: ConnectionFilter::default(),
 			block_announcement_type: BlockAnnouncementType::SendInventory,
 			transaction_announcement_type: TransactionAnnouncementType::SendInventory,
@@ -122,6 +129,19 @@ impl Peer {
 }
 
 impl Peers for PeersImpl {
+	fn require_peer_services(&self, services: Services) {
+		// possible optimization: force p2p level to establish connections to SegWit-nodes only
+		// without it, all other nodes will be eventually banned (this could take some time, though)
+		let mut peers = self.peers.write();
+		for peer_index in peers.iter().filter(|&(_, p)| p.services.includes(&services)).map(|(p, _)| *p).collect::<Vec<_>>() {
+			let peer = peers.remove(&peer_index).expect("iterating peers keys; qed"); 
+			let expected_services: u64 = services.into();
+			let actual_services: u64 = peer.services.into();
+			warn!(target: "sync", "Disconnecting from peer#{} because of insufficient services. Expected {:x}, actual: {:x}", peer_index, expected_services, actual_services);
+			peer.connection.close();
+		}
+	}
+
 	fn connection(&self, peer_index: PeerIndex) -> Option<OutboundSyncConnectionRef> {
 		self.peers.read().get(&peer_index).map(|peer| peer.connection.clone())
 	}
@@ -132,9 +152,9 @@ impl PeersContainer for PeersImpl {
 		self.peers.read().keys().cloned().collect()
 	}
 
-	fn insert(&self, peer_index: PeerIndex, connection: OutboundSyncConnectionRef) {
+	fn insert(&self, peer_index: PeerIndex, services: Services, connection: OutboundSyncConnectionRef) {
 		trace!(target: "sync", "Connected to peer#{}", peer_index);
-		assert!(self.peers.write().insert(peer_index, Peer::with_connection(connection)).is_none());
+		assert!(self.peers.write().insert(peer_index, Peer::new(services, connection)).is_none());
 	}
 
 	fn remove(&self, peer_index: PeerIndex) {
@@ -227,6 +247,13 @@ impl PeersFilters for PeersImpl {
 }
 
 impl PeersOptions for PeersImpl {
+	fn is_segwit_enabled(&self, peer_index: PeerIndex) -> bool {
+		self.peers.read()
+			.get(&peer_index)
+			.map(|peer| peer.services.witness())
+			.unwrap_or_default()
+	}
+
 	fn set_block_announcement_type(&self, peer_index: PeerIndex, announcement_type: BlockAnnouncementType) {
 		if let Some(peer) = self.peers.write().get_mut(&peer_index) {
 			peer.block_announcement_type = announcement_type;
