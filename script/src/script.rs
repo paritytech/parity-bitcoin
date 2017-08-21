@@ -151,7 +151,7 @@ impl Script {
 		}
 		let witness_version = match Opcode::from_u8(self.data[0]) {
 			Some(Opcode::OP_0) => 0,
-			Some(x) if x >= Opcode::OP_1 && x <= Opcode::OP_16 => (x as u8) - (Opcode::OP_1 as u8) - 1,
+			Some(x) if x >= Opcode::OP_1 && x <= Opcode::OP_16 => (x as u8) - (Opcode::OP_1 as u8) + 1,
 			_ => return None,
 		};
 		let witness_program = &self.data[2..];

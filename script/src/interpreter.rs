@@ -256,6 +256,7 @@ pub fn verify_script(
 
 	let mut stack = Stack::new();
 	let mut stack_copy = Stack::new();
+	let mut had_witness = false;
 
 	try!(eval_script(&mut stack, script_sig, flags, checker, version));
 
@@ -276,8 +277,9 @@ pub fn verify_script(
 				return Err(Error::WitnessMalleated);
 			}
 
+			had_witness = true;
 			verify_cleanstack = false;
-			if !verify_witness_program(witness, witness_version, witness_program, flags, checker, version)? {
+			if !verify_witness_program(witness, witness_version, witness_program, flags, checker)? {
 				return Err(Error::EvalFalse);
 			}
 		}
@@ -309,8 +311,9 @@ pub fn verify_script(
 					return Err(Error::WitnessMalleatedP2SH);
 				}
 
+				had_witness = true;
 				verify_cleanstack = false;
-				if !verify_witness_program(witness, witness_version, witness_program, flags, checker, version)? {
+				if !verify_witness_program(witness, witness_version, witness_program, flags, checker)? {
 					return Err(Error::EvalFalse);
 				}
 			}
@@ -330,6 +333,16 @@ pub fn verify_script(
 		}
 	}
 
+	if flags.verify_witness {
+		// We can't check for correct unexpected witness data if P2SH was off, so require
+		// that WITNESS implies P2SH. Otherwise, going from WITNESS->P2SH+WITNESS would be
+		// possible, which is not a softfork.
+		assert!(flags.verify_p2sh);
+		if !had_witness && !witness.is_empty() {
+			return Err(Error::WitnessUnexpected);
+		}
+	}
+
 	Ok(())
 }
 
@@ -339,7 +352,6 @@ fn verify_witness_program(
 	witness_program: &[u8],
 	flags: &VerificationFlags,
 	checker: &SignatureChecker,
-	version: SignatureVersion,
 ) -> Result<bool, Error> {
 	if witness_version != 0 {
 		if flags.verify_discourage_upgradable_witness_program {
@@ -389,7 +401,7 @@ fn verify_witness_program(
 		return Err(Error::PushSize);
 	}
 
-	if !eval_script(&mut stack, &script_pubkey, flags, checker, version)? {
+	if !eval_script(&mut stack, &script_pubkey, flags, checker, SignatureVersion::WitnessV0)? {
 		return Ok(false);
 	}
 
@@ -2194,48 +2206,442 @@ mod tests {
 		}
 	}
 
-	// original tests from bitcoin core:
-	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1256
-	#[test]
-	fn basic_witness_script_checks() {
-		let script_sig = Script::new(Bytes::new());
-		let script_pubkey = Script::new("00206e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d".into());
-		let checker = TransactionSignatureChecker {
-			input_index: 0,
-			input_amount: 0,
-			signer: Transaction::default().into(),
+	fn run_witness_test(script_sig: Script, script_pubkey: Script, script_witness: Vec<Bytes>, flags: VerificationFlags, sigver: SignatureVersion, amount: u64) -> Result<(), Error> {
+		use chain::{TransactionInput, OutPoint, TransactionOutput};
+
+		let tx1 = Transaction {
+			version: 1,
+			inputs: vec![TransactionInput {
+				previous_output: OutPoint {
+					hash: Default::default(),
+					index: 0xffffffff,
+				},
+				script_sig: Builder::default().push_num(0.into()).push_num(0.into()).into_bytes(),
+				sequence: 0xffffffff,
+				script_witness: vec![],
+			}],
+			outputs: vec![TransactionOutput {
+				value: amount,
+				script_pubkey: script_pubkey.to_bytes(),
+			}],
+			lock_time: 0,
+		};
+		let tx2 = Transaction {
+			version: 1,
+			inputs: vec![TransactionInput {
+				previous_output: OutPoint {
+					hash: tx1.hash(),
+					index: 0,
+				},
+				script_sig: script_sig.to_bytes(),
+				sequence: 0xffffffff,
+				script_witness: script_witness.clone(),
+			}],
+			outputs: vec![TransactionOutput {
+				value: amount,
+				script_pubkey: Builder::default().into_bytes(),
+			}],
+			lock_time: 0,
 		};
 
-		assert_eq!(verify_script(&script_sig,
-			&script_pubkey,
-			&vec!["00".into()],
-			&VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-			&checker,
-			SignatureVersion::WitnessV0),
-			Err(Error::EvalFalse));
+		let checker = TransactionSignatureChecker {
+			input_index: 0,
+			input_amount: amount,
+			signer: tx2.into(),
+		};
 
-		assert_eq!(verify_script(&script_sig,
+		verify_script(&script_sig,
 			&script_pubkey,
-			&vec!["51".into()],
-			&VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+			&script_witness,
+			&flags,
 			&checker,
-			SignatureVersion::WitnessV0),
-			Err(Error::WitnessProgramMismatch));
+			sigver)
+	}
 
-		assert_eq!(verify_script(&script_sig,
-			&script_pubkey,
-			&vec!["00".into()],
-			&VerificationFlags::default(),
-			&checker,
-			SignatureVersion::WitnessV0),
-			Ok(()));
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1257
+	#[test]
+	fn witness_invalid_script() {
+		assert_eq!(Err(Error::EvalFalse),
+			run_witness_test("".into(),
+				"00206e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d".into(),
+				vec!["00".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
 
-		assert_eq!(verify_script(&script_sig,
-			&script_pubkey,
-			&vec!["51".into()],
-			&VerificationFlags::default(),
-			&checker,
-			SignatureVersion::WitnessV0),
-			Ok(()));
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1258
+	#[test]
+	fn witness_script_hash_mismatch() {
+		assert_eq!(Err(Error::WitnessProgramMismatch),
+			run_witness_test("".into(),
+				"00206e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d".into(),
+				vec!["51".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1259
+	#[test]
+	fn witness_invalid_script_check_skipped() {
+		assert_eq!(Ok(()),
+			run_witness_test("".into(),
+				"00206e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d".into(),
+				vec!["00".into()],
+				VerificationFlags::default(),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1260
+	#[test]
+	fn witness_script_hash_mismatch_check_skipped() {
+		assert_eq!(Ok(()),
+			run_witness_test("".into(),
+				"00206e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d".into(),
+				vec!["51".into()],
+				VerificationFlags::default(),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1860
+	#[test]
+	fn witness_basic_p2wsh() {
+		assert_eq!(Ok(()),
+			run_witness_test("".into(),
+				"0020b95237b48faaa69eb078e1170be3b5cbb3fddf16d0a991e14ad274f7b33a4f64".into(),
+				vec!["304402200d461c140cfdfcf36b94961db57ae8c18d1cb80e9d95a9e47ac22470c1bf125502201c8dc1cbfef6a3ef90acbbb992ca22fe9466ee6f9d4898eda277a7ac3ab4b25101".into(),
+					"410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				1,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1872
+	#[test]
+	fn witness_basic_p2wpkh() {
+		assert_eq!(Ok(()),
+			run_witness_test("".into(),
+				"001491b24bf9f5288532960ac687abb035127b1d28a5".into(),
+				vec!["304402201e7216e5ccb3b61d46946ec6cc7e8c4e0117d13ac2fd4b152197e4805191c74202203e9903e33e84d9ee1dd13fb057afb7ccfb47006c23f6a067185efbc9dd780fc501".into(),
+					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				1,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1884
+	#[test]
+	fn witness_basic_p2sh_p2wsh() {
+		assert_eq!(Ok(()),
+			run_witness_test("220020b95237b48faaa69eb078e1170be3b5cbb3fddf16d0a991e14ad274f7b33a4f64".into(),
+				"a914f386c2ba255cc56d20cfa6ea8b062f8b5994551887".into(),
+				vec!["3044022066e02c19a513049d49349cf5311a1b012b7c4fae023795a18ab1d91c23496c22022025e216342c8e07ce8ef51e8daee88f84306a9de66236cab230bb63067ded1ad301".into(),
+					"410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				1,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1896
+	#[test]
+	fn witness_basic_p2sh_p2wpkh() {
+		assert_eq!(Ok(()),
+			run_witness_test("16001491b24bf9f5288532960ac687abb035127b1d28a5".into(),
+				"a91417743beb429c55c942d2ec703b98c4d57c2df5c687".into(),
+				vec!["304402200929d11561cd958460371200f82e9cae64c727a495715a31828e27a7ad57b36d0220361732ced04a6f97351ecca21a56d0b8cd4932c1da1f8f569a2b68e5e48aed7801".into(),
+					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				1,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1908
+	#[test]
+	fn witness_basic_p2wsh_with_wrong_key() {
+		assert_eq!(Err(Error::EvalFalse),
+			run_witness_test("".into(),
+				"0020ac8ebd9e52c17619a381fa4f71aebb696087c6ef17c960fd0587addad99c0610".into(),
+				vec!["304402202589f0512cb2408fb08ed9bd24f85eb3059744d9e4f2262d0b7f1338cff6e8b902206c0978f449693e0578c71bc543b11079fd0baae700ee5e9a6bee94db490af9fc01".into(),
+					"41048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26cafac".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1920
+	#[test]
+	fn witness_basic_p2wpkh_with_wrong_key() {
+		assert_eq!(Err(Error::EvalFalse),
+			run_witness_test("".into(),
+				"00147cf9c846cd4882efec4bf07e44ebdad495c94f4b".into(),
+				vec!["304402206ef7fdb2986325d37c6eb1a8bb24aeb46dede112ed8fc76c7d7500b9b83c0d3d02201edc2322c794fe2d6b0bd73ed319e714aa9b86d8891961530d5c9b7156b60d4e01".into(),
+					"048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1920
+	#[test]
+	fn witness_basic_p2sh_p2wsh_with_wrong_key() {
+		assert_eq!(Err(Error::EvalFalse),
+			run_witness_test("220020ac8ebd9e52c17619a381fa4f71aebb696087c6ef17c960fd0587addad99c0610".into(),
+				"a91461039a003883787c0d6ebc66d97fdabe8e31449d87".into(),
+				vec!["30440220069ea3581afaf8187f63feee1fd2bd1f9c0dc71ea7d6e8a8b07ee2ebcf824bf402201a4fdef4c532eae59223be1eda6a397fc835142d4ddc6c74f4aa85b766a5c16f01".into(),
+					"41048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26cafac".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1944
+	#[test]
+	fn witness_basic_p2sh_p2wpkh_with_wrong_key() {
+		assert_eq!(Err(Error::EvalFalse),
+			run_witness_test("1600147cf9c846cd4882efec4bf07e44ebdad495c94f4b".into(),
+				"a9144e0c2aed91315303fc6a1dc4c7bc21c88f75402e87".into(),
+				vec!["304402204209e49457c2358f80d0256bc24535b8754c14d08840fc4be762d6f5a0aed80b02202eaf7d8fc8d62f60c67adcd99295528d0e491ae93c195cec5a67e7a09532a88001".into(),
+					"048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1956
+	#[test]
+	fn witness_basic_p2wsh_with_wrong_key_check_skipped() {
+		assert_eq!(Ok(()),
+			run_witness_test("".into(),
+				"0020ac8ebd9e52c17619a381fa4f71aebb696087c6ef17c960fd0587addad99c0610".into(),
+				vec!["304402202589f0512cb2408fb08ed9bd24f85eb3059744d9e4f2262d0b7f1338cff6e8b902206c0978f449693e0578c71bc543b11079fd0baae700ee5e9a6bee94db490af9fc01".into(),
+					"41048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26cafac".into()],
+				VerificationFlags::default().verify_p2sh(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1968
+	#[test]
+	fn witness_basic_p2wpkh_with_wrong_key_check_skipped() {
+		assert_eq!(Ok(()),
+			run_witness_test("".into(),
+				"00147cf9c846cd4882efec4bf07e44ebdad495c94f4b".into(),
+				vec!["304402206ef7fdb2986325d37c6eb1a8bb24aeb46dede112ed8fc76c7d7500b9b83c0d3d02201edc2322c794fe2d6b0bd73ed319e714aa9b86d8891961530d5c9b7156b60d4e01".into(),
+					"4104828048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf2263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26cafac".into()],
+				VerificationFlags::default().verify_p2sh(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1980
+	#[test]
+	fn witness_basic_p2sh_p2wsh_with_wrong_key_check_skipped() {
+		assert_eq!(Ok(()),
+			run_witness_test("220020ac8ebd9e52c17619a381fa4f71aebb696087c6ef17c960fd0587addad99c0610".into(),
+				"a91461039a003883787c0d6ebc66d97fdabe8e31449d87".into(),
+				vec!["30440220069ea3581afaf8187f63feee1fd2bd1f9c0dc71ea7d6e8a8b07ee2ebcf824bf402201a4fdef4c532eae59223be1eda6a397fc835142d4ddc6c74f4aa85b766a5c16f01".into(),
+					"41048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26cafac".into()],
+				VerificationFlags::default().verify_p2sh(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1992
+	#[test]
+	fn witness_basic_p2sh_p2wpkh_with_wrong_key_check_skipped() {
+		assert_eq!(Ok(()),
+			run_witness_test("1600147cf9c846cd4882efec4bf07e44ebdad495c94f4b".into(),
+				"a9144e0c2aed91315303fc6a1dc4c7bc21c88f75402e87".into(),
+				vec!["304402204209e49457c2358f80d0256bc24535b8754c14d08840fc4be762d6f5a0aed80b02202eaf7d8fc8d62f60c67adcd99295528d0e491ae93c195cec5a67e7a09532a88001".into(),
+					"048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf".into()],
+				VerificationFlags::default().verify_p2sh(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2004
+	#[test]
+	fn witness_basic_p2wsh_with_wrong_value() {
+		assert_eq!(Err(Error::EvalFalse),
+			run_witness_test("".into(),
+				"0020b95237b48faaa69eb078e1170be3b5cbb3fddf16d0a991e14ad274f7b33a4f64".into(),
+				vec!["3044022066faa86e74e8b30e82691b985b373de4f9e26dc144ec399c4f066aa59308e7c202204712b86f28c32503faa051dbeabff2c238ece861abc36c5e0b40b1139ca222f001".into(),
+					"410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2016
+	#[test]
+	fn witness_basic_p2wpkh_with_wrong_value() {
+		assert_eq!(Err(Error::EvalFalse),
+			run_witness_test("".into(),
+				"001491b24bf9f5288532960ac687abb035127b1d28a5".into(),
+				vec!["304402203b3389b87448d7dfdb5e82fb854fcf92d7925f9938ea5444e36abef02c3d6a9602202410bc3265049abb07fd2e252c65ab7034d95c9d5acccabe9fadbdc63a52712601".into(),
+					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2028
+	#[test]
+	fn witness_basic_p2sh_p2wsh_with_wrong_value() {
+		assert_eq!(Err(Error::EvalFalse),
+			run_witness_test("220020b95237b48faaa69eb078e1170be3b5cbb3fddf16d0a991e14ad274f7b33a4f64".into(),
+				"a914f386c2ba255cc56d20cfa6ea8b062f8b5994551887".into(),
+				vec!["3044022000a30c4cfc10e4387be528613575434826ad3c15587475e0df8ce3b1746aa210022008149265e4f8e9dafe1f3ea50d90cb425e9e40ea7ebdd383069a7cfa2b77004701".into(),
+					"410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2040
+	#[test]
+	fn witness_basic_p2sh_p2wpkh_with_wrong_value() {
+		assert_eq!(Err(Error::EvalFalse),
+			run_witness_test("16001491b24bf9f5288532960ac687abb035127b1d28a5".into(),
+				"a91417743beb429c55c942d2ec703b98c4d57c2df5c687".into(),
+				vec!["304402204fc3a2cd61a47913f2a5f9107d0ad4a504c7b31ee2d6b3b2f38c2b10ee031e940220055d58b7c3c281aaa381d8f486ac0f3e361939acfd568046cb6a311cdfa974cf01".into(),
+					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2052
+	#[test]
+	fn witness_p2wpkh_with_future_version() {
+		assert_eq!(Err(Error::DiscourageUpgradableWitnessProgram),
+			run_witness_test("".into(),
+				"511491b24bf9f5288532960ac687abb035127b1d28a5".into(),
+				vec!["304402205ae57ae0534c05ca9981c8a6cdf353b505eaacb7375f96681a2d1a4ba6f02f84022056248e68643b7d8ce7c7d128c9f1f348bcab8be15d094ad5cadd24251a28df8001".into(),
+					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true).verify_discourage_upgradable_witness_program(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2064
+	#[test]
+	fn witness_p2wpkh_with_wrong_witness_program_length() {
+		assert_eq!(Err(Error::WitnessProgramWrongLength),
+			run_witness_test("".into(),
+				"001fb34b78da162751647974d5cb7410aa428ad339dbf7d1e16e833f68a0cbf1c3".into(),
+				vec!["3044022064100ca0e2a33332136775a86cd83d0230e58b9aebb889c5ac952abff79a46ef02205f1bf900e022039ad3091bdaf27ac2aef3eae9ed9f190d821d3e508405b9513101".into(),
+					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2076
+	#[test]
+	fn witness_p2wsh_with_empty_witness() {
+		assert_eq!(Err(Error::WitnessProgramWitnessEmpty),
+			run_witness_test("".into(),
+				"0020b95237b48faaa69eb078e1170be3b5cbb3fddf16d0a991e14ad274f7b33a4f64".into(),
+				vec![],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2083
+	#[test]
+	fn witness_p2wsh_with_witness_program_mismatch() {
+		assert_eq!(Err(Error::WitnessProgramMismatch),
+			run_witness_test("".into(),
+				"0020b95237b48faaa69eb078e1170be3b5cbb3fddf16d0a991e14ad274f7b33a4f64".into(),
+				vec!["3044022039105b995a5f448639a997a5c90fda06f50b49df30c3bdb6663217bf79323db002206fecd54269dec569fcc517178880eb58bb40f381a282bb75766ff3637d5f4b4301".into(),
+					"400479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2095
+	#[test]
+	fn witness_p2wpkh_with_witness_program_mismatch() {
+		assert_eq!(Err(Error::WitnessProgramMismatch),
+			run_witness_test("".into(),
+				"001491b24bf9f5288532960ac687abb035127b1d28a5".into(),
+				vec!["304402201a96950593cb0af32d080b0f193517f4559241a8ebd1e95e414533ad64a3f423022047f4f6d3095c23235bdff3aeff480d0529c027a3f093cb265b7cbf148553b85101".into(),
+					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into(),
+					"".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2108
+	#[test]
+	fn witness_p2wpkh_with_non_empty_script_sig() {
+		assert_eq!(Err(Error::WitnessMalleated),
+			run_witness_test("5b".into(),
+				"001491b24bf9f5288532960ac687abb035127b1d28a5".into(),
+				vec!["304402201a96950593cb0af32d080b0f193517f4559241a8ebd1e95e414533ad64a3f423022047f4f6d3095c23235bdff3aeff480d0529c027a3f093cb265b7cbf148553b85101".into(),
+					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2120
+	#[test]
+	fn witness_p2sh_p2wpkh_with_superfluous_push_in_script_sig() {
+		assert_eq!(Err(Error::WitnessMalleatedP2SH),
+			run_witness_test("5b1600147cf9c846cd4882efec4bf07e44ebdad495c94f4b".into(),
+				"a9144e0c2aed91315303fc6a1dc4c7bc21c88f75402e87".into(),
+				vec!["304402204209e49457c2358f80d0256bc24535b8754c14d08840fc4be762d6f5a0aed80b02202eaf7d8fc8d62f60c67adcd99295528d0e491ae93c195cec5a67e7a09532a88001".into(),
+					"048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2132
+	#[test]
+	fn witness_p2pk_with_witness() {
+		assert_eq!(Err(Error::WitnessUnexpected),
+			run_witness_test("47304402200a5c6163f07b8d3b013c4d1d6dba25e780b39658d79ba37af7057a3b7f15ffa102201fd9b4eaa9943f734928b99a83592c2e7bf342ea2680f6a2bb705167966b742001".into(),
+				"410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into(),
+				vec!["".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				0,
+			));
 	}
 }

@@ -102,5 +102,10 @@ impl VerificationFlags {
 		self.verify_nulldummy = value;
 		self
 	}
+
+	pub fn verify_discourage_upgradable_witness_program(mut self, value: bool) -> Self {
+		self.verify_discourage_upgradable_witness_program = value;
+		self
+	}
 }
 
