@@ -2644,4 +2644,64 @@ mod tests {
 				0,
 			));
 	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2299
+	#[test]
+	fn witness_p2wsh_checkmultisig() {
+		assert_eq!(Ok(()),
+			run_witness_test("".into(),
+				"002008a6665ebfd43b02323423e764e185d98d1587f903b81507dbb69bfc41005efa".into(),
+				vec!["".into(),
+					"304402202d092ededd1f060609dbf8cb76950634ff42b3e62cf4adb69ab92397b07d742302204ff886f8d0817491a96d1daccdcc820f6feb122ee6230143303100db37dfa79f01".into(),
+					"5121038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b852ae".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				1,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2312
+	#[test]
+	fn witness_p2sh_p2wsh_checkmultisig() {
+		assert_eq!(Ok(()),
+			run_witness_test("22002008a6665ebfd43b02323423e764e185d98d1587f903b81507dbb69bfc41005efa".into(),
+				"a9146f5ecd4b83b77f3c438f5214eff96454934fc5d187".into(),
+				vec!["".into(),
+					"304402202dd7e91243f2235481ffb626c3b7baf2c859ae3a5a77fb750ef97b99a8125dc002204960de3d3c3ab9496e218ec57e5240e0e10a6f9546316fe240c216d45116d29301".into(),
+					"5121038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b852ae".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				1,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2351
+	#[test]
+	fn witness_p2wsh_checkmultisig_using_key2() {
+		assert_eq!(Ok(()),
+			run_witness_test("".into(),
+				"002008a6665ebfd43b02323423e764e185d98d1587f903b81507dbb69bfc41005efa".into(),
+				vec!["".into(),
+					"304402201e9e6f7deef5b2f21d8223c5189b7d5e82d237c10e97165dd08f547c4e5ce6ed02206796372eb1cc6acb52e13ee2d7f45807780bf96b132cb6697f69434be74b1af901".into(),
+					"5121038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b852ae".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				1,
+			));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L2364
+	#[test]
+	fn witness_p2sh_p2wsh_checkmultisig_using_key2() {
+		assert_eq!(Ok(()),
+			run_witness_test("22002008a6665ebfd43b02323423e764e185d98d1587f903b81507dbb69bfc41005efa".into(),
+				"a9146f5ecd4b83b77f3c438f5214eff96454934fc5d187".into(),
+				vec!["".into(),
+					"3044022045e667f3f0f3147b95597a24babe9afecea1f649fd23637dfa7ed7e9f3ac18440220295748e81005231135289fe3a88338dabba55afa1bdb4478691337009d82b68d01".into(),
+					"5121038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b852ae".into()],
+				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+				SignatureVersion::Base,
+				1,
+			));
+	}
 }

@@ -313,7 +313,7 @@ impl<'a> TransactionEval<'a> {
 		let verify_dersig = height >= params.bip66_height;
 		let signature_version = match params.fork {
 			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height => SignatureVersion::ForkId,
-			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => SignatureVersion::Base,
+			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) | ConsensusFork::SegWit2x(_) => SignatureVersion::Base,
 		};
 
 		let verify_checksequence = deployments.csv();
