@@ -79,9 +79,9 @@ impl OrphanTransactionsPool {
 			let mut removed_orphans_hashes: Vec<H256> = Vec::new();
 			if let Entry::Occupied(children_entry) = self.by_parent.entry(hash.clone()) {
 				for child in children_entry.get() {
-					let all_parents_are_known = {
-						let child_entry = self.by_hash.get_mut(child).expect("every entry in by_parent.values() has corresponding entry in by_hash.keys()");
-						child_entry.remove_known_parent(&hash)
+					let all_parents_are_known = match self.by_hash.get_mut(child) {
+						Some(child_entry) => child_entry.remove_known_parent(&hash),
+						None => false,
 					};
 
 					if all_parents_are_known {
@@ -205,5 +205,21 @@ mod tests {
 		assert_eq!(pool.len(), 0);
 		let removed: Vec<H256> = removed.into_iter().map(|tx| tx.hash).collect();
 		assert_eq!(removed, vec![chain.at(6).hash()]);
+	}
+
+	#[test]
+	fn orphan_transaction_pool_remove_transactions_child_before_parent() {
+		let chain = &mut ChainBuilder::new();
+		TransactionBuilder::with_output(100).store(chain)			// t1
+			.into_input(0).add_output(200).store(chain)				// t1 -> t2
+			.into_input(0).add_output(300).store(chain);			// t1 -> t2 -> t3
+		let t2_unknown: HashSet<H256> = chain.at(1).inputs.iter().map(|i| i.previous_output.hash.clone()).collect();
+		let t3_unknown: HashSet<H256> = chain.at(2).inputs.iter().map(|i| i.previous_output.hash.clone()).collect();
+
+		let mut pool = OrphanTransactionsPool::new();
+		pool.insert(chain.at(1).into(), t2_unknown); // t2
+		pool.insert(chain.at(2).into(), t3_unknown); // t3
+
+		pool.remove_transactions(&[chain.at(2).hash(), chain.at(1).hash()]);
 	}
 }
