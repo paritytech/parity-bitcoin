@@ -216,7 +216,6 @@ impl ConsensusFork {
 mod tests {
 	use super::super::Magic;
 	use super::{ConsensusParams, ConsensusFork};
-	//use deployments::tests::DummyDeployments;
 
 	#[test]
 	fn test_consensus_params_bip34_height() {
@@ -251,6 +250,22 @@ mod tests {
 		assert_eq!(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork).miner_confirmation_window, 2016);
 		assert_eq!(ConsensusParams::new(Magic::Testnet, ConsensusFork::NoFork).miner_confirmation_window, 2016);
 		assert_eq!(ConsensusParams::new(Magic::Regtest, ConsensusFork::NoFork).miner_confirmation_window, 144);
+	}
+
+	#[test]
+	fn test_consensus_fork_min_block_size() {
+		assert_eq!(ConsensusFork::NoFork.min_block_size(0), 0);
+		assert_eq!(ConsensusFork::SegWit2x(100).min_block_size(0), 0);
+		assert_eq!(ConsensusFork::SegWit2x(100).min_block_size(100), 0);
+		assert_eq!(ConsensusFork::BitcoinCash(100).min_block_size(0), 0);
+		assert_eq!(ConsensusFork::BitcoinCash(100).min_block_size(100), 1_000_001);
+	}
+
+	#[test]
+	fn test_consensus_fork_max_transaction_size() {
+		assert_eq!(ConsensusFork::NoFork.max_transaction_size(0), 1_000_000);
+		assert_eq!(ConsensusFork::SegWit2x(100).max_transaction_size(0), 1_000_000);
+		assert_eq!(ConsensusFork::BitcoinCash(100).max_transaction_size(0), 1_000_000);
 	}
 
 	#[test]

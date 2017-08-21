@@ -20,3 +20,4 @@ impl Deployment {
 		(version & VERSIONBITS_TOP_MASK) == VERSIONBITS_TOP_BITS && (version & (1 << self.bit)) != 0
 	}
 }
+
