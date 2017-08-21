@@ -132,14 +132,6 @@ impl From<Transaction> for TransactionInputSigner {
 impl TransactionInputSigner {
 	pub fn signature_hash(&self, input_index: usize, input_amount: u64, script_pubkey: &Script, sigversion: SignatureVersion, sighashtype: u32) -> H256 {
 		let sighash = Sighash::from_u32(sigversion, sighashtype);
-		if input_index >= self.inputs.len() {
-			return 1u8.into();
-		}
-
-		if sighash.base == SighashBase::Single && input_index >= self.outputs.len() {
-			return 1u8.into();
-		}
-
 		match sigversion {
 			SignatureVersion::ForkId if sighash.fork_id => self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash),
 			SignatureVersion::Base | SignatureVersion::ForkId => self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash),
@@ -177,6 +169,14 @@ impl TransactionInputSigner {
 	}
 
 	pub fn signature_hash_original(&self, input_index: usize, script_pubkey: &Script, sighashtype: u32, sighash: Sighash) -> H256 {
+		if input_index >= self.inputs.len() {
+			return 1u8.into();
+		}
+
+		if sighash.base == SighashBase::Single && input_index >= self.outputs.len() {
+			return 1u8.into();
+		}
+
 		let script_pubkey = script_pubkey.without_separators();
 
 		let inputs = if sighash.anyone_can_pay {
