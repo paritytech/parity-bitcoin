@@ -1,4 +1,4 @@
-use network::{ConsensusParams, Deployments as NetworkDeployments, segwit};
+use network::{ConsensusParams, segwit};
 use crypto::dhash256;
 use db::{TransactionOutputProvider, BlockHeaderProvider};
 use script;
@@ -6,7 +6,7 @@ use ser::Stream;
 use sigops::{transaction_sigops, transaction_sigops_cost}	;
 use work::block_reward_satoshi;
 use duplex_store::DuplexTransactionOutputProvider;
-use deployments::{Deployments, ActiveDeployments};
+use deployments::BlockDeployments;
 use canon::CanonBlock;
 use error::{Error, TransactionError};
 use timestamp::median_timestamp;
@@ -27,15 +27,15 @@ impl<'a> BlockAcceptor<'a> {
 		consensus: &'a ConsensusParams,
 		block: CanonBlock<'a>,
 		height: u32,
-		deployments: ActiveDeployments<'a>,
+		deployments: &'a BlockDeployments<'a>,
 		headers: &'a BlockHeaderProvider,
 	) -> Self {
 		BlockAcceptor {
-			finality: BlockFinality::new(block, height, deployments.deployments, headers, consensus),
+			finality: BlockFinality::new(block, height, deployments, headers),
 			serialized_size: BlockSerializedSize::new(block, consensus, deployments, height),
 			coinbase_script: BlockCoinbaseScript::new(block, consensus, height),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store, height),
-			sigops: BlockSigops::new(block, store, consensus, deployments, height),
+			sigops: BlockSigops::new(block, store, consensus, height),
 			witness: BlockWitness::new(block, deployments),
 		}
 	}
@@ -59,8 +59,8 @@ pub struct BlockFinality<'a> {
 }
 
 impl<'a> BlockFinality<'a> {
-	fn new(block: CanonBlock<'a>, height: u32, deployments: &'a Deployments, headers: &'a BlockHeaderProvider, params: &ConsensusParams) -> Self {
-		let csv_active = deployments.csv(height, headers, params);
+	fn new(block: CanonBlock<'a>, height: u32, deployments: &'a BlockDeployments<'a>, headers: &'a BlockHeaderProvider) -> Self {
+		let csv_active = deployments.csv();
 
 		BlockFinality {
 			block: block,
@@ -88,32 +88,30 @@ impl<'a> BlockFinality<'a> {
 pub struct BlockSerializedSize<'a> {
 	block: CanonBlock<'a>,
 	consensus: &'a ConsensusParams,
-	deployments: ActiveDeployments<'a>,
 	height: u32,
+	segwit_active: bool,
 }
 
 impl<'a> BlockSerializedSize<'a> {
-	fn new(block: CanonBlock<'a>, consensus: &'a ConsensusParams, deployments: ActiveDeployments<'a>, height: u32) -> Self {
+	fn new(block: CanonBlock<'a>, consensus: &'a ConsensusParams, deployments: &'a BlockDeployments<'a>, height: u32) -> Self {
+		let segwit_active = deployments.segwit();
+
 		BlockSerializedSize {
 			block: block,
 			consensus: consensus,
-			deployments: deployments,
 			height: height,
+			segwit_active: segwit_active,
 		}
 	}
 
 	fn check(&self) -> Result<(), Error> {
 		let size = self.block.size();
-		if !self.consensus.fork.check_block_size(size, self.height, &self.deployments) {
-			return Err(Error::Size(size))
+		if size < self.consensus.fork.min_block_size(self.height) ||
+			size > self.consensus.fork.max_block_size(self.height) {
+			return Err(Error::Size(size));
 		}
 
-		let is_segwit_active = self.deployments.is_active("segwit");
-		if is_segwit_active {
-			if self.block.transactions.len() * segwit::WITNESS_SCALE_FACTOR > segwit::MAX_BLOCK_WEIGHT {
-				return Err(Error::Weight);
-			}
-
+		if self.segwit_active {
 			let size_with_witness = self.block.size_with_witness();
 			let weight = size * (segwit::WITNESS_SCALE_FACTOR - 1) + size_with_witness;
 			if weight > segwit::MAX_BLOCK_WEIGHT {
@@ -128,39 +126,42 @@ pub struct BlockSigops<'a> {
 	block: CanonBlock<'a>,
 	store: &'a TransactionOutputProvider,
 	consensus: &'a ConsensusParams,
-	deployments: ActiveDeployments<'a>,
 	height: u32,
+	bip16_active: bool,
 }
 
 impl<'a> BlockSigops<'a> {
-	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus: &'a ConsensusParams, deployments: ActiveDeployments<'a>, height: u32) -> Self {
+	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus: &'a ConsensusParams, height: u32) -> Self {
+		let bip16_active = block.header.raw.time >= consensus.bip16_time;
+
 		BlockSigops {
 			block: block,
 			store: store,
 			consensus: consensus,
-			deployments: deployments,
 			height: height,
+			bip16_active: bip16_active,
 		}
 	}
 
 	fn check(&self) -> Result<(), Error> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
-		let bip16_active = self.block.header.raw.time >= self.consensus.bip16_time;
-		let sigops = self.block.transactions.iter()
-			.map(|tx| transaction_sigops(&tx.raw, &store, bip16_active))
-			.sum::<usize>();
+		let (sigops, sigops_cost) = self.block.transactions.iter()
+			.map(|tx| {
+				let tx_sigops = transaction_sigops(&tx.raw, &store, self.bip16_active);
+				let tx_sigops_cost = transaction_sigops_cost(&tx.raw, &store, tx_sigops);
+				(tx_sigops, tx_sigops_cost)
+			})
+			.fold((0, 0), |acc, (tx_sigops, tx_sigops_cost)| (acc.0 + tx_sigops, acc.1 + tx_sigops_cost));
 
+		// check sigops
 		let size = self.block.size();
 		if sigops > self.consensus.fork.max_block_sigops(self.height, size) {
-			return Err(Error::MaximumSigops)
+			return Err(Error::MaximumSigops);
 		}
 
-		// TODO: when segwit is enabled, only sigop_cost must be checked!!!
-		let sigops_cost = self.block.transactions.iter()
-			.map(|tx| transaction_sigops_cost(&tx.raw, &store, bip16_active))
-			.sum::<usize>();
-		if !self.consensus.fork.check_block_sigops_cost(sigops_cost, &self.deployments) {
-			Err(Error::MaximumSigops)
+		// check sigops cost
+		if sigops_cost > self.consensus.fork.max_block_sigops_cost(self.height, size) {
+			Err(Error::MaximumSigopsCost)
 		} else {
 			Ok(())
 		}
@@ -275,10 +276,12 @@ pub struct BlockWitness<'a> {
 }
 
 impl<'a> BlockWitness<'a> {
-	fn new(block: CanonBlock<'a>, deployments: ActiveDeployments<'a>) -> Self {
+	fn new(block: CanonBlock<'a>, deployments: &'a BlockDeployments<'a>) -> Self {
+		let segwit_active = deployments.segwit();
+
 		BlockWitness {
 			block: block,
-			segwit_active: deployments.is_active("segwit"),
+			segwit_active: segwit_active,
 		}
 	}
 

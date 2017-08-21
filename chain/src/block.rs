@@ -11,12 +11,6 @@ pub struct Block {
 	pub transactions: Vec<Transaction>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct WitnessBlock<'a> {
-	pub block_header: BlockHeader,
-	pub transactions: Vec<&'a Transaction>,
-}
-
 impl From<&'static str> for Block {
 	fn from(s: &'static str) -> Self {
 		deserialize(&s.from_hex().unwrap() as &[u8]).unwrap()
@@ -59,10 +53,6 @@ impl Block {
 
 	pub fn hash(&self) -> H256 {
 		self.block_header.hash()
-	}
-
-	pub fn cost(&self) -> u64 {
-		unimplemented!()
 	}
 }
 

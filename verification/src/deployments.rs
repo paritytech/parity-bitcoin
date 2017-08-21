@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use parking_lot::Mutex;
-use network::{ConsensusParams, Deployment, Deployments as NetworkDeployments};
+use network::{ConsensusParams, Deployment};
 use hash::H256;
 use db::{BlockHeaderProvider, BlockRef, BlockAncestors, BlockIterator};
 use timestamp::median_timestamp;
@@ -56,9 +56,8 @@ pub struct Deployments {
 	cache: Mutex<DeploymentStateCache>,
 }
 
-#[derive(Clone, Copy)]
-pub struct ActiveDeployments<'a> {
-	pub deployments: &'a Deployments,
+pub struct BlockDeployments<'a> {
+	deployments: &'a Deployments,
 	number: u32,
 	headers: &'a BlockHeaderProvider,
 	consensus: &'a ConsensusParams,
@@ -89,6 +88,25 @@ impl Deployments {
 			},
 			None => false
 		}
+	}
+}
+
+impl<'a> BlockDeployments<'a> {
+	pub fn new(deployments: &'a Deployments, number: u32, headers: &'a BlockHeaderProvider, consensus: &'a ConsensusParams) -> Self {
+		BlockDeployments {
+			deployments: deployments,
+			number: number,
+			headers: headers,
+			consensus: consensus,
+		}
+	}
+
+	pub fn csv(&self) -> bool {
+		self.deployments.csv(self.number, self.headers, self.consensus)
+	}
+
+	pub fn segwit(&self) -> bool {
+		self.deployments.segwit(self.number, self.headers, self.consensus)
 	}
 }
 
@@ -138,27 +156,6 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 		},
 	}
 
-}
-
-impl<'a> ActiveDeployments<'a> {
-	pub fn new(deployments: &'a Deployments, number: u32, headers: &'a BlockHeaderProvider, consensus: &'a ConsensusParams) -> Self {
-		ActiveDeployments {
-			deployments: deployments,
-			number: number,
-			headers: headers,
-			consensus: consensus,
-		}
-	}
-}
-
-impl<'a> NetworkDeployments for ActiveDeployments<'a> {
-	fn is_active(&self, name: &str) -> bool {
-		match name {
-			"csv" => self.deployments.segwit(self.number, self.headers, self.consensus),
-			"segwit" => self.deployments.segwit(self.number, self.headers, self.consensus),
-			_ => false,
-		}
-	}
 }
 
 fn first_of_the_period(block: u32, miner_confirmation_window: u32) -> u32 {

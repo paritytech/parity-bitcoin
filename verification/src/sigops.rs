@@ -45,12 +45,14 @@ pub fn transaction_sigops(
 pub fn transaction_sigops_cost(
 	transaction: &Transaction,
 	store: &TransactionOutputProvider,
-	bip16_active: bool,
+	sigops: usize,
 ) -> usize {
-	let sigops_cost = transaction_sigops(transaction, store, bip16_active) * segwit::WITNESS_SCALE_FACTOR;
+	let sigops_cost = sigops * segwit::WITNESS_SCALE_FACTOR;
 	let witness_sigops_cost: usize = transaction.inputs.iter()
 		.map(|input| store.transaction_output(&input.previous_output, usize::max_value())
-			.map(|output| witness_sigops(&Script::new(input.script_sig.clone()), &Script::new(output.script_pubkey.clone()), &ScriptWitness { stack: input.script_witness.clone().into() }))
+			.map(|output| witness_sigops(&Script::new(input.script_sig.clone()), &Script::new(output.script_pubkey.clone()), &ScriptWitness {
+				stack: input.script_witness.clone().into(), // TODO: excess clone
+			}))
 			.unwrap_or(0))
 		.sum();
 	sigops_cost + witness_sigops_cost

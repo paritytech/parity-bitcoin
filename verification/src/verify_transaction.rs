@@ -1,12 +1,12 @@
 use std::ops;
 use ser::Serializable;
 use chain::IndexedTransaction;
-use network::{ConsensusParams, ConsensusFork, Deployments};
+use network::{ConsensusParams, ConsensusFork};
+use deployments::BlockDeployments;
 use duplex_store::NoopStore;
 use sigops::transaction_sigops;
 use error::TransactionError;
 use constants::{MIN_COINBASE_SIZE, MAX_COINBASE_SIZE};
-use deployments::ActiveDeployments;
 
 pub struct TransactionVerifier<'a> {
 	pub empty: TransactionEmpty<'a>,
@@ -42,14 +42,14 @@ pub struct MemoryPoolTransactionVerifier<'a> {
 }
 
 impl<'a> MemoryPoolTransactionVerifier<'a> {
-	pub fn new(transaction: &'a IndexedTransaction, consensus: &'a ConsensusParams, deployments: ActiveDeployments<'a>) -> Self {
+	pub fn new(transaction: &'a IndexedTransaction, consensus: &'a ConsensusParams, deployments: &'a BlockDeployments<'a>) -> Self {
 		trace!(target: "verification", "Mempool-Tx pre-verification {}", transaction.hash.to_reversed_str());
 		MemoryPoolTransactionVerifier {
 			empty: TransactionEmpty::new(transaction),
 			null_non_coinbase: TransactionNullNonCoinbase::new(transaction),
 			is_coinbase: TransactionMemoryPoolCoinbase::new(transaction),
-			size: TransactionSize::new(transaction, deployments, consensus),
-			premature_witness: TransactionPrematureWitness::new(transaction, deployments),
+			size: TransactionSize::new(transaction, consensus),
+			premature_witness: TransactionPrematureWitness::new(transaction, &deployments),
 			sigops: TransactionSigops::new(transaction, ConsensusFork::absolute_maximum_block_sigops()),
 		}
 	}
@@ -151,21 +151,20 @@ impl<'a> TransactionMemoryPoolCoinbase<'a> {
 
 pub struct TransactionSize<'a> {
 	transaction: &'a IndexedTransaction,
-	deployments: ActiveDeployments<'a>,
 	consensus: &'a ConsensusParams,
 }
 
 impl<'a> TransactionSize<'a> {
-	fn new(transaction: &'a IndexedTransaction, deployments: ActiveDeployments<'a>, consensus: &'a ConsensusParams) -> Self {
+	fn new(transaction: &'a IndexedTransaction, consensus: &'a ConsensusParams) -> Self {
 		TransactionSize {
 			transaction: transaction,
-			deployments: deployments,
 			consensus: consensus,
 		}
 	}
 
 	fn check(&self) -> Result<(), TransactionError> {
-		if !self.consensus.fork.check_transaction_size(self.transaction.raw.serialized_size(), &self.deployments) {
+		let size = self.transaction.raw.serialized_size();
+		if size > self.consensus.fork.max_transaction_size() {
 			Err(TransactionError::MaxSize)
 		} else {
 			Ok(())
@@ -198,19 +197,21 @@ impl<'a> TransactionSigops<'a> {
 
 pub struct TransactionPrematureWitness<'a> {
 	transaction: &'a IndexedTransaction,
-	deployments: ActiveDeployments<'a>,
+	segwit_active: bool,
 }
 
 impl<'a> TransactionPrematureWitness<'a> {
-	pub fn new(transaction: &'a IndexedTransaction, deployments: ActiveDeployments<'a>) -> Self {
+	pub fn new(transaction: &'a IndexedTransaction, deployments: &'a BlockDeployments<'a>) -> Self {
+		let segwit_active = deployments.segwit();
+
 		TransactionPrematureWitness {
 			transaction: transaction,
-			deployments: deployments,
+			segwit_active: segwit_active,
 		}
 	}
 
 	pub fn check(&self) -> Result<(), TransactionError> {
-		if self.transaction.raw.has_witness() && !self.deployments.is_active("segwit") {
+		if !self.segwit_active && self.transaction.raw.has_witness() {
 			Err(TransactionError::PrematureWitness)
 		} else {
 			Ok(())

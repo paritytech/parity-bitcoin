@@ -11,7 +11,9 @@ use hash::H256;
 use constants::{SEQUENCE_FINAL, LOCKTIME_THRESHOLD};
 use ser::{Error, Serializable, Deserializable, Stream, Reader};
 
+/// Must be zero.
 const WITNESS_MARKER: u8 = 0;
+/// Must be nonzero.
 const WITNESS_FLAG: u8 = 1;
 
 #[derive(Debug, PartialEq, Eq, Clone, Default, Serializable, Deserializable)]
@@ -178,10 +180,6 @@ impl Transaction {
 			result += output.value;
 		}
 		result
-	}
-
-	pub fn cost(&self) -> u64 {
-		unimplemented!()
 	}
 }
 
