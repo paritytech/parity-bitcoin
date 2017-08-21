@@ -357,15 +357,15 @@ fn verify_witness_program(
 				return Err(Error::WitnessProgramWitnessEmpty);
 			}
 
+			let script_pubkey = &witness_stack[witness_stack_len - 1];
 			let stack = &witness_stack[0..witness_stack_len - 1];
-			let script_pubkey = Script::new(stack[witness_stack_len - 1].clone());
+			let script_pubkey_hash = sha256(script_pubkey);
 
-			let script_pubkey_hash = dhash256(&script_pubkey);
-			if script_pubkey_hash != witness_program[0..64].into() {
+			if script_pubkey_hash != witness_program[0..32].into() {
 				return Err(Error::WitnessProgramMismatch);
 			}
 
-			(stack.iter().cloned().collect::<Vec<_>>().into(), script_pubkey)
+			(stack.iter().cloned().collect::<Vec<_>>().into(), Script::new(script_pubkey.clone()))
 		},
 		20 => {
 			if witness_stack_len != 2 {
@@ -2192,5 +2192,50 @@ mod tests {
 
 			assert_eq!(verify_script(&script_sig, &script_pubkey, &ScriptWitness::default(), &flags.verify_strictenc(true), &checker, SignatureVersion::ForkId), Err(Error::SignatureMustUseForkId));
 		}
+	}
+
+	// original tests from bitcoin core:
+	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1256
+	#[test]
+	fn basic_witness_script_checks() {
+		let script_sig = Script::new(Bytes::new());
+		let script_pubkey = Script::new("00206e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d".into());
+		let checker = TransactionSignatureChecker {
+			input_index: 0,
+			input_amount: 0,
+			signer: Transaction::default().into(),
+		};
+
+		assert_eq!(verify_script(&script_sig,
+			&script_pubkey,
+			&vec!["00".into()],
+			&VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+			&checker,
+			SignatureVersion::WitnessV0),
+			Err(Error::EvalFalse));
+
+		assert_eq!(verify_script(&script_sig,
+			&script_pubkey,
+			&vec!["51".into()],
+			&VerificationFlags::default().verify_p2sh(true).verify_witness(true),
+			&checker,
+			SignatureVersion::WitnessV0),
+			Err(Error::WitnessProgramMismatch));
+
+		assert_eq!(verify_script(&script_sig,
+			&script_pubkey,
+			&vec!["00".into()],
+			&VerificationFlags::default(),
+			&checker,
+			SignatureVersion::WitnessV0),
+			Ok(()));
+
+		assert_eq!(verify_script(&script_sig,
+			&script_pubkey,
+			&vec!["51".into()],
+			&VerificationFlags::default(),
+			&checker,
+			SignatureVersion::WitnessV0),
+			Ok(()));
 	}
 }
