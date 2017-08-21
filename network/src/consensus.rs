@@ -263,9 +263,9 @@ mod tests {
 
 	#[test]
 	fn test_consensus_fork_max_transaction_size() {
-		assert_eq!(ConsensusFork::NoFork.max_transaction_size(0), 1_000_000);
-		assert_eq!(ConsensusFork::SegWit2x(100).max_transaction_size(0), 1_000_000);
-		assert_eq!(ConsensusFork::BitcoinCash(100).max_transaction_size(0), 1_000_000);
+		assert_eq!(ConsensusFork::NoFork.max_transaction_size(), 1_000_000);
+		assert_eq!(ConsensusFork::SegWit2x(100).max_transaction_size(), 1_000_000);
+		assert_eq!(ConsensusFork::BitcoinCash(100).max_transaction_size(), 1_000_000);
 	}
 
 	#[test]

@@ -2,7 +2,7 @@ use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use db::{TransactionMetaProvider, TransactionOutputProvider};
 use network::{ConsensusParams, ConsensusFork};
-use script::{Script, ScriptWitness, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner, SignatureVersion};
+use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner, SignatureVersion};
 use duplex_store::DuplexTransactionOutputProvider;
 use deployments::BlockDeployments;
 use script::Builder;
@@ -360,9 +360,7 @@ impl<'a> TransactionEval<'a> {
 			checker.input_index = index;
 			checker.input_amount = output.value;
 
-			let script_witness = ScriptWitness {
-				stack: input.script_witness.clone().into(), // TODO
-			};
+			let script_witness = &input.script_witness;
 			let input: Script = input.script_sig.clone().into();
 			let output: Script = output.script_pubkey.into();
 

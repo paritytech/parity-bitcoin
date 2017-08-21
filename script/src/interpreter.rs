@@ -349,9 +349,9 @@ fn verify_witness_program(
 		return Ok(true);
 	}
 
-	let witness_stack = &witness.stack;
-	let witness_stack_len = witness.stack.len();
-	let (mut stack, script_pubkey) = match witness_program.len() {
+	let witness_stack = witness;
+	let witness_stack_len = witness_stack.len();
+	let (mut stack, script_pubkey): (Stack<_>, Script) = match witness_program.len() {
 		32 => {
 			if witness_stack_len == 0 {
 				return Err(Error::WitnessProgramWitnessEmpty);
@@ -380,7 +380,7 @@ fn verify_witness_program(
 				.push_opcode(Opcode::OP_CHECKSIG)
 				.into_script();
 
-			(witness_stack.clone(), script_pubkey)
+			(witness_stack.clone().into(), script_pubkey)
 		},
 		_ => return Err(Error::WitnessProgramWrongLength),
 	};

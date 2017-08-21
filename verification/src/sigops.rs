@@ -50,9 +50,7 @@ pub fn transaction_sigops_cost(
 	let sigops_cost = sigops * segwit::WITNESS_SCALE_FACTOR;
 	let witness_sigops_cost: usize = transaction.inputs.iter()
 		.map(|input| store.transaction_output(&input.previous_output, usize::max_value())
-			.map(|output| witness_sigops(&Script::new(input.script_sig.clone()), &Script::new(output.script_pubkey.clone()), &ScriptWitness {
-				stack: input.script_witness.clone().into(), // TODO: excess clone
-			}))
+			.map(|output| witness_sigops(&Script::new(input.script_sig.clone()), &Script::new(output.script_pubkey.clone()), &input.script_witness,))
 			.unwrap_or(0))
 		.sum();
 	sigops_cost + witness_sigops_cost
@@ -88,9 +86,9 @@ fn witness_program_sigops(
 ) -> usize {
 	match witness_version {
 		0 if witness_program.len() == 20 => 1,
-		0 if witness_program.len() == 32 => match script_witness.stack.last().ok() {
+		0 if witness_program.len() == 32 => match script_witness.last() {
 			Some(subscript) => Script::new(subscript.clone()).sigops_count(true),
-			_ => 0
+			_ => 0,
 		},
 		_ => 0,
 	}
