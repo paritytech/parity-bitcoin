@@ -405,11 +405,11 @@ fn verify_witness_program(
 		return Ok(false);
 	}
 
-	let success = !stack.is_empty() && {
-		let last = stack.last()?;
-		cast_to_bool(last)
-	};
+	if stack.len() != 1 {
+		return Err(Error::EvalFalse);
+	}
 
+	let success = cast_to_bool(stack.last().expect("stack.len() == 1; last() only returns errors when stack is empty; qed"));
 	Ok(success)
 }
 
@@ -2206,7 +2206,7 @@ mod tests {
 		}
 	}
 
-	fn run_witness_test(script_sig: Script, script_pubkey: Script, script_witness: Vec<Bytes>, flags: VerificationFlags, sigver: SignatureVersion, amount: u64) -> Result<(), Error> {
+	fn run_witness_test(script_sig: Script, script_pubkey: Script, script_witness: Vec<Bytes>, flags: VerificationFlags, amount: u64) -> Result<(), Error> {
 		use chain::{TransactionInput, OutPoint, TransactionOutput};
 
 		let tx1 = Transaction {
@@ -2255,7 +2255,7 @@ mod tests {
 			&script_witness,
 			&flags,
 			&checker,
-			sigver)
+			SignatureVersion::Base)
 	}
 
 	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/script_tests.json#L1257
@@ -2266,7 +2266,6 @@ mod tests {
 				"00206e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d".into(),
 				vec!["00".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2279,7 +2278,6 @@ mod tests {
 				"00206e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d".into(),
 				vec!["51".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2292,7 +2290,6 @@ mod tests {
 				"00206e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d".into(),
 				vec!["00".into()],
 				VerificationFlags::default(),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2305,7 +2302,6 @@ mod tests {
 				"00206e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d".into(),
 				vec!["51".into()],
 				VerificationFlags::default(),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2319,7 +2315,6 @@ mod tests {
 				vec!["304402200d461c140cfdfcf36b94961db57ae8c18d1cb80e9d95a9e47ac22470c1bf125502201c8dc1cbfef6a3ef90acbbb992ca22fe9466ee6f9d4898eda277a7ac3ab4b25101".into(),
 					"410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				1,
 			));
 	}
@@ -2333,7 +2328,6 @@ mod tests {
 				vec!["304402201e7216e5ccb3b61d46946ec6cc7e8c4e0117d13ac2fd4b152197e4805191c74202203e9903e33e84d9ee1dd13fb057afb7ccfb47006c23f6a067185efbc9dd780fc501".into(),
 					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				1,
 			));
 	}
@@ -2347,7 +2341,6 @@ mod tests {
 				vec!["3044022066e02c19a513049d49349cf5311a1b012b7c4fae023795a18ab1d91c23496c22022025e216342c8e07ce8ef51e8daee88f84306a9de66236cab230bb63067ded1ad301".into(),
 					"410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				1,
 			));
 	}
@@ -2361,7 +2354,6 @@ mod tests {
 				vec!["304402200929d11561cd958460371200f82e9cae64c727a495715a31828e27a7ad57b36d0220361732ced04a6f97351ecca21a56d0b8cd4932c1da1f8f569a2b68e5e48aed7801".into(),
 					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				1,
 			));
 	}
@@ -2375,7 +2367,6 @@ mod tests {
 				vec!["304402202589f0512cb2408fb08ed9bd24f85eb3059744d9e4f2262d0b7f1338cff6e8b902206c0978f449693e0578c71bc543b11079fd0baae700ee5e9a6bee94db490af9fc01".into(),
 					"41048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26cafac".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2389,7 +2380,6 @@ mod tests {
 				vec!["304402206ef7fdb2986325d37c6eb1a8bb24aeb46dede112ed8fc76c7d7500b9b83c0d3d02201edc2322c794fe2d6b0bd73ed319e714aa9b86d8891961530d5c9b7156b60d4e01".into(),
 					"048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2403,7 +2393,6 @@ mod tests {
 				vec!["30440220069ea3581afaf8187f63feee1fd2bd1f9c0dc71ea7d6e8a8b07ee2ebcf824bf402201a4fdef4c532eae59223be1eda6a397fc835142d4ddc6c74f4aa85b766a5c16f01".into(),
 					"41048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26cafac".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2417,7 +2406,6 @@ mod tests {
 				vec!["304402204209e49457c2358f80d0256bc24535b8754c14d08840fc4be762d6f5a0aed80b02202eaf7d8fc8d62f60c67adcd99295528d0e491ae93c195cec5a67e7a09532a88001".into(),
 					"048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2431,7 +2419,6 @@ mod tests {
 				vec!["304402202589f0512cb2408fb08ed9bd24f85eb3059744d9e4f2262d0b7f1338cff6e8b902206c0978f449693e0578c71bc543b11079fd0baae700ee5e9a6bee94db490af9fc01".into(),
 					"41048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26cafac".into()],
 				VerificationFlags::default().verify_p2sh(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2445,7 +2432,6 @@ mod tests {
 				vec!["304402206ef7fdb2986325d37c6eb1a8bb24aeb46dede112ed8fc76c7d7500b9b83c0d3d02201edc2322c794fe2d6b0bd73ed319e714aa9b86d8891961530d5c9b7156b60d4e01".into(),
 					"4104828048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf2263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26cafac".into()],
 				VerificationFlags::default().verify_p2sh(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2459,7 +2445,6 @@ mod tests {
 				vec!["30440220069ea3581afaf8187f63feee1fd2bd1f9c0dc71ea7d6e8a8b07ee2ebcf824bf402201a4fdef4c532eae59223be1eda6a397fc835142d4ddc6c74f4aa85b766a5c16f01".into(),
 					"41048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26cafac".into()],
 				VerificationFlags::default().verify_p2sh(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2473,7 +2458,6 @@ mod tests {
 				vec!["304402204209e49457c2358f80d0256bc24535b8754c14d08840fc4be762d6f5a0aed80b02202eaf7d8fc8d62f60c67adcd99295528d0e491ae93c195cec5a67e7a09532a88001".into(),
 					"048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf".into()],
 				VerificationFlags::default().verify_p2sh(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2487,7 +2471,6 @@ mod tests {
 				vec!["3044022066faa86e74e8b30e82691b985b373de4f9e26dc144ec399c4f066aa59308e7c202204712b86f28c32503faa051dbeabff2c238ece861abc36c5e0b40b1139ca222f001".into(),
 					"410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2501,7 +2484,6 @@ mod tests {
 				vec!["304402203b3389b87448d7dfdb5e82fb854fcf92d7925f9938ea5444e36abef02c3d6a9602202410bc3265049abb07fd2e252c65ab7034d95c9d5acccabe9fadbdc63a52712601".into(),
 					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2515,7 +2497,6 @@ mod tests {
 				vec!["3044022000a30c4cfc10e4387be528613575434826ad3c15587475e0df8ce3b1746aa210022008149265e4f8e9dafe1f3ea50d90cb425e9e40ea7ebdd383069a7cfa2b77004701".into(),
 					"410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2529,7 +2510,6 @@ mod tests {
 				vec!["304402204fc3a2cd61a47913f2a5f9107d0ad4a504c7b31ee2d6b3b2f38c2b10ee031e940220055d58b7c3c281aaa381d8f486ac0f3e361939acfd568046cb6a311cdfa974cf01".into(),
 					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2543,7 +2523,6 @@ mod tests {
 				vec!["304402205ae57ae0534c05ca9981c8a6cdf353b505eaacb7375f96681a2d1a4ba6f02f84022056248e68643b7d8ce7c7d128c9f1f348bcab8be15d094ad5cadd24251a28df8001".into(),
 					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true).verify_discourage_upgradable_witness_program(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2557,7 +2536,6 @@ mod tests {
 				vec!["3044022064100ca0e2a33332136775a86cd83d0230e58b9aebb889c5ac952abff79a46ef02205f1bf900e022039ad3091bdaf27ac2aef3eae9ed9f190d821d3e508405b9513101".into(),
 					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2570,7 +2548,6 @@ mod tests {
 				"0020b95237b48faaa69eb078e1170be3b5cbb3fddf16d0a991e14ad274f7b33a4f64".into(),
 				vec![],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2584,7 +2561,6 @@ mod tests {
 				vec!["3044022039105b995a5f448639a997a5c90fda06f50b49df30c3bdb6663217bf79323db002206fecd54269dec569fcc517178880eb58bb40f381a282bb75766ff3637d5f4b4301".into(),
 					"400479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2599,7 +2575,6 @@ mod tests {
 					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into(),
 					"".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2613,7 +2588,6 @@ mod tests {
 				vec!["304402201a96950593cb0af32d080b0f193517f4559241a8ebd1e95e414533ad64a3f423022047f4f6d3095c23235bdff3aeff480d0529c027a3f093cb265b7cbf148553b85101".into(),
 					"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2627,7 +2601,6 @@ mod tests {
 				vec!["304402204209e49457c2358f80d0256bc24535b8754c14d08840fc4be762d6f5a0aed80b02202eaf7d8fc8d62f60c67adcd99295528d0e491ae93c195cec5a67e7a09532a88001".into(),
 					"048282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f5150811f8a8098557dfe45e8256e830b60ace62d613ac2f7b17bed31b6eaff6e26caf".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2640,7 +2613,6 @@ mod tests {
 				"410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8ac".into(),
 				vec!["".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				0,
 			));
 	}
@@ -2655,7 +2627,6 @@ mod tests {
 					"304402202d092ededd1f060609dbf8cb76950634ff42b3e62cf4adb69ab92397b07d742302204ff886f8d0817491a96d1daccdcc820f6feb122ee6230143303100db37dfa79f01".into(),
 					"5121038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b852ae".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				1,
 			));
 	}
@@ -2670,7 +2641,6 @@ mod tests {
 					"304402202dd7e91243f2235481ffb626c3b7baf2c859ae3a5a77fb750ef97b99a8125dc002204960de3d3c3ab9496e218ec57e5240e0e10a6f9546316fe240c216d45116d29301".into(),
 					"5121038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b852ae".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				1,
 			));
 	}
@@ -2685,7 +2655,6 @@ mod tests {
 					"304402201e9e6f7deef5b2f21d8223c5189b7d5e82d237c10e97165dd08f547c4e5ce6ed02206796372eb1cc6acb52e13ee2d7f45807780bf96b132cb6697f69434be74b1af901".into(),
 					"5121038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b852ae".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				1,
 			));
 	}
@@ -2700,8 +2669,137 @@ mod tests {
 					"3044022045e667f3f0f3147b95597a24babe9afecea1f649fd23637dfa7ed7e9f3ac18440220295748e81005231135289fe3a88338dabba55afa1bdb4478691337009d82b68d01".into(),
 					"5121038282263212c609d9ea2a6e3e172de238d8c39cabd5ac1ca10646e23fd5f51508410479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b852ae".into()],
 				VerificationFlags::default().verify_p2sh(true).verify_witness(true),
-				SignatureVersion::Base,
 				1,
 			));
+	}
+
+	fn run_witness_test_tx_test(script_pubkey: Script, tx: &Transaction, flags: &VerificationFlags, amount: u64, index: usize) -> Result<(), Error> {
+		let checker = TransactionSignatureChecker {
+			input_index: index,
+			input_amount: amount,
+			signer: tx.clone().into(),
+		};
+
+		verify_script(&tx.inputs[index].script_sig.clone().into(),
+			&script_pubkey,
+			&tx.inputs[index].script_witness,
+			flags,
+			&checker,
+			SignatureVersion::Base)
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L254
+	#[test]
+	fn witness_unknown_program_version() {
+		let tx = "0100000000010300010000000000000000000000000000000000000000000000000000000000000000000000ffffffff00010000000000000000000000000000000000000000000000000000000000000100000000ffffffff00010000000000000000000000000000000000000000000000000000000000000200000000ffffffff03e8030000000000000151d0070000000000000151b80b00000000000001510002483045022100a3cec69b52cba2d2de623ffffffffff1606184ea55476c0f8189fda231bc9cbb022003181ad597f7c380a7d1c740286b1d022b8b04ded028b833282e055e03b8efef812103596d3451025c19dbbdeb932d6bf8bfb4ad499b95b6f88db8899efac102e5fc710000000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true).verify_discourage_upgradable_witness_program(true);
+		assert_eq!(Err(Error::DiscourageUpgradableWitnessProgram), run_witness_test_tx_test("51".into(), &tx, &flags, 1000, 0)
+			.and_then(|_| run_witness_test_tx_test("60144c9c3dfac4207d5d8cb89df5722cb3d712385e3f".into(), &tx, &flags, 2000, 1))
+			.and_then(|_| run_witness_test_tx_test("51".into(), &tx, &flags, 3000, 2)));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L260
+	#[test]
+	fn witness_unknown_program0_lengh() {
+		let tx = "0100000000010300010000000000000000000000000000000000000000000000000000000000000000000000ffffffff00010000000000000000000000000000000000000000000000000000000000000100000000ffffffff00010000000000000000000000000000000000000000000000000000000000000200000000ffffffff04b60300000000000001519e070000000000000151860b0000000000000100960000000000000001510002473044022022fceb54f62f8feea77faac7083c3b56c4676a78f93745adc8a35800bc36adfa022026927df9abcf0a8777829bcfcce3ff0a385fa54c3f9df577405e3ef24ee56479022103596d3451025c19dbbdeb932d6bf8bfb4ad499b95b6f88db8899efac102e5fc710000000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
+		assert_eq!(Err(Error::WitnessProgramWrongLength), run_witness_test_tx_test("51".into(), &tx, &flags, 1000, 0)
+			.and_then(|_| run_witness_test_tx_test("00154c9c3dfac4207d5d8cb89df5722cb3d712385e3fff".into(), &tx, &flags, 2000, 1))
+			.and_then(|_| run_witness_test_tx_test("51".into(), &tx, &flags, 3000, 2)));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L260
+	#[test]
+	fn witness_single_anyone_same_index_value_changed() {
+		let tx = "0100000000010300010000000000000000000000000000000000000000000000000000000000000000000000ffffffff00010000000000000000000000000000000000000000000000000000000000000100000000ffffffff00010000000000000000000000000000000000000000000000000000000000000200000000ffffffff03e80300000000000001516c070000000000000151b80b0000000000000151000248304502210092f4777a0f17bf5aeb8ae768dec5f2c14feabf9d1fe2c89c78dfed0f13fdb86902206da90a86042e252bcd1e80a168c719e4a1ddcc3cebea24b9812c5453c79107e9832103596d3451025c19dbbdeb932d6bf8bfb4ad499b95b6f88db8899efac102e5fc710000000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
+		assert_eq!(Err(Error::EvalFalse), run_witness_test_tx_test("51".into(), &tx, &flags, 1000, 0)
+			.and_then(|_| run_witness_test_tx_test("00144c9c3dfac4207d5d8cb89df5722cb3d712385e3f".into(), &tx, &flags, 2000, 1))
+			.and_then(|_| run_witness_test_tx_test("51".into(), &tx, &flags, 3000, 2)));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L272
+	#[test]
+	fn witness_none_anyone_same_index_value_changed() {
+		let tx = "0100000000010300010000000000000000000000000000000000000000000000000000000000000000000000ffffffff000100000000000000000000000000000000000000000000000000000000000001000000000100000000010000000000000000000000000000000000000000000000000000000000000200000000ffffffff00000248304502210091b32274295c2a3fa02f5bce92fb2789e3fc6ea947fbe1a76e52ea3f4ef2381a022079ad72aefa3837a2e0c033a8652a59731da05fa4a813f4fc48e87c075037256b822103596d3451025c19dbbdeb932d6bf8bfb4ad499b95b6f88db8899efac102e5fc710000000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
+		assert_eq!(Err(Error::EvalFalse), run_witness_test_tx_test("51".into(), &tx, &flags, 1000, 0)
+			.and_then(|_| run_witness_test_tx_test("00144c9c3dfac4207d5d8cb89df5722cb3d712385e3f".into(), &tx, &flags, 2000, 1))
+			.and_then(|_| run_witness_test_tx_test("51".into(), &tx, &flags, 3000, 2)));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L278
+	#[test]
+	fn witness_all_anyone_third_value_changed() {
+		let tx = "0100000000010300010000000000000000000000000000000000000000000000000000000000000000000000ffffffff00010000000000000000000000000000000000000000000000000000000000000100000000ffffffff00010000000000000000000000000000000000000000000000000000000000000200000000ffffffff03e8030000000000000151d0070000000000000151540b00000000000001510002483045022100a3cec69b52cba2d2de623eeef89e0ba1606184ea55476c0f8189fda231bc9cbb022003181ad597f7c380a7d1c740286b1d022b8b04ded028b833282e055e03b8efef812103596d3451025c19dbbdeb932d6bf8bfb4ad499b95b6f88db8899efac102e5fc710000000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
+		assert_eq!(Err(Error::EvalFalse), run_witness_test_tx_test("51".into(), &tx, &flags, 1000, 0)
+			.and_then(|_| run_witness_test_tx_test("00144c9c3dfac4207d5d8cb89df5722cb3d712385e3f".into(), &tx, &flags, 2000, 1))
+			.and_then(|_| run_witness_test_tx_test("51".into(), &tx, &flags, 3000, 2)));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L284
+	#[test]
+	fn witness_with_push_of_521_bytes() {
+		let tx = "0100000000010100010000000000000000000000000000000000000000000000000000000000000000000000ffffffff010000000000000000015102fd0902000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002755100000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
+		assert_eq!(Err(Error::PushSize), run_witness_test_tx_test("002033198a9bfef674ebddb9ffaa52928017b8472791e54c609cb95f278ac6b1e349".into(), &tx, &flags, 1000, 0));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L288
+	#[test]
+	fn witness_unknown_version_with_false_on_stack() {
+		let tx = "0100000000010100010000000000000000000000000000000000000000000000000000000000000000000000ffffffff010000000000000000015101010100000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
+		assert_eq!(Err(Error::EvalFalse), run_witness_test_tx_test("60020000".into(), &tx, &flags, 2000, 0));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L292
+	#[test]
+	fn witness_unknown_version_with_non_empty_stack() {
+		let tx = "0100000000010100010000000000000000000000000000000000000000000000000000000000000000000000ffffffff01000000000000000001510102515100000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
+		assert_eq!(Err(Error::EvalFalse), run_witness_test_tx_test("00202f04a3aa051f1f60d695f6c44c0c3d383973dfd446ace8962664a76bb10e31a8".into(), &tx, &flags, 2000, 0));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L296
+	#[test]
+	fn witness_program0_with_push_of_2_bytes() {
+		let tx = "0100000000010100010000000000000000000000000000000000000000000000000000000000000000000000ffffffff010000000000000000015101040002000100000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
+		assert_eq!(Err(Error::WitnessProgramWrongLength), run_witness_test_tx_test("00020001".into(), &tx, &flags, 2000, 0));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L300
+	#[test]
+	fn witness_unknown_version_with_non_empty_script_sig() {
+		let tx = "01000000010001000000000000000000000000000000000000000000000000000000000000000000000151ffffffff010000000000000000015100000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
+		assert_eq!(Err(Error::WitnessMalleated), run_witness_test_tx_test("60020001".into(), &tx, &flags, 2000, 0));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L304
+	#[test]
+	fn witness_non_witness_single_anyone_hash_input_position() {
+		let tx = "010000000200010000000000000000000000000000000000000000000000000000000000000100000049483045022100acb96cfdbda6dc94b489fd06f2d720983b5f350e31ba906cdbd800773e80b21c02200d74ea5bdf114212b4bbe9ed82c36d2e369e302dff57cb60d01c428f0bd3daab83ffffffff0001000000000000000000000000000000000000000000000000000000000000000000004847304402202a0b4b1294d70540235ae033d78e64b4897ec859c7b6f1b2b1d8a02e1d46006702201445e756d2254b0f1dfda9ab8e1e1bc26df9668077403204f32d16a49a36eb6983ffffffff02e9030000000000000151e803000000000000015100000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
+		assert_eq!(Err(Error::EvalFalse), run_witness_test_tx_test("2103596d3451025c19dbbdeb932d6bf8bfb4ad499b95b6f88db8899efac102e5fc71ac".into(), &tx, &flags, 1000, 0)
+			.and_then(|_| run_witness_test_tx_test("2103596d3451025c19dbbdeb932d6bf8bfb4ad499b95b6f88db8899efac102e5fc71ac".into(), &tx, &flags, 1001, 1)));
+	}
+
+/*	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L309
+	#[test]
+	fn witness_p2wsh_with_redeem_witness_script_pubkey() {
+		let tx = "0100000000010100010000000000000000000000000000000000000000000000000000000000000000000000ffffffff0001045102010100000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
+		assert_eq!(Err(Error::EvalFalse), run_witness_test_tx_test("002034b6c399093e06cf9f0f7f660a1abcfe78fcf7b576f43993208edd9518a0ae9b".into(), &tx, &flags, 1000, 0));
+	}
+*/
+	// https://github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_invalid.json#L313
+	#[test]
+	fn witness_33_bytes_witness_script_pubkey() {
+		let tx = "010000000100010000000000000000000000000000000000000000000000000000000000000000000000ffffffff01e803000000000000015100000000".into();
+		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true).verify_discourage_upgradable_witness_program(true);
+		assert_eq!(Err(Error::DiscourageUpgradableWitnessProgram), run_witness_test_tx_test("6021ff25429251b5a84f452230a3c75fd886b7fc5a7865ce4a7bb7a9d7c5be6da3dbff".into(), &tx, &flags, 1000, 0));
 	}
 }
