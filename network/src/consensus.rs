@@ -84,7 +84,7 @@ impl ConsensusParams {
 					bit: 0,
 					start_time: 1462060800,
 					timeout: 1493596800,
-					activation: Some(770112),
+					activation: Some(419328),
 				}),
 				segwit_deployment: match fork {
 					ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => Some(Deployment {
@@ -111,7 +111,7 @@ impl ConsensusParams {
 					bit: 0,
 					start_time: 1456790400,
 					timeout: 1493596800,
-					activation: Some(419328),
+					activation: Some(770112),
 				}),
 				segwit_deployment: match fork {
 					ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => Some(Deployment {
