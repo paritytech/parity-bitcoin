@@ -242,16 +242,7 @@ impl TransactionInputSigner {
 		let hash_prevouts = compute_hash_prevouts(sighash, &self.inputs);
 		let hash_sequence = compute_hash_sequence(sighash, &self.inputs);
 		let hash_outputs = compute_hash_outputs(sighash, input_index, &self.outputs);
-/*println!("=== version = {:?}", self.version);
-println!("=== hash_prevouts = {:?}", hash_prevouts);
-println!("=== hash_sequence = {:?}", hash_sequence);
-println!("=== previous_output = {:?}", self.inputs[input_index].previous_output);
-println!("=== script_pubkey = {:?}", script_pubkey);
-println!("=== input_amount = {:?}", input_amount);
-println!("=== sequence = {:?}", self.inputs[input_index].sequence);
-println!("=== hash_outputs = {:?}", hash_outputs);
-println!("=== lock_time = {:?}", self.lock_time);
-println!("=== sighashtype = {:?}", sighashtype);*/
+
 		let mut stream = Stream::default();
 		stream.append(&self.version);
 		stream.append(&hash_prevouts);

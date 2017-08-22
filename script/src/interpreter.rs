@@ -3059,20 +3059,6 @@ mod tests {
 		let flags = VerificationFlags::default().verify_witness(true).verify_p2sh(true);
 		assert_eq!(Ok(()), run_witness_test_tx_test("21036d5c20fa14fb2f635474c1dc4ef5909d4568e5569b79fc94d3448486e14685f8ac".into(), &tx, &flags, 156250000, 0)
 			.and_then(|_| run_witness_test_tx_test("00205d1b56b63d714eebe542309525f484b7e9d6f686b3781b6f61ef925d66d6f6a0".into(), &tx, &flags, 4900000000, 1)));
-/*
-pbtc:
-=== version = 1
-=== hash_prevouts = ef546acf4a020de3898d1b8956176bb507e6211b5ed3619cd08b6ea7e2a09d41
-=== hash_sequence = 0000000000000000000000000000000000000000000000000000000000000000
-=== previous_output = OutPoint { hash: 0815cf020f013ed6cf91d29f4202e8a58726b1ac6c79da47c23d1bee0a6925f8, index: 0 }
-=== script_pubkey = Script { data: ab210255a9626aebf5e29c0e6538428ba0d1dcf6ca98ffdf086aa8ced5e0d0215ea465ac }
-=== input_amount = 4900000000
-=== sequence = 4294967295
-=== hash_outputs = 0000000000000000000000000000000000000000000000000000000000000000
-=== lock_time = 0
-=== sighashtype = 3
-=== OP_CHECKSIG: false/WitnessV0
-*/
 	}
 
 	// https://github.com/bitcoin/bitcoin/blob/7ee6c434ce8df9441abcf1718555cc7728a4c575/src/test/data/tx_valid.json#L476
