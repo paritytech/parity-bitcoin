@@ -113,7 +113,6 @@ impl<'a> BlockDeployments<'a> {
 /// Calculates threshold state of given deployment
 fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, number: u32, headers: &BlockHeaderProvider, consensus: &ConsensusParams) -> ThresholdState {
 	// deployments are checked using previous block index
-	let number = number - 1;
 	if let Some(activation) = deployment.activation {
 		if activation <= number {
 			return ThresholdState::Active;
@@ -123,7 +122,7 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 	}
 
 	// get number of the first block in the period
-	let number = first_of_the_period(number, consensus.miner_confirmation_window);
+	let number = first_of_the_period(number.saturating_sub(1), consensus.miner_confirmation_window);
 
 	let hash = match headers.block_header(BlockRef::Number(number)) {
 		Some(header) => header.hash(),
