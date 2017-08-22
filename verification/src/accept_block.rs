@@ -1,4 +1,4 @@
-use network::{ConsensusParams, segwit};
+use network::{ConsensusParams, ConsensusFork};
 use crypto::dhash256;
 use db::{TransactionOutputProvider, BlockHeaderProvider};
 use script;
@@ -113,8 +113,8 @@ impl<'a> BlockSerializedSize<'a> {
 
 		if self.segwit_active {
 			let size_with_witness = self.block.size_with_witness();
-			let weight = size * (segwit::WITNESS_SCALE_FACTOR - 1) + size_with_witness;
-			if weight > segwit::MAX_BLOCK_WEIGHT {
+			let weight = size * (ConsensusFork::witness_scale_factor() - 1) + size_with_witness;
+			if weight > self.consensus.fork.max_block_weight(self.height) {
 				return Err(Error::Weight);
 			}
 		}
