@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 use chain::IndexedBlock;
+use network::ConsensusFork;
 use sigops::transaction_sigops;
 use duplex_store::NoopStore;
 use error::{Error, TransactionError};
-use constants::{MAX_BLOCK_SIZE, MAX_BLOCK_SIGOPS};
 
 pub struct BlockVerifier<'a> {
 	pub empty: BlockEmpty<'a>,
@@ -20,10 +20,10 @@ impl<'a> BlockVerifier<'a> {
 		BlockVerifier {
 			empty: BlockEmpty::new(block),
 			coinbase: BlockCoinbase::new(block),
-			serialized_size: BlockSerializedSize::new(block, MAX_BLOCK_SIZE),
+			serialized_size: BlockSerializedSize::new(block, ConsensusFork::absolute_maximum_block_size()),
 			extra_coinbases: BlockExtraCoinbases::new(block),
 			transactions_uniqueness: BlockTransactionsUniqueness::new(block),
-			sigops: BlockSigops::new(block, MAX_BLOCK_SIGOPS),
+			sigops: BlockSigops::new(block, ConsensusFork::absolute_maximum_block_sigops()),
 			merkle_root: BlockMerkleRoot::new(block),
 		}
 	}

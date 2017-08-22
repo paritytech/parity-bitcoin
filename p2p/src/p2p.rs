@@ -12,6 +12,7 @@ use abstract_ns::Resolver;
 use ns_dns_tokio::DnsResolver;
 use message::{Payload, MessageResult, Message};
 use message::common::Services;
+use message::types::addr::AddressEntry;
 use net::{connect, Connections, Channel, Config as NetConfig, accept_connection, ConnectionCounter};
 use util::{NodeTable, Node, NodeTableError, Direction};
 use session::{SessionFactory, SeednodeSessionFactory, NormalSessionFactory};
@@ -45,7 +46,7 @@ impl Context {
 		let context = Context {
 			connections: Default::default(),
 			connection_counter: ConnectionCounter::new(config.inbound_connections, config.outbound_connections),
-			node_table: RwLock::new(try!(NodeTable::from_file(&config.node_table_path))),
+			node_table: RwLock::new(try!(NodeTable::from_file(config.preferable_services, &config.node_table_path))),
 			pool: pool_handle,
 			remote: remote,
 			local_sync_node: local_sync_node,
@@ -84,7 +85,7 @@ impl Context {
 	}
 
 	/// Updates node table.
-	pub fn update_node_table(&self, nodes: Vec<Node>) {
+	pub fn update_node_table(&self, nodes: Vec<AddressEntry>) {
 		trace!("Updating node table with {} entries", nodes.len());
 		self.node_table.write().insert_many(nodes);
 	}
@@ -126,6 +127,7 @@ impl Context {
 
 				let needed = context.connection_counter.outbound_connections_needed() as usize;
 				if needed != 0 {
+					// TODO: pass Services::with_bitcoin_cash(true) after HF block
 					let used_addresses = context.connections.addresses();
 					let peers = context.node_table.read().nodes_with_services(&Services::default(), context.config.internet_protocol, &used_addresses, needed);
 					let addresses = peers.into_iter()

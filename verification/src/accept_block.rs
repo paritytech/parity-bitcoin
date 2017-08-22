@@ -1,4 +1,4 @@
-use network::{Magic, ConsensusParams};
+use network::ConsensusParams;
 use db::{TransactionOutputProvider, BlockHeaderProvider};
 use script;
 use sigops::transaction_sigops;
@@ -6,13 +6,13 @@ use work::block_reward_satoshi;
 use duplex_store::DuplexTransactionOutputProvider;
 use deployments::Deployments;
 use canon::CanonBlock;
-use constants::MAX_BLOCK_SIGOPS;
 use error::{Error, TransactionError};
 use timestamp::median_timestamp;
 
 /// Flexible verification of ordered block
 pub struct BlockAcceptor<'a> {
 	pub finality: BlockFinality<'a>,
+	pub serialized_size: BlockSerializedSize<'a>,
 	pub sigops: BlockSigops<'a>,
 	pub coinbase_claim: BlockCoinbaseClaim<'a>,
 	pub coinbase_script: BlockCoinbaseScript<'a>,
@@ -21,24 +21,25 @@ pub struct BlockAcceptor<'a> {
 impl<'a> BlockAcceptor<'a> {
 	pub fn new(
 		store: &'a TransactionOutputProvider,
-		network: Magic,
+		consensus: &'a ConsensusParams,
 		block: CanonBlock<'a>,
 		height: u32,
 		deployments: &'a Deployments,
 		headers: &'a BlockHeaderProvider,
 	) -> Self {
-		let params = network.consensus_params();
 		BlockAcceptor {
-			finality: BlockFinality::new(block, height, deployments, headers, &params),
-			coinbase_script: BlockCoinbaseScript::new(block, &params, height),
+			finality: BlockFinality::new(block, height, deployments, headers, consensus),
+			serialized_size: BlockSerializedSize::new(block, consensus, height),
+			coinbase_script: BlockCoinbaseScript::new(block, consensus, height),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store, height),
-			sigops: BlockSigops::new(block, store, params, MAX_BLOCK_SIGOPS),
+			sigops: BlockSigops::new(block, store, consensus, height),
 		}
 	}
 
 	pub fn check(&self) -> Result<(), Error> {
 		self.finality.check()?;
 		self.sigops.check()?;
+		self.serialized_size.check()?;
 		self.coinbase_claim.check()?;
 		self.coinbase_script.check()?;
 		Ok(())
@@ -79,31 +80,58 @@ impl<'a> BlockFinality<'a> {
 	}
 }
 
+pub struct BlockSerializedSize<'a> {
+	block: CanonBlock<'a>,
+	consensus: &'a ConsensusParams,
+	height: u32,
+}
+
+impl<'a> BlockSerializedSize<'a> {
+	fn new(block: CanonBlock<'a>, consensus: &'a ConsensusParams, height: u32) -> Self {
+		BlockSerializedSize {
+			block: block,
+			consensus: consensus,
+			height: height,
+		}
+	}
+
+	fn check(&self) -> Result<(), Error> {
+		let size = self.block.size();
+		if size < self.consensus.fork.min_block_size(self.height) ||
+			size > self.consensus.fork.max_block_size(self.height) {
+			Err(Error::Size(size))
+		} else {
+			Ok(())
+		}
+	}
+}
+
 pub struct BlockSigops<'a> {
 	block: CanonBlock<'a>,
 	store: &'a TransactionOutputProvider,
-	consensus_params: ConsensusParams,
-	max_sigops: usize,
+	consensus: &'a ConsensusParams,
+	height: u32,
 }
 
 impl<'a> BlockSigops<'a> {
-	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus_params: ConsensusParams, max_sigops: usize) -> Self {
+	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus: &'a ConsensusParams, height: u32) -> Self {
 		BlockSigops {
 			block: block,
 			store: store,
-			consensus_params: consensus_params,
-			max_sigops: max_sigops,
+			consensus: consensus,
+			height: height,
 		}
 	}
 
 	fn check(&self) -> Result<(), Error> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
-		let bip16_active = self.block.header.raw.time >= self.consensus_params.bip16_time;
+		let bip16_active = self.block.header.raw.time >= self.consensus.bip16_time;
 		let sigops = self.block.transactions.iter()
 			.map(|tx| transaction_sigops(&tx.raw, &store, bip16_active))
 			.sum::<usize>();
 
-		if sigops > self.max_sigops {
+		let size = self.block.size();
+		if sigops > self.consensus.fork.max_block_sigops(self.height, size) {
 			Err(Error::MaximumSigops)
 		} else {
 			Ok(())

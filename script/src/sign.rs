@@ -12,6 +12,7 @@ use {Script, Builder};
 pub enum SignatureVersion {
 	Base,
 	WitnessV0,
+	ForkId,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -34,70 +35,65 @@ impl From<SighashBase> for u32 {
 pub struct Sighash {
 	pub base: SighashBase,
 	pub anyone_can_pay: bool,
+	pub fork_id: bool,
 }
 
 impl From<Sighash> for u32 {
 	fn from(s: Sighash) -> Self {
 		let base = s.base as u32;
-		if s.anyone_can_pay {
+		let base = if s.anyone_can_pay {
 			base | 0x80
+		} else {
+			base
+		};
+
+		if s.fork_id {
+			base | 0x40
 		} else {
 			base
 		}
 	}
 }
 
-impl From<u32> for Sighash {
-	fn from(u: u32) -> Self {
-		// use 0x9f istead of 0x1f to catch 0x80
-		match u & 0x9f {
-			2 => Sighash::new(SighashBase::None, false),
-			3 => Sighash::new(SighashBase::Single, false),
-			0x81 => Sighash::new(SighashBase::All, true),
-			0x82 => Sighash::new(SighashBase::None, true),
-			0x83 => Sighash::new(SighashBase::Single, true),
-			x if x & 0x80 == 0x80 => Sighash::new(SighashBase::All, true),
-			// 0 is handled like all...
-			1 | _ => Sighash::new(SighashBase::All, false),
-		}
-	}
-}
-
 impl Sighash {
-	pub fn new(base: SighashBase, anyone_can_pay: bool) -> Self {
+	pub fn new(base: SighashBase, anyone_can_pay: bool, fork_id: bool) -> Self {
 		Sighash {
 			base: base,
 			anyone_can_pay: anyone_can_pay,
+			fork_id: fork_id,
 		}
 	}
 
-	pub fn is_defined(u: u32) -> bool {
-		// use 0x9f istead of 0x1f to catch 0x80
-		match u & 0x9f {
-			1 | 2 | 3 |
-			0x81 | 0x82 | 0x83 => true,
-			x if x & 0x80 == 0x80 => true,
+	/// Used by SCRIPT_VERIFY_STRICTENC
+	pub fn is_defined(version: SignatureVersion, u: u32) -> bool {
+		// reset anyone_can_pay && fork_id (if applicable) bits
+		let u = match version {
+			SignatureVersion::ForkId => u & !(0x40 | 0x80),
+			_ => u & !(0x80),
+		};
+
+		// Only exact All | None | Single values are passing this check
+		match u {
+			1 | 2 | 3 => true,
 			_ => false,
 		}
 	}
 
-	pub fn from_u32(u: u32) -> Option<Self> {
-		// use 0x9f istead of 0x1f to catch 0x80
-		let (base, anyone_can_pay) = match u & 0x9f {
-			1 => (SighashBase::All, false),
-			2 => (SighashBase::None, false),
-			3 => (SighashBase::Single, false),
-			0x81 => (SighashBase::All, true),
-			0x82 => (SighashBase::None, true),
-			0x83 => (SighashBase::Single, true),
-			x if x & 0x80 == 0x80 => (SighashBase::All, true),
-			_ => return None,
+	/// Creates Sighash from any u, even if is_defined() == false
+	pub fn from_u32(version: SignatureVersion, u: u32) -> Self {
+		let anyone_can_pay = (u & 0x80) == 0x80;
+		let fork_id = version == SignatureVersion::ForkId && (u & 0x40) == 0x40;
+		let base = match u & 0x1f {
+			2 => SighashBase::None,
+			3 => SighashBase::Single,
+			1 | _ => SighashBase::All,
 		};
 
-		Some(Sighash::new(base, anyone_can_pay))
+		Sighash::new(base, anyone_can_pay, fork_id)
 	}
 }
 
+#[derive(Debug)]
 pub struct UnsignedTransactionInput {
 	pub previous_output: OutPoint,
 	pub sequence: u32,
@@ -113,6 +109,7 @@ impl From<TransactionInput> for UnsignedTransactionInput {
 	}
 }
 
+#[derive(Debug)]
 pub struct TransactionInputSigner {
 	pub version: i32,
 	pub inputs: Vec<UnsignedTransactionInput>,
@@ -133,8 +130,8 @@ impl From<Transaction> for TransactionInputSigner {
 }
 
 impl TransactionInputSigner {
-	pub fn signature_hash(&self, input_index: usize, script_pubkey: &Script, sighashtype: u32) -> H256 {
-		let sighash = Sighash::from(sighashtype);
+	pub fn signature_hash(&self, input_index: usize, input_amount: u64, script_pubkey: &Script, sigversion: SignatureVersion, sighashtype: u32) -> H256 {
+		let sighash = Sighash::from_u32(sigversion, sighashtype);
 		if input_index >= self.inputs.len() {
 			return 1u8.into();
 		}
@@ -143,6 +140,42 @@ impl TransactionInputSigner {
 			return 1u8.into();
 		}
 
+		match sigversion {
+			SignatureVersion::ForkId if sighash.fork_id => self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash),
+			SignatureVersion::Base | SignatureVersion::ForkId => self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash),
+			_ => 1u8.into(),
+		}
+	}
+
+	/// input_index - index of input to sign
+	/// script_pubkey - script_pubkey of input's previous_output pubkey
+	pub fn signed_input(
+		&self,
+		keypair: &KeyPair,
+		input_index: usize,
+		input_amount: u64,
+		script_pubkey: &Script,
+		sigversion: SignatureVersion,
+		sighash: u32,
+	) -> TransactionInput {
+		let hash = self.signature_hash(input_index, input_amount, script_pubkey, sigversion, sighash);
+
+		let mut signature: Vec<u8> = keypair.private().sign(&hash).unwrap().into();
+		signature.push(sighash as u8);
+		let script_sig = Builder::default()
+			.push_data(&signature)
+			//.push_data(keypair.public())
+			.into_script();
+
+		let unsigned_input = &self.inputs[input_index];
+		TransactionInput {
+			previous_output: unsigned_input.previous_output.clone(),
+			sequence: unsigned_input.sequence,
+			script_sig: script_sig.to_bytes(),
+		}
+	}
+
+	pub fn signature_hash_original(&self, input_index: usize, script_pubkey: &Script, sighashtype: u32, sighash: Sighash) -> H256 {
 		let script_pubkey = script_pubkey.without_separators();
 
 		let inputs = if sighash.anyone_can_pay {
@@ -198,30 +231,58 @@ impl TransactionInputSigner {
 		dhash256(&out)
 	}
 
-	/// input_index - index of input to sign
-	/// script_pubkey - script_pubkey of input's previous_output pubkey
-	pub fn signed_input(
-		&self,
-		keypair: &KeyPair,
-		input_index: usize,
-		script_pubkey: &Script,
-		sighash: u32,
-	) -> TransactionInput {
-		let hash = self.signature_hash(input_index, script_pubkey, sighash);
+	fn signature_hash_fork_id(&self, input_index: usize, input_amount: u64, script_pubkey: &Script, sighashtype: u32, sighash: Sighash) -> H256 {
+		let hash_prevouts = match sighash.anyone_can_pay {
+			false => {
+				let mut stream = Stream::default();
+				for input in &self.inputs {
+					stream.append(&input.previous_output);
+				}
+				dhash256(&stream.out())
+			},
+			true => 0u8.into(),
+		};
 
-		let mut signature: Vec<u8> = keypair.private().sign(&hash).unwrap().into();
-		signature.push(sighash as u8);
-		let script_sig = Builder::default()
-			.push_data(&signature)
-			.push_data(keypair.public())
-			.into_script();
+		let hash_sequence = match sighash.base {
+			SighashBase::All if !sighash.anyone_can_pay => {
+				let mut stream = Stream::default();
+				for input in &self.inputs {
+					stream.append(&input.sequence);
+				}
+				dhash256(&stream.out())
+			},
+			_ => 0u8.into(),
+		};
 
-		let unsigned_input = &self.inputs[input_index];
-		TransactionInput {
-			previous_output: unsigned_input.previous_output.clone(),
-			sequence: unsigned_input.sequence,
-			script_sig: script_sig.to_bytes(),
-		}
+		let hash_outputs = match sighash.base {
+			SighashBase::All => {
+				let mut stream = Stream::default();
+				for output in &self.outputs {
+					stream.append(output);
+				}
+				dhash256(&stream.out())
+			},
+			SighashBase::Single if input_index < self.outputs.len() => {
+				let mut stream = Stream::default();
+				stream.append(&self.outputs[input_index]);
+				dhash256(&stream.out())
+			},
+			_ => 0u8.into(),
+		};
+
+		let mut stream = Stream::default();
+		stream.append(&self.version);
+		stream.append(&hash_prevouts);
+		stream.append(&hash_sequence);
+		stream.append(&self.inputs[input_index].previous_output);
+		stream.append_list(&**script_pubkey);
+		stream.append(&input_amount);
+		stream.append(&self.inputs[input_index].sequence);
+		stream.append(&hash_outputs);
+		stream.append(&self.lock_time);
+		stream.append(&sighashtype); // this also includes 24-bit fork id. which is 0 for BitcoinCash
+		let out = stream.out();
+		dhash256(&out)
 	}
 }
 
@@ -232,7 +293,7 @@ mod tests {
 	use keys::{KeyPair, Private, Address};
 	use chain::{OutPoint, TransactionOutput, Transaction};
 	use script::Script;
-	use super::{UnsignedTransactionInput, TransactionInputSigner, SighashBase};
+	use super::{Sighash, UnsignedTransactionInput, TransactionInputSigner, SighashBase, SignatureVersion};
 
 	// http://www.righto.com/2014/02/bitcoins-hard-way-using-raw-bitcoin.html
 	// https://blockchain.info/rawtx/81b4c832d70cb56ff957589752eb4125a4cab78a25a8fc52d6a09e5bd4404d48
@@ -274,7 +335,7 @@ mod tests {
 			outputs: vec![output],
 		};
 
-		let hash = input_signer.signature_hash(0, &previous_output, SighashBase::All.into());
+		let hash = input_signer.signature_hash(0, 0, &previous_output, SignatureVersion::Base, SighashBase::All.into());
 		assert_eq!(hash, expected_signature_hash);
 	}
 
@@ -290,7 +351,8 @@ mod tests {
 		let script: Script = script.into();
 		let expected = H256::from_reversed_str(result);
 
-		let hash = signer.signature_hash(input_index, &script, hash_type as u32);
+		let sighash = Sighash::from_u32(SignatureVersion::Base, hash_type as u32);
+		let hash = signer.signature_hash_original(input_index, &script, hash_type as u32, sighash);
 		assert_eq!(expected, hash);
 	}
 
@@ -798,5 +860,21 @@ mod tests {
 		run_test_sighash("e1cfd73b0125add9e9d699f5a45dca458355af175a7bd4486ebef28f1928d87864384d02df02000000036a0051ffffffff0357df030100000000036a5365777e2d04000000000763ab6a00005265f434a601000000000351655100000000", "ab53ab", 0, -1936500914, "950f4b4f72ccdf8a6a0f381265d6c8842fdb7e8b3df3e9742905f643b2432b69");
 		run_test_sighash("cf781855040a755f5ba85eef93837236b34a5d3daeb2dbbdcf58bb811828d806ed05754ab8010000000351ac53ffffffffda1e264727cf55c67f06ebcc56dfe7fa12ac2a994fecd0180ce09ee15c480f7d00000000096351516a51acac00ab53dd49ff9f334befd6d6f87f1a832cddfd826a90b78fd8cf19a52cb8287788af94e939d6020000000700525251ac526310d54a7e8900ed633f0f6f0841145aae7ee0cbbb1e2a0cae724ee4558dbabfdc58ba6855010000000552536a53abfd1b101102c51f910500000000096300656a525252656a300bee010000000009ac52005263635151abe19235c9", "53005365", 2, 1422854188, "d5981bd4467817c1330da72ddb8760d6c2556cd809264b2d85e6d274609fc3a3");
 		run_test_sighash("fea256ce01272d125e577c0a09570a71366898280dda279b021000db1325f27edda41a53460100000002ab53c752c21c013c2b3a01000000000000000000", "65", 0, 1145543262, "076b9f844f6ae429de228a2c337c704df1652c292b6c6494882190638dad9efd");
+	}
+
+	#[test]
+	fn test_sighash_forkid_from_u32() {
+		assert!(!Sighash::is_defined(SignatureVersion::Base, 0xFFFFFF82));
+		assert!(!Sighash::is_defined(SignatureVersion::Base, 0x00000182));
+		assert!(!Sighash::is_defined(SignatureVersion::Base, 0x00000080));
+		assert!( Sighash::is_defined(SignatureVersion::Base, 0x00000001));
+		assert!( Sighash::is_defined(SignatureVersion::Base, 0x00000082));
+		assert!( Sighash::is_defined(SignatureVersion::Base, 0x00000003));
+
+		assert!(!Sighash::is_defined(SignatureVersion::ForkId, 0xFFFFFFC2));
+		assert!(!Sighash::is_defined(SignatureVersion::ForkId, 0x000001C2));
+		assert!( Sighash::is_defined(SignatureVersion::ForkId, 0x00000081));
+		assert!( Sighash::is_defined(SignatureVersion::ForkId, 0x000000C2));
+		assert!( Sighash::is_defined(SignatureVersion::ForkId, 0x00000043));
 	}
 }

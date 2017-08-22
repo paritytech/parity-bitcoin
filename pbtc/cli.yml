@@ -9,6 +9,12 @@ args:
     - regtest:
         long: regtest
         help: Use private network for regtest
+    - segwit2x:
+        long: segwit2x
+        help: Enable SegWit2x verification rules
+    - bitcoin-cash:
+        long: bitcoin-cash
+        help: Use Bitcoin Cash verification rules
     - connect:
         short: c
         long: connect

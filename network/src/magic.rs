@@ -5,7 +5,6 @@ use compact::Compact;
 use ser::{Stream, Serializable};
 use chain::Block;
 use primitives::hash::H256;
-use super::ConsensusParams;
 
 const MAGIC_MAINNET: u32 = 0xD9B4BEF9;
 const MAGIC_TESTNET: u32 = 0x0709110B;
@@ -95,10 +94,6 @@ impl Magic {
 			Magic::Testnet => H256::from_reversed_str("000000000871ee6842d3648317ccc8a435eb8cc3c2429aee94faff9ba26b05a0"),
 			_ => self.genesis_block().hash(),
 		}
-	}
-
-	pub fn consensus_params(&self) -> ConsensusParams {
-		ConsensusParams::with_magic(*self)
 	}
 }
 

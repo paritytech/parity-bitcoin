@@ -5,7 +5,7 @@ use futures::{Future, lazy, finished};
 use chain::{Transaction, IndexedTransaction, IndexedBlock};
 use message::types;
 use miner::BlockAssembler;
-use network::Magic;
+use network::ConsensusParams;
 use synchronization_client::{Client};
 use synchronization_executor::{Task as SynchronizationTask, TaskExecutor};
 use synchronization_server::{Server, ServerTask};
@@ -19,7 +19,7 @@ use types::{PeerIndex, RequestId, StorageRef, MemoryPoolRef, PeersRef, ExecutorR
 /// Local synchronization node
 pub struct LocalNode<T: TaskExecutor, U: Server, V: Client> {
 	/// Network we are working on
-	network: Magic,
+	consensus: ConsensusParams,
 	/// Storage reference
 	storage: StorageRef,
 	/// Memory pool reference
@@ -50,10 +50,10 @@ struct TransactionAcceptSinkData {
 impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 	/// Create new synchronization node
 	#[cfg_attr(feature="cargo-clippy", allow(too_many_arguments))]
-	pub fn new(network: Magic, storage: StorageRef, memory_pool: MemoryPoolRef, peers: PeersRef,
+	pub fn new(consensus: ConsensusParams, storage: StorageRef, memory_pool: MemoryPoolRef, peers: PeersRef,
 		state: SynchronizationStateRef, executor: ExecutorRef<T>, client: ClientRef<V>, server: ServerRef<U>) -> Self {
 		LocalNode {
-			network: network,
+			consensus: consensus,
 			storage: storage,
 			memory_pool: memory_pool,
 			peers: peers,
@@ -275,9 +275,14 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 
 	/// Get block template for mining
 	pub fn get_block_template(&self) -> BlockTemplate {
-		let block_assembler = BlockAssembler::default();
+		let height = self.storage.best_block().number;
+		let max_block_size = self.consensus.fork.max_block_size(height);
+		let block_assembler = BlockAssembler {
+			max_block_size: max_block_size as u32,
+			max_block_sigops: self.consensus.fork.max_block_sigops(height, max_block_size) as u32,
+		};
 		let memory_pool = &*self.memory_pool.read();
-		block_assembler.create_new_block(&self.storage, memory_pool, time::get_time().sec as u32, self.network)
+		block_assembler.create_new_block(&self.storage, memory_pool, time::get_time().sec as u32, &self.consensus)
 	}
 
 	/// Install synchronization events listener
@@ -335,7 +340,7 @@ pub mod tests {
 	use synchronization_chain::Chain;
 	use message::types;
 	use message::common::{InventoryVector, InventoryType};
-	use network::Magic;
+	use network::{ConsensusParams, ConsensusFork, Magic};
 	use chain::Transaction;
 	use db::{BlockChainDatabase};
 	use miner::MemoryPool;
@@ -373,8 +378,8 @@ pub mod tests {
 		let sync_peers = Arc::new(PeersImpl::default());
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
-		let config = Config { network: Magic::Mainnet, close_connection_on_bad_block: true };
-		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Mainnet));
+		let config = Config { close_connection_on_bad_block: true };
+		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork)));
 		let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier);
 		let mut verifier = match verifier {
 			Some(verifier) => verifier,
@@ -382,7 +387,7 @@ pub mod tests {
 		};
 		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
 		let client = SynchronizationClient::new(sync_state.clone(), client_core, verifier);
-		let local_node = LocalNode::new(Magic::Mainnet, storage, memory_pool, sync_peers, sync_state, executor.clone(), client, server.clone());
+		let local_node = LocalNode::new(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork), storage, memory_pool, sync_peers, sync_state, executor.clone(), client, server.clone());
 		(executor, server, local_node)
 	}
 

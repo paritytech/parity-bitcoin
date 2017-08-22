@@ -73,6 +73,11 @@ impl VerificationFlags {
 		self
 	}
 
+	pub fn verify_strictenc(mut self, value: bool) -> Self {
+		self.verify_strictenc = value;
+		self
+	}
+
 	pub fn verify_locktime(mut self, value: bool) -> Self {
 		self.verify_locktime = value;
 		self

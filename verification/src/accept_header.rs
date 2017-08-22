@@ -1,4 +1,4 @@
-use network::{Magic, ConsensusParams};
+use network::ConsensusParams;
 use db::BlockHeaderProvider;
 use canon::CanonHeader;
 use error::Error;
@@ -15,16 +15,15 @@ pub struct HeaderAcceptor<'a> {
 impl<'a> HeaderAcceptor<'a> {
 	pub fn new(
 		store: &'a BlockHeaderProvider,
-		network: Magic,
+		consensus: &'a ConsensusParams,
 		header: CanonHeader<'a>,
 		height: u32,
 		deployments: &'a Deployments,
 	) -> Self {
-		let params = network.consensus_params();
 		HeaderAcceptor {
-			work: HeaderWork::new(header, store, height, network),
-			median_timestamp: HeaderMedianTimestamp::new(header, store, height, deployments, &params),
-			version: HeaderVersion::new(header, height, params),
+			work: HeaderWork::new(header, store, height, consensus),
+			median_timestamp: HeaderMedianTimestamp::new(header, store, height, deployments, consensus),
+			version: HeaderVersion::new(header, height, consensus),
 		}
 	}
 
@@ -41,11 +40,11 @@ impl<'a> HeaderAcceptor<'a> {
 pub struct HeaderVersion<'a> {
 	header: CanonHeader<'a>,
 	height: u32,
-	consensus_params: ConsensusParams,
+	consensus_params: &'a ConsensusParams,
 }
 
 impl<'a> HeaderVersion<'a> {
-	fn new(header: CanonHeader<'a>, height: u32, consensus_params: ConsensusParams) -> Self {
+	fn new(header: CanonHeader<'a>, height: u32, consensus_params: &'a ConsensusParams) -> Self {
 		HeaderVersion {
 			header: header,
 			height: height,
@@ -68,23 +67,23 @@ pub struct HeaderWork<'a> {
 	header: CanonHeader<'a>,
 	store: &'a BlockHeaderProvider,
 	height: u32,
-	network: Magic,
+	consensus: &'a ConsensusParams,
 }
 
 impl<'a> HeaderWork<'a> {
-	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, height: u32, network: Magic) -> Self {
+	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, height: u32, consensus: &'a ConsensusParams) -> Self {
 		HeaderWork {
 			header: header,
 			store: store,
 			height: height,
-			network: network,
+			consensus: consensus,
 		}
 	}
 
 	fn check(&self) -> Result<(), Error> {
 		let previous_header_hash = self.header.raw.previous_header_hash.clone();
 		let time = self.header.raw.time;
-		let work = work_required(previous_header_hash, time, self.height, self.store, self.network);
+		let work = work_required(previous_header_hash, time, self.height, self.store, self.consensus);
 		if work == self.header.raw.bits {
 			Ok(())
 		} else {
