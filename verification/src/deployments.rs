@@ -142,7 +142,14 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 			let from_block = deployment_state.block_number + consensus.miner_confirmation_window;
 			let threshold_state = deployment_state.state;
 			let deployment_iter = ThresholdIterator::new(deployment, headers, from_block, consensus, threshold_state);
-			let state = deployment_iter.last().expect("iter must have at least one item");
+			let state = match deployment_iter.last() {
+				Some(state) => state,
+				None => DeploymentState {
+					block_number: number,
+					block_hash: hash,
+					state: deployment_state.state,
+				},
+			};
 			let result = state.state;
 			entry.insert(state);
 			result
