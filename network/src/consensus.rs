@@ -3,7 +3,7 @@ use hash::H256;
 use {Magic, Deployment};
 
 /// First block of SegWit2x fork.
-pub const SEGWIT2X_FORK_BLOCK: u32 = 0xFFFFFFFF; // not known (yet?)
+pub const SEGWIT2X_FORK_BLOCK: u32 = 494784; // https://segwit2x.github.io/segwit2x-announce.html
 /// First block of BitcoinCash fork.
 pub const BITCOIN_CASH_FORK_BLOCK: u32 = 478559; // https://blockchair.com/bitcoin-cash/block/478559
 
