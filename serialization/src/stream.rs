@@ -30,6 +30,11 @@ pub fn serialized_list_size<T, K>(t: &[K]) -> usize where T: Serializable, K: Bo
 		t.iter().map(Borrow::borrow).map(Serializable::serialized_size).sum::<usize>()
 }
 
+pub fn serialized_list_size_with_flags<T, K>(t: &[K], flags: u32) -> usize where T: Serializable, K: Borrow<T> {
+	CompactInteger::from(t.len()).serialized_size() +
+		t.iter().map(Borrow::borrow).map(|i| Serializable::serialized_size_with_flags(i, flags)).sum::<usize>()
+}
+
 pub trait Serializable {
 	/// Serialize the struct and appends it to the end of stream.
 	fn serialize(&self, s: &mut Stream);
@@ -38,6 +43,12 @@ pub trait Serializable {
 	fn serialized_size(&self) -> usize where Self: Sized {
 		// fallback implementation
 		serialize(self).len()
+	}
+
+	/// Hint about the size of serialized struct with given flags.
+	fn serialized_size_with_flags(&self, flags: u32) -> usize where Self: Sized {
+		// fallback implementation
+		serialize_with_flags(self, flags).len()
 	}
 }
 
