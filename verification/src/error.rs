@@ -1,6 +1,7 @@
 use hash::H256;
 use compact::Compact;
 use db::Error as DBError;
+use script::Error as SignatureError;
 
 #[derive(Debug, PartialEq)]
 /// All possible verification errors
@@ -86,7 +87,7 @@ pub enum TransactionError {
 	/// Referenced coinbase output for the transaction input is not mature enough
 	Maturity,
 	/// Signature invalid for given input
-	Signature(usize),
+	Signature(usize, SignatureError),
 	/// Unknown previous transaction referenced
 	UnknownReference(H256),
 	/// Spends more than claims

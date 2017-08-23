@@ -271,6 +271,7 @@ pub mod tests {
 	use chain::{IndexedBlock, IndexedTransaction};
 	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink, AsyncVerifier, VerificationTask, ChainVerifierWrapper};
 	use types::{BlockHeight, StorageRef, MemoryPoolRef};
+	use script::Error as ScriptError;
 	use VerificationParameters;
 
 	#[derive(Default)]
@@ -417,7 +418,7 @@ pub mod tests {
 			verification_level: VerificationLevel::Full,
 			verification_edge: 1.into(),
 		});
-		assert_eq!(wrapper.verify_block(&bad_transaction_block), Err(VerificationError::Transaction(1, TransactionError::Signature(0))));
+		assert_eq!(wrapper.verify_block(&bad_transaction_block), Err(VerificationError::Transaction(1, TransactionError::Signature(0, ScriptError::InvalidStackOperation))));
 	}
 
 	#[test]

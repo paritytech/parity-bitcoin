@@ -374,7 +374,7 @@ impl<'a> TransactionEval<'a> {
 				.verify_witness(self.verify_witness);
 
 			try!(verify_script(&input, &output, &script_witness, &flags, &checker, self.signature_version)
-				.map_err(|_| TransactionError::Signature(index)));
+				.map_err(|e| TransactionError::Signature(index, e)));
 		}
 
 		Ok(())
