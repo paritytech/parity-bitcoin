@@ -262,7 +262,7 @@ impl Deserializable for Transaction {
 #[cfg(test)]
 mod tests {
 	use hash::H256;
-	use ser::Serializable;
+	use ser::{Serializable, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 	use super::{Transaction, TransactionInput, OutPoint, TransactionOutput};
 
 	// real transaction from block 80000
@@ -334,5 +334,14 @@ mod tests {
 			lock_time: 0x00000011,
 		};
 		assert_eq!(actual, expected);
+	}
+
+	#[test]
+	fn test_serialization_with_flags() {
+		let transaction_without_witness: Transaction = "000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000".into();
+		assert_eq!(serialize_with_flags(&transaction_without_witness, 0), serialize_with_flags(&transaction_without_witness, SERIALIZE_TRANSACTION_WITNESS));
+
+		let transaction_with_witness: Transaction = "0000000000010100000000000000000000000000000000000000000000000000000000000000000000000000000000000001010000000000".into();
+		assert!(serialize_with_flags(&transaction_with_witness, 0) != serialize_with_flags(&transaction_with_witness, SERIALIZE_TRANSACTION_WITNESS));
 	}
 }
