@@ -192,8 +192,8 @@ impl ConsensusFork {
 	pub fn max_block_sigops(&self, height: u32, block_size: usize) -> usize {
 		match *self {
 			// according to REQ-5: max_block_sigops = 20000 * ceil((max(blocksize_bytes, 1000000) / 1000000))
-			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height && block_size > 1_000_000 =>
-				20_000 * (max(block_size, 1_000_000) / 1_000_000),
+			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height =>
+				20_000 * (1 + (block_size - 1) / 1_000_000),
 			ConsensusFork::SegWit2x(fork_height) if height >= fork_height =>
 				40_000,
 			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) | ConsensusFork::BitcoinCash(_) => 20_000,
