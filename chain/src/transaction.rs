@@ -344,4 +344,13 @@ mod tests {
 		let transaction_with_witness: Transaction = "0000000000010100000000000000000000000000000000000000000000000000000000000000000000000000000000000001010000000000".into();
 		assert!(serialize_with_flags(&transaction_with_witness, 0) != serialize_with_flags(&transaction_with_witness, SERIALIZE_TRANSACTION_WITNESS));
 	}
+
+	#[test]
+	fn test_witness_hash_differs() {
+		let transaction_without_witness: Transaction = "000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000".into();
+		assert_eq!(transaction_without_witness.hash(), transaction_without_witness.witness_hash());
+
+		let transaction_with_witness: Transaction = "0000000000010100000000000000000000000000000000000000000000000000000000000000000000000000000000000001010000000000".into();
+		assert!(transaction_with_witness.hash() != transaction_with_witness.witness_hash());
+	}
 }
