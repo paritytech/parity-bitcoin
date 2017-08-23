@@ -221,6 +221,30 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		self.db.write(update).map_err(Error::DatabaseError)
 	}
 
+	/// Rollbacks single best block
+	fn rollback_best(&self) -> Result<H256, Error> {
+		let decanonized = match self.block(self.best_block.read().hash.clone().into()) {
+			Some(block) => block,
+			None => return Ok(H256::default()),
+		};
+		let decanonized_hash = self.decanonize()?;
+		debug_assert_eq!(decanonized.hash(), decanonized_hash);
+
+		// and now remove decanonized block from database
+		// all code currently works in assumption that origin of all blocks is one of:
+		// {CanonChain, SideChain, SideChainBecomingCanonChain}
+		let mut update = DBTransaction::new();
+		update.delete(Key::BlockHeader(decanonized_hash.clone()));
+		update.delete(Key::BlockTransactions(decanonized_hash.clone()));
+		for tx in decanonized.transactions.into_iter() {
+			update.delete(Key::Transaction(tx.hash()));
+		}
+
+		self.db.write(update).map_err(Error::DatabaseError)?;
+
+		Ok(self.best_block().hash)
+	}
+
 	/// Marks block as a new best block.
 	/// Block must be already inserted into db, and it's parent must be current best block.
 	/// Updates meta data.
@@ -487,6 +511,10 @@ impl<T> TransactionOutputProvider for BlockChainDatabase<T> where T: KeyValueDat
 impl<T> BlockChain for BlockChainDatabase<T> where T: KeyValueDatabase {
 	fn insert(&self, block: IndexedBlock) -> Result<(), Error> {
 		BlockChainDatabase::insert(self, block)
+	}
+
+	fn rollback_best(&self) -> Result<H256, Error> {
+		BlockChainDatabase::rollback_best(self)
 	}
 
 	fn canonize(&self, block_hash: &H256) -> Result<(), Error> {
