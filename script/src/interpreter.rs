@@ -580,7 +580,7 @@ pub fn eval_script(
 			Opcode::OP_MOD | Opcode::OP_LSHIFT | Opcode::OP_RSHIFT => {
 				return Err(Error::DisabledOpcode(opcode));
 			},
-			Opcode::OP_NOP => break,
+			Opcode::OP_NOP => (),
 			Opcode::OP_CHECKLOCKTIMEVERIFY => {
 				if flags.verify_locktime {
 					// Note that elsewhere numeric opcodes are limited to
