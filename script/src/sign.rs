@@ -235,10 +235,6 @@ impl TransactionInputSigner {
 	}
 
 	fn signature_hash_witness0(&self, input_index: usize, input_amount: u64, script_pubkey: &Script, sighashtype: u32, sighash: Sighash) -> H256 {
-		self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash)
-	}
-
-	fn signature_hash_fork_id(&self, input_index: usize, input_amount: u64, script_pubkey: &Script, sighashtype: u32, sighash: Sighash) -> H256 {
 		let hash_prevouts = compute_hash_prevouts(sighash, &self.inputs);
 		let hash_sequence = compute_hash_sequence(sighash, &self.inputs);
 		let hash_outputs = compute_hash_outputs(sighash, input_index, &self.outputs);
@@ -256,6 +252,18 @@ impl TransactionInputSigner {
 		stream.append(&sighashtype); // this also includes 24-bit fork id. which is 0 for BitcoinCash
 		let out = stream.out();
 		dhash256(&out)
+	}
+
+	fn signature_hash_fork_id(&self, input_index: usize, input_amount: u64, script_pubkey: &Script, sighashtype: u32, sighash: Sighash) -> H256 {
+		if input_index >= self.inputs.len() {
+			return 1u8.into();
+		}
+
+		if sighash.base == SighashBase::Single && input_index >= self.outputs.len() {
+			return 1u8.into();
+		}
+
+		self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash)
 	}
 }
 

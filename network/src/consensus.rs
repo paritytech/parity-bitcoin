@@ -1,4 +1,3 @@
-use std::cmp::max;
 use hash::H256;
 use {Magic, Deployment};
 
