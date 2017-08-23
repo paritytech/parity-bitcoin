@@ -106,11 +106,18 @@ impl<'a> BlockSerializedSize<'a> {
 
 	fn check(&self) -> Result<(), Error> {
 		let size = self.block.size();
+
+		// block size (without witness) is valid for all forks:
+		// before SegWit: it is main check for size
+		// after SegWit: without witness data, block size should be <= 1_000_000
+		// after BitcoinCash fork: block size is increased to 8_000_000
+		// after SegWit2x fork: without witness data, block size should be <= 2_000_000
 		if size < self.consensus.fork.min_block_size(self.height) ||
 			size > self.consensus.fork.max_block_size(self.height) {
 			return Err(Error::Size(size));
 		}
 
+		// there's no need to define weight for pre-SegWit blocks
 		if self.segwit_active {
 			let size_with_witness = self.block.size_with_witness();
 			let weight = size * (ConsensusFork::witness_scale_factor() - 1) + size_with_witness;
@@ -153,13 +160,21 @@ impl<'a> BlockSigops<'a> {
 			})
 			.fold((0, 0), |acc, (tx_sigops, tx_sigops_cost)| (acc.0 + tx_sigops, acc.1 + tx_sigops_cost));
 
-		// check sigops
+		// sigops check is valid for all forks:
+		// before SegWit: 20_000
+		// after SegWit: cost of sigops is sigops * 4 and max cost is 80_000 => max sigops is still 20_000
+		// after BitcoinCash fork: 20_000 sigops for each full/partial 1_000_000 bytes of block
+		// after SegWit2x fork: cost of sigops is sigops * 4 and max cost is 160_000 => max sigops is 40_000
 		let size = self.block.size();
 		if sigops > self.consensus.fork.max_block_sigops(self.height, size) {
 			return Err(Error::MaximumSigops);
 		}
 
-		// check sigops cost
+		// sigops check is valid for all forks:
+		// before SegWit: no witnesses => cost is sigops * 4 and max cost is 80_000
+		// after SegWit: it is main check for sigops
+		// after BitcoinCash fork: no witnesses => cost is sigops * 4 and max cost depends on block size
+		// after SegWit2x: it is basic check for sigops, limits are increased
 		if sigops_cost > self.consensus.fork.max_block_sigops_cost(self.height, size) {
 			Err(Error::MaximumSigopsCost)
 		} else {
