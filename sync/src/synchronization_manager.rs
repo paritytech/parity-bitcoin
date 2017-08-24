@@ -95,6 +95,8 @@ impl ManagementWorker {
 
 				manage_synchronization_peers_headers(&peers_config, core.peers(), core.peers_tasks());
 				manage_orphaned_transactions(&orphan_config, core.orphaned_transactions_pool());
+			} else {
+				// only remove orphaned blocks when not in synchronization state
 				if let Some(orphans_to_remove) = manage_unknown_orphaned_blocks(&unknown_config, core.orphaned_blocks_pool()) {
 					for orphan_to_remove in orphans_to_remove {
 						core.chain().forget_block(&orphan_to_remove);
@@ -280,14 +282,14 @@ pub fn manage_orphaned_transactions(config: &ManageOrphanTransactionsConfig, orp
 		let mut remove_num = if unknown_transactions.len() > config.max_number { unknown_transactions.len() - config.max_number } else { 0 };
 		let now = precise_time_s();
 		for (hash, orphan_tx) in unknown_transactions {
-			// remove oldest blocks if there are more unknown blocks that we can hold in memory
+			// remove oldest transactions if there are more unknown transactions that we can hold in memory
 			if remove_num > 0 {
 				orphans_to_remove.push(hash.clone());
 				remove_num -= 1;
 				continue;
 			}
 
-			// check if block is unknown for too long
+			// check if transaction is unknown for too long
 			let time_diff = now - orphan_tx.insertion_time;
 			if time_diff <= config.removal_time_ms as f64 / 1000f64 {
 				break;
@@ -298,7 +300,7 @@ pub fn manage_orphaned_transactions(config: &ManageOrphanTransactionsConfig, orp
 		orphans_to_remove
 	};
 
-	// remove unknown blocks
+	// remove unknown transactions
 	let orphans_to_remove: Vec<H256> = orphaned_transactions_pool.remove_transactions(&orphans_to_remove).into_iter()
 		.map(|t| t.hash)
 		.collect();
