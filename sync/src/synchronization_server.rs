@@ -273,6 +273,16 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 					notfound.inventory.push(next_item);
 				}
 			},
+			common::InventoryType::MessageWitnessTx => {
+				// only transaction from memory pool can be requested
+				if let Some(transaction) = self.memory_pool.read().read_by_hash(&next_item.hash) {
+					trace!(target: "sync", "'getblocks' response to peer#{} is ready with witness-tx {}", peer_index, next_item.hash.to_reversed_str());
+					let transaction = IndexedTransaction::new(next_item.hash, transaction.clone());
+					self.executor.execute(Task::WitnessTransaction(peer_index, transaction));
+				} else {
+					notfound.inventory.push(next_item);
+				}
+			},
 			common::InventoryType::MessageBlock => {
 				if let Some(block) = self.storage.block(next_item.hash.clone().into()) {
 					trace!(target: "sync", "'getblocks' response to peer#{} is ready with block {}", peer_index, next_item.hash.to_reversed_str());
@@ -312,9 +322,15 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 					notfound.inventory.push(next_item);
 				}
 			},
-			_ => {
-
+			common::InventoryType::MessageWitnessBlock => {
+				if let Some(block) = self.storage.block(next_item.hash.clone().into()) {
+					trace!(target: "sync", "'getblocks' response to peer#{} is ready with witness-block {}", peer_index, next_item.hash.to_reversed_str());
+					self.executor.execute(Task::WitnessBlock(peer_index, block.into()));
+				} else {
+					notfound.inventory.push(next_item);
+				}
 			},
+			common::InventoryType::Error | common::InventoryType::MessageWitnessFilteredBlock => (),
 		}
 
 		Some(ServerTask::ReversedGetData(peer_index, message, notfound))
@@ -466,7 +482,7 @@ pub mod tests {
 	use parking_lot::{Mutex, RwLock};
 	use db::{BlockChainDatabase};
 	use message::types;
-	use message::common::{self, InventoryVector, InventoryType};
+	use message::common::{self, Services, InventoryVector, InventoryType};
 	use primitives::hash::H256;
 	use chain::Transaction;
 	use inbound_connection::tests::DummyOutboundSyncConnection;
@@ -648,7 +664,7 @@ pub mod tests {
 	fn server_get_block_txn_responds_when_good_request() {
 		let (_, _, executor, peers, server) = create_synchronization_server();
 
-		peers.insert(0, DummyOutboundSyncConnection::new());
+		peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		peers.hash_known_as(0, test_data::genesis().hash(), KnownHashType::CompactBlock);
 
 		// when asking for block_txns
@@ -673,7 +689,7 @@ pub mod tests {
 	fn server_get_block_txn_do_not_responds_when_bad_request() {
 		let (_, _, _, peers, server) = create_synchronization_server();
 
-		peers.insert(0, DummyOutboundSyncConnection::new());
+		peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(peers.enumerate().contains(&0));
 
 		// when asking for block_txns
@@ -812,7 +828,7 @@ pub mod tests {
 		storage.canonize(&b2.hash()).unwrap();
 
 		// This peer won't get any blocks, because it has not set filter for the connection
-		let peer_index2 = 1; peers.insert(peer_index2, DummyOutboundSyncConnection::new());
+		let peer_index2 = 1; peers.insert(peer_index2, Services::default(), DummyOutboundSyncConnection::new());
 
 		let mut loop_task = ServerTask::GetData(peer_index2, types::GetData {inventory: vec![
 			InventoryVector { inv_type: InventoryType::MessageFilteredBlock, hash: b1_hash.clone() },
@@ -835,7 +851,7 @@ pub mod tests {
 
 		let mut counter = 2;
 		for (get_tx1, get_tx2) in peers_config {
-			let peer_index = counter; peers.insert(peer_index, DummyOutboundSyncConnection::new());
+			let peer_index = counter; peers.insert(peer_index, Services::default(), DummyOutboundSyncConnection::new());
 			counter += 1;
 			// setup filter
 			peers.set_bloom_filter(peer_index, default_filterload());
@@ -906,7 +922,7 @@ pub mod tests {
 		storage.canonize(&b1.hash()).unwrap();
 
 		// This peer will receive compact block
-		let peer_index2 = 1; peers.insert(peer_index2, DummyOutboundSyncConnection::new());
+		let peer_index2 = 1; peers.insert(peer_index2, Services::default(), DummyOutboundSyncConnection::new());
 
 		// ask for data
 		let mut loop_task = ServerTask::GetData(peer_index2, types::GetData {inventory: vec![

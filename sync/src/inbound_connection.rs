@@ -196,6 +196,8 @@ pub mod tests {
 		fn send_getheaders(&self, _message: &types::GetHeaders) { *self.messages.lock().entry("getheaders".to_owned()).or_insert(0) += 1; }
 		fn send_transaction(&self, _message: &types::Tx) { *self.messages.lock().entry("transaction".to_owned()).or_insert(0) += 1; }
 		fn send_block(&self, _message: &types::Block) { *self.messages.lock().entry("block".to_owned()).or_insert(0) += 1; }
+		fn send_witness_transaction(&self, _message: &types::Tx) { *self.messages.lock().entry("witness_transaction".to_owned()).or_insert(0) += 1; }
+		fn send_witness_block(&self, _message: &types::Block) { *self.messages.lock().entry("witness_block".to_owned()).or_insert(0) += 1; }
 		fn send_headers(&self, _message: &types::Headers) { *self.messages.lock().entry("headers".to_owned()).or_insert(0) += 1; }
 		fn respond_headers(&self, _message: &types::Headers, _id: RequestId) { *self.messages.lock().entry("headers".to_owned()).or_insert(0) += 1; }
 		fn send_mempool(&self, _message: &types::MemPool) { *self.messages.lock().entry("mempool".to_owned()).or_insert(0) += 1; }

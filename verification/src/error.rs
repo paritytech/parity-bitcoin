@@ -1,6 +1,7 @@
 use hash::H256;
 use compact::Compact;
 use db::Error as DBError;
+use script::Error as SignatureError;
 
 #[derive(Debug, PartialEq)]
 /// All possible verification errors
@@ -32,10 +33,14 @@ pub enum Error {
 	/// Maximum sigops operations exceeded - will not provide how much it was in total
 	/// since it stops counting once `MAX_BLOCK_SIGOPS` is reached
 	MaximumSigops,
+	/// Maximum sigops operations cost  exceeded
+	MaximumSigopsCost,
 	/// Coinbase signature is not in the range 2-100
 	CoinbaseSignatureLength(usize),
 	/// Block size is invalid
 	Size(usize),
+	/// Block weight is invalid
+	Weight,
 	/// Block transactions are not final.
 	NonFinalBlock,
 	/// Old version block.
@@ -46,6 +51,12 @@ pub enum Error {
 	TransactionFeesOverflow,
 	/// Sum of all referenced outputs in block transactions resulted in the overflow
 	ReferencedInputsSumOverflow,
+	/// SegWit: bad witess nonce size
+	WitnessInvalidNonceSize,
+	/// SegWit: witness merkle mismatch
+	WitnessMerkleCommitmentMismatch,
+	/// SegWit: unexpected witness
+	UnexpectedWitness,
 	/// Database error
 	Database(DBError),
 }
@@ -76,7 +87,7 @@ pub enum TransactionError {
 	/// Referenced coinbase output for the transaction input is not mature enough
 	Maturity,
 	/// Signature invalid for given input
-	Signature(usize),
+	Signature(usize, SignatureError),
 	/// Unknown previous transaction referenced
 	UnknownReference(H256),
 	/// Spends more than claims
@@ -95,5 +106,7 @@ pub enum TransactionError {
 	UsingSpentOutput(H256, u32),
 	/// Transaction, protected using BitcoinCash OP_RETURN replay protection (REQ-6-1).
 	ReturnReplayProtection,
+	/// Transaction with witness is received before SegWit is activated.
+	PrematureWitness,
 }
 

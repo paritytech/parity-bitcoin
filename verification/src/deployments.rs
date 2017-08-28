@@ -51,9 +51,16 @@ struct DeploymentState {
 /// Last known deployment states
 type DeploymentStateCache = HashMap<&'static str, DeploymentState>;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Deployments {
 	cache: Mutex<DeploymentStateCache>,
+}
+
+pub struct BlockDeployments<'a> {
+	deployments: &'a Deployments,
+	number: u32,
+	headers: &'a BlockHeaderProvider,
+	consensus: &'a ConsensusParams,
 }
 
 impl Deployments {
@@ -71,10 +78,41 @@ impl Deployments {
 			None => false
 		}
 	}
+
+	/// Returns true if SegWit deployment is active
+	pub fn segwit(&self, number: u32, headers: &BlockHeaderProvider, consensus: &ConsensusParams) -> bool {
+		match consensus.segwit_deployment {
+			Some(segwit) => {
+				let mut cache = self.cache.lock();
+				threshold_state(&mut cache, segwit, number, headers, consensus).is_active()
+			},
+			None => false
+		}
+	}
+}
+
+impl<'a> BlockDeployments<'a> {
+	pub fn new(deployments: &'a Deployments, number: u32, headers: &'a BlockHeaderProvider, consensus: &'a ConsensusParams) -> Self {
+		BlockDeployments {
+			deployments: deployments,
+			number: number,
+			headers: headers,
+			consensus: consensus,
+		}
+	}
+
+	pub fn csv(&self) -> bool {
+		self.deployments.csv(self.number, self.headers, self.consensus)
+	}
+
+	pub fn segwit(&self) -> bool {
+		self.deployments.segwit(self.number, self.headers, self.consensus)
+	}
 }
 
 /// Calculates threshold state of given deployment
 fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, number: u32, headers: &BlockHeaderProvider, consensus: &ConsensusParams) -> ThresholdState {
+	// deployments are checked using previous block index
 	if let Some(activation) = deployment.activation {
 		if activation <= number {
 			return ThresholdState::Active;
@@ -84,7 +122,7 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 	}
 
 	// get number of the first block in the period
-	let number = first_of_the_period(number, consensus.miner_confirmation_window);
+	let number = first_of_the_period(number.saturating_sub(1), consensus.miner_confirmation_window);
 
 	let hash = match headers.block_header(BlockRef::Number(number)) {
 		Some(header) => header.hash(),
@@ -105,7 +143,14 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 			let from_block = deployment_state.block_number + consensus.miner_confirmation_window;
 			let threshold_state = deployment_state.state;
 			let deployment_iter = ThresholdIterator::new(deployment, headers, from_block, consensus, threshold_state);
-			let state = deployment_iter.last().expect("iter must have at least one item");
+			let state = match deployment_iter.last() {
+				Some(state) => state,
+				None => DeploymentState {
+					block_number: number,
+					block_hash: hash,
+					state: deployment_state.state,
+				},
+			};
 			let result = state.state;
 			entry.insert(state);
 			result
@@ -118,7 +163,6 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 			result
 		},
 	}
-
 }
 
 fn first_of_the_period(block: u32, miner_confirmation_window: u32) -> u32 {

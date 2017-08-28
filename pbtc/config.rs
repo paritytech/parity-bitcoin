@@ -3,7 +3,7 @@ use clap;
 use message::Services;
 use network::{Magic, ConsensusParams, ConsensusFork, SEGWIT2X_FORK_BLOCK, BITCOIN_CASH_FORK_BLOCK};
 use p2p::InternetProtocol;
-use seednodes::{mainnet_seednodes, testnet_seednodes};
+use seednodes::{mainnet_seednodes, testnet_seednodes, segwit2x_seednodes};
 use rpc_apis::ApiSet;
 use {USER_AGENT, REGTEST_USER_AGENT};
 use primitives::hash::H256;
@@ -81,7 +81,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => None,
 	};
 
-	let seednodes = match matches.value_of("seednode") {
+	let mut seednodes: Vec<String> = match matches.value_of("seednode") {
 		Some(s) => vec![s.parse().map_err(|_| "Invalid seednode".to_owned())?],
 		None => match magic {
 			Magic::Mainnet => mainnet_seednodes().into_iter().map(Into::into).collect(),
@@ -89,6 +89,10 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 			Magic::Other(_) | Magic::Regtest | Magic::Unitest => Vec::new(),
 		},
 	};
+	match consensus_fork {
+		ConsensusFork::SegWit2x(_) => seednodes.extend(segwit2x_seednodes().into_iter().map(Into::into)),
+		_ => (),
+	}
 
 	let db_cache = match matches.value_of("db-cache") {
 		Some(s) => s.parse().map_err(|_| "Invalid cache size - should be number in MB".to_owned())?,
@@ -115,7 +119,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	let services = Services::default().with_network(true);
 	let services = match consensus.fork {
 		ConsensusFork::BitcoinCash(_) => services.with_bitcoin_cash(true),
-		ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => services,
+		ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => services.with_witness(true),
 	};
 
 	let verification_level = match matches.value_of("verification-level") {

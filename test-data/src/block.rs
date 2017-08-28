@@ -440,6 +440,7 @@ impl<F> TransactionInputBuilder<F> where F: Invoke<chain::TransactionInput> {
 				previous_output: self.output.expect("Building input without previous output"),
 				script_sig: self.signature,
 				sequence: self.sequence,
+				script_witness: vec![],
 			}
 		)
 	}

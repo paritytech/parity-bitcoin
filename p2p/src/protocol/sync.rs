@@ -1,15 +1,16 @@
 use std::sync::Arc;
 use bytes::Bytes;
-use message::{Command, Error, Payload, types, deserialize_payload};
+use message::{Command, Error, Payload, Services, types, deserialize_payload};
 use protocol::Protocol;
 use net::PeerContext;
+use ser::SERIALIZE_TRANSACTION_WITNESS;
 
 pub type InboundSyncConnectionRef = Box<InboundSyncConnection>;
 pub type OutboundSyncConnectionRef = Arc<OutboundSyncConnection>;
 pub type LocalSyncNodeRef = Box<LocalSyncNode>;
 
 pub trait LocalSyncNode : Send + Sync {
-	fn create_sync_session(&self, height: i32, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;
+	fn create_sync_session(&self, height: i32, services: Services, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;
 }
 
 pub trait InboundSyncConnection : Send + Sync {
@@ -43,6 +44,8 @@ pub trait OutboundSyncConnection : Send + Sync {
 	fn send_getheaders(&self, message: &types::GetHeaders);
 	fn send_transaction(&self, message: &types::Tx);
 	fn send_block(&self, message: &types::Block);
+	fn send_witness_transaction(&self, message: &types::Tx);
+	fn send_witness_block(&self, message: &types::Block);
 	fn send_headers(&self, message: &types::Headers);
 	fn respond_headers(&self, message: &types::Headers, id: u32);
 	fn send_mempool(&self, message: &types::MemPool);
@@ -96,6 +99,14 @@ impl OutboundSyncConnection for OutboundSync {
 
 	fn send_block(&self, message: &types::Block) {
 		self.context.send_request(message);
+	}
+
+	fn send_witness_transaction(&self, message: &types::Tx) {
+		self.context.send_request_with_flags(message, SERIALIZE_TRANSACTION_WITNESS);
+	}
+
+	fn send_witness_block(&self, message: &types::Block) {
+		self.context.send_request_with_flags(message, SERIALIZE_TRANSACTION_WITNESS);
 	}
 
 	fn send_headers(&self, message: &types::Headers) {
@@ -172,7 +183,7 @@ pub struct SyncProtocol {
 impl SyncProtocol {
 	pub fn new(context: Arc<PeerContext>) -> Self {
 		let outbound_connection = Arc::new(OutboundSync::new(context.clone()));
-		let inbound_connection = context.global().create_sync_session(0, outbound_connection);
+		let inbound_connection = context.global().create_sync_session(0, context.info().version_message.services(), outbound_connection);
 		SyncProtocol {
 			inbound_connection: inbound_connection,
 			context: context,

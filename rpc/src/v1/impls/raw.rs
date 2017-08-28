@@ -48,6 +48,7 @@ impl RawClientCore {
 				},
 				script_sig: GlobalBytes::new(), // default script
 				sequence: input.sequence.unwrap_or(default_sequence),
+				script_witness: vec![],
 			}).collect();
 
 		// prepare outputs

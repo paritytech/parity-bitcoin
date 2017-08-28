@@ -3,7 +3,7 @@ use db::BlockHeaderProvider;
 use canon::CanonHeader;
 use error::Error;
 use work::work_required;
-use deployments::Deployments;
+use deployments::BlockDeployments;
 use timestamp::median_timestamp;
 
 pub struct HeaderAcceptor<'a> {
@@ -18,11 +18,11 @@ impl<'a> HeaderAcceptor<'a> {
 		consensus: &'a ConsensusParams,
 		header: CanonHeader<'a>,
 		height: u32,
-		deployments: &'a Deployments,
+		deployments: &'a BlockDeployments<'a>,
 	) -> Self {
 		HeaderAcceptor {
 			work: HeaderWork::new(header, store, height, consensus),
-			median_timestamp: HeaderMedianTimestamp::new(header, store, height, deployments, consensus),
+			median_timestamp: HeaderMedianTimestamp::new(header, store, deployments),
 			version: HeaderVersion::new(header, height, consensus),
 		}
 	}
@@ -99,8 +99,8 @@ pub struct HeaderMedianTimestamp<'a> {
 }
 
 impl<'a> HeaderMedianTimestamp<'a> {
-	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, height: u32, deployments: &'a Deployments, params: &ConsensusParams) -> Self {
-		let active = deployments.csv(height, store, params);
+	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, deployments: &'a BlockDeployments<'a>) -> Self {
+		let active = deployments.csv();
 		HeaderMedianTimestamp {
 			header: header,
 			store: store,

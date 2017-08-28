@@ -32,6 +32,19 @@ impl Block {
 		merkle_root(&hashes)
 	}
 
+	/// Returns block's witness merkle root.
+	pub fn witness_merkle_root(&self) -> H256 {
+		let hashes = match self.transactions.split_first() {
+			None => vec![],
+			Some((_, rest)) => {
+				let mut hashes = vec![H256::from(0)];
+				hashes.extend(rest.iter().map(Transaction::witness_hash));
+				hashes
+			},
+		};
+		merkle_root(&hashes)
+	}
+
 	pub fn transactions(&self) -> &[Transaction] {
 		&self.transactions
 	}

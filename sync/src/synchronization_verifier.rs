@@ -170,7 +170,7 @@ impl AsyncVerifier {
 						},
 						Ok(tx_output_provider) => {
 							let time: u32 = get_time().sec as u32;
-							match verifier.verifier.verify_mempool_transaction(&tx_output_provider, height, time, &transaction.raw) {
+							match verifier.verifier.verify_mempool_transaction(storage.as_block_header_provider(), &tx_output_provider, height, time, &transaction.raw) {
 								Ok(_) => sink.on_transaction_verification_success(transaction.into()),
 								Err(e) => sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash),
 							}
@@ -271,6 +271,7 @@ pub mod tests {
 	use chain::{IndexedBlock, IndexedTransaction};
 	use super::{Verifier, BlockVerificationSink, TransactionVerificationSink, AsyncVerifier, VerificationTask, ChainVerifierWrapper};
 	use types::{BlockHeight, StorageRef, MemoryPoolRef};
+	use script::Error as ScriptError;
 	use VerificationParameters;
 
 	#[derive(Default)]
@@ -417,7 +418,7 @@ pub mod tests {
 			verification_level: VerificationLevel::Full,
 			verification_edge: 1.into(),
 		});
-		assert_eq!(wrapper.verify_block(&bad_transaction_block), Err(VerificationError::Transaction(1, TransactionError::Signature(0))));
+		assert_eq!(wrapper.verify_block(&bad_transaction_block), Err(VerificationError::Transaction(1, TransactionError::Signature(0, ScriptError::InvalidStackOperation))));
 	}
 
 	#[test]

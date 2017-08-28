@@ -12,7 +12,7 @@ use verify_header::HeaderVerifier;
 use verify_transaction::MemoryPoolTransactionVerifier;
 use accept_chain::ChainAcceptor;
 use accept_transaction::MemoryPoolTransactionAcceptor;
-use deployments::Deployments;
+use deployments::{Deployments, BlockDeployments};
 use {Verify, VerificationLevel};
 
 pub struct BackwardsCompatibleChainVerifier {
@@ -49,22 +49,28 @@ impl BackwardsCompatibleChainVerifier {
 				unreachable!();
 			},
 			BlockOrigin::CanonChain { block_number } => {
+				let header_provider = self.store.as_store().as_block_header_provider();
+				let deployments = BlockDeployments::new(&self.deployments, block_number, header_provider, &self.consensus);
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(self.store.as_store(), &self.consensus, verification_level, canon_block, block_number, &self.deployments);
+				let chain_acceptor = ChainAcceptor::new(self.store.as_store(), &self.consensus, verification_level, canon_block, block_number, &deployments);
 				chain_acceptor.check()?;
 			},
 			BlockOrigin::SideChain(origin) => {
 				let block_number = origin.block_number;
+				let header_provider = self.store.as_store().as_block_header_provider();
+				let deployments = BlockDeployments::new(&self.deployments, block_number, header_provider, &self.consensus);
 				let fork = self.store.fork(origin)?;
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(fork.store(), &self.consensus, verification_level, canon_block, block_number, &self.deployments);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), &self.consensus, verification_level, canon_block, block_number, &deployments);
 				chain_acceptor.check()?;
 			},
 			BlockOrigin::SideChainBecomingCanonChain(origin) => {
 				let block_number = origin.block_number;
+				let header_provider = self.store.as_store().as_block_header_provider();
+				let deployments = BlockDeployments::new(&self.deployments, block_number, header_provider, &self.consensus);
 				let fork = self.store.fork(origin)?;
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(fork.store(), &self.consensus, verification_level, canon_block, block_number, &self.deployments);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), &self.consensus, verification_level, canon_block, block_number, &deployments);
 				chain_acceptor.check()?;
 			},
 		}
@@ -89,6 +95,7 @@ impl BackwardsCompatibleChainVerifier {
 
 	pub fn verify_mempool_transaction<T>(
 		&self,
+		block_header_provider: &BlockHeaderProvider,
 		prevout_provider: &T,
 		height: u32,
 		time: u32,
@@ -96,7 +103,8 @@ impl BackwardsCompatibleChainVerifier {
 	) -> Result<(), TransactionError> where T: TransactionOutputProvider {
 		let indexed_tx = transaction.clone().into();
 		// let's do preverification first
-		let tx_verifier = MemoryPoolTransactionVerifier::new(&indexed_tx, &self.consensus, height);
+		let deployments = BlockDeployments::new(&self.deployments, height, block_header_provider, &self.consensus);
+		let tx_verifier = MemoryPoolTransactionVerifier::new(&indexed_tx, &self.consensus, &deployments);
 		try!(tx_verifier.check());
 
 		let canon_tx = CanonTransaction::new(&indexed_tx);
@@ -110,8 +118,7 @@ impl BackwardsCompatibleChainVerifier {
 			canon_tx,
 			height,
 			time,
-			&self.deployments,
-			self.store.as_block_header_provider()
+			&deployments,
 		);
 		tx_acceptor.check()
 	}
