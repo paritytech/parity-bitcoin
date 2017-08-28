@@ -970,6 +970,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		let chunk_size = min(limits.max_blocks_in_request, max(hashes.len() as BlockHeight, limits.min_blocks_in_request));
 		let last_peer_index = peers.len() - 1;
 		let mut tasks: Vec<Task> = Vec::new();
+		let is_segwit_active = self.chain.is_segwit_active();
+		let inv_type = if is_segwit_active { InventoryType::MessageWitnessBlock } else { InventoryType::MessageBlock };
 		for (peer_index, peer) in peers.into_iter().enumerate() {
 			// we have to request all blocks => we will request last peer for all remaining blocks
 			let peer_chunk_size = if peer_index == last_peer_index { hashes.len() } else { min(hashes.len(), chunk_size as usize) };
@@ -984,10 +986,9 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			self.peers_tasks.on_blocks_requested(peer, &chunk_hashes);
 
 			// request blocks. If block is believed to have witness - ask for witness
-			let is_segwit_active = self.chain.is_segwit_active();
 			let getdata = types::GetData {
 				inventory: chunk_hashes.into_iter().map(|h| InventoryVector {
-					inv_type: if is_segwit_active { InventoryType::MessageWitnessBlock } else { InventoryType::MessageBlock },
+					inv_type: inv_type,
 					hash: h,
 				}).collect(),
 			};
