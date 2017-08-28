@@ -101,3 +101,9 @@ subcommands:
             - PATH:
                 required: true
                 help: Path of the bitcoin core database
+    - rollback:
+        about: Rollback database to given canon-chain block
+        args:
+            - BLOCK:
+                required: true
+                help: Either block hash, or block number 

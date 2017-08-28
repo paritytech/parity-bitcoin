@@ -64,6 +64,7 @@ fn run() -> Result<(), String> {
 
 	match matches.subcommand() {
 		("import", Some(import_matches)) => commands::import(cfg, import_matches),
+		("rollback", Some(rollback_matches)) => commands::rollback(cfg, rollback_matches),
 		_ => commands::start(cfg),
 	}
 }
