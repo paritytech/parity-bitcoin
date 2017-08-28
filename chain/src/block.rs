@@ -34,12 +34,14 @@ impl Block {
 
 	/// Returns block's witness merkle root.
 	pub fn witness_merkle_root(&self) -> H256 {
-		let hashes = self.transactions.iter()
-			.enumerate()
-			.map(|(i, tx)| match i {
-				0 => H256::from(0),
-				_ => tx.witness_hash(),
-			}).collect::<Vec<H256>>();
+		let hashes = match self.transactions.split_first() {
+			None => vec![],
+			Some((_, rest)) => {
+				let mut hashes = vec![H256::from(0)];
+				hashes.extend(rest.iter().map(Transaction::witness_hash));
+				hashes
+			},
+		};
 		merkle_root(&hashes)
 	}
 
