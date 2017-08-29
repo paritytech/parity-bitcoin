@@ -1,5 +1,4 @@
-# parity-bitcoin
-The Parity Bitcoin client
+# The Parity Bitcoin client.
 
 [![Build Status][travis-image]][travis-url] [![Snap Status](https://build.snapcraft.io/badge/paritytech/parity-bitcoin.svg)](https://build.snapcraft.io/user/paritytech/parity-bitcoin)
 
@@ -38,7 +37,7 @@ Minimal supported version is `rustc 1.16.0 (30cf806ef 2017-03-10)`
 
 #### Install rustc and cargo
 
-Both `rustc` and `cargo` are a part of rust toolchain.
+Both `rustc` and `cargo` are a part of rust tool-chain.
 
 An easy way to install the stable binaries for Linux and Mac is to run this in your shell:
 
@@ -94,7 +93,7 @@ sudo snap install parity-bitcoin --edge
 
 #### Running unit tests
 
-Assuming that repo is already cloned, we can run unit tests with this command:
+Assuming that repository is already cloned, we can run unit tests with this command:
 
 ```
 ./tools/test.sh
@@ -102,7 +101,7 @@ Assuming that repo is already cloned, we can run unit tests with this command:
 
 #### Running external integration tests
 
-Running integration tests is automated, as regtests repo is one of the submodules. Let's download it first:
+Running integration tests is automated, as the regtests repository is one of the submodules. Let's download it first:
 
 ```
 git submodule update --init
@@ -130,9 +129,9 @@ java -jar pull-tests-f56eec3.jar
 
 ## Going online
 
-By default parity connects to bitcoind seednodes. Full list is [here](./pbtc/seednodes.rs).
+By default parity connects to bitcoind-seednodes. Full list is [here](./pbtc/seednodes.rs).
 
-To start syncing the mainnet, just start the client:
+To start syncing the main network, just start the client:
 
 ```
 ./target/release/pbtc
@@ -152,7 +151,7 @@ To not print any syncing progress add `--quiet` flag:
 
 ## Importing bitcoind database
 
-It it is possible to import existing bitcoind database:
+It it is possible to import existing `bitcoind` database:
 
 ```
 # where $BITCOIND_DB is path to your bitcoind database, e.g., "/Users/user/Library/Application Support"
@@ -215,15 +214,15 @@ TODO
 
 ## Logging
 
-This is a section only for dev / power users.
+This is a section only for developers and power users.
 
-You can enable detailed client logging by setting env variable `RUST_LOG`, e.g.,
+You can enable detailed client logging by setting the environment variable `RUST_LOG`, e.g.,
 
 ```
 RUST_LOG=verification=info ./target/release/pbtc --quiet
 ```
 
-`pbtc` started with this env variable will print all logs comming from `verification` module with verbosity `info` or higher. Available log levels are:
+`pbtc` started with this environment variable will print all logs coming from `verification` module with verbosity `info` or higher. Available log levels are:
 
 - `error`
 - `warn`
@@ -237,7 +236,7 @@ It's also possible to start logging from multiple modules in the same time:
 RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace ./target/release/pbtc --quiet
 ```
 
-**Note:** `RUST_LOG` does only work together with command line option `--quiet` which will surpress the default `sync=info` logging.
+**Note:** `RUST_LOG` does only work together with command line option `--quiet` which will suppress the default `sync=info` logging.
 
 ## Internal documentation
 
