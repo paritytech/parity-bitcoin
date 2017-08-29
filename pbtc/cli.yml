@@ -32,9 +32,10 @@ args:
         value_name: PORT
         help: Listen for connections on PORT.
         takes_value: true
-    - print-to-console:
-        long: print-to-console
-        help: Show synchronization information in your console.
+    - quiet:
+        short: q
+        long: quiet
+        help: Do not show any synchronization information in the console.
     - data-dir:
         short: d
         long: data-dir
