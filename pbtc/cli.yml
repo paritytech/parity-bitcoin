@@ -81,9 +81,9 @@ args:
         value_name: HOSTS
     - blocknotify:
         long: blocknotify
-        help: Execute command when the best block changes (%s in cmd is replaced by the block hash).
+        help: Execute COMMAND when the best block changes (%s in COMMAND is replaced by the block hash).
         takes_value: true
-        value_name: command
+        value_name: COMMAND
     - verification-level:
         long: verification-level
         help: Sets the Blocks verification level to full (default), header (scripts are not verified), or none (no verification at all).

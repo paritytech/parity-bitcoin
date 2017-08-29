@@ -188,7 +188,7 @@ FLAGS:
     -V, --version             Prints version information
 
 OPTIONS:
-        --blocknotify <command>            Execute command when the best block changes (%s in cmd is replaced by the block hash).
+        --blocknotify <COMMAND>            Execute COMMAND when the best block changes (%s in cmd is replaced by the block hash).
     -c, --connect <IP>                     Connect only to the specified node.
     -d, --data-dir <PATH>                  Specify the database and configuration directory PATH.
         --db-cache <SIZE>                  Sets the database cache size.
