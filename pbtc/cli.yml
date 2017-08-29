@@ -1,109 +1,109 @@
 name: pbtc
 version: "0.1.0"
-author: Parity Technologies <admin@parity.io>
-about: Parity bitcoin client
+author: Parity Technologies <info@parity.io>
+about: Parity Bitcoin client
 args:
     - testnet:
         long: testnet
-        help: Use the test network
+        help: Use the test network (Testnet3).
     - regtest:
         long: regtest
-        help: Use private network for regtest
+        help: Use a private network for regression tests.
     - segwit2x:
         long: segwit2x
-        help: Enable SegWit2x verification rules
+        help: Enable SegWit2x verification rules.
     - bitcoin-cash:
         long: bitcoin-cash
-        help: Use Bitcoin Cash verification rules
+        help: Use Bitcoin Cash verification rules.
     - connect:
         short: c
         long: connect
         value_name: IP
-        help: Connect only to the specified node
+        help: Connect only to the specified node.
         takes_value: true
     - seednode:
         short: s
         long: seednode
         value_name: IP
-        help: Connect to a node to retrieve peer addresses, and disconnect
+        help: Connect to a seed-node to retrieve peer addresses, and disconnect.
         takes_value: true
     - port:
         long: port
         value_name: PORT
-        help: Listen for connections on PORT
+        help: Listen for connections on PORT.
         takes_value: true
     - print-to-console:
         long: print-to-console
-        help: Send sync info to console
+        help: Show synchronization information in your console.
     - data-dir:
         short: d
         long: data-dir
         value_name: PATH
-        help: Specify the database & configuration directory PATH
+        help: Specify the database and configuration directory PATH.
         takes_value: true
     - db-cache:
         long: db-cache
         value_name: SIZE
-        help: Sets db cache size
+        help: Sets the database cache size.
         takes_value: true
     - only-net:
         long: only-net
         value_name: NET
-        help: Only connect to nodes in network <NET> (ipv4 or ipv6)
+        help: Only connect to nodes in network version <NET> (ipv4 or ipv6).
         takes_value: true
     - no-jsonrpc:
         long: no-jsonrpc
-        help: Disable the JSON-RPC API server
+        help: Disable the JSON-RPC API server.
     - jsonrpc-port:
         long: jsonrpc-port
-        help: The port portion of the JSONRPC API server
+        help: Specify the PORT for the JSONRPC API server.
         takes_value: true
         value_name: PORT
     - jsonrpc-interface:
         long: jsonrpc-interface
-        help: The hostname portion of the JSONRPC API server
+        help: The hostname portion of the JSONRPC API server.
         takes_value: true
         value_name: INTERFACE
     - jsonrpc-cors:
         long: jsonrpc-cors
-        help: Specify CORS header for JSON-RPC API responses
+        help: Specify CORS header for JSON-RPC API responses.
         takes_value: true
         value_name: URL
     - jsonrpc-apis:
         long: jsonrpc-apis
-        help: Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API name.
+        help: Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API names.
         takes_value: true
         value_name: APIS
     - jsonrpc-hosts:
         long: jsonrpc-hosts
-        help: List of allowed Host header values
+        help: List of allowed Host header values.
         takes_value: true
         value_name: HOSTS
     - blocknotify:
         long: blocknotify
-        help: Execute command when the best block changes (%s in cmd is replaced by block hash)
+        help: Execute command when the best block changes (%s in cmd is replaced by the block hash).
         takes_value: true
         value_name: command
     - verification-level:
         long: verification-level
-        help: Blocks verification level - full (default), header (scripts are not verified), none (no verification at all)
+        help: Sets the Blocks verification level to full (default), header (scripts are not verified), or none (no verification at all).
         takes_value: true
         value_name: LEVEL
     - verification-edge:
         long: verification-edge
-        help: Non-default verification-level is applied until block with given hash is met.
+        help: Non-default verification-level is applied until a block with given hash is met.
         takes_value: true
         value_name: BLOCK
 subcommands:
     - import:
-        about: Import blocks from bitcoin core database
+        about: Import blocks from a Bitcoin Core database.
         args:
             - PATH:
                 required: true
-                help: Path of the bitcoin core database
+                help: Path of the Bitcoin Core database.
     - rollback:
-        about: Rollback database to given canon-chain block
+        about: Rollback the database to given canonical-chain block.
         args:
             - BLOCK:
                 required: true
-                help: Either block hash, or block number 
+                help: Either block hash, or block number.
