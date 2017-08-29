@@ -171,37 +171,42 @@ Full list of cli options, which is available under `pbtc --help`
 
 ```
 pbtc 0.1.0
-Parity Technologies <admin@parity.io>
-Parity bitcoin client
+Parity Technologies <info@parity.io>
+Parity Bitcoin client
 
 USAGE:
     pbtc [FLAGS] [OPTIONS] [SUBCOMMAND]
 
 FLAGS:
+        --bitcoin-cash        Use Bitcoin Cash verification rules.
     -h, --help                Prints help information
-        --no-jsonrpc          Disable the JSON-RPC API server
-        --print-to-console    Send sync info to console
-        --regtest             Use private network for regtest
-        --testnet             Use the test network
+        --no-jsonrpc          Disable the JSON-RPC API server.
+        --print-to-console    Show synchronization information in your console.
+        --regtest             Use a private network for regression tests.
+        --segwit2x            Enable SegWit2x verification rules.
+        --testnet             Use the test network (Testnet3).
     -V, --version             Prints version information
 
 OPTIONS:
-        --blocknotify <command>            Execute command when the best block changes (%s in cmd is replaced by block hash)
-    -c, --connect <IP>                     Connect only to the specified node
-    -d, --data-dir <PATH>                  Specify the database & configuration directory PATH
-        --db-cache <SIZE>                  Sets db cache size
-        --jsonrpc-apis <APIS>              Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API name.
-        --jsonrpc-cors <URL>               Specify CORS header for JSON-RPC API responses
-        --jsonrpc-hosts <HOSTS>            List of allowed Host header values
-        --jsonrpc-interface <INTERFACE>    The hostname portion of the JSONRPC API server
-        --jsonrpc-port <PORT>              The port portion of the JSONRPC API server
-        --only-net <NET>                   Only connect to nodes in network <NET> (ipv4 or ipv6)
-        --port <PORT>                      Listen for connections on PORT
-    -s, --seednode <IP>                    Connect to a node to retrieve peer addresses, and disconnect
+        --blocknotify <command>            Execute command when the best block changes (%s in cmd is replaced by the block hash).
+    -c, --connect <IP>                     Connect only to the specified node.
+    -d, --data-dir <PATH>                  Specify the database and configuration directory PATH.
+        --db-cache <SIZE>                  Sets the database cache size.
+        --jsonrpc-apis <APIS>              Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API names.
+        --jsonrpc-cors <URL>               Specify CORS header for JSON-RPC API responses.
+        --jsonrpc-hosts <HOSTS>            List of allowed Host header values.
+        --jsonrpc-interface <INTERFACE>    The hostname portion of the JSONRPC API server.
+        --jsonrpc-port <PORT>              Specify the PORT for the JSONRPC API server.
+        --only-net <NET>                   Only connect to nodes in network version <NET> (ipv4 or ipv6).
+        --port <PORT>                      Listen for connections on PORT.
+    -s, --seednode <IP>                    Connect to a seed-node to retrieve peer addresses, and disconnect.
+        --verification-edge <BLOCK>        Non-default verification-level is applied until a block with given hash is met.
+        --verification-level <LEVEL>       Sets the Blocks verification level to full (default), header (scripts are not verified), or none (no verification at all).
 
 SUBCOMMANDS:
-    help      Prints this message or the help of the given subcommand(s)
-    import    Import blocks from bitcoin core database
+    help        Prints this message or the help of the given subcommand(s)
+    import      Import blocks from a Bitcoin Core database.
+    rollback    Rollback the database to given canonical-chain block.
 ```
 
 ## JSON-RPC
