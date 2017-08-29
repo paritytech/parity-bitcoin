@@ -50,7 +50,7 @@ Windows binaries can be downloaded from [rust-lang website](https://www.rust-lan
 
 #### Install C and C++ compilers
 
-You will need the cc and gcc compilers to build some of the dependencies
+You will need the cc and gcc compilers to build some of the dependencies.
 
 ```
 sudo apt-get update
@@ -59,14 +59,14 @@ sudo apt-get install build-essential
 
 #### Clone and build pbtc
 
-Now let's clone `pbtc` and enter it's directory
+Now let's clone `pbtc` and enter it's directory:
 
 ```
 git clone https://github.com/paritytech/parity-bitcoin
 cd parity-bitcoin
 ```
 
-`pbtc` can be build in two modes. `--debug` and `--release`. Debug is the default
+`pbtc` can be build in two modes. `--debug` and `--release`. Debug is the default.
 
 ```
 # builds pbtc in debug mode
@@ -78,7 +78,7 @@ cargo build -p pbtc
 cargo build -p pbtc --release
 ```
 
-`pbtc` is now available at either `./target/debug/pbtc` or `./target/release/pbtc`
+`pbtc` is now available at either `./target/debug/pbtc` or `./target/release/pbtc`.
 
 ## Installing the snap
 
@@ -90,7 +90,7 @@ sudo snap install parity-bitcoin --edge
 
 ## Running tests
 
-`pbtc` has internal unit tests and it conforms to external integration tests
+`pbtc` has internal unit tests and it conforms to external integration tests.
 
 #### Running unit tests
 
@@ -108,13 +108,13 @@ Running integration tests is automated, as regtests repo is one of the submodule
 git submodule update --init
 ```
 
-Now we can run them
+Now we can run them:
 
 ```
 ./tools/regtests.sh
 ```
 
-It's also possible to run regtests manually
+It's also possible to run regtests manually:
 
 ```
 # let's start pbtc in regtest compatible mode
@@ -130,24 +130,24 @@ java -jar pull-tests-f56eec3.jar
 
 ## Going online
 
-By default parity connects to bitcoind seednodes. Full list is [here](./pbtc/seednodes.rs)
+By default parity connects to bitcoind seednodes. Full list is [here](./pbtc/seednodes.rs).
 
-To start syncing the mainnet, just start the client
+To start syncing the mainnet, just start the client:
 
 ```
 ./target/release/pbtc
 ```
 
-To start syncing the testnet
+To start syncing the testnet:
 
 ```
 ./target/release/pbtc --testnet
 ```
 
-To print syncing progress add `--print-to-console` flag
+To not print any syncing progress add `--quiet` flag:
 
 ```
-./target/release/pbtc --print-to-console
+./target/release/pbtc --quiet
 ```
 
 ## Importing bitcoind database
@@ -155,19 +155,19 @@ To print syncing progress add `--print-to-console` flag
 It it is possible to import existing bitcoind database:
 
 ```
-# where $BITCOIND_DB is path to your bitcoind database eg. "/Users/marek/Library/Application Support"
-./target/release/pbtc --print-to-console import "$BITCOIND_DB/Bitcoin/blocks"
+# where $BITCOIND_DB is path to your bitcoind database, e.g., "/Users/user/Library/Application Support"
+./target/release/pbtc import "$BITCOIND_DB/Bitcoin/blocks"
 ```
 
 By default import verifies imported the blocks. You can disable this, by adding `--skip-verification flag.
 
 ```
-./target/release/pbtc --print-to-console import "#BITCOIND_DB/Bitcoin/blocks" --skip-verification
+./target/release/pbtc import "#BITCOIND_DB/Bitcoin/blocks" --skip-verification
 ```
 
 ## Command line interface
 
-Full list of cli options, which is available under `pbtc --help`
+Full list of CLI options, which is available under `pbtc --help`:
 
 ```
 pbtc 0.1.0
@@ -178,17 +178,17 @@ USAGE:
     pbtc [FLAGS] [OPTIONS] [SUBCOMMAND]
 
 FLAGS:
-        --bitcoin-cash        Use Bitcoin Cash verification rules.
-    -h, --help                Prints help information
-        --no-jsonrpc          Disable the JSON-RPC API server.
-        --print-to-console    Show synchronization information in your console.
-        --regtest             Use a private network for regression tests.
-        --segwit2x            Enable SegWit2x verification rules.
-        --testnet             Use the test network (Testnet3).
-    -V, --version             Prints version information
+        --bitcoin-cash    Use Bitcoin Cash verification rules.
+    -h, --help            Prints help information
+        --no-jsonrpc      Disable the JSON-RPC API server.
+    -q, --quiet           Do not show any synchronization information in the console.
+        --regtest         Use a private network for regression tests.
+        --segwit2x        Enable SegWit2x verification rules.
+        --testnet         Use the test network (Testnet3).
+    -V, --version         Prints version information
 
 OPTIONS:
-        --blocknotify <COMMAND>            Execute COMMAND when the best block changes (%s in cmd is replaced by the block hash).
+        --blocknotify <COMMAND>            Execute COMMAND when the best block changes (%s in COMMAND is replaced by the block hash).
     -c, --connect <IP>                     Connect only to the specified node.
     -d, --data-dir <PATH>                  Specify the database and configuration directory PATH.
         --db-cache <SIZE>                  Sets the database cache size.
@@ -217,17 +217,13 @@ TODO
 
 This is a section only for dev / power users.
 
-You can enable detailed client logging by setting env variable `RUST_LOG`
-
-eg.
+You can enable detailed client logging by setting env variable `RUST_LOG`, e.g.,
 
 ```
-RUST_LOG=verification=info ./target/release/pbtc
+RUST_LOG=verification=info ./target/release/pbtc --quiet
 ```
 
-`pbtc` started with this env variable will print all logs comming from `verification` module with verbosity `info` or higher
-
-Available log levels:
+`pbtc` started with this env variable will print all logs comming from `verification` module with verbosity `info` or higher. Available log levels are:
 
 - `error`
 - `warn`
@@ -235,13 +231,13 @@ Available log levels:
 - `debug`
 - `trace`
 
-It's also possible to start logging from multiple modules in the same time
+It's also possible to start logging from multiple modules in the same time:
 
 ```
-RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace
+RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace ./target/release/pbtc --quiet
 ```
 
-*note* `RUST_LOG` does not work together with command line option `--print-to-console`
+**Note:** `RUST_LOG` does only work together with command line option `--quiet` which will surpress the default `sync=info` logging.
 
 ## Internal documentation
 
