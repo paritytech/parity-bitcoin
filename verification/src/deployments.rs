@@ -6,7 +6,7 @@ use hash::H256;
 use db::{BlockHeaderProvider, BlockRef, BlockAncestors, BlockIterator};
 use timestamp::median_timestamp;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum ThresholdState {
 	Defined,
 	Started,
@@ -73,7 +73,7 @@ impl Deployments {
 		match consensus.csv_deployment {
 			Some(csv) => {
 				let mut cache = self.cache.lock();
-				threshold_state(&mut cache, csv, number, headers, consensus).is_active()
+				threshold_state(&mut cache, csv, number, headers, consensus.miner_confirmation_window, consensus.rule_change_activation_threshold).is_active()
 			},
 			None => false
 		}
@@ -84,7 +84,7 @@ impl Deployments {
 		match consensus.segwit_deployment {
 			Some(segwit) => {
 				let mut cache = self.cache.lock();
-				threshold_state(&mut cache, segwit, number, headers, consensus).is_active()
+				threshold_state(&mut cache, segwit, number, headers, consensus.miner_confirmation_window, consensus.rule_change_activation_threshold).is_active()
 			},
 			None => false
 		}
@@ -111,7 +111,7 @@ impl<'a> BlockDeployments<'a> {
 }
 
 /// Calculates threshold state of given deployment
-fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, number: u32, headers: &BlockHeaderProvider, consensus: &ConsensusParams) -> ThresholdState {
+fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, number: u32, headers: &BlockHeaderProvider, miner_confirmation_window: u32, rule_change_activation_threshold: u32) -> ThresholdState {
 	// deployments are checked using previous block index
 	if let Some(activation) = deployment.activation {
 		if activation <= number {
@@ -121,8 +121,13 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 		}
 	}
 
+	// number is number of block which is currently validating
+	// => it is not in database
+	// we need to make all checks for previous blocks
+	let number = number.saturating_sub(1);
+
 	// get number of the first block in the period
-	let number = first_of_the_period(number.saturating_sub(1), consensus.miner_confirmation_window);
+	let number = first_of_the_period(number, miner_confirmation_window);
 
 	let hash = match headers.block_header(BlockRef::Number(number)) {
 		Some(header) => header.hash(),
@@ -140,9 +145,8 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 			if deployment_state.state.is_final() {
 				return deployment_state.state
 			}
-			let from_block = deployment_state.block_number + consensus.miner_confirmation_window;
 			let threshold_state = deployment_state.state;
-			let deployment_iter = ThresholdIterator::new(deployment, headers, from_block, consensus, threshold_state);
+			let deployment_iter = ThresholdIterator::new(deployment, headers, number, miner_confirmation_window, rule_change_activation_threshold, threshold_state);
 			let state = match deployment_iter.last() {
 				Some(state) => state,
 				None => DeploymentState {
@@ -156,7 +160,7 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 			result
 		},
 		Entry::Vacant(entry) => {
-			let deployment_iter = ThresholdIterator::new(deployment, headers, 0, consensus, ThresholdState::Defined);
+			let deployment_iter = ThresholdIterator::new(deployment, headers, miner_confirmation_window - 1, miner_confirmation_window, rule_change_activation_threshold, ThresholdState::Defined);
 			let state = deployment_iter.last().unwrap_or_default();
 			let result = state.state;
 			entry.insert(state);
@@ -184,17 +188,19 @@ struct ThresholdIterator<'a> {
 	deployment: Deployment,
 	block_iterator: BlockIterator<'a>,
 	headers: &'a BlockHeaderProvider,
-	consensus: &'a ConsensusParams,
+	miner_confirmation_window: u32,
+	rule_change_activation_threshold: u32,
 	last_state: ThresholdState,
 }
 
 impl<'a> ThresholdIterator<'a> {
-	fn new(deployment: Deployment, headers: &'a BlockHeaderProvider, to_check: u32, consensus: &'a ConsensusParams, state: ThresholdState) -> Self {
+	fn new(deployment: Deployment, headers: &'a BlockHeaderProvider, to_check: u32, miner_confirmation_window: u32, rule_change_activation_threshold: u32, state: ThresholdState) -> Self {
 		ThresholdIterator {
 			deployment: deployment,
-			block_iterator: BlockIterator::new(to_check, consensus.miner_confirmation_window, headers),
+			block_iterator: BlockIterator::new(to_check, miner_confirmation_window, headers),
 			headers: headers,
-			consensus: consensus,
+			miner_confirmation_window: miner_confirmation_window,
+			rule_change_activation_threshold: rule_change_activation_threshold,
 			last_state: state,
 		}
 	}
@@ -223,8 +229,8 @@ impl<'a> Iterator for ThresholdIterator<'a> {
 				if median >= self.deployment.timeout {
 					self.last_state = ThresholdState::Failed;
 				} else {
-					let count = count_deployment_matches(block_number, self.headers, self.deployment, self.consensus.miner_confirmation_window);
-					if count >= self.consensus.rule_change_activation_threshold as usize {
+					let count = count_deployment_matches(block_number, self.headers, self.deployment, self.miner_confirmation_window);
+					if count >= self.rule_change_activation_threshold as usize {
 						self.last_state = ThresholdState::LockedIn;
 					}
 				}
@@ -249,7 +255,78 @@ impl<'a> Iterator for ThresholdIterator<'a> {
 
 #[cfg(test)]
 mod tests {
-	use super::first_of_the_period;
+	use std::collections::HashMap;
+	use chain::BlockHeader;
+	use db::{BlockHeaderProvider, BlockRef};
+	use network::Deployment;
+	use hash::H256;
+	use primitives::bytes::Bytes;
+	use super::{DeploymentStateCache, ThresholdState, first_of_the_period, threshold_state};
+
+	const MINER_CONFIRMATION_WINDOW: u32 = 1000;
+	const RULE_CHANGE_ACTIVATION_THRESHOLD: u32 = 900;
+
+	#[derive(Default)]
+	struct DeploymentHeaderProvider {
+		pub by_height: Vec<BlockHeader>,
+		pub by_hash: HashMap<H256, usize>,
+	}
+
+	impl DeploymentHeaderProvider {
+		pub fn mine(&mut self, height: u32, time: u32, version: u32) {
+			let mut previous_header_hash = self.by_height.last().map(|h| h.previous_header_hash.clone()).unwrap_or(H256::default());
+			while self.by_height.len() < height as usize {
+				let header = BlockHeader {
+					version: version,
+					previous_header_hash: previous_header_hash,
+					merkle_root_hash: Default::default(),
+					time: time,
+					bits: 0.into(),
+					nonce: height,
+				};
+				previous_header_hash = header.hash();
+
+				self.by_height.push(header);
+				self.by_hash.insert(previous_header_hash.clone(), self.by_height.len() - 1);
+			}
+		}
+	}
+
+	impl BlockHeaderProvider for DeploymentHeaderProvider {
+		fn block_header_bytes(&self, _block_ref: BlockRef) -> Option<Bytes> {
+			unimplemented!()
+		}
+
+		fn block_header(&self, block_ref: BlockRef) -> Option<BlockHeader> {
+			match block_ref {
+				BlockRef::Number(height) => self.by_height.get(height as usize).cloned(),
+				BlockRef::Hash(hash) => self.by_hash.get(&hash).and_then(|height| self.by_height.get(*height)).cloned(),
+			}
+		}
+	}
+
+	fn make_test_time(height: u32) -> u32 {
+		1415926536 + 600 * height
+	}
+
+	fn prepare_deployments() -> (DeploymentStateCache, DeploymentHeaderProvider, Deployment) {
+		let (mut cache, headers, deployment) = (
+			DeploymentStateCache::default(),
+			DeploymentHeaderProvider::default(),
+			Deployment {
+				name: "test",
+				bit: 0,
+				start_time: make_test_time(10000),
+				timeout: make_test_time(20000),
+				activation: None,
+			},
+		);
+
+		assert_eq!(threshold_state(&mut cache, deployment, 0, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), ThresholdState::Defined);
+		assert_eq!(threshold_state(&mut DeploymentStateCache::default(), deployment, 0, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), ThresholdState::Defined);
+
+		(cache, headers, deployment)
+	}
 
 	#[test]
 	fn test_first_of_the_period() {
@@ -262,5 +339,126 @@ mod tests {
 		assert_eq!(8063, first_of_the_period(8063, window));
 		assert_eq!(8063, first_of_the_period(10000, window));
 		assert_eq!(8063, first_of_the_period(10001, window));
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/a90e6d2bffc422ddcdb771c53aac0bceb970a2c4/src/test/versionbits_tests.cpp#L149
+	#[test]
+	fn test_threshold_state_defined_to_failed() {
+		let (mut cache, mut headers, deployment) = prepare_deployments();
+		let test_cases = vec![
+			(1,		make_test_time(1),		0x20000001,	ThresholdState::Defined),
+			(11,	make_test_time(11),		0x20000001,	ThresholdState::Defined),
+			(989,	make_test_time(989),	0x20000001,	ThresholdState::Defined),
+			(999,	make_test_time(20000),	0x20000001,	ThresholdState::Defined),
+			(1000,	make_test_time(30000),	0x20000001,	ThresholdState::Failed),
+			(1999,	make_test_time(30001),	0x20000001,	ThresholdState::Failed),
+			(2000,	make_test_time(30002),	0x20000001,	ThresholdState::Failed),
+			(2001,	make_test_time(30003),	0x20000001,	ThresholdState::Failed),
+			(2999,	make_test_time(30004),	0x20000001,	ThresholdState::Failed),
+			(3000,	make_test_time(30005),	0x20000001,	ThresholdState::Failed),
+		];
+
+		for (height, time, version, state) in test_cases {
+			headers.mine(height, time, version);
+
+			assert_eq!(threshold_state(&mut cache, deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
+			assert_eq!(threshold_state(&mut DeploymentStateCache::default(), deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
+		}
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/a90e6d2bffc422ddcdb771c53aac0bceb970a2c4/src/test/versionbits_tests.cpp#L162
+	#[test]
+	fn test_threshold_state_defined_to_started_to_failed() {
+		let (mut cache, mut headers, deployment) = prepare_deployments();
+		let test_cases = vec![
+			(1,		make_test_time(1),			0x20000000,	ThresholdState::Defined),
+			(1000,	make_test_time(10000) - 1,	0x20000001,	ThresholdState::Defined),
+			(2000,	make_test_time(10000),		0x20000001,	ThresholdState::Started),
+			(2051,	make_test_time(10010),		0x20000000,	ThresholdState::Started),
+			(2950,	make_test_time(10020),		0x20000001,	ThresholdState::Started),
+			(3000,	make_test_time(20000),		0x20000000,	ThresholdState::Failed),
+			(4000,	make_test_time(20010),		0x20000001,	ThresholdState::Failed),
+		];
+
+
+		for (height, time, version, state) in test_cases {
+			headers.mine(height, time, version);
+
+			assert_eq!(threshold_state(&mut cache, deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
+			assert_eq!(threshold_state(&mut DeploymentStateCache::default(), deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
+		}
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/a90e6d2bffc422ddcdb771c53aac0bceb970a2c4/src/test/versionbits_tests.cpp#L172
+	#[test]
+	fn test_threshold_state_defined_to_started_to_failed_when_threshold_reached() {
+		let (mut cache, mut headers, deployment) = prepare_deployments();
+		let test_cases = vec![
+			(1,		make_test_time(1),			0x20000000,	ThresholdState::Defined),
+			(1000,	make_test_time(10000) - 1,	0x20000001,	ThresholdState::Defined),
+			(2000,	make_test_time(10000),		0x20000001,	ThresholdState::Started),
+			(2999,	make_test_time(30000),		0x20000001,	ThresholdState::Started),
+			(3000,	make_test_time(30000),		0x20000001,	ThresholdState::Failed),
+			(3999,	make_test_time(30001),		0x20000000,	ThresholdState::Failed),
+			(4000,	make_test_time(30002),		0x20000000,	ThresholdState::Failed),
+			(14333,	make_test_time(30003),		0x20000000,	ThresholdState::Failed),
+			(20000,	make_test_time(40000),		0x20000000,	ThresholdState::Failed),
+		];
+
+		for (height, time, version, state) in test_cases {
+			headers.mine(height, time, version);
+
+			assert_eq!(threshold_state(&mut cache, deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
+			assert_eq!(threshold_state(&mut DeploymentStateCache::default(), deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
+		}
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/a90e6d2bffc422ddcdb771c53aac0bceb970a2c4/src/test/versionbits_tests.cpp#L184
+	#[test]
+	fn test_threshold_state_defined_to_started_to_lockedin() {
+		let (mut cache, mut headers, deployment) = prepare_deployments();
+		let test_cases = vec![
+			(1,		make_test_time(1),			0x20000000,	ThresholdState::Defined),
+			(1000,	make_test_time(10000) - 1,	0x20000001,	ThresholdState::Defined),
+			(2000,	make_test_time(10000),		0x20000001,	ThresholdState::Started),
+			(2050,	make_test_time(10010),		0x20000000,	ThresholdState::Started),
+			(2950,	make_test_time(10020),		0x20000001,	ThresholdState::Started),
+			(2999,	make_test_time(19999),		0x20000000,	ThresholdState::Started),
+			(3000,	make_test_time(29999),		0x20000000,	ThresholdState::LockedIn),
+			(3999,	make_test_time(30001),		0x20000000,	ThresholdState::LockedIn),
+			(4000,	make_test_time(30002),		0x20000000,	ThresholdState::Active),
+			(14333,	make_test_time(30003),		0x20000000,	ThresholdState::Active),
+			(24000,	make_test_time(40000),		0x20000000,	ThresholdState::Active),
+		];
+
+		for (height, time, version, state) in test_cases {
+			headers.mine(height, time, version);
+
+			assert_eq!(threshold_state(&mut cache, deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
+			assert_eq!(threshold_state(&mut DeploymentStateCache::default(), deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
+		}
+	}
+
+	// https://github.com/bitcoin/bitcoin/blob/a90e6d2bffc422ddcdb771c53aac0bceb970a2c4/src/test/versionbits_tests.cpp#L198
+	#[test]
+	fn test_threshold_state_defined_multiple_to_started_multiple_to_failed() {
+		let (mut cache, mut headers, deployment) = prepare_deployments();
+		let test_cases = vec![
+			(999,	make_test_time(999),		0x20000000,	ThresholdState::Defined),
+			(1000,	make_test_time(1000),		0x20000000,	ThresholdState::Defined),
+			(2000,	make_test_time(2000),		0x20000000,	ThresholdState::Defined),
+			(3000,	make_test_time(10000),		0x20000000,	ThresholdState::Started),
+			(4000,	make_test_time(10000),		0x20000000,	ThresholdState::Started),
+			(5000,	make_test_time(10000),		0x20000000,	ThresholdState::Started),
+			(6000,	make_test_time(20000),		0x20000000,	ThresholdState::Failed),
+			(7000,	make_test_time(20000),		0x20000001,	ThresholdState::Failed),
+		];
+
+		for (height, time, version, state) in test_cases {
+			headers.mine(height, time, version);
+
+			assert_eq!(threshold_state(&mut cache, deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
+			assert_eq!(threshold_state(&mut DeploymentStateCache::default(), deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
+		}
 	}
 }
