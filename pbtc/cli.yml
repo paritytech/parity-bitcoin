@@ -30,7 +30,7 @@ args:
     - port:
         long: port
         value_name: PORT
-        help: Listen for connections on PORT
+        help: Listen for connections on PORT, default 8333.
         takes_value: true
     - print-to-console:
         long: print-to-console
@@ -56,7 +56,7 @@ args:
         help: Disable the JSON-RPC API server
     - jsonrpc-port:
         long: jsonrpc-port
-        help: The port portion of the JSONRPC API server
+        help: The port portion of the JSONRPC API server, default 8332.
         takes_value: true
         value_name: PORT
     - jsonrpc-interface:
@@ -71,7 +71,7 @@ args:
         value_name: URL
     - jsonrpc-apis:
         long: jsonrpc-apis
-        help: Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API name.
+        help: Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API name. Available APIs are blockchain, network, miner, raw.
         takes_value: true
         value_name: APIS
     - jsonrpc-hosts:
@@ -106,4 +106,4 @@ subcommands:
         args:
             - BLOCK:
                 required: true
-                help: Either block hash, or block number 
+                help: Either block hash, or block number
