@@ -195,9 +195,9 @@ OPTIONS:
         --jsonrpc-cors <URL>               Specify CORS header for JSON-RPC API responses
         --jsonrpc-hosts <HOSTS>            List of allowed Host header values
         --jsonrpc-interface <INTERFACE>    The hostname portion of the JSONRPC API server
-        --jsonrpc-port <PORT>              The port portion of the JSONRPC API server, default 8332.
+        --jsonrpc-port <PORT>              The port portion of the JSONRPC API server
         --only-net <NET>                   Only connect to nodes in network <NET> (ipv4 or ipv6)
-        --port <PORT>                      Listen for connections on PORT, default 8333.
+        --port <PORT>                      Listen for connections on PORT
     -s, --seednode <IP>                    Connect to a node to retrieve peer addresses, and disconnect
 
 SUBCOMMANDS:
