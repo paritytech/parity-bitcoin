@@ -9,6 +9,9 @@ args:
     - regtest:
         long: regtest
         help: Use a private network for regression tests.
+    - segwit:
+        long: segwit
+        help: Enable SegWit verification rules.
     - segwit2x:
         long: segwit2x
         help: Enable SegWit2x verification rules.

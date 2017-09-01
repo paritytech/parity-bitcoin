@@ -2,11 +2,20 @@ use std::sync::Arc;
 use chain::BlockHeader;
 use {
 	BestBlock, BlockProvider, BlockHeaderProvider, TransactionProvider, TransactionMetaProvider,
-	TransactionOutputProvider, BlockChain, IndexedBlockProvider, Forkable
+	TransactionOutputProvider, BlockChain, IndexedBlockProvider, Forkable, Error
 };
 
-pub trait CanonStore: Store + Forkable {
+pub trait CanonStore: Store + Forkable + ConfigStore {
 	fn as_store(&self) -> &Store;
+}
+
+/// Configuration storage interface
+pub trait ConfigStore {
+	/// get consensus_fork this database is configured for
+	fn consensus_fork(&self) -> Result<Option<String>, Error>;
+
+	/// set consensus_fork this database is configured for
+	fn set_consensus_fork(&self, consensus_fork: &str) -> Result<(), Error>;
 }
 
 /// Blockchain storage interface

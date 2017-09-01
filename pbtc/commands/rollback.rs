@@ -2,11 +2,10 @@ use clap::ArgMatches;
 use db::BlockRef;
 use config::Config;
 use primitives::hash::H256;
-use util::{open_db, init_db};
+use util::init_db;
 
 pub fn rollback(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
-	let db = open_db(&cfg);
-	try!(init_db(&cfg, &db));
+	try!(init_db(&cfg));
 
 	let block_ref = matches.value_of("BLOCK").expect("BLOCK is required in cli.yml; qed");
 	let block_ref = if block_ref.len() == 64 {
@@ -18,10 +17,10 @@ pub fn rollback(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 		BlockRef::Number(block_ref.parse().map_err(|e| format!("Invalid block hash: {}", e))?)
 	};
 
-	let required_block_hash = db.block_header(block_ref.clone()).ok_or(format!("Block {:?} is unknown", block_ref))?.hash();
+	let required_block_hash = cfg.db.block_header(block_ref.clone()).ok_or(format!("Block {:?} is unknown", block_ref))?.hash();
 	let genesis_hash = cfg.magic.genesis_block().hash();
 
-	let mut best_block_hash = db.best_block().hash;
+	let mut best_block_hash = cfg.db.best_block().hash;
 	debug_assert!(best_block_hash != H256::default()); // genesis inserted in init_db
 
 	loop {
@@ -34,6 +33,6 @@ pub fn rollback(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 			return Err(format!("Failed to revert to block {:?}. Reverted to genesis", block_ref));
 		}
 
-		best_block_hash = db.rollback_best().map_err(|e| format!("{:?}", e))?;
+		best_block_hash = cfg.db.rollback_best().map_err(|e| format!("{:?}", e))?;
 	}
 }
