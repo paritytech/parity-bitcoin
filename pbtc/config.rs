@@ -18,7 +18,7 @@ pub struct Config {
 	pub port: u16,
 	pub connect: Option<net::SocketAddr>,
 	pub seednodes: Vec<String>,
-	pub print_to_console: bool,
+	pub quiet: bool,
 	pub inbound_connections: u32,
 	pub outbound_connections: u32,
 	pub p2p_threads: usize,
@@ -34,7 +34,7 @@ pub struct Config {
 pub const DEFAULT_DB_CACHE: usize = 512;
 
 pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
-	let print_to_console = matches.is_present("print-to-console");
+	let quiet = matches.is_present("quiet");
 	let magic = match (matches.is_present("testnet"), matches.is_present("regtest")) {
 		(true, false) => Magic::Testnet,
 		(false, true) => Magic::Regtest,
@@ -139,7 +139,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	};
 
 	let config = Config {
-		print_to_console: print_to_console,
+		quiet: quiet,
 		magic: magic,
 		consensus: consensus,
 		services: services,

@@ -1,6 +1,4 @@
-# parity-bitcoin
-
-The Parity Bitcoin client
+# The Parity Bitcoin client.
 
 [![Build Status][travis-image]][travis-url] [![Snap Status](https://build.snapcraft.io/badge/paritytech/parity-bitcoin.svg)](https://build.snapcraft.io/user/paritytech/parity-bitcoin)
 
@@ -39,7 +37,7 @@ Minimal supported version is `rustc 1.16.0 (30cf806ef 2017-03-10)`
 
 #### Install rustc and cargo
 
-Both `rustc` and `cargo` are a part of rust toolchain.
+Both `rustc` and `cargo` are a part of rust tool-chain.
 
 An easy way to install the stable binaries for Linux and Mac is to run this in your shell:
 
@@ -51,7 +49,7 @@ Windows binaries can be downloaded from [rust-lang website](https://www.rust-lan
 
 #### Install C and C++ compilers
 
-You will need the cc and gcc compilers to build some of the dependencies
+You will need the cc and gcc compilers to build some of the dependencies.
 
 ```
 sudo apt-get update
@@ -60,14 +58,14 @@ sudo apt-get install build-essential
 
 #### Clone and build pbtc
 
-Now let's clone `pbtc` and enter it's directory
+Now let's clone `pbtc` and enter it's directory:
 
 ```
 git clone https://github.com/paritytech/parity-bitcoin
 cd parity-bitcoin
 ```
 
-`pbtc` can be build in two modes. `--debug` and `--release`. Debug is the default
+`pbtc` can be build in two modes. `--debug` and `--release`. Debug is the default.
 
 ```
 # builds pbtc in debug mode
@@ -79,7 +77,7 @@ cargo build -p pbtc
 cargo build -p pbtc --release
 ```
 
-`pbtc` is now available at either `./target/debug/pbtc` or `./target/release/pbtc`
+`pbtc` is now available at either `./target/debug/pbtc` or `./target/release/pbtc`.
 
 ## Installing the snap
 
@@ -91,11 +89,11 @@ sudo snap install parity-bitcoin --edge
 
 ## Running tests
 
-`pbtc` has internal unit tests and it conforms to external integration tests
+`pbtc` has internal unit tests and it conforms to external integration tests.
 
 #### Running unit tests
 
-Assuming that repo is already cloned, we can run unit tests with this command:
+Assuming that repository is already cloned, we can run unit tests with this command:
 
 ```
 ./tools/test.sh
@@ -103,19 +101,19 @@ Assuming that repo is already cloned, we can run unit tests with this command:
 
 #### Running external integration tests
 
-Running integration tests is automated, as regtests repo is one of the submodules. Let's download it first:
+Running integration tests is automated, as the regtests repository is one of the submodules. Let's download it first:
 
 ```
 git submodule update --init
 ```
 
-Now we can run them
+Now we can run them:
 
 ```
 ./tools/regtests.sh
 ```
 
-It's also possible to run regtests manually
+It's also possible to run regtests manually:
 
 ```
 # let's start pbtc in regtest compatible mode
@@ -131,78 +129,83 @@ java -jar pull-tests-f56eec3.jar
 
 ## Going online
 
-By default parity connects to bitcoind seednodes. Full list is [here](./pbtc/seednodes.rs)
+By default parity connects to bitcoind-seednodes. Full list is [here](./pbtc/seednodes.rs).
 
-To start syncing the mainnet, just start the client
+To start syncing the main network, just start the client:
 
 ```
 ./target/release/pbtc
 ```
 
-To start syncing the testnet
+To start syncing the testnet:
 
 ```
 ./target/release/pbtc --testnet
 ```
 
-To print syncing progress add `--print-to-console` flag
+To not print any syncing progress add `--quiet` flag:
 
 ```
-./target/release/pbtc --print-to-console
+./target/release/pbtc --quiet
 ```
 
 ## Importing bitcoind database
 
-It it is possible to import existing bitcoind database:
+It it is possible to import existing `bitcoind` database:
 
 ```
-# where $BITCOIND_DB is path to your bitcoind database eg. "/Users/marek/Library/Application Support"
-./target/release/pbtc --print-to-console import "$BITCOIND_DB/Bitcoin/blocks"
+# where $BITCOIND_DB is path to your bitcoind database, e.g., "/Users/user/Library/Application Support"
+./target/release/pbtc import "$BITCOIND_DB/Bitcoin/blocks"
 ```
 
-By default import verifies imported the blocks. You can disable this, by adding `--skip-verification flag.
+By default import verifies imported the blocks. You can disable this, by adding `--skip-verification` flag.
 
 ```
-./target/release/pbtc --print-to-console import "#BITCOIND_DB/Bitcoin/blocks" --skip-verification
+./target/release/pbtc import "#BITCOIND_DB/Bitcoin/blocks" --skip-verification
 ```
 
 ## Command line interface
 
-Full list of cli options, which is available under `pbtc --help`
+Full list of CLI options, which is available under `pbtc --help`:
 
 ```
 pbtc 0.1.0
-Parity Technologies <admin@parity.io>
-Parity bitcoin client
+Parity Technologies <info@parity.io>
+Parity Bitcoin client
 
 USAGE:
     pbtc [FLAGS] [OPTIONS] [SUBCOMMAND]
 
 FLAGS:
-    -h, --help                Prints help information
-        --no-jsonrpc          Disable the JSON-RPC API server
-        --print-to-console    Send sync info to console
-        --regtest             Use private network for regtest
-        --testnet             Use the test network
-    -V, --version             Prints version information
+        --bitcoin-cash    Use Bitcoin Cash verification rules.
+    -h, --help            Prints help information
+        --no-jsonrpc      Disable the JSON-RPC API server.
+    -q, --quiet           Do not show any synchronization information in the console.
+        --regtest         Use a private network for regression tests.
+        --segwit2x        Enable SegWit2x verification rules.
+        --testnet         Use the test network (Testnet3).
+    -V, --version         Prints version information
 
 OPTIONS:
-        --blocknotify <command>            Execute command when the best block changes (%s in cmd is replaced by block hash)
-    -c, --connect <IP>                     Connect only to the specified node
-    -d, --data-dir <PATH>                  Specify the database & configuration directory PATH
-        --db-cache <SIZE>                  Sets db cache size
-        --jsonrpc-apis <APIS>              Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API name. Available APIs are blockchain, network, miner, raw.
-        --jsonrpc-cors <URL>               Specify CORS header for JSON-RPC API responses
-        --jsonrpc-hosts <HOSTS>            List of allowed Host header values
-        --jsonrpc-interface <INTERFACE>    The hostname portion of the JSONRPC API server
-        --jsonrpc-port <PORT>              The port portion of the JSONRPC API server
-        --only-net <NET>                   Only connect to nodes in network <NET> (ipv4 or ipv6)
-        --port <PORT>                      Listen for connections on PORT
-    -s, --seednode <IP>                    Connect to a node to retrieve peer addresses, and disconnect
+        --blocknotify <COMMAND>            Execute COMMAND when the best block changes (%s in COMMAND is replaced by the block hash).
+    -c, --connect <IP>                     Connect only to the specified node.
+    -d, --data-dir <PATH>                  Specify the database and configuration directory PATH.
+        --db-cache <SIZE>                  Sets the database cache size.
+        --jsonrpc-apis <APIS>              Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API names.
+        --jsonrpc-cors <URL>               Specify CORS header for JSON-RPC API responses.
+        --jsonrpc-hosts <HOSTS>            List of allowed Host header values.
+        --jsonrpc-interface <INTERFACE>    The hostname portion of the JSONRPC API server.
+        --jsonrpc-port <PORT>              Specify the PORT for the JSONRPC API server.
+        --only-net <NET>                   Only connect to nodes in network version <NET> (ipv4 or ipv6).
+        --port <PORT>                      Listen for connections on PORT.
+    -s, --seednode <IP>                    Connect to a seed-node to retrieve peer addresses, and disconnect.
+        --verification-edge <BLOCK>        Non-default verification-level is applied until a block with given hash is met.
+        --verification-level <LEVEL>       Sets the Blocks verification level to full (default), header (scripts are not verified), or none (no verification at all).
 
 SUBCOMMANDS:
-    help      Prints this message or the help of the given subcommand(s)
-    import    Import blocks from bitcoin core database
+    help        Prints this message or the help of the given subcommand(s)
+    import      Import blocks from a Bitcoin Core database.
+    rollback    Rollback the database to given canonical-chain block.
 ```
 
 ## JSON-RPC
@@ -328,19 +331,15 @@ Adds transaction to the memory pool && relays it to the peers.
 
 ## Logging
 
-This is a section only for dev / power users.
+This is a section only for developers and power users.
 
-You can enable detailed client logging by setting env variable `RUST_LOG`
-
-eg.
+You can enable detailed client logging by setting the environment variable `RUST_LOG`, e.g.,
 
 ```
 RUST_LOG=verification=info ./target/release/pbtc
 ```
 
-`pbtc` started with this env variable will print all logs comming from `verification` module with verbosity `info` or higher
-
-Available log levels:
+`pbtc` started with this environment variable will print all logs coming from `verification` module with verbosity `info` or higher. Available log levels are:
 
 - `error`
 - `warn`
@@ -348,13 +347,11 @@ Available log levels:
 - `debug`
 - `trace`
 
-It's also possible to start logging from multiple modules in the same time
+It's also possible to start logging from multiple modules in the same time:
 
 ```
-RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace
+RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace ./target/release/pbtc
 ```
-
-*note* `RUST_LOG` does not work together with command line option `--print-to-console`
 
 ## Internal documentation
 

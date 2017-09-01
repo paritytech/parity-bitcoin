@@ -52,7 +52,7 @@ fn run() -> Result<(), String> {
 	let matches = clap::App::from_yaml(yaml).get_matches();
 	let cfg = try!(config::parse(&matches));
 
-	if cfg.print_to_console {
+	if !cfg.quiet {
 		if cfg!(windows) {
 			logs::init(LOG_INFO, logs::DateLogFormatter);
 		} else {
