@@ -147,21 +147,18 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 			}
 			let threshold_state = deployment_state.state;
 			let deployment_iter = ThresholdIterator::new(deployment, headers, number, miner_confirmation_window, rule_change_activation_threshold, threshold_state);
-			let state = match deployment_iter.last() {
-				Some(state) => state,
-				None => DeploymentState {
-					block_number: number,
-					block_hash: hash,
-					state: deployment_state.state,
-				},
-			};
+			let state = deployment_iter.last().expect("iter must have at least one item");
 			let result = state.state;
 			entry.insert(state);
 			result
 		},
 		Entry::Vacant(entry) => {
 			let deployment_iter = ThresholdIterator::new(deployment, headers, miner_confirmation_window - 1, miner_confirmation_window, rule_change_activation_threshold, ThresholdState::Defined);
-			let state = deployment_iter.last().unwrap_or_default();
+			let state = deployment_iter.last().unwrap_or_else(|| DeploymentState {
+				block_number: number,
+				block_hash: hash,
+				state: ThresholdState::Defined,
+			});
 			let result = state.state;
 			entry.insert(state);
 			result
@@ -255,6 +252,7 @@ impl<'a> Iterator for ThresholdIterator<'a> {
 
 #[cfg(test)]
 mod tests {
+	use std::sync::atomic::{AtomicUsize, Ordering};
 	use std::collections::HashMap;
 	use chain::BlockHeader;
 	use db::{BlockHeaderProvider, BlockRef};
@@ -268,6 +266,7 @@ mod tests {
 
 	#[derive(Default)]
 	struct DeploymentHeaderProvider {
+		pub request_count: AtomicUsize,
 		pub by_height: Vec<BlockHeader>,
 		pub by_hash: HashMap<H256, usize>,
 	}
@@ -298,6 +297,7 @@ mod tests {
 		}
 
 		fn block_header(&self, block_ref: BlockRef) -> Option<BlockHeader> {
+			self.request_count.fetch_add(1, Ordering::Relaxed);
 			match block_ref {
 				BlockRef::Number(height) => self.by_height.get(height as usize).cloned(),
 				BlockRef::Hash(hash) => self.by_hash.get(&hash).and_then(|height| self.by_height.get(*height)).cloned(),
@@ -418,23 +418,33 @@ mod tests {
 	fn test_threshold_state_defined_to_started_to_lockedin() {
 		let (mut cache, mut headers, deployment) = prepare_deployments();
 		let test_cases = vec![
-			(1,		make_test_time(1),			0x20000000,	ThresholdState::Defined),
-			(1000,	make_test_time(10000) - 1,	0x20000001,	ThresholdState::Defined),
-			(2000,	make_test_time(10000),		0x20000001,	ThresholdState::Started),
-			(2050,	make_test_time(10010),		0x20000000,	ThresholdState::Started),
-			(2950,	make_test_time(10020),		0x20000001,	ThresholdState::Started),
-			(2999,	make_test_time(19999),		0x20000000,	ThresholdState::Started),
-			(3000,	make_test_time(29999),		0x20000000,	ThresholdState::LockedIn),
-			(3999,	make_test_time(30001),		0x20000000,	ThresholdState::LockedIn),
-			(4000,	make_test_time(30002),		0x20000000,	ThresholdState::Active),
-			(14333,	make_test_time(30003),		0x20000000,	ThresholdState::Active),
-			(24000,	make_test_time(40000),		0x20000000,	ThresholdState::Active),
+			(1,		make_test_time(1),			0x20000000,	ThresholdState::Defined, false),
+			(1000,	make_test_time(10000) - 1,	0x20000001,	ThresholdState::Defined, false),
+			(2000,	make_test_time(10000),		0x20000001,	ThresholdState::Started, false),
+			(2050,	make_test_time(10010),		0x20000000,	ThresholdState::Started, true),
+			(2950,	make_test_time(10020),		0x20000001,	ThresholdState::Started, true),
+			(2999,	make_test_time(19999),		0x20000000,	ThresholdState::Started, true),
+			(3000,	make_test_time(29999),		0x20000000,	ThresholdState::LockedIn, false),
+			(3999,	make_test_time(30001),		0x20000000,	ThresholdState::LockedIn, true),
+			(4000,	make_test_time(30002),		0x20000000,	ThresholdState::Active, false),
+			(14333,	make_test_time(30003),		0x20000000,	ThresholdState::Active, false),
+			(24000,	make_test_time(40000),		0x20000000,	ThresholdState::Active, false),
 		];
 
-		for (height, time, version, state) in test_cases {
+		for (height, time, version, state, is_single_request) in test_cases {
 			headers.mine(height, time, version);
 
+			let req_old = headers.request_count.load(Ordering::Relaxed);
 			assert_eq!(threshold_state(&mut cache, deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
+			let req_new = headers.request_count.load(Ordering::Relaxed);
+
+			// also check that same-period states are read from cache
+			if is_single_request {
+				assert_eq!(req_old + 1, req_new);
+			} else {
+				assert!(req_old < req_new);
+			}
+
 			assert_eq!(threshold_state(&mut DeploymentStateCache::default(), deployment, height, &headers, MINER_CONFIRMATION_WINDOW, RULE_CHANGE_ACTIVATION_THRESHOLD), state);
 		}
 	}

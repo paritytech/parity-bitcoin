@@ -118,6 +118,8 @@ pub struct Chain {
 	memory_pool: MemoryPoolRef,
 	/// Blocks that have been marked as dead-ends
 	dead_end_blocks: HashSet<H256>,
+	/// Deployments cache
+	deployments: Deployments,
 	/// Is SegWit active?
 	is_segwit_active: bool,
 }
@@ -150,7 +152,8 @@ impl Chain {
 			.expect("storage with genesis block is required");
 		let best_storage_block = storage.best_block();
 		let best_storage_block_hash = best_storage_block.hash.clone();
-		let is_segwit_active = Deployments::new().segwit(best_storage_block.number, storage.as_block_header_provider(), &consensus);
+		let deployments = Deployments::new();
+		let is_segwit_active = deployments.segwit(best_storage_block.number, storage.as_block_header_provider(), &consensus);
 
 		Chain {
 			genesis_block_hash: genesis_block_hash,
@@ -162,6 +165,7 @@ impl Chain {
 			verifying_transactions: LinkedHashMap::new(),
 			memory_pool: memory_pool,
 			dead_end_blocks: HashSet::new(),
+			deployments: deployments,
 			is_segwit_active: is_segwit_active,
 		}
 	}
@@ -363,7 +367,7 @@ impl Chain {
 
 				// remember new best block hash
 				self.best_storage_block = self.storage.as_store().best_block();
-				self.is_segwit_active = Deployments::new().segwit(self.best_storage_block.number, self.storage.as_block_header_provider(), &self.consensus);
+				self.is_segwit_active = self.deployments.segwit(self.best_storage_block.number, self.storage.as_block_header_provider(), &self.consensus);
 
 				// remove inserted block + handle possible reorganization in headers chain
 				// TODO: mk, not sure if we need both of those params
@@ -399,7 +403,7 @@ impl Chain {
 
 				// remember new best block hash
 				self.best_storage_block = self.storage.best_block();
-				self.is_segwit_active = Deployments::new().segwit(self.best_storage_block.number, self.storage.as_block_header_provider(), &self.consensus);
+				self.is_segwit_active = self.deployments.segwit(self.best_storage_block.number, self.storage.as_block_header_provider(), &self.consensus);
 
 				// remove inserted block + handle possible reorganization in headers chain
 				// TODO: mk, not sure if we need both of those params
