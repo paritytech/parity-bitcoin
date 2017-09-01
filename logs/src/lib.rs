@@ -3,6 +3,7 @@ extern crate log;
 extern crate env_logger;
 extern crate time;
 
+use std::env;
 use ansi_term::Colour as Color;
 use log::{LogRecord, LogLevel};
 use env_logger::LogBuilder;
@@ -46,7 +47,12 @@ impl LogFormatter for DateAndColorLogFormatter {
 
 pub fn init<T>(filters: &str, formatter: T) where T: LogFormatter {
 	let mut builder = LogBuilder::new();
-	builder.parse(filters);
+	let filters = match env::var("RUST_LOG") {
+		Ok(env_filters) => format!("{},{}", env_filters, filters),
+		Err(_) => filters.into(),
+	};
+
+	builder.parse(&filters);
 	builder.format(move |record| formatter.format(record));
 	builder.init().expect("Logger can be initialized only once");
 }
