@@ -31,10 +31,10 @@ script:
   - echo 'Building in release mode' && echo -en 'travis_fold:start:build.release'
   - cargo build --release
   - echo -en 'travis_fold:end:build.release'
-  - echo 'Running regtests from ./tools/compare-tool/pull-tests-be0eef7.jar' && echo -en 'travis_fold:start:regtests'
+  - echo 'Running regtests from ./tools/regtests.sh' && echo -en 'travis_fold:start:regtests'
   - ./tools/regtests.sh
   - echo -en 'travis_fold:end:regtests'
-  - echo 'Running bench from /benhcer' && echo -en 'travis_fold:start:bench'
+  - echo 'Running bench from ./tools/bench.sh' && echo -en 'travis_fold:start:bench'
   - ./tools/bench.sh
   - echo -en 'travis_fold:end:bench'
 after_success: |

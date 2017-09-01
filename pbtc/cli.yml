@@ -72,7 +72,7 @@ args:
         value_name: URL
     - jsonrpc-apis:
         long: jsonrpc-apis
-        help: Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API names.
+        help: Specify the APIs available through the JSONRPC interface. APIS is a comma-delimited list of API name. Available APIs are blockchain, network, miner, raw.
         takes_value: true
         value_name: APIS
     - jsonrpc-hosts:
