@@ -158,7 +158,7 @@ It it is possible to import existing `bitcoind` database:
 ./target/release/pbtc import "$BITCOIND_DB/Bitcoin/blocks"
 ```
 
-By default import verifies imported the blocks. You can disable this, by adding `--skip-verification flag.
+By default import verifies imported the blocks. You can disable this, by adding `--skip-verification` flag.
 
 ```
 ./target/release/pbtc import "#BITCOIND_DB/Bitcoin/blocks" --skip-verification
@@ -336,7 +336,7 @@ This is a section only for developers and power users.
 You can enable detailed client logging by setting the environment variable `RUST_LOG`, e.g.,
 
 ```
-RUST_LOG=verification=info ./target/release/pbtc --quiet
+RUST_LOG=verification=info ./target/release/pbtc
 ```
 
 `pbtc` started with this environment variable will print all logs coming from `verification` module with verbosity `info` or higher. Available log levels are:
@@ -350,10 +350,8 @@ RUST_LOG=verification=info ./target/release/pbtc --quiet
 It's also possible to start logging from multiple modules in the same time:
 
 ```
-RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace ./target/release/pbtc --quiet
+RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace ./target/release/pbtc
 ```
-
-**Note:** `RUST_LOG` does only work together with command line option `--quiet` which will suppress the default `sync=info` logging.
 
 ## Internal documentation
 
