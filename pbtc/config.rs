@@ -176,21 +176,24 @@ fn parse_consensus_fork(db: &db::SharedStore, matches: &clap::ArgMatches) -> Res
 		Err(err) => return Err(err.into()),
 	};
 	let new_consensus_fork = match (matches.is_present("segwit"), matches.is_present("segwit2x"), matches.is_present("bitcoin-cash")) {
-		(false, false, false) if old_consensus_fork.is_none() =>
-			return Err("You must select fork on first run: --segwit, --segwit2x, --bitcoin-cash".into()),
+		(false, false, false) => match &old_consensus_fork {
+			&Some(ref old_consensus_fork) => old_consensus_fork,
+			&None => return Err("You must select fork on first run: --segwit, --segwit2x, --bitcoin-cash".into()),
+		},
 		(true, false, false) => "segwit",
 		(false, true, false) => "segwit2x",
 		(false, false, true) => "bitcoin-cash",
 		_ => return Err("You can only pass single fork argument: --segwit, --segwit2x, --bitcoin-cash".into()),
 	};
 
-	match old_consensus_fork {
-		None => match db.set_consensus_fork(new_consensus_fork) {
+	match &old_consensus_fork {
+		&None => match db.set_consensus_fork(new_consensus_fork) {
 			Ok(()) => (),
 			Err(err) => return Err(err.into()),
 		},
-		Some(ref old_consensus_fork) if old_consensus_fork == new_consensus_fork => (),
-		Some(old_consensus_fork) => return Err(format!("Cannnot select '{}' fork with non-empty database of '{}' fork", new_consensus_fork, old_consensus_fork)),
+		&Some(ref old_consensus_fork) if old_consensus_fork == new_consensus_fork => (),
+		&Some(ref old_consensus_fork) =>
+			return Err(format!("Cannot select '{}' fork with non-empty database of '{}' fork", new_consensus_fork, old_consensus_fork)),
 	}
 
 	Ok(match new_consensus_fork {
