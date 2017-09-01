@@ -10,9 +10,9 @@ pub enum Error {
 	AncientFork,
 }
 
-impl Into<String> for Error {
-	fn into(self) -> String {
-		match self {
+impl From<Error> for String {
+	fn from(e: Error) -> String {
+		match e {
 			Error::DatabaseError(s) => format!("Database error: {}", s),
 			Error::CannotCanonize => "Cannot canonize block".into(),
 			Error::UnknownParent => "Block parent is unknown".into(),

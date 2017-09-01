@@ -171,10 +171,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 }
 
 fn parse_consensus_fork(db: &db::SharedStore, matches: &clap::ArgMatches) -> Result<ConsensusFork, String> {
-	let old_consensus_fork = match db.consensus_fork() {
-		Ok(consensus_fork) => consensus_fork,
-		Err(err) => return Err(err.into()),
-	};
+	let old_consensus_fork = db.consensus_fork()?;
 	let new_consensus_fork = match (matches.is_present("segwit"), matches.is_present("segwit2x"), matches.is_present("bitcoin-cash")) {
 		(false, false, false) => match &old_consensus_fork {
 			&Some(ref old_consensus_fork) => old_consensus_fork,
@@ -187,10 +184,7 @@ fn parse_consensus_fork(db: &db::SharedStore, matches: &clap::ArgMatches) -> Res
 	};
 
 	match &old_consensus_fork {
-		&None => match db.set_consensus_fork(new_consensus_fork) {
-			Ok(()) => (),
-			Err(err) => return Err(err.into()),
-		},
+		&None => db.set_consensus_fork(new_consensus_fork)?,
 		&Some(ref old_consensus_fork) if old_consensus_fork == new_consensus_fork => (),
 		&Some(ref old_consensus_fork) =>
 			return Err(format!("Cannot select '{}' fork with non-empty database of '{}' fork", new_consensus_fork, old_consensus_fork)),
