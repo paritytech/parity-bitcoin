@@ -36,7 +36,7 @@ pub use block_origin::{BlockOrigin, SideChainOrigin};
 pub use block_provider::{BlockHeaderProvider, BlockProvider, IndexedBlockProvider};
 pub use block_ref::BlockRef;
 pub use error::Error;
-pub use store::{AsSubstore, Store, SharedStore, CanonStore};
+pub use store::{AsSubstore, Store, SharedStore, CanonStore, ConfigStore};
 pub use transaction_meta::TransactionMeta;
 pub use transaction_provider::{TransactionProvider, TransactionOutputProvider, TransactionMetaProvider};
 

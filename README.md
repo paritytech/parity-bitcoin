@@ -117,7 +117,7 @@ It's also possible to run regtests manually:
 
 ```
 # let's start pbtc in regtest compatible mode
-./target/release/pbtc --regtest
+./target/release/pbtc --segwit --regtest
 
 # now in second shell window
 cd $HOME
@@ -131,22 +131,24 @@ java -jar pull-tests-f56eec3.jar
 
 By default parity connects to bitcoind-seednodes. Full list is [here](./pbtc/seednodes.rs).
 
-To start syncing the main network, just start the client:
+Before starting synchronization, you must decide - which fork to follow - SegWit (`--segwit` flag), SegWit2x (`--segwit2x` flag) or Bitcoin Cash (`--bitcoin-cash` flag). On next start, passing the same flag is optional, as the database is already bound to selected fork and won't be synchronized using other verification rules.
+
+To start syncing the main network, just start the client, passing selected fork flag. For example:
 
 ```
-./target/release/pbtc
+./target/release/pbtc --segwit
 ```
 
 To start syncing the testnet:
 
 ```
-./target/release/pbtc --testnet
+./target/release/pbtc --segwit --testnet
 ```
 
 To not print any syncing progress add `--quiet` flag:
 
 ```
-./target/release/pbtc --quiet
+./target/release/pbtc --segwit --quiet
 ```
 
 ## Importing bitcoind database
@@ -158,10 +160,10 @@ It it is possible to import existing `bitcoind` database:
 ./target/release/pbtc import "$BITCOIND_DB/Bitcoin/blocks"
 ```
 
-By default import verifies imported the blocks. You can disable this, by adding `--skip-verification` flag.
+By default import verifies imported the blocks. You can disable this, by adding `--verification-level==none` flag.
 
 ```
-./target/release/pbtc import "#BITCOIND_DB/Bitcoin/blocks" --skip-verification
+./target/release/pbtc import "#BITCOIND_DB/Bitcoin/blocks" --segwit --skip-verification
 ```
 
 ## Command line interface
@@ -182,6 +184,7 @@ FLAGS:
         --no-jsonrpc      Disable the JSON-RPC API server.
     -q, --quiet           Do not show any synchronization information in the console.
         --regtest         Use a private network for regression tests.
+        --segwit          Enable SegWit verification rules.
         --segwit2x        Enable SegWit2x verification rules.
         --testnet         Use the test network (Testnet3).
     -V, --version         Prints version information
@@ -336,7 +339,7 @@ This is a section only for developers and power users.
 You can enable detailed client logging by setting the environment variable `RUST_LOG`, e.g.,
 
 ```
-RUST_LOG=verification=info ./target/release/pbtc
+RUST_LOG=verification=info ./target/release/pbtc --segwit
 ```
 
 `pbtc` started with this environment variable will print all logs coming from `verification` module with verbosity `info` or higher. Available log levels are:
@@ -350,7 +353,7 @@ RUST_LOG=verification=info ./target/release/pbtc
 It's also possible to start logging from multiple modules in the same time:
 
 ```
-RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace ./target/release/pbtc
+RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace ./target/release/pbtc --segwit
 ```
 
 ## Internal documentation

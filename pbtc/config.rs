@@ -1,5 +1,6 @@
 use std::net;
 use clap;
+use db;
 use message::Services;
 use network::{Magic, ConsensusParams, ConsensusFork, SEGWIT2X_FORK_BLOCK, BITCOIN_CASH_FORK_BLOCK};
 use p2p::InternetProtocol;
@@ -10,6 +11,7 @@ use primitives::hash::H256;
 use rpc::HttpConfiguration as RpcHttpConfig;
 use verification::VerificationLevel;
 use sync::VerificationParameters;
+use util::open_db;
 
 pub struct Config {
 	pub magic: Magic,
@@ -29,11 +31,24 @@ pub struct Config {
 	pub rpc_config: RpcHttpConfig,
 	pub block_notify_command: Option<String>,
 	pub verification_params: VerificationParameters,
+	pub db: db::SharedStore,
 }
 
 pub const DEFAULT_DB_CACHE: usize = 512;
 
 pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
+	let db_cache = match matches.value_of("db-cache") {
+		Some(s) => s.parse().map_err(|_| "Invalid cache size - should be number in MB".to_owned())?,
+		None => DEFAULT_DB_CACHE,
+	};
+
+	let data_dir = match matches.value_of("data-dir") {
+		Some(s) => Some(s.parse().map_err(|_| "Invalid data-dir".to_owned())?),
+		None => None,
+	};
+
+	let db = open_db(&data_dir, db_cache);
+
 	let quiet = matches.is_present("quiet");
 	let magic = match (matches.is_present("testnet"), matches.is_present("regtest")) {
 		(true, false) => Magic::Testnet,
@@ -42,12 +57,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		(true, true) => return Err("Only one testnet option can be used".into()),
 	};
 
-	let (consensus_fork, user_agent_suffix) = match (matches.is_present("segwit2x"), matches.is_present("bitcoin-cash")) {
-		(true, false) => (ConsensusFork::SegWit2x(SEGWIT2X_FORK_BLOCK), "/SegWit2x"),
-		(false, true) => (ConsensusFork::BitcoinCash(BITCOIN_CASH_FORK_BLOCK), "/UAHF"),
-		(false, false) => (ConsensusFork::NoFork, ""),
-		(true, true) => return Err("Only one fork can be used".into()),
-	};
+	let consensus_fork = parse_consensus_fork(&db, &matches)?;
 	let consensus = ConsensusParams::new(magic, consensus_fork);
 
 	let (in_connections, out_connections) = match magic {
@@ -61,6 +71,11 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	};
 
 	// to skip idiotic 30 seconds delay in test-scripts
+	let user_agent_suffix = match consensus_fork {
+		ConsensusFork::NoFork => "",
+		ConsensusFork::SegWit2x(_) => "/SegWit2x",
+		ConsensusFork::BitcoinCash(_) => "/UAHF",
+	};
 	let user_agent = match magic {
 		Magic::Testnet | Magic::Mainnet | Magic::Unitest | Magic::Other(_) => format!("{}{}", USER_AGENT, user_agent_suffix),
 		Magic::Regtest => REGTEST_USER_AGENT.into(),
@@ -93,16 +108,6 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		ConsensusFork::SegWit2x(_) => seednodes.extend(segwit2x_seednodes().into_iter().map(Into::into)),
 		_ => (),
 	}
-
-	let db_cache = match matches.value_of("db-cache") {
-		Some(s) => s.parse().map_err(|_| "Invalid cache size - should be number in MB".to_owned())?,
-		None => DEFAULT_DB_CACHE,
-	};
-
-	let data_dir = match matches.value_of("data-dir") {
-		Some(s) => Some(s.parse().map_err(|_| "Invalid data-dir".to_owned())?),
-		None => None,
-	};
 
 	let only_net = match matches.value_of("only-net") {
 		Some(s) => s.parse()?,
@@ -159,9 +164,38 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 			verification_level: verification_level,
 			verification_edge: verification_edge,
 		},
+		db: db,
 	};
 
 	Ok(config)
+}
+
+fn parse_consensus_fork(db: &db::SharedStore, matches: &clap::ArgMatches) -> Result<ConsensusFork, String> {
+	let old_consensus_fork = db.consensus_fork()?;
+	let new_consensus_fork = match (matches.is_present("segwit"), matches.is_present("segwit2x"), matches.is_present("bitcoin-cash")) {
+		(false, false, false) => match &old_consensus_fork {
+			&Some(ref old_consensus_fork) => old_consensus_fork,
+			&None => return Err("You must select fork on first run: --segwit, --segwit2x, --bitcoin-cash".into()),
+		},
+		(true, false, false) => "segwit",
+		(false, true, false) => "segwit2x",
+		(false, false, true) => "bitcoin-cash",
+		_ => return Err("You can only pass single fork argument: --segwit, --segwit2x, --bitcoin-cash".into()),
+	};
+
+	match &old_consensus_fork {
+		&None => db.set_consensus_fork(new_consensus_fork)?,
+		&Some(ref old_consensus_fork) if old_consensus_fork == new_consensus_fork => (),
+		&Some(ref old_consensus_fork) =>
+			return Err(format!("Cannot select '{}' fork with non-empty database of '{}' fork", new_consensus_fork, old_consensus_fork)),
+	}
+
+	Ok(match new_consensus_fork {
+		"segwit" => ConsensusFork::NoFork,
+		"segwit2x" => ConsensusFork::SegWit2x(SEGWIT2X_FORK_BLOCK),
+		"bitcoin-cash" => ConsensusFork::BitcoinCash(BITCOIN_CASH_FORK_BLOCK),
+		_ => unreachable!("hardcoded above"),
+	})
 }
 
 fn parse_rpc_config(magic: Magic, matches: &clap::ArgMatches) -> Result<RpcHttpConfig, String> {
