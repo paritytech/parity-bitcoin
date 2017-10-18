@@ -1,10 +1,18 @@
-FROM ubuntu:14.04
-MAINTAINER Parity Technologies <devops@parity.io>
-WORKDIR /build
+# This Dockerfile uses Docker Multi-Stage Builds
+# See https://docs.docker.com/engine/userguide/eng-image/multistage-build/
+
+# Build image
+FROM rust:1.21-jessie AS build
+
 #ENV for build TAG
 ARG BUILD_TAG
-ENV BUILD_TAG ${BUILD_TAG:-master}
+ENV BUILD_TAG=${BUILD_TAG:-master} \
+    PATH=/root/.cargo/bin:$PATH \
+    RUST_BACKTRACE=1
+
+WORKDIR /build
 RUN echo $BUILD_TAG
+
 # install tools and dependencies
 RUN apt-get update && \
         apt-get install -y --force-yes --no-install-recommends \
@@ -17,35 +25,25 @@ RUN apt-get update && \
         ca-certificates \
         libssl-dev \
         pkg-config \
-        libudev-dev && \
-# install rustup
- curl https://sh.rustup.rs -sSf | sh -s -- -y && \
-# rustup directory
- PATH=/root/.cargo/bin:$PATH && \
-# show backtraces
- RUST_BACKTRACE=1 && \
+        libudev-dev
+
 # build pbtc-ubuntu
- cd /build&&git clone https://github.com/paritytech/parity-bitcoin && \
-        cd parity-bitcoin && \
-	git pull&& \
-	git checkout $BUILD_TAG && \
-        cargo build --verbose --release && \
-        strip /build/parity-bitcoin/target/release/pbtc && \
- file /build/parity-bitcoin/target/release/pbtc&&mkdir -p /pbtc-ubuntu&& \
- cp /build/parity-bitcoin/target/release/pbtc /pbtc-ubuntu/pbtc-ubuntu&& \
-#cleanup Docker image
- rm -rf /root/.cargo&&rm -rf /root/.multirust&&rm -rf /root/.rustup&&rm -rf /build&&\
- apt-get purge -y  \
- g++ \
- build-essential \
- curl \
- git \
- file \
- binutils \
- libssl-dev \
- pkg-config \
- libudev-dev && \
- rm -rf /var/lib/apt/lists/*
+RUN git clone https://github.com/paritytech/parity-bitcoin
+
+WORKDIR /build/parity-bitcoin
+RUN git pull
+RUN git checkout $BUILD_TAG
+RUN cargo build --verbose --release
+RUN strip /build/parity-bitcoin/target/release/pbtc
+RUN file /build/parity-bitcoin/target/release/pbtc
+
+# Runtime image, copies pbtc artifact from build image
+FROM ubuntu:16.04 AS run
+LABEL maintainer "Parity Technologies <devops@parity.io>"
+
+WORKDIR /pbtc-ubuntu
+COPY --from=build /build/parity-bitcoin/target/release/pbtc/ /pbtc-ubuntu/pbtc-ubuntu
+
 # setup ENTRYPOINT
 EXPOSE 8333 18333 8332 18332
 ENTRYPOINT ["/pbtc-ubuntu/pbtc-ubuntu"]
