@@ -4,9 +4,8 @@ use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::sync::atomic::{AtomicBool, Ordering};
 use sync::{create_sync_peers, create_local_sync_node, create_sync_connection_factory, SyncListener};
-use message::Services;
 use primitives::hash::H256;
-use util::{open_db, init_db, node_table_path};
+use util::{init_db, node_table_path};
 use {config, p2p, PROTOCOL_VERSION, PROTOCOL_MINIMUM};
 use super::super::rpc;
 
@@ -85,8 +84,7 @@ impl Drop for BlockNotifier {
 pub fn start(cfg: config::Config) -> Result<(), String> {
 	let mut el = p2p::event_loop();
 
-	let db = open_db(&cfg);
-	init_db(&cfg, &db)?;
+	init_db(&cfg)?;
 
 	let nodes_path = node_table_path(&cfg);
 
@@ -99,7 +97,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 			protocol_minimum: PROTOCOL_MINIMUM,
 			magic: cfg.magic,
 			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
-			services: Services::default().with_network(true),
+			services: cfg.services,
 			user_agent: cfg.user_agent,
 			start_height: 0,
 			relay: true,
@@ -107,11 +105,12 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 		peers: cfg.connect.map_or_else(|| vec![], |x| vec![x]),
 		seeds: cfg.seednodes,
 		node_table_path: nodes_path,
+		preferable_services: cfg.services,
 		internet_protocol: cfg.internet_protocol,
 	};
 
 	let sync_peers = create_sync_peers();
-	let local_sync_node = create_local_sync_node(cfg.magic, db.clone(), sync_peers.clone());
+	let local_sync_node = create_local_sync_node(cfg.consensus, cfg.db.clone(), sync_peers.clone(), cfg.verification_params);
 	let sync_connection_factory = create_sync_connection_factory(sync_peers.clone(), local_sync_node.clone());
 
 	if let Some(block_notify_command) = cfg.block_notify_command {
@@ -121,7 +120,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 	let p2p = try!(p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle()).map_err(|x| x.to_string()));
 	let rpc_deps = rpc::Dependencies {
 		network: cfg.magic,
-		storage: db,
+		storage: cfg.db,
 		local_sync_node: local_sync_node,
 		p2p_context: p2p.context().clone(),
 		remote: el.remote(),

@@ -23,14 +23,12 @@ use best_block::BestBlock;
 use {
 	BlockRef, Error, BlockHeaderProvider, BlockProvider, BlockOrigin, TransactionMeta, IndexedBlockProvider,
 	TransactionMetaProvider, TransactionProvider, TransactionOutputProvider, BlockChain, Store,
-	SideChainOrigin, ForkChain, Forkable, CanonStore
+	SideChainOrigin, ForkChain, Forkable, CanonStore, ConfigStore
 };
 
-const KEY_VERSION: &'static str = "version";
 const KEY_BEST_BLOCK_NUMBER: &'static str = "best_block_number";
 const KEY_BEST_BLOCK_HASH: &'static str = "best_block_hash";
 
-const DB_VERSION: u32 = 1;
 const MAX_FORK_ROUTE_PRESET: usize = 2048;
 
 pub struct BlockChainDatabase<T> where T: KeyValueDatabase {
@@ -221,6 +219,30 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		}
 
 		self.db.write(update).map_err(Error::DatabaseError)
+	}
+
+	/// Rollbacks single best block
+	fn rollback_best(&self) -> Result<H256, Error> {
+		let decanonized = match self.block(self.best_block.read().hash.clone().into()) {
+			Some(block) => block,
+			None => return Ok(H256::default()),
+		};
+		let decanonized_hash = self.decanonize()?;
+		debug_assert_eq!(decanonized.hash(), decanonized_hash);
+
+		// and now remove decanonized block from database
+		// all code currently works in assumption that origin of all blocks is one of:
+		// {CanonChain, SideChain, SideChainBecomingCanonChain}
+		let mut update = DBTransaction::new();
+		update.delete(Key::BlockHeader(decanonized_hash.clone()));
+		update.delete(Key::BlockTransactions(decanonized_hash.clone()));
+		for tx in decanonized.transactions.into_iter() {
+			update.delete(Key::Transaction(tx.hash()));
+		}
+
+		self.db.write(update).map_err(Error::DatabaseError)?;
+
+		Ok(self.best_block().hash)
 	}
 
 	/// Marks block as a new best block.
@@ -491,6 +513,10 @@ impl<T> BlockChain for BlockChainDatabase<T> where T: KeyValueDatabase {
 		BlockChainDatabase::insert(self, block)
 	}
 
+	fn rollback_best(&self) -> Result<H256, Error> {
+		BlockChainDatabase::rollback_best(self)
+	}
+
 	fn canonize(&self, block_hash: &H256) -> Result<(), Error> {
 		BlockChainDatabase::canonize(self, block_hash)
 	}
@@ -539,5 +565,25 @@ impl<T> Store for BlockChainDatabase<T> where T: KeyValueDatabase {
 	/// get blockchain difficulty
 	fn difficulty(&self) -> f64 {
 		self.best_header().bits.to_f64()
+	}
+}
+
+impl<T> ConfigStore for BlockChainDatabase<T> where T: KeyValueDatabase {
+	fn consensus_fork(&self) -> Result<Option<String>, Error> {
+		match self.db.get(&Key::Configuration("consensus_fork"))
+			.map(KeyState::into_option)
+			.map(|x| x.and_then(Value::as_configuration)) {
+			Ok(Some(consensus_fork)) => String::from_utf8(consensus_fork.into())
+				.map_err(|e| Error::DatabaseError(format!("{}", e)))
+				.map(Some),
+			Ok(None) => Ok(None),
+			Err(e) => Err(Error::DatabaseError(e.into())),
+		}
+	}
+
+	fn set_consensus_fork(&self, consensus_fork: &str) -> Result<(), Error> {
+		let mut update = DBTransaction::new();
+		update.insert(KeyValue::Configuration("consensus_fork", consensus_fork.as_bytes().into()));
+		self.db.write(update).map_err(Error::DatabaseError)
 	}
 }

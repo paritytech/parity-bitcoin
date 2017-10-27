@@ -28,8 +28,12 @@ pub enum Task {
 	MerkleBlock(PeerIndex, types::MerkleBlock),
 	/// Send cmpcmblock
 	CompactBlock(PeerIndex, types::CompactBlock),
+	/// Send block with witness data
+	WitnessBlock(PeerIndex, IndexedBlock),
 	/// Send transaction
 	Transaction(PeerIndex, IndexedTransaction),
+	/// Send transaction with witness data
+	WitnessTransaction(PeerIndex, IndexedTransaction),
 	/// Send block transactions
 	BlockTxn(PeerIndex, types::BlockTxn),
 	/// Send notfound
@@ -117,6 +121,17 @@ impl LocalSynchronizationTaskExecutor {
 		}
 	}
 
+	fn execute_witness_block(&self, peer_index: PeerIndex, block: IndexedBlock) {
+		if let Some(connection) = self.peers.connection(peer_index) {
+			trace!(target: "sync", "Sending witness block {} to peer#{}", block.hash().to_reversed_str(), peer_index);
+			self.peers.hash_known_as(peer_index, block.hash().clone(), KnownHashType::Block);
+			let block = types::Block {
+				block: block.to_raw_block(),
+			};
+			connection.send_witness_block(&block);
+		}
+	}
+
 	fn execute_transaction(&self, peer_index: PeerIndex, transaction: IndexedTransaction) {
 		if let Some(connection) = self.peers.connection(peer_index) {
 			trace!(target: "sync", "Sending transaction {} to peer#{}", transaction.hash.to_reversed_str(), peer_index);
@@ -125,6 +140,17 @@ impl LocalSynchronizationTaskExecutor {
 				transaction: transaction.raw,
 			};
 			connection.send_transaction(&transaction);
+		}
+	}
+
+	fn execute_witness_transaction(&self, peer_index: PeerIndex, transaction: IndexedTransaction) {
+		if let Some(connection) = self.peers.connection(peer_index) {
+			trace!(target: "sync", "Sending witness transaction {} to peer#{}", transaction.hash.to_reversed_str(), peer_index);
+			self.peers.hash_known_as(peer_index, transaction.hash, KnownHashType::Transaction);
+			let transaction = types::Tx {
+				transaction: transaction.raw,
+			};
+			connection.send_witness_transaction(&transaction);
 		}
 	}
 
@@ -202,7 +228,9 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 			Task::Block(peer_index, block) => self.execute_block(peer_index, block),
 			Task::MerkleBlock(peer_index, block) => self.execute_merkleblock(peer_index, block),
 			Task::CompactBlock(peer_index, block) => self.execute_compact_block(peer_index, block),
+			Task::WitnessBlock(peer_index, block) => self.execute_witness_block(peer_index, block),
 			Task::Transaction(peer_index, transaction) => self.execute_transaction(peer_index, transaction),
+			Task::WitnessTransaction(peer_index, transaction) => self.execute_witness_transaction(peer_index, transaction),
 			Task::BlockTxn(peer_index, blocktxn) => self.execute_block_txn(peer_index, blocktxn),
 			Task::NotFound(peer_index, notfound) => self.execute_notfound(peer_index, notfound),
 			Task::Inventory(peer_index, inventory) => self.execute_inventory(peer_index, inventory),
@@ -222,7 +250,7 @@ pub mod tests {
 	use std::time;
 	use parking_lot::{Mutex, Condvar};
 	use chain::Transaction;
-	use message::types;
+	use message::{Services, types};
 	use inbound_connection::tests::DummyOutboundSyncConnection;
 	use local_node::tests::{default_filterload, make_filteradd};
 	use synchronization_peers::{PeersImpl, PeersContainer, PeersFilters, PeersOptions, BlockAnnouncementType};
@@ -275,9 +303,9 @@ pub mod tests {
 		let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
 
 		let c1 = DummyOutboundSyncConnection::new();
-		peers.insert(1, c1.clone());
+		peers.insert(1, Services::default(), c1.clone());
 		let c2 = DummyOutboundSyncConnection::new();
-		peers.insert(2, c2.clone());
+		peers.insert(2, Services::default(), c2.clone());
 		peers.set_block_announcement_type(2, BlockAnnouncementType::SendCompactBlock);
 
 		executor.execute(Task::RelayNewBlock(test_data::genesis().into()));
@@ -291,9 +319,9 @@ pub mod tests {
 		let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
 
 		let c1 = DummyOutboundSyncConnection::new();
-		peers.insert(1, c1.clone());
+		peers.insert(1, Services::default(), c1.clone());
 		let c2 = DummyOutboundSyncConnection::new();
-		peers.insert(2, c2.clone());
+		peers.insert(2, Services::default(), c2.clone());
 		peers.set_block_announcement_type(2, BlockAnnouncementType::SendHeaders);
 
 		executor.execute(Task::RelayNewBlock(test_data::genesis().into()));
@@ -315,26 +343,26 @@ pub mod tests {
 
 		// peer#1 wants tx1
 		let c1 = DummyOutboundSyncConnection::new();
-		peers.insert(1, c1.clone());
+		peers.insert(1, Services::default(), c1.clone());
 		peers.set_bloom_filter(1, default_filterload());
 		peers.update_bloom_filter(1, make_filteradd(&*tx1_hash));
 		// peer#2 wants tx2
 		let c2 = DummyOutboundSyncConnection::new();
-		peers.insert(2, c2.clone());
+		peers.insert(2, Services::default(), c2.clone());
 		peers.set_bloom_filter(2, default_filterload());
 		peers.update_bloom_filter(2, make_filteradd(&*tx2_hash));
 		// peer#3 wants tx1 + tx2 transactions
 		let c3 = DummyOutboundSyncConnection::new();
-		peers.insert(3, c3.clone());
+		peers.insert(3, Services::default(), c3.clone());
 		peers.set_bloom_filter(3, default_filterload());
 		peers.update_bloom_filter(3, make_filteradd(&*tx1_hash));
 		peers.update_bloom_filter(3, make_filteradd(&*tx2_hash));
 		// peer#4 has default behaviour (no filter)
 		let c4 = DummyOutboundSyncConnection::new();
-		peers.insert(4, c4.clone());
+		peers.insert(4, Services::default(), c4.clone());
 		// peer#5 wants some other transactions
 		let c5 = DummyOutboundSyncConnection::new();
-		peers.insert(5, c5.clone());
+		peers.insert(5, Services::default(), c5.clone());
 		peers.set_bloom_filter(5, default_filterload());
 		peers.update_bloom_filter(5, make_filteradd(&*tx3_hash));
 
@@ -361,13 +389,13 @@ pub mod tests {
 		let executor = LocalSynchronizationTaskExecutor::new(peers.clone());
 
 		let c2 = DummyOutboundSyncConnection::new();
-		peers.insert(2, c2.clone());
+		peers.insert(2, Services::default(), c2.clone());
 		peers.set_fee_filter(2, types::FeeFilter::with_fee_rate(3000));
 		let c3 = DummyOutboundSyncConnection::new();
-		peers.insert(3, c3.clone());
+		peers.insert(3, Services::default(), c3.clone());
 		peers.set_fee_filter(3, types::FeeFilter::with_fee_rate(4000));
 		let c4 = DummyOutboundSyncConnection::new();
-		peers.insert(4, c4.clone());
+		peers.insert(4, Services::default(), c4.clone());
 
 		executor.execute(Task::RelayNewTransaction(test_data::genesis().transactions[0].clone().into(), 3500));
 

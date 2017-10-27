@@ -45,9 +45,8 @@ impl Protocol for AddrProtocol {
 					unreachable!("This version of protocol is not supported!");
 				},
 				Addr::V31402(addr) => {
-					let nodes: Vec<_> = addr.addresses.into_iter().map(Into::into).collect();
-					let nodes_len = nodes.len();
-					self.context.global().update_node_table(nodes);
+					let nodes_len = addr.addresses.len();
+					self.context.global().update_node_table(addr.addresses);
 					// seednodes are currently responding with two addr messages:
 					// 1) addr message with single address - seednode itself
 					// 2) addr message with 1000 addresses (seednode node_table contents)

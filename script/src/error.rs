@@ -40,6 +40,8 @@ pub enum Error {
 	// BIP62
 	SignatureHashtype,
 	SignatureDer,
+	SignatureIllegalForkId,
+	SignatureMustUseForkId,
 	Minimaldata,
 	SignaturePushOnly,
 	SignatureHighS,
@@ -49,6 +51,16 @@ pub enum Error {
 
 	// Softfork safeness
 	DiscourageUpgradableNops,
+	DiscourageUpgradableWitnessProgram,
+
+	// SegWit-related errors
+	WitnessProgramWrongLength,
+	WitnessProgramWitnessEmpty,
+	WitnessProgramMismatch,
+	WitnessMalleated,
+	WitnessMalleatedP2SH,
+	WitnessUnexpected,
+	WitnessPubKeyType,
 }
 
 impl fmt::Display for Error {
@@ -88,6 +100,8 @@ impl fmt::Display for Error {
 			// BIP62
 			Error::SignatureHashtype => "Invalid Signature Hashtype".fmt(f),
 			Error::SignatureDer => "Invalid Signature".fmt(f),
+			Error::SignatureIllegalForkId => "Illegal use of SIGHASH_FORKID".fmt(f),
+			Error::SignatureMustUseForkId => "Signature must use SIGHASH_FORKID".fmt(f),
 			Error::Minimaldata => "Check minimaldata failed".fmt(f),
 			Error::SignaturePushOnly => "Only push opcodes are allowed in this signature".fmt(f),
 			Error::SignatureHighS => "Invalid High S in Signature".fmt(f),
@@ -97,6 +111,16 @@ impl fmt::Display for Error {
 
 			// Softfork safeness
 			Error::DiscourageUpgradableNops => "Discourage Upgradable Nops".fmt(f),
+			Error::DiscourageUpgradableWitnessProgram => "Discourage Upgradable Witness Program".fmt(f),
+
+			// SegWit-related errors
+			Error::WitnessProgramWrongLength => "Witness program has incorrect length".fmt(f),
+			Error::WitnessProgramWitnessEmpty => "Witness program was passed an empty witness".fmt(f),
+			Error::WitnessProgramMismatch => "Witness program hash mismatch".fmt(f),
+			Error::WitnessMalleated => "Witness requires empty scriptSig".fmt(f),
+			Error::WitnessMalleatedP2SH => "Witness requires only-redeemscript scriptSig".fmt(f),
+			Error::WitnessUnexpected => "Witness provided for non-witness script".fmt(f),
+			Error::WitnessPubKeyType => "Using non-compressed keys in segwit".fmt(f),
 		}
 	}
 }

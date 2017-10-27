@@ -73,6 +73,11 @@ impl VerificationFlags {
 		self
 	}
 
+	pub fn verify_strictenc(mut self, value: bool) -> Self {
+		self.verify_strictenc = value;
+		self
+	}
+
 	pub fn verify_locktime(mut self, value: bool) -> Self {
 		self.verify_locktime = value;
 		self
@@ -85,6 +90,21 @@ impl VerificationFlags {
 
 	pub fn verify_dersig(mut self, value: bool) -> Self {
 		self.verify_dersig = value;
+		self
+	}
+
+	pub fn verify_witness(mut self, value: bool) -> Self {
+		self.verify_witness = value;
+		self
+	}
+
+	pub fn verify_nulldummy(mut self, value: bool) -> Self {
+		self.verify_nulldummy = value;
+		self
+	}
+
+	pub fn verify_discourage_upgradable_witness_program(mut self, value: bool) -> Self {
+		self.verify_discourage_upgradable_witness_program = value;
 		self
 	}
 }

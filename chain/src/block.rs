@@ -1,37 +1,14 @@
-use std::io;
 use hex::FromHex;
 use hash::H256;
-use ser::{
-	Deserializable, Reader, Error as ReaderError, deserialize,
-	Serializable, Stream
-};
+use ser::{deserialize};
 use merkle_root::merkle_root;
 use {BlockHeader, Transaction};
 use super::RepresentH256;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serializable, Deserializable)]
 pub struct Block {
 	pub block_header: BlockHeader,
 	pub transactions: Vec<Transaction>,
-}
-
-impl Serializable for Block {
-	fn serialize(&self, stream: &mut Stream) {
-		stream
-			.append(&self.block_header)
-			.append_list(&self.transactions);
-	}
-}
-
-impl Deserializable for Block {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let result = Block {
-			block_header: try!(reader.read()),
-			transactions: try!(reader.read_list()),
-		};
-
-		Ok(result)
-	}
 }
 
 impl From<&'static str> for Block {
@@ -52,6 +29,19 @@ impl Block {
 	/// Returns block's merkle root.
 	pub fn merkle_root(&self) -> H256 {
 		let hashes = self.transactions.iter().map(Transaction::hash).collect::<Vec<H256>>();
+		merkle_root(&hashes)
+	}
+
+	/// Returns block's witness merkle root.
+	pub fn witness_merkle_root(&self) -> H256 {
+		let hashes = match self.transactions.split_first() {
+			None => vec![],
+			Some((_, rest)) => {
+				let mut hashes = vec![H256::from(0)];
+				hashes.extend(rest.iter().map(Transaction::witness_hash));
+				hashes
+			},
+		};
 		merkle_root(&hashes)
 	}
 

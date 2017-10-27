@@ -53,6 +53,8 @@
 
 extern crate time;
 #[macro_use]
+extern crate lazy_static;
+#[macro_use]
 extern crate log;
 extern crate parking_lot;
 extern crate rayon;
@@ -63,6 +65,7 @@ extern crate network;
 extern crate primitives;
 extern crate serialization as ser;
 extern crate script;
+extern crate bitcrypto as crypto;
 
 pub mod constants;
 mod canon;
@@ -106,8 +109,20 @@ pub use error::{Error, TransactionError};
 pub use sigops::transaction_sigops;
 pub use timestamp::median_timestamp;
 pub use work::{work_required, is_valid_proof_of_work, is_valid_proof_of_work_hash, block_reward_satoshi};
+pub use deployments::Deployments;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+/// Blocks verification level.
+pub enum VerificationLevel {
+	/// Full verification.
+	Full,
+	/// Transaction scripts are not checked.
+	Header,
+	/// No verification at all.
+	NoVerification,
+}
 
 /// Interface for block verification
 pub trait Verify : Send + Sync {
-	fn verify(&self, block: &chain::IndexedBlock) -> Result<(), Error>;
+	fn verify(&self, level: VerificationLevel, block: &chain::IndexedBlock) -> Result<(), Error>;
 }

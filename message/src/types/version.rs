@@ -77,6 +77,14 @@ impl Version {
 		}
 	}
 
+	pub fn nonce(&self) -> Option<u64> {
+		match *self {
+			Version::V0(_) => None,
+			Version::V106(_, ref v) |
+			Version::V70001(_, ref v, _) => Some(v.nonce),
+		}
+	}
+
 	pub fn services(&self) -> Services {
 		match *self {
 			Version::V0(ref s) |
@@ -90,6 +98,14 @@ impl Version {
 			Version::V0(_) => true,
 			Version::V106(_, _) => true,
 			Version::V70001(_, _, ref v) => v.relay,
+		}
+	}
+
+	pub fn user_agent(&self) -> Option<String> {
+		match *self {
+			Version::V0(_) => None,
+			Version::V106(_, ref v) |
+			Version::V70001(_, ref v, _) => Some(v.user_agent.clone()),
 		}
 	}
 }

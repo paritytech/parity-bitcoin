@@ -38,9 +38,11 @@ impl SignatureChecker for NoopSignatureChecker {
 	}
 }
 
+#[derive(Debug)]
 pub struct TransactionSignatureChecker {
 	pub signer: TransactionInputSigner,
 	pub input_index: usize,
+	pub input_amount: u64,
 }
 
 impl SignatureChecker for TransactionSignatureChecker {
@@ -50,9 +52,9 @@ impl SignatureChecker for TransactionSignatureChecker {
 		public: &Public,
 		script_code: &Script,
 		sighashtype: u32,
-		_version: SignatureVersion
+		version: SignatureVersion
 	) -> bool {
-		let hash = self.signer.signature_hash(self.input_index, script_code, sighashtype);
+		let hash = self.signer.signature_hash(self.input_index, self.input_amount, script_code, version, sighashtype);
 		public.verify(&hash, signature).unwrap_or(false)
 	}
 

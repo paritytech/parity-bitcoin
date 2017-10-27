@@ -20,6 +20,7 @@ extern crate sync;
 extern crate import;
 extern crate rpc as ethcore_rpc;
 extern crate primitives;
+extern crate verification;
 
 mod commands;
 mod config;
@@ -51,7 +52,7 @@ fn run() -> Result<(), String> {
 	let matches = clap::App::from_yaml(yaml).get_matches();
 	let cfg = try!(config::parse(&matches));
 
-	if cfg.print_to_console {
+	if !cfg.quiet {
 		if cfg!(windows) {
 			logs::init(LOG_INFO, logs::DateLogFormatter);
 		} else {
@@ -63,6 +64,7 @@ fn run() -> Result<(), String> {
 
 	match matches.subcommand() {
 		("import", Some(import_matches)) => commands::import(cfg, import_matches),
+		("rollback", Some(rollback_matches)) => commands::rollback(cfg, rollback_matches),
 		_ => commands::start(cfg),
 	}
 }
