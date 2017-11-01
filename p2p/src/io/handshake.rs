@@ -7,7 +7,6 @@ use network::Magic;
 use io::{write_message, WriteMessage, ReadMessage, read_message};
 
 pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> Handshake<A> where A: AsyncWrite + AsyncRead {
-println!("=== magic = {:x}", magic);
 	Handshake {
 		version: version.version(),
 		nonce: version.nonce(),
@@ -18,7 +17,6 @@ println!("=== magic = {:x}", magic);
 }
 
 pub fn accept_handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> AcceptHandshake<A> where A: AsyncWrite + AsyncRead {
-println!("=== magic = {:x}", magic);
 	AcceptHandshake {
 		version: version.version(),
 		nonce: version.nonce(),
