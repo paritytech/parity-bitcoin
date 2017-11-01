@@ -95,7 +95,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 		connection: p2p::NetConfig {
 			protocol_version: PROTOCOL_VERSION,
 			protocol_minimum: PROTOCOL_MINIMUM,
-			magic: cfg.magic,
+			magic: cfg.consensus.magic(),
 			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
 			services: cfg.services,
 			user_agent: cfg.user_agent,
@@ -119,7 +119,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 
 	let p2p = try!(p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle()).map_err(|x| x.to_string()));
 	let rpc_deps = rpc::Dependencies {
-		network: cfg.magic,
+		network: cfg.network,
 		storage: cfg.db,
 		local_sync_node: local_sync_node,
 		p2p_context: p2p.context().clone(),

@@ -7,6 +7,7 @@ use network::Magic;
 use io::{write_message, WriteMessage, ReadMessage, read_message};
 
 pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> Handshake<A> where A: AsyncWrite + AsyncRead {
+println!("=== magic = {:x}", magic);
 	Handshake {
 		version: version.version(),
 		nonce: version.nonce(),
@@ -17,6 +18,7 @@ pub fn handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> H
 }
 
 pub fn accept_handshake<A>(a: A, magic: Magic, version: Version, min_version: u32) -> AcceptHandshake<A> where A: AsyncWrite + AsyncRead {
+println!("=== magic = {:x}", magic);
 	AcceptHandshake {
 		version: version.version(),
 		nonce: version.nonce(),
@@ -211,7 +213,7 @@ mod tests {
 	use tokio_io::{AsyncRead, AsyncWrite};
 	use bytes::Bytes;
 	use ser::Stream;
-	use network::Magic;
+	use network::{Network, ConsensusFork};
 	use message::{Message, Error};
 	use message::types::Verack;
 	use message::types::version::{Version, V0, V106, V70001};
@@ -287,7 +289,7 @@ mod tests {
 
 	#[test]
 	fn test_handshake() {
-		let magic = Magic::Mainnet;
+		let magic = Network::Mainnet.magic(ConsensusFork::NoFork);
 		let version = 70012;
 		let local_version = local_version();
 		let remote_version = remote_version();
@@ -317,7 +319,7 @@ mod tests {
 
 	#[test]
 	fn test_accept_handshake() {
-		let magic = Magic::Mainnet;
+		let magic = Network::Mainnet.magic(ConsensusFork::NoFork);
 		let version = 70012;
 		let local_version = local_version();
 		let remote_version = remote_version();
@@ -346,7 +348,7 @@ mod tests {
 
 	#[test]
 	fn test_self_handshake() {
-		let magic = Magic::Mainnet;
+		let magic = Network::Mainnet.magic(ConsensusFork::NoFork);
 		let version = 70012;
 		let remote_version = local_version();
 		let local_version = local_version();
@@ -367,7 +369,7 @@ mod tests {
 
 	#[test]
 	fn test_accept_self_handshake() {
-		let magic = Magic::Mainnet;
+		let magic = Network::Mainnet.magic(ConsensusFork::NoFork);
 		let version = 70012;
 		let remote_version = local_version();
 		let local_version = local_version();
@@ -383,6 +385,28 @@ mod tests {
 		let expected = Error::InvalidVersion;
 
 		let hs = accept_handshake(test_io, magic, local_version, 0).wait().unwrap();
+		assert_eq!(hs.1.unwrap_err(), expected);
+	}
+
+	#[test]
+	fn test_fails_to_accept_other_fork_node() {
+		let magic1 = Network::Mainnet.magic(ConsensusFork::NoFork);
+		let magic2 = Network::Mainnet.magic(ConsensusFork::BitcoinCash(0));
+		let version = 70012;
+		let local_version = local_version();
+		let remote_version = remote_version();
+
+		let mut remote_stream = Stream::new();
+		remote_stream.append_slice(Message::new(magic2, version, &remote_version).unwrap().as_ref());
+
+		let test_io = TestIo {
+			read: io::Cursor::new(remote_stream.out()),
+			write: Bytes::default(),
+		};
+
+		let expected = Error::InvalidMagic;
+
+		let hs = accept_handshake(test_io, magic1, local_version, 0).wait().unwrap();
 		assert_eq!(hs.1.unwrap_err(), expected);
 	}
 }

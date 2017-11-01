@@ -340,7 +340,7 @@ pub mod tests {
 	use synchronization_chain::Chain;
 	use message::types;
 	use message::common::{InventoryVector, InventoryType};
-	use network::{ConsensusParams, ConsensusFork, Magic};
+	use network::{ConsensusParams, ConsensusFork, Network};
 	use chain::Transaction;
 	use db::{BlockChainDatabase};
 	use miner::MemoryPool;
@@ -374,12 +374,12 @@ pub mod tests {
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
 		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
-		let chain = Chain::new(storage.clone(), ConsensusParams::new(Magic::Unitest, ConsensusFork::NoFork), memory_pool.clone());
+		let chain = Chain::new(storage.clone(), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork), memory_pool.clone());
 		let sync_peers = Arc::new(PeersImpl::default());
 		let executor = DummyTaskExecutor::new();
 		let server = Arc::new(DummyServer::new());
 		let config = Config { close_connection_on_bad_block: true };
-		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork)));
+		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork)));
 		let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier);
 		let mut verifier = match verifier {
 			Some(verifier) => verifier,
@@ -387,7 +387,7 @@ pub mod tests {
 		};
 		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
 		let client = SynchronizationClient::new(sync_state.clone(), client_core, verifier);
-		let local_node = LocalNode::new(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork), storage, memory_pool, sync_peers, sync_state, executor.clone(), client, server.clone());
+		let local_node = LocalNode::new(ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork), storage, memory_pool, sync_peers, sync_state, executor.clone(), client, server.clone());
 		(executor, server, local_node)
 	}
 

@@ -18,7 +18,7 @@ pub fn rollback(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 	};
 
 	let required_block_hash = cfg.db.block_header(block_ref.clone()).ok_or(format!("Block {:?} is unknown", block_ref))?.hash();
-	let genesis_hash = cfg.magic.genesis_block().hash();
+	let genesis_hash = cfg.network.genesis_block().hash();
 
 	let mut best_block_hash = cfg.db.best_block().hash;
 	debug_assert!(best_block_hash != H256::default()); // genesis inserted in init_db

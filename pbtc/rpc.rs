@@ -2,14 +2,14 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use rpc_apis::{self, ApiSet};
 use ethcore_rpc::{Server, Error, start_http, MetaIoHandler, Compatibility, Remote};
-use network::Magic;
+use network::Network;
 use std::io;
 use sync;
 use db;
 use p2p;
 
 pub struct Dependencies {
-	pub network: Magic,
+	pub network: Network,
 	pub local_sync_node: sync::LocalNodeRef,
 	pub storage: db::SharedStore,
 	pub p2p_context: Arc<p2p::Context>,

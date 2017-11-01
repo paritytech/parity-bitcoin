@@ -2,9 +2,9 @@ use std::net;
 use clap;
 use db;
 use message::Services;
-use network::{Magic, ConsensusParams, ConsensusFork, SEGWIT2X_FORK_BLOCK, BITCOIN_CASH_FORK_BLOCK};
+use network::{Network, ConsensusParams, ConsensusFork, SEGWIT2X_FORK_BLOCK, BITCOIN_CASH_FORK_BLOCK};
 use p2p::InternetProtocol;
-use seednodes::{mainnet_seednodes, testnet_seednodes, segwit2x_seednodes};
+use seednodes::{mainnet_seednodes, testnet_seednodes, segwit2x_seednodes, bitcoin_cash_seednodes, bitcoin_cash_testnet_seednodes};
 use rpc_apis::ApiSet;
 use {USER_AGENT, REGTEST_USER_AGENT};
 use primitives::hash::H256;
@@ -14,7 +14,7 @@ use sync::VerificationParameters;
 use util::open_db;
 
 pub struct Config {
-	pub magic: Magic,
+	pub network: Network,
 	pub consensus: ConsensusParams,
 	pub services: Services,
 	pub port: u16,
@@ -50,24 +50,24 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	let db = open_db(&data_dir, db_cache);
 
 	let quiet = matches.is_present("quiet");
-	let magic = match (matches.is_present("testnet"), matches.is_present("regtest")) {
-		(true, false) => Magic::Testnet,
-		(false, true) => Magic::Regtest,
-		(false, false) => Magic::Mainnet,
+	let network = match (matches.is_present("testnet"), matches.is_present("regtest")) {
+		(true, false) => Network::Testnet,
+		(false, true) => Network::Regtest,
+		(false, false) => Network::Mainnet,
 		(true, true) => return Err("Only one testnet option can be used".into()),
 	};
 
 	let consensus_fork = parse_consensus_fork(&db, &matches)?;
-	let consensus = ConsensusParams::new(magic, consensus_fork);
+	let consensus = ConsensusParams::new(network, consensus_fork);
 
-	let (in_connections, out_connections) = match magic {
-		Magic::Testnet | Magic::Mainnet | Magic::Other(_) => (10, 10),
-		Magic::Regtest | Magic::Unitest => (1, 0),
+	let (in_connections, out_connections) = match network {
+		Network::Testnet | Network::Mainnet | Network::Other(_) => (10, 10),
+		Network::Regtest | Network::Unitest => (1, 0),
 	};
 
-	let p2p_threads = match magic {
-		Magic::Testnet | Magic::Mainnet | Magic::Other(_) => 4,
-		Magic::Regtest | Magic::Unitest => 1,
+	let p2p_threads = match network {
+		Network::Testnet | Network::Mainnet | Network::Other(_) => 4,
+		Network::Regtest | Network::Unitest => 1,
 	};
 
 	// to skip idiotic 30 seconds delay in test-scripts
@@ -76,20 +76,20 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		ConsensusFork::SegWit2x(_) => "/SegWit2x",
 		ConsensusFork::BitcoinCash(_) => "/UAHF",
 	};
-	let user_agent = match magic {
-		Magic::Testnet | Magic::Mainnet | Magic::Unitest | Magic::Other(_) => format!("{}{}", USER_AGENT, user_agent_suffix),
-		Magic::Regtest => REGTEST_USER_AGENT.into(),
+	let user_agent = match network {
+		Network::Testnet | Network::Mainnet | Network::Unitest | Network::Other(_) => format!("{}{}", USER_AGENT, user_agent_suffix),
+		Network::Regtest => REGTEST_USER_AGENT.into(),
 	};
 
 	let port = match matches.value_of("port") {
 		Some(port) => port.parse().map_err(|_| "Invalid port".to_owned())?,
-		None => magic.port(),
+		None => network.port(),
 	};
 
 	let connect = match matches.value_of("connect") {
 		Some(s) => Some(match s.parse::<net::SocketAddr>() {
 			Err(_) => s.parse::<net::IpAddr>()
-				.map(|ip| net::SocketAddr::new(ip, magic.port()))
+				.map(|ip| net::SocketAddr::new(ip, network.port()))
 				.map_err(|_| "Invalid connect".to_owned()),
 			Ok(a) => Ok(a),
 		}?),
@@ -98,10 +98,12 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 
 	let mut seednodes: Vec<String> = match matches.value_of("seednode") {
 		Some(s) => vec![s.parse().map_err(|_| "Invalid seednode".to_owned())?],
-		None => match magic {
-			Magic::Mainnet => mainnet_seednodes().into_iter().map(Into::into).collect(),
-			Magic::Testnet => testnet_seednodes().into_iter().map(Into::into).collect(),
-			Magic::Other(_) | Magic::Regtest | Magic::Unitest => Vec::new(),
+		None => match (network, consensus_fork) {
+			(Network::Mainnet, ConsensusFork::BitcoinCash(_)) => bitcoin_cash_seednodes().into_iter().map(Into::into).collect(),
+			(Network::Testnet, ConsensusFork::BitcoinCash(_)) => bitcoin_cash_testnet_seednodes().into_iter().map(Into::into).collect(),
+			(Network::Mainnet, _) => mainnet_seednodes().into_iter().map(Into::into).collect(),
+			(Network::Testnet, _) => testnet_seednodes().into_iter().map(Into::into).collect(),
+			(Network::Other(_), _) | (Network::Regtest, _) | (Network::Unitest, _) => Vec::new(),
 		},
 	};
 	match consensus_fork {
@@ -114,7 +116,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => InternetProtocol::default(),
 	};
 
-	let rpc_config = parse_rpc_config(magic, matches)?;
+	let rpc_config = parse_rpc_config(network, matches)?;
 
 	let block_notify_command = match matches.value_of("blocknotify") {
 		Some(s) => Some(s.parse().map_err(|_| "Invalid blocknotify commmand".to_owned())?),
@@ -140,12 +142,12 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 			let edge: H256 = s.parse().map_err(|_| "Invalid verification edge".to_owned())?;
 			edge.reversed()
 		},
-		_ => magic.default_verification_edge(),
+		_ => network.default_verification_edge(),
 	};
 
 	let config = Config {
 		quiet: quiet,
-		magic: magic,
+		network: network,
 		consensus: consensus,
 		services: services,
 		port: port,
@@ -198,8 +200,8 @@ fn parse_consensus_fork(db: &db::SharedStore, matches: &clap::ArgMatches) -> Res
 	})
 }
 
-fn parse_rpc_config(magic: Magic, matches: &clap::ArgMatches) -> Result<RpcHttpConfig, String> {
-	let mut config = RpcHttpConfig::with_port(magic.rpc_port());
+fn parse_rpc_config(network: Network, matches: &clap::ArgMatches) -> Result<RpcHttpConfig, String> {
+	let mut config = RpcHttpConfig::with_port(network.rpc_port());
 	config.enabled = !matches.is_present("no-jsonrpc");
 	if !config.enabled {
 		return Ok(config);
