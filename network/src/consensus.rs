@@ -175,7 +175,7 @@ impl ConsensusFork {
 	pub fn min_block_size(&self, height: u32) -> usize {
 		match *self {
 			// size of first fork block must be larger than 1MB
-			ConsensusFork::BitcoinCash(fork_height) if height == fork_height => 1_000_001,
+			ConsensusFork::BitcoinCash(fork_height) | ConsensusFork::SegWit2x(fork_height) if height == fork_height => 1_000_001,
 			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) | ConsensusFork::SegWit2x(_) => 0,
 		}
 	}
@@ -266,7 +266,7 @@ mod tests {
 	fn test_consensus_fork_min_block_size() {
 		assert_eq!(ConsensusFork::NoFork.min_block_size(0), 0);
 		assert_eq!(ConsensusFork::SegWit2x(100).min_block_size(0), 0);
-		assert_eq!(ConsensusFork::SegWit2x(100).min_block_size(100), 0);
+		assert_eq!(ConsensusFork::SegWit2x(100).min_block_size(100), 1_000_001);
 		assert_eq!(ConsensusFork::BitcoinCash(100).min_block_size(0), 0);
 		assert_eq!(ConsensusFork::BitcoinCash(100).min_block_size(100), 1_000_001);
 	}
