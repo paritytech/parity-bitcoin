@@ -2,7 +2,7 @@ use ser::Stream;
 use bytes::{TaggedBytes, Bytes};
 use network::Magic;
 use common::Command;
-use serialization::serialize_payload;
+use serialization::serialize_payload_with_flags;
 use {Payload, MessageResult, MessageHeader};
 
 pub fn to_raw_message(magic: Magic, command: Command, payload: &Bytes) -> Bytes {
@@ -19,7 +19,11 @@ pub struct Message<T> {
 
 impl<T> Message<T> where T: Payload {
 	pub fn new(magic: Magic, version: u32, payload: &T) -> MessageResult<Self> {
-		let serialized = try!(serialize_payload(payload, version));
+		Self::with_flags(magic, version, payload, 0)
+	}
+
+	pub fn with_flags(magic: Magic, version: u32, payload: &T, serialization_flags: u32) -> MessageResult<Self> {
+		let serialized = try!(serialize_payload_with_flags(payload, version, serialization_flags));
 
 		let message = Message {
 			bytes: TaggedBytes::new(to_raw_message(magic, T::command().into(), &serialized)),

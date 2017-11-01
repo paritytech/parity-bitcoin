@@ -4,12 +4,11 @@ use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use futures::Future;
 use parking_lot::Mutex;
-use time;
+use time::precise_time_s;
 use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
-use message::types;
+use message::{types, Services};
 use message::common::{InventoryType, InventoryVector};
 use miner::transaction_fee_rate;
-use network::Magic;
 use primitives::hash::H256;
 use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 use synchronization_chain::{Chain, BlockState, TransactionState, BlockInsertionResult};
@@ -19,7 +18,6 @@ use synchronization_peers_tasks::PeersTasks;
 use synchronization_verifier::{VerificationSink, BlockVerificationSink, TransactionVerificationSink, VerificationTask};
 use types::{BlockHeight, ClientCoreRef, PeersRef, PeerIndex, SynchronizationStateRef, EmptyBoxFuture, SyncListenerRef};
 use utils::{AverageSpeedMeter, MessageBlockHeadersProvider, OrphanBlocksPool, OrphanTransactionsPool, HashPosition};
-#[cfg(test)] use synchronization_peers::Peers;
 #[cfg(test)] use synchronization_peers_tasks::{Information as PeersTasksInformation};
 #[cfg(test)] use synchronization_chain::{Information as ChainInformation};
 
@@ -41,6 +39,12 @@ const NEAR_EMPTY_VERIFICATION_QUEUE_THRESHOLD_S: f64 = 20_f64;
 const SYNC_SPEED_BLOCKS_TO_INSPECT: usize = 512;
 /// Number of blocks to inspect when calculating average blocks speed
 const BLOCKS_SPEED_BLOCKS_TO_INSPECT: usize = 512;
+/// Minimal time between duplicated blocks requests.
+const MIN_BLOCK_DUPLICATION_INTERVAL_S: f64 = 10_f64;
+/// Maximal number of blocks in duplicate requests.
+const MAX_BLOCKS_IN_DUPLICATE_REQUEST: BlockHeight = 4;
+/// Minimal number of blocks in duplicate requests.
+const MIN_BLOCKS_IN_DUPLICATE_REQUEST: BlockHeight = 8;
 
 /// Information on current synchronization state.
 #[cfg(test)]
@@ -77,8 +81,6 @@ pub trait ClientCore {
 /// Synchronization client configuration options.
 #[derive(Debug)]
 pub struct Config {
-	/// Network
-	pub network: Magic,
 	/// If true, connection to peer who has provided us with bad block is closed
 	pub close_connection_on_bad_block: bool,
 }
@@ -123,6 +125,8 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	config: Config,
 	/// Synchronization events listener
 	listener: Option<SyncListenerRef>,
+	/// Time of last duplicated blocks request.
+	last_dup_time: f64,
 }
 
 /// Verification sink for synchronization client core
@@ -140,6 +144,20 @@ pub enum State {
 	NearlySaturated,
 	/// We have downloaded all blocks of the blockchain of which we have ever heard
 	Saturated,
+}
+
+/// Blocks request limits.
+pub struct BlocksRequestLimits {
+	/// Approximate maximal number of blocks hashes in scheduled queue.
+	pub max_scheduled_hashes: BlockHeight,
+	/// Approximate maximal number of blocks hashes in requested queue.
+	pub max_requested_blocks: BlockHeight,
+	/// Approximate maximal number of blocks in verifying queue.
+	pub max_verifying_blocks: BlockHeight,
+	/// Minimum number of blocks to request from peer
+	pub min_blocks_in_request: BlockHeight,
+	/// Maximum number of blocks to request from peer
+	pub max_blocks_in_request: BlockHeight,
 }
 
 /// Transaction append error
@@ -189,6 +207,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		self.executor.execute(Task::GetHeaders(peer_index, types::GetHeaders::with_block_locator_hashes(block_locator_hashes)));
 		// unuseful until respond with headers message
 		self.peers_tasks.unuseful_peer(peer_index);
+		self.peers_tasks.on_headers_requested(peer_index);
 	}
 
 	fn on_disconnect(&mut self, peer_index: PeerIndex) {
@@ -207,6 +226,8 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		// else ask for all unknown transactions and blocks
+		let is_segwit_active = self.chain.is_segwit_active();
+		let ask_for_witness = is_segwit_active && self.peers.is_segwit_enabled(peer_index);
 		let unknown_inventory: Vec<_> = message.inventory.into_iter()
 			.filter(|item| {
 				match item.inv_type {
@@ -224,7 +245,9 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 						_ => false,
 					},
 					// we never ask for merkle blocks && we never ask for compact blocks
-					InventoryType::MessageCompactBlock | InventoryType::MessageFilteredBlock => false,
+					InventoryType::MessageCompactBlock | InventoryType::MessageFilteredBlock
+						| InventoryType::MessageWitnessBlock | InventoryType::MessageWitnessFilteredBlock
+						| InventoryType::MessageWitnessTx => false,
 					// unknown inventory type
 					InventoryType::Error => {
 						self.peers.misbehaving(peer_index, &format!("Provided unknown inventory type {:?}", item.hash.to_reversed_str()));
@@ -232,6 +255,24 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 					}
 				}
 			})
+			// we are not synchronizing =>
+			// 1) either segwit is active and we are connected to segwit-enabled nodes => we could ask for witness
+			// 2) or segwit is inactive => we shall not ask for witness
+			.map(|item| if !ask_for_witness {
+					item
+				} else {
+					match item.inv_type {
+						InventoryType::MessageTx => InventoryVector {
+							inv_type: InventoryType::MessageWitnessTx,
+							hash: item.hash,
+						},
+						InventoryType::MessageBlock => InventoryVector {
+							inv_type: InventoryType::MessageWitnessBlock,
+							hash: item.hash,
+						},
+						_ => item,
+					}
+				})
 			.collect();
 
 		// if everything is known => ignore this message
@@ -467,6 +508,9 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 			// for now, let's exclude peer from synchronization - we are relying on full nodes for synchronization
 			let removed_tasks = self.peers_tasks.reset_blocks_tasks(peer_index);
 			self.peers_tasks.unuseful_peer(peer_index);
+			if self.state.is_synchronizing() {
+				self.peers.misbehaving(peer_index, &format!("Responded with NotFound(unrequested_block)"));
+			}
 
 			// if peer has had some blocks tasks, rerequest these blocks
 			self.execute_synchronization_tasks(Some(removed_tasks), None);
@@ -516,7 +560,15 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		// display information if processed many blocks || enough time has passed since sync start
 		self.print_synchronization_information();
 
+		// prepare limits. TODO: must be updated using current retrieval && verification speed && blocks size
+		let mut limits = BlocksRequestLimits::default();
+		if self.chain.length_of_blocks_state(BlockState::Stored) > 150_000 {
+			limits.min_blocks_in_request = 8;
+			limits.max_blocks_in_request = 16;
+		}
+
 		// if some blocks requests are forced => we should ask peers even if there are no idle peers
+		let verifying_hashes_len = self.chain.length_of_blocks_state(BlockState::Verifying);
 		if let Some(forced_blocks_requests) = forced_blocks_requests {
 			let useful_peers = self.peers_tasks.useful_peers();
 			// if we have to request blocks && there are no useful peers at all => switch to saturated state
@@ -526,7 +578,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 				return;
 			}
 
-			let forced_tasks = self.prepare_blocks_requests_tasks(useful_peers, forced_blocks_requests);
+			let forced_tasks = self.prepare_blocks_requests_tasks(&limits, useful_peers, forced_blocks_requests);
 			tasks.extend(forced_tasks);
 		}
 
@@ -534,7 +586,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		if let Some(final_blocks_requests) = final_blocks_requests {
 			let useful_peers = self.peers_tasks.useful_peers();
 			if !useful_peers.is_empty() { // if empty => not a problem, just forget these blocks
-				let forced_tasks = self.prepare_blocks_requests_tasks(useful_peers, final_blocks_requests);
+				let forced_tasks = self.prepare_blocks_requests_tasks(&limits, useful_peers, final_blocks_requests);
 				tasks.extend(forced_tasks);
 			}
 		}
@@ -575,7 +627,6 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 				//    => we could ask idle peer2 about [B1, B2, B3, B4]
 				// these requests has priority over new blocks requests below
 				let requested_hashes_len = self.chain.length_of_blocks_state(BlockState::Requested);
-				let verifying_hashes_len = self.chain.length_of_blocks_state(BlockState::Verifying);
 				if requested_hashes_len != 0 {
 					let verification_speed: f64 = self.block_speed_meter.speed();
 					let synchronization_speed: f64 = self.sync_speed_meter.speed();
@@ -609,15 +660,19 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 					// if verification queue will be empty before all synchronization requests will be completed
 					// + do not spam with duplicated blocks requests if blocks are too big && there are still blocks left for NEAR_EMPTY_VERIFICATION_QUEUE_THRESHOLD_S
 					// => duplicate blocks requests
+					let now = precise_time_s();
 					if synchronization_queue_will_be_full_in > verification_queue_will_be_empty_in &&
-						verification_queue_will_be_empty_in < NEAR_EMPTY_VERIFICATION_QUEUE_THRESHOLD_S {
+						verification_queue_will_be_empty_in < NEAR_EMPTY_VERIFICATION_QUEUE_THRESHOLD_S &&
+						now - self.last_dup_time > MIN_BLOCK_DUPLICATION_INTERVAL_S {
+						// do not duplicate too often
+						self.last_dup_time = now;
 						// blocks / second * second -> blocks
-						let hashes_requests_to_duplicate_len = synchronization_speed * (synchronization_queue_will_be_full_in - verification_queue_will_be_empty_in);
+						let hashes_requests_to_duplicate_len = (synchronization_speed * (synchronization_queue_will_be_full_in - verification_queue_will_be_empty_in)) as BlockHeight;
 						// do not ask for too many blocks
-						let hashes_requests_to_duplicate_len = min(MAX_BLOCKS_IN_REQUEST, hashes_requests_to_duplicate_len as BlockHeight);
+						let hashes_requests_to_duplicate_len = min(MAX_BLOCKS_IN_DUPLICATE_REQUEST, hashes_requests_to_duplicate_len);
 						// ask for at least 1 block
-						let hashes_requests_to_duplicate_len = max(1, min(requested_hashes_len, hashes_requests_to_duplicate_len));
-						blocks_requests = Some(self.chain.best_n_of_blocks_state(BlockState::Requested, hashes_requests_to_duplicate_len));
+						let hashes_requests_to_duplicate_len = max(MIN_BLOCKS_IN_DUPLICATE_REQUEST, min(requested_hashes_len, hashes_requests_to_duplicate_len));
+						blocks_requests = Some(self.chain.best_n_of_blocks_state(BlockState::Requested, hashes_requests_to_duplicate_len as BlockHeight));
 
 						trace!(target: "sync", "Duplicating {} blocks requests. Sync speed: {} * {}, blocks speed: {} * {}.", hashes_requests_to_duplicate_len, synchronization_speed, requested_hashes_len, verification_speed, verifying_hashes_len);
 					}
@@ -625,9 +680,10 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 				// check if we can move some blocks from scheduled to requested queue
 				{
+					// TODO: only request minimal number of blocks, if other urgent blocks are requested
 					let scheduled_hashes_len = self.chain.length_of_blocks_state(BlockState::Scheduled);
 					if requested_hashes_len + verifying_hashes_len < MAX_REQUESTED_BLOCKS + MAX_VERIFYING_BLOCKS && scheduled_hashes_len != 0 {
-						let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(scheduled_hashes_len / blocks_idle_peers_len, MIN_BLOCKS_IN_REQUEST));
+						let chunk_size = min(limits.max_blocks_in_request, max(scheduled_hashes_len / blocks_idle_peers_len, limits.min_blocks_in_request));
 						let hashes_to_request_len = chunk_size * blocks_idle_peers_len;
 						let hashes_to_request = self.chain.request_blocks_hashes(hashes_to_request_len);
 						match blocks_requests {
@@ -641,7 +697,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 
 		// append blocks requests tasks
 		if let Some(blocks_requests) = blocks_requests {
-			tasks.extend(self.prepare_blocks_requests_tasks(blocks_idle_peers, blocks_requests));
+			tasks.extend(self.prepare_blocks_requests_tasks(&limits, blocks_idle_peers, blocks_requests));
 		}
 
 		// execute synchronization tasks
@@ -724,6 +780,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				sync_speed_meter: AverageSpeedMeter::with_inspect_items(BLOCKS_SPEED_BLOCKS_TO_INSPECT),
 				config: config,
 				listener: None,
+				last_dup_time: 0f64,
 			}
 		));
 
@@ -758,6 +815,11 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		&mut self.chain
 	}
 
+	/// Return peers reference
+	pub fn peers(&self) -> PeersRef {
+		self.peers.clone()
+	}
+
 	/// Return peers tasks reference
 	pub fn peers_tasks(&mut self) -> &mut PeersTasks {
 		&mut self.peers_tasks
@@ -779,26 +841,21 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		self.verify_headers = verify;
 	}
 
-	/// Return peers reference
-	#[cfg(test)]
-	pub fn peers(&mut self) -> &Peers {
-		&*self.peers
-	}
-
 	/// Print synchronization information
 	pub fn print_synchronization_information(&mut self) {
 		if let State::Synchronizing(timestamp, num_of_blocks) = self.state {
-			let new_timestamp = time::precise_time_s();
+			let new_timestamp = precise_time_s();
 			let timestamp_diff = new_timestamp - timestamp;
 			let new_num_of_blocks = self.chain.best_storage_block().number;
 			let blocks_diff = if new_num_of_blocks > num_of_blocks { new_num_of_blocks - num_of_blocks } else { 0 };
-			if timestamp_diff >= 60.0 || blocks_diff > 1000 {
-				self.state = State::Synchronizing(time::precise_time_s(), new_num_of_blocks);
-
-				use time;
-				info!(target: "sync", "{:?} @ Processed {} blocks in {} seconds. Chain information: {:?}"
-					, time::strftime("%H:%M:%S", &time::now()).unwrap()
-					, blocks_diff, timestamp_diff
+			if timestamp_diff >= 60.0 || blocks_diff >= 1000 {
+				self.state = State::Synchronizing(precise_time_s(), new_num_of_blocks);
+				let blocks_speed = blocks_diff as f64 / timestamp_diff;
+				info!(target: "sync", "Processed {} blocks in {:.2} seconds ({:.2} blk/s).\tPeers: {:?}.\tChain: {:?}"
+					, blocks_diff
+					, timestamp_diff
+					, blocks_speed
+					, self.peers_tasks.information()
 					, self.chain.information());
 			}
 		}
@@ -904,15 +961,17 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		Ok(transactions)
 	}
 
-	fn prepare_blocks_requests_tasks(&mut self, mut peers: Vec<PeerIndex>, mut hashes: Vec<H256>) -> Vec<Task> {
+	fn prepare_blocks_requests_tasks(&mut self, limits: &BlocksRequestLimits, mut peers: Vec<PeerIndex>, mut hashes: Vec<H256>) -> Vec<Task> {
 		use std::mem::swap;
 
 		// ask fastest peers for hashes at the beginning of `hashes`
 		self.peers_tasks.sort_peers_for_blocks(&mut peers);
 
-		let chunk_size = min(MAX_BLOCKS_IN_REQUEST, max(hashes.len() as BlockHeight, MIN_BLOCKS_IN_REQUEST));
+		let chunk_size = min(limits.max_blocks_in_request, max(hashes.len() as BlockHeight, limits.min_blocks_in_request));
 		let last_peer_index = peers.len() - 1;
 		let mut tasks: Vec<Task> = Vec::new();
+		let is_segwit_active = self.chain.is_segwit_active();
+		let inv_type = if is_segwit_active { InventoryType::MessageWitnessBlock } else { InventoryType::MessageBlock };
 		for (peer_index, peer) in peers.into_iter().enumerate() {
 			// we have to request all blocks => we will request last peer for all remaining blocks
 			let peer_chunk_size = if peer_index == last_peer_index { hashes.len() } else { min(hashes.len(), chunk_size as usize) };
@@ -926,9 +985,12 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			// remember that peer is asked for these blocks
 			self.peers_tasks.on_blocks_requested(peer, &chunk_hashes);
 
-			// request blocks
+			// request blocks. If block is believed to have witness - ask for witness
 			let getdata = types::GetData {
-				inventory: chunk_hashes.into_iter().map(InventoryVector::block).collect(),
+				inventory: chunk_hashes.into_iter().map(|h| InventoryVector {
+					inv_type: inv_type,
+					hash: h,
+				}).collect(),
 			};
 			tasks.push(Task::GetData(peer, getdata));
 		}
@@ -948,7 +1010,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		self.shared_state.update_synchronizing(true);
-		self.state = State::Synchronizing(time::precise_time_s(), self.chain.best_storage_block().number);
+		self.state = State::Synchronizing(precise_time_s(), self.chain.best_storage_block().number);
 	}
 
 	/// Switch to nearly saturated state
@@ -988,9 +1050,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			self.chain.forget_all_blocks_with_state(BlockState::Requested);
 			self.chain.forget_all_blocks_with_state(BlockState::Scheduled);
 
-			use time;
-			info!(target: "sync", "{:?} @ Switched to saturated state. Chain information: {:?}",
-				time::strftime("%H:%M:%S", &time::now()).unwrap(),
+			info!(target: "sync", "Switched to saturated state.\tChain: {:?}",
 				self.chain.information());
 		}
 
@@ -1009,6 +1069,9 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	fn on_block_verification_success(&mut self, block: IndexedBlock) -> Option<Vec<VerificationTask>> {
 		// update block processing speed
 		self.block_speed_meter.checkpoint();
+
+		// remember if SegWit was active before this block
+		let segwit_was_active = self.chain.is_segwit_active();
 
 		// remove flags
 		let needs_relay = !self.do_not_relay.remove(block.hash());
@@ -1029,6 +1092,13 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			Ok(insert_result) => {
 				// update shared state
 				self.shared_state.update_best_storage_block_height(self.chain.best_storage_block().number);
+
+				// if SegWit activated after this block insertion:
+				// 1) no more connections to !NODE_WITNESS nodes
+				// 2) disconnect from all nodes without NODE_WITNESS support
+				if !segwit_was_active && self.chain.is_segwit_active() {
+					self.peers.require_peer_services(Services::default().with_witness(true));
+				}
 
 				// notify listener
 				if let Some(best_block_hash) = insert_result.canonized_blocks_hashes.last() {
@@ -1067,7 +1137,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			Err(e) => {
 				// process as irrecoverable failure
 				panic!("Block {} insertion failed with error {:?}", block_hash.to_reversed_str(), e);
-			}
+			},
 		}
 	}
 
@@ -1172,6 +1242,18 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 }
 
+impl Default for BlocksRequestLimits {
+	fn default() -> Self {
+		BlocksRequestLimits {
+			max_scheduled_hashes: MAX_SCHEDULED_HASHES,
+			max_requested_blocks: MAX_REQUESTED_BLOCKS,
+			max_verifying_blocks: MAX_VERIFYING_BLOCKS,
+			min_blocks_in_request: MIN_BLOCKS_IN_REQUEST,
+			max_blocks_in_request: MAX_BLOCKS_IN_REQUEST,
+		}
+	}
+}
+
 #[cfg(test)]
 pub mod tests {
 	extern crate test_data;
@@ -1181,9 +1263,9 @@ pub mod tests {
 	use chain::{Block, Transaction};
 	use db::BlockChainDatabase;
 	use message::common::InventoryVector;
-	use message::types;
+	use message::{Services, types};
 	use miner::MemoryPool;
-	use network::Magic;
+	use network::{ConsensusParams, ConsensusFork, Magic};
 	use primitives::hash::H256;
 	use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 	use inbound_connection::tests::DummyOutboundSyncConnection;
@@ -1234,11 +1316,11 @@ pub mod tests {
 		};
 		let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
-		let chain = Chain::new(storage.clone(), memory_pool.clone());
+		let chain = Chain::new(storage.clone(), ConsensusParams::new(Magic::Unitest, ConsensusFork::NoFork), memory_pool.clone());
 		let executor = DummyTaskExecutor::new();
-		let config = Config { network: Magic::Mainnet, close_connection_on_bad_block: true };
+		let config = Config { close_connection_on_bad_block: true };
 
-		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), Magic::Unitest));
+		let chain_verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Magic::Unitest, ConsensusFork::NoFork)));
 		let client_core = SynchronizationClientCore::new(config, sync_state.clone(), sync_peers.clone(), executor.clone(), chain, chain_verifier.clone());
 		{
 			client_core.lock().set_verify_headers(false);
@@ -2035,7 +2117,7 @@ pub mod tests {
 
 		let (_, core, sync) = create_sync(None, Some(dummy_verifier));
 
-		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
 		sync.on_block(0, b0.into());
@@ -2056,7 +2138,7 @@ pub mod tests {
 			chain.mark_dead_end_block(&b0.hash());
 		}
 
-		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
 		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
@@ -2078,7 +2160,7 @@ pub mod tests {
 		}
 
 		core.lock().set_verify_headers(true);
-		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
 		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
@@ -2097,7 +2179,7 @@ pub mod tests {
 			chain.mark_dead_end_block(&b0.hash());
 		}
 
-		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
 		sync.on_block(0, b0.into());
@@ -2117,7 +2199,7 @@ pub mod tests {
 			chain.mark_dead_end_block(&b0.hash());
 		}
 
-		core.lock().peers.insert(0, DummyOutboundSyncConnection::new());
+		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
 		sync.on_block(0, b1.into());

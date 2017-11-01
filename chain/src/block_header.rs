@@ -1,14 +1,11 @@
-use std::{fmt, io};
+use std::fmt;
 use hex::FromHex;
-use ser::{
-	Deserializable, Reader, Error as ReaderError, deserialize,
-	Serializable, Stream, serialize
-};
+use ser::{deserialize, serialize};
 use crypto::dhash256;
 use compact::Compact;
 use hash::H256;
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Serializable, Deserializable)]
 pub struct BlockHeader {
 	pub version: u32,
 	pub previous_header_hash: H256,
@@ -34,33 +31,6 @@ impl fmt::Debug for BlockHeader {
 			.field("bits", &self.bits)
 			.field("nonce", &self.nonce)
 			.finish()
-	}
-}
-
-impl Serializable for BlockHeader {
-	fn serialize(&self, stream: &mut Stream) {
-		stream
-			.append(&self.version)
-			.append(&self.previous_header_hash)
-			.append(&self.merkle_root_hash)
-			.append(&self.time)
-			.append(&self.bits)
-			.append(&self.nonce);
-	}
-}
-
-impl Deserializable for BlockHeader {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let block_header = BlockHeader {
-			version: try!(reader.read()),
-			previous_header_hash: try!(reader.read()),
-			merkle_root_hash: try!(reader.read()),
-			time: try!(reader.read()),
-			bits: try!(reader.read()),
-			nonce: try!(reader.read()),
-		};
-
-		Ok(block_header)
 	}
 }
 

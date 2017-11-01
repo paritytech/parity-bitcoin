@@ -61,7 +61,12 @@ impl PeerContext {
 
 	/// Request is always automatically send.
 	pub fn send_request<T>(&self, payload: &T) where T: Payload {
-		let send = Context::send_to_peer(self.context.clone(), self.info.id, payload);
+		self.send_request_with_flags(payload, 0)
+	}
+
+	/// Request is always automatically send.
+	pub fn send_request_with_flags<T>(&self, payload: &T, serialization_flags: u32) where T: Payload {
+		let send = Context::send_to_peer(self.context.clone(), self.info.id, payload, serialization_flags);
 		self.context.spawn(send);
 	}
 
@@ -94,14 +99,14 @@ impl PeerContext {
 		let mut queue = self.response_queue.lock();
 		if is_final {
 			if sync.permission_for_response(id) {
-				let send = Context::send_to_peer(self.context.clone(), self.info.id, payload);
+				let send = Context::send_to_peer(self.context.clone(), self.info.id, payload, 0);
 				self.context.spawn(send);
 				self.send_awaiting(&mut sync, &mut queue, id);
 			} else {
 				queue.push_finished_response(id, self.to_message(payload).into());
 			}
 		} else if sync.is_permitted(id) {
-			let send = Context::send_to_peer(self.context.clone(), self.info.id, payload);
+			let send = Context::send_to_peer(self.context.clone(), self.info.id, payload, 0);
 			self.context.spawn(send);
 		} else {
 			queue.push_unfinished_response(id, self.to_message(payload).into());

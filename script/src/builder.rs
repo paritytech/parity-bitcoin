@@ -126,4 +126,9 @@ impl Builder {
 	pub fn into_script(self) -> Script {
 		Script::new(self.data)
 	}
+
+	/// Builds final script bytes
+	pub fn into_bytes(self) -> Bytes {
+		self.data
+	}
 }

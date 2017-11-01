@@ -3,7 +3,7 @@ use std::time::Duration;
 use futures::{Future, Select, BoxFuture, Poll, Async};
 use tokio_core::reactor::{Handle, Timeout};
 
-type DeadlineBox<F> where F: Future = BoxFuture<DeadlineStatus<F::Item>, F::Error>;
+type DeadlineBox<F> = BoxFuture<DeadlineStatus<<F as Future>::Item>, <F as Future>::Error>;
 
 pub fn deadline<F, T>(duration: Duration, handle: &Handle, future: F) -> Result<Deadline<F>, io::Error>
 	where F: Future<Item = T, Error = io::Error> + Send + 'static, T: 'static {

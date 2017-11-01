@@ -1,0 +1,19 @@
+name: parity-bitcoin
+version: git
+summary: The Parity Bitcoin client
+description: |
+  Bitcoin client written in Rust.
+
+grade: devel # must be 'stable' to release into candidate/stable channels
+confinement: strict
+
+apps:
+  parity-bitcoin:
+    command: pbtc
+    plugs: [network, network-bind]
+
+parts:
+  parity-bitcoin:
+    source: .
+    plugin: rust
+    build-packages: [g++]

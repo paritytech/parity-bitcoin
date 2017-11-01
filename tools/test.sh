@@ -15,6 +15,7 @@ cargo test\
 	-p rpc\
 	-p script\
 	-p serialization\
+	-p serialization_derive\
 	-p sync\
 	-p test-data\
 	-p verification

@@ -1,10 +1,4 @@
-use std::io;
-use ser::{
-	Serializable, Stream,
-	Deserializable, Reader, Error as ReaderError
-};
-
-#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Default, PartialEq, Eq, Clone, Copy, Serializable, Deserializable)]
 pub struct Services(u64);
 
 impl From<Services> for u64 {
@@ -65,6 +59,15 @@ impl Services {
 		self
 	}
 
+	pub fn bitcoin_cash(&self) -> bool {
+		self.bit_at(5)
+	}
+
+	pub fn with_bitcoin_cash(mut self, v: bool) -> Self {
+		self.set_bit(5, v);
+		self
+	}
+
 	pub fn includes(&self, other: &Self) -> bool {
 		self.0 & other.0 == other.0
 	}
@@ -79,18 +82,6 @@ impl Services {
 
 	fn bit_at(&self, bit: usize) -> bool {
 		self.0 & (1 << bit) != 0
-	}
-}
-
-impl Serializable for Services {
-	fn serialize(&self, stream: &mut Stream) {
-		stream.append(&self.0);
-	}
-}
-
-impl Deserializable for Services {
-	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		reader.read().map(Services)
 	}
 }
 

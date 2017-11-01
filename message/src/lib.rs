@@ -3,6 +3,8 @@ extern crate bitcrypto as crypto;
 extern crate chain;
 extern crate primitives;
 extern crate serialization as ser;
+#[macro_use]
+extern crate serialization_derive;
 extern crate network;
 
 pub mod common;

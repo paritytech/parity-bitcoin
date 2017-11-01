@@ -1,9 +1,9 @@
-use network::{Magic, ConsensusParams};
+use network::ConsensusParams;
 use db::BlockHeaderProvider;
 use canon::CanonHeader;
 use error::Error;
 use work::work_required;
-use deployments::Deployments;
+use deployments::BlockDeployments;
 use timestamp::median_timestamp;
 
 pub struct HeaderAcceptor<'a> {
@@ -15,16 +15,15 @@ pub struct HeaderAcceptor<'a> {
 impl<'a> HeaderAcceptor<'a> {
 	pub fn new(
 		store: &'a BlockHeaderProvider,
-		network: Magic,
+		consensus: &'a ConsensusParams,
 		header: CanonHeader<'a>,
 		height: u32,
-		deployments: &'a Deployments,
+		deployments: &'a BlockDeployments<'a>,
 	) -> Self {
-		let params = network.consensus_params();
 		HeaderAcceptor {
-			work: HeaderWork::new(header, store, height, network),
-			median_timestamp: HeaderMedianTimestamp::new(header, store, height, deployments, &params),
-			version: HeaderVersion::new(header, height, params),
+			work: HeaderWork::new(header, store, height, consensus),
+			median_timestamp: HeaderMedianTimestamp::new(header, store, deployments),
+			version: HeaderVersion::new(header, height, consensus),
 		}
 	}
 
@@ -41,11 +40,11 @@ impl<'a> HeaderAcceptor<'a> {
 pub struct HeaderVersion<'a> {
 	header: CanonHeader<'a>,
 	height: u32,
-	consensus_params: ConsensusParams,
+	consensus_params: &'a ConsensusParams,
 }
 
 impl<'a> HeaderVersion<'a> {
-	fn new(header: CanonHeader<'a>, height: u32, consensus_params: ConsensusParams) -> Self {
+	fn new(header: CanonHeader<'a>, height: u32, consensus_params: &'a ConsensusParams) -> Self {
 		HeaderVersion {
 			header: header,
 			height: height,
@@ -55,8 +54,8 @@ impl<'a> HeaderVersion<'a> {
 
 	fn check(&self) -> Result<(), Error> {
 		if (self.header.raw.version < 2 && self.height >= self.consensus_params.bip34_height) ||
-			(self.header.raw.version < 3 && self.height >= self.consensus_params.bip65_height) ||
-			(self.header.raw.version < 4 && self.height >= self.consensus_params.bip66_height) {
+			(self.header.raw.version < 3 && self.height >= self.consensus_params.bip66_height) ||
+			(self.header.raw.version < 4 && self.height >= self.consensus_params.bip65_height) {
 			Err(Error::OldVersionBlock)
 		} else {
 			Ok(())
@@ -68,23 +67,23 @@ pub struct HeaderWork<'a> {
 	header: CanonHeader<'a>,
 	store: &'a BlockHeaderProvider,
 	height: u32,
-	network: Magic,
+	consensus: &'a ConsensusParams,
 }
 
 impl<'a> HeaderWork<'a> {
-	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, height: u32, network: Magic) -> Self {
+	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, height: u32, consensus: &'a ConsensusParams) -> Self {
 		HeaderWork {
 			header: header,
 			store: store,
 			height: height,
-			network: network,
+			consensus: consensus,
 		}
 	}
 
 	fn check(&self) -> Result<(), Error> {
 		let previous_header_hash = self.header.raw.previous_header_hash.clone();
 		let time = self.header.raw.time;
-		let work = work_required(previous_header_hash, time, self.height, self.store, self.network);
+		let work = work_required(previous_header_hash, time, self.height, self.store, self.consensus);
 		if work == self.header.raw.bits {
 			Ok(())
 		} else {
@@ -100,8 +99,8 @@ pub struct HeaderMedianTimestamp<'a> {
 }
 
 impl<'a> HeaderMedianTimestamp<'a> {
-	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, height: u32, deployments: &'a Deployments, params: &ConsensusParams) -> Self {
-		let active = deployments.csv(height, store, params);
+	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, deployments: &'a BlockDeployments<'a>) -> Self {
+		let active = deployments.csv();
 		HeaderMedianTimestamp {
 			header: header,
 			store: store,

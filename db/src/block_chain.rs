@@ -15,6 +15,9 @@ pub trait BlockChain {
 	/// Inserts new block into blockchain
 	fn insert(&self, block: IndexedBlock) -> Result<(), Error>;
 
+	/// Rollbacks single best block. Returns new best block hash
+	fn rollback_best(&self) -> Result<H256, Error>;
+
 	/// Canonizes block with given hash
 	fn canonize(&self, block_hash: &H256) -> Result<(), Error>;
 

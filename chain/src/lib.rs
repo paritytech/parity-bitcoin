@@ -3,6 +3,8 @@ extern crate heapsize;
 extern crate primitives;
 extern crate bitcrypto as crypto;
 extern crate serialization as ser;
+#[macro_use]
+extern crate serialization_derive;
 
 pub mod constants;
 

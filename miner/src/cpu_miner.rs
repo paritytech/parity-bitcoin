@@ -3,12 +3,10 @@ use primitives::bytes::Bytes;
 use primitives::hash::H256;
 use primitives::bigint::{U256, Uint};
 use primitives::compact::Compact;
-use chain::{merkle_root, Transaction, TransactionInput, TransactionOutput};
+use chain::{merkle_root, Transaction};
 use crypto::dhash256;
 use ser::Stream;
 use verification::is_valid_proof_of_work_hash;
-use keys::AddressHash;
-use script::Builder;
 use block_assembler::BlockTemplate;
 
 /// Instead of serializing `BlockHeader` from scratch over and over again,
@@ -136,49 +134,54 @@ pub fn find_solution<T>(block: &BlockTemplate, mut coinbase_transaction_builder:
 	None
 }
 
-pub struct P2shCoinbaseTransactionBuilder {
-	transaction: Transaction,
-}
-
-impl P2shCoinbaseTransactionBuilder {
-	pub fn new(hash: &AddressHash, value: u64) -> Self {
-		let script_pubkey = Builder::build_p2sh(hash).into();
-
-		let transaction = Transaction {
-			version: 0,
-			inputs: vec![TransactionInput::coinbase(Bytes::default())],
-			outputs: vec![TransactionOutput {
-				value: value,
-				script_pubkey: script_pubkey,
-			}],
-			lock_time: 0,
-		};
-
-		P2shCoinbaseTransactionBuilder {
-			transaction: transaction,
-		}
-	}
-}
-
-impl CoinbaseTransactionBuilder for P2shCoinbaseTransactionBuilder {
-	fn set_extranonce(&mut self, extranonce: &[u8]) {
-		self.transaction.inputs[0].script_sig = extranonce.to_vec().into();
-	}
-
-	fn hash(&self) -> H256 {
-		self.transaction.hash()
-	}
-
-	fn finish(self) -> Transaction {
-		self.transaction
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use primitives::bigint::{U256, Uint};
+	use primitives::bytes::Bytes;
+	use primitives::hash::H256;
 	use block_assembler::BlockTemplate;
-	use super::{find_solution, P2shCoinbaseTransactionBuilder};
+	use chain::{Transaction, TransactionInput, TransactionOutput};
+	use keys::AddressHash;
+	use script::Builder;
+	use super::{find_solution, CoinbaseTransactionBuilder};
+
+	pub struct P2shCoinbaseTransactionBuilder {
+		transaction: Transaction,
+	}
+
+	impl P2shCoinbaseTransactionBuilder {
+		pub fn new(hash: &AddressHash, value: u64) -> Self {
+			let script_pubkey = Builder::build_p2sh(hash).into();
+
+			let transaction = Transaction {
+				version: 0,
+				inputs: vec![TransactionInput::coinbase(Bytes::default())],
+				outputs: vec![TransactionOutput {
+					value: value,
+					script_pubkey: script_pubkey,
+				}],
+				lock_time: 0,
+			};
+
+			P2shCoinbaseTransactionBuilder {
+				transaction: transaction,
+			}
+		}
+	}
+
+	impl CoinbaseTransactionBuilder for P2shCoinbaseTransactionBuilder {
+		fn set_extranonce(&mut self, extranonce: &[u8]) {
+			self.transaction.inputs[0].script_sig = extranonce.to_vec().into();
+		}
+
+		fn hash(&self) -> H256 {
+			self.transaction.hash()
+		}
+
+		fn finish(self) -> Transaction {
+			self.transaction
+		}
+	}
 
 	#[test]
 	fn test_cpu_miner_low_difficulty() {

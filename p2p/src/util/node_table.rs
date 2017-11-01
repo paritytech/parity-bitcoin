@@ -17,6 +17,8 @@ pub struct Node {
 	time: i64,
 	/// Services supported by the node.
 	services: Services,
+	/// Is preferable node?
+	is_preferable: bool,
 	/// Node failures counter.
 	failures: u32,
 }
@@ -24,17 +26,6 @@ pub struct Node {
 impl Node {
 	pub fn address(&self) -> SocketAddr {
 		self.addr
-	}
-}
-
-impl From<AddressEntry> for Node {
-	fn from(entry: AddressEntry) -> Self {
-		Node {
-			addr: SocketAddr::new(entry.address.address.into(), entry.address.port.into()),
-			time: entry.timestamp as i64,
-			services: entry.address.services,
-			failures: 0,
-		}
 	}
 }
 
@@ -63,11 +54,17 @@ impl From<Node> for NodeByScore {
 impl PartialOrd for NodeByScore {
 	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
 		if self.0.failures == other.0.failures {
-			if other.0.time == self.0.time {
-				other.0.partial_cmp(&self.0)
-			}
-			else {
-				other.0.time.partial_cmp(&self.0.time)
+			if self.0.is_preferable == other.0.is_preferable {
+				if other.0.time == self.0.time {
+					other.0.partial_cmp(&self.0)
+				}
+				else {
+					other.0.time.partial_cmp(&self.0.time)
+				}
+			} else if self.0.is_preferable {
+				return Some(Ordering::Less)
+			} else {
+				Some(Ordering::Greater)
 			}
 		} else {
 			self.0.failures.partial_cmp(&other.0.failures)
@@ -78,11 +75,17 @@ impl PartialOrd for NodeByScore {
 impl Ord for NodeByScore {
 	fn cmp(&self, other: &Self) -> Ordering {
 		if self.0.failures == other.0.failures {
-			if other.0.time == self.0.time {
-				other.0.cmp(&self.0)
-			}
-			else {
-				other.0.time.cmp(&self.0.time)
+			if self.0.is_preferable == other.0.is_preferable {
+				if other.0.time == self.0.time {
+					other.0.cmp(&self.0)
+				}
+				else {
+					other.0.time.cmp(&self.0.time)
+				}
+			} else if self.0.is_preferable {
+				return Ordering::Less
+			} else {
+				Ordering::Greater
 			}
 		} else {
 			self.0.failures.cmp(&other.0.failures)
@@ -168,6 +171,8 @@ pub enum NodeTableError { AddressAlreadyAdded, NoAddressInTable }
 pub struct NodeTable<T = RealTime> where T: Time {
 	/// Time source.
 	time: T,
+	/// Preferable services.
+	preferable_services: Services,
 	/// Nodes by socket address.
 	by_addr: HashMap<SocketAddr, Node>,
 	/// Nodes sorted by score.
@@ -177,15 +182,24 @@ pub struct NodeTable<T = RealTime> where T: Time {
 }
 
 impl NodeTable {
+	#[cfg(test)]
+	/// Creates empty node table with preferable services.
+	pub fn new(preferable_services: Services) -> Self {
+		NodeTable {
+			preferable_services,
+			..Default::default()
+		}
+	}
+
 	/// Opens a file loads node_table from it.
-	pub fn from_file<P>(path: P) -> Result<Self, io::Error> where P: AsRef<path::Path> {
+	pub fn from_file<P>(preferable_services: Services, path: P) -> Result<Self, io::Error> where P: AsRef<path::Path> {
 		fs::OpenOptions::new()
 			.create(true)
 			.read(true)
 			// without opening for write, mac os returns os error 22
 			.write(true)
 			.open(path)
-			.and_then(Self::load)
+			.and_then(|f| Self::load(preferable_services, f))
 	}
 
 	/// Saves node table to file
@@ -213,6 +227,7 @@ impl<T> NodeTable<T> where T: Time {
 					addr: addr,
 					time: now,
 					services: services,
+					is_preferable: services.includes(&self.preferable_services),
 					failures: 0,
 				};
 				self.by_score.insert(node.clone().into());
@@ -254,14 +269,22 @@ impl<T> NodeTable<T> where T: Time {
 	/// Inserts many new addresses into node table.
 	/// Used in `addr` request handler.
 	/// Discards all nodes with timestamp newer than current time.
-	pub fn insert_many(&mut self, nodes: Vec<Node>) {
+	pub fn insert_many(&mut self, addresses: Vec<AddressEntry>) {
 		// discard all nodes with timestamp newer than current time.
 		let now = self.time.get().sec;
-		let iter = nodes.into_iter()
-			.filter(|node| node.time <= now);
+		let iter = addresses.into_iter()
+			.filter(|addr| addr.timestamp as i64 <= now);
 
 		// iterate over the rest
-		for node in iter {
+		for addr in iter {
+			let node = Node {
+				addr: SocketAddr::new(addr.address.address.into(), addr.address.port.into()),
+				time: addr.timestamp as i64,
+				services: addr.address.services,
+				is_preferable: addr.address.services.includes(&self.preferable_services),
+				failures: 0,
+			};
+
 			match self.by_addr.entry(node.addr) {
 				Entry::Occupied(mut entry) => {
 					let old = entry.get_mut();
@@ -369,22 +392,25 @@ impl<T> NodeTable<T> where T: Time {
 	}
 
 	/// Loads table in from a csv source.
-	pub fn load<R>(read: R) -> Result<Self, io::Error> where R: io::Read, T: Default {
+	pub fn load<R>(preferable_services: Services, read: R) -> Result<Self, io::Error> where R: io::Read, T: Default {
 		let mut rdr = csv::Reader::from_reader(read)
 			.has_headers(false)
 			.delimiter(b' ');
 
 		let mut node_table = NodeTable::default();
+		node_table.preferable_services = preferable_services;
 
 		let err = || io::Error::new(io::ErrorKind::Other, "Load csv error");
 
 		for row in rdr.decode() {
 			let (addr, time, services, failures): (String, i64, u64, u32) = try!(row.map_err(|_| err()));
 
+			let services = services.into();
 			let node = Node {
 				addr: try!(addr.parse().map_err(|_| err())),
 				time: time,
-				services: services.into(),
+				services: services,
+				is_preferable: services.includes(&preferable_services),
 				failures: failures,
 			};
 
@@ -559,7 +585,7 @@ mod tests {
 
 		let mut db = Vec::new();
 		assert_eq!(table.save(&mut db).unwrap(), ());
-		let loaded_table = NodeTable::<IncrementalTime>::load(&db as &[u8]).unwrap();
+		let loaded_table = NodeTable::<IncrementalTime>::load(Services::default(), &db as &[u8]).unwrap();
 		assert_eq!(table.by_addr, loaded_table.by_addr);
 		assert_eq!(table.by_score, loaded_table.by_score);
 		assert_eq!(table.by_time, loaded_table.by_time);
@@ -572,5 +598,22 @@ mod tests {
 127.0.0.1:8002 5 0 1
 127.0.0.1:8003 3 0 1
 ".to_string(), s);
+	}
+
+	#[test]
+	fn test_preferable_services() {
+		let s0: SocketAddr = "127.0.0.1:8000".parse().unwrap();
+		let s1: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+
+		let mut table = NodeTable::new(Services::default().with_network(true).with_bitcoin_cash(true));
+		table.insert(s0, Services::default().with_network(true));
+		table.insert(s1, Services::default().with_network(true).with_bitcoin_cash(true));
+		assert_eq!(table.nodes_with_services(&Services::default(), InternetProtocol::default(), &HashSet::new(), 1)[0].address(), s1);
+
+		table.note_failure(&s1);
+		assert_eq!(table.nodes_with_services(&Services::default(), InternetProtocol::default(), &HashSet::new(), 1)[0].address(), s0);
+
+		table.note_failure(&s0);
+		assert_eq!(table.nodes_with_services(&Services::default(), InternetProtocol::default(), &HashSet::new(), 1)[0].address(), s1);
 	}
 }
