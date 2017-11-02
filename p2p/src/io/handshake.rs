@@ -287,7 +287,7 @@ mod tests {
 
 	#[test]
 	fn test_handshake() {
-		let magic = Network::Mainnet.magic(ConsensusFork::NoFork);
+		let magic = Network::Mainnet.magic(&ConsensusFork::NoFork);
 		let version = 70012;
 		let local_version = local_version();
 		let remote_version = remote_version();
@@ -317,7 +317,7 @@ mod tests {
 
 	#[test]
 	fn test_accept_handshake() {
-		let magic = Network::Mainnet.magic(ConsensusFork::NoFork);
+		let magic = Network::Mainnet.magic(&ConsensusFork::NoFork);
 		let version = 70012;
 		let local_version = local_version();
 		let remote_version = remote_version();
@@ -346,7 +346,7 @@ mod tests {
 
 	#[test]
 	fn test_self_handshake() {
-		let magic = Network::Mainnet.magic(ConsensusFork::NoFork);
+		let magic = Network::Mainnet.magic(&ConsensusFork::NoFork);
 		let version = 70012;
 		let remote_version = local_version();
 		let local_version = local_version();
@@ -367,7 +367,7 @@ mod tests {
 
 	#[test]
 	fn test_accept_self_handshake() {
-		let magic = Network::Mainnet.magic(ConsensusFork::NoFork);
+		let magic = Network::Mainnet.magic(&ConsensusFork::NoFork);
 		let version = 70012;
 		let remote_version = local_version();
 		let local_version = local_version();
@@ -388,8 +388,8 @@ mod tests {
 
 	#[test]
 	fn test_fails_to_accept_other_fork_node() {
-		let magic1 = Network::Mainnet.magic(ConsensusFork::NoFork);
-		let magic2 = Network::Mainnet.magic(ConsensusFork::BitcoinCash(0));
+		let magic1 = Network::Mainnet.magic(&ConsensusFork::NoFork);
+		let magic2 = Network::Mainnet.magic(&ConsensusFork::BitcoinCash(Default::default()));
 		let version = 70012;
 		let local_version = local_version();
 		let remote_version = remote_version();

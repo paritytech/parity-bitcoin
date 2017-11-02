@@ -2,7 +2,7 @@ use std::net;
 use clap;
 use db;
 use message::Services;
-use network::{Network, ConsensusParams, ConsensusFork, SEGWIT2X_FORK_BLOCK, BITCOIN_CASH_FORK_BLOCK};
+use network::{Network, ConsensusParams, ConsensusFork};
 use p2p::InternetProtocol;
 use seednodes::{mainnet_seednodes, testnet_seednodes, segwit2x_seednodes, bitcoin_cash_seednodes, bitcoin_cash_testnet_seednodes};
 use rpc_apis::ApiSet;
@@ -71,7 +71,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	};
 
 	// to skip idiotic 30 seconds delay in test-scripts
-	let user_agent_suffix = match consensus_fork {
+	let user_agent_suffix = match consensus.fork {
 		ConsensusFork::NoFork => "",
 		ConsensusFork::SegWit2x(_) => "/SegWit2x",
 		ConsensusFork::BitcoinCash(_) => "/UAHF",
@@ -98,15 +98,15 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 
 	let mut seednodes: Vec<String> = match matches.value_of("seednode") {
 		Some(s) => vec![s.parse().map_err(|_| "Invalid seednode".to_owned())?],
-		None => match (network, consensus_fork) {
-			(Network::Mainnet, ConsensusFork::BitcoinCash(_)) => bitcoin_cash_seednodes().into_iter().map(Into::into).collect(),
-			(Network::Testnet, ConsensusFork::BitcoinCash(_)) => bitcoin_cash_testnet_seednodes().into_iter().map(Into::into).collect(),
+		None => match (network, &consensus.fork) {
+			(Network::Mainnet, &ConsensusFork::BitcoinCash(_)) => bitcoin_cash_seednodes().into_iter().map(Into::into).collect(),
+			(Network::Testnet, &ConsensusFork::BitcoinCash(_)) => bitcoin_cash_testnet_seednodes().into_iter().map(Into::into).collect(),
 			(Network::Mainnet, _) => mainnet_seednodes().into_iter().map(Into::into).collect(),
 			(Network::Testnet, _) => testnet_seednodes().into_iter().map(Into::into).collect(),
 			(Network::Other(_), _) | (Network::Regtest, _) | (Network::Unitest, _) => Vec::new(),
 		},
 	};
-	match consensus_fork {
+	match consensus.fork {
 		ConsensusFork::SegWit2x(_) => seednodes.extend(segwit2x_seednodes().into_iter().map(Into::into)),
 		_ => (),
 	}
@@ -124,9 +124,9 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	};
 
 	let services = Services::default().with_network(true);
-	let services = match consensus.fork {
-		ConsensusFork::BitcoinCash(_) => services.with_bitcoin_cash(true),
-		ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => services.with_witness(true),
+	let services = match &consensus.fork {
+		&ConsensusFork::BitcoinCash(_) => services.with_bitcoin_cash(true),
+		&ConsensusFork::NoFork | &ConsensusFork::SegWit2x(_) => services.with_witness(true),
 	};
 
 	let verification_level = match matches.value_of("verification-level") {
@@ -194,8 +194,8 @@ fn parse_consensus_fork(db: &db::SharedStore, matches: &clap::ArgMatches) -> Res
 
 	Ok(match new_consensus_fork {
 		"segwit" => ConsensusFork::NoFork,
-		"segwit2x" => ConsensusFork::SegWit2x(SEGWIT2X_FORK_BLOCK),
-		"bitcoin-cash" => ConsensusFork::BitcoinCash(BITCOIN_CASH_FORK_BLOCK),
+		"segwit2x" => ConsensusFork::SegWit2x(Default::default()),
+		"bitcoin-cash" => ConsensusFork::BitcoinCash(Default::default()),
 		_ => unreachable!("hardcoded above"),
 	})
 }

@@ -78,21 +78,21 @@ mod tests {
 	fn test_read_message() {
 		let raw: Bytes = "f9beb4d970696e6700000000000000000800000083c00c765845303b6da97786".into();
 		let ping = Ping::new(u64::from_str_radix("8677a96d3b304558", 16).unwrap());
-		assert_eq!(read_message(raw.as_ref(), Network::Mainnet.magic(ConsensusFork::NoFork), 0).wait().unwrap().1, Ok(ping));
-		assert_eq!(read_message::<Ping, _>(raw.as_ref(), Network::Testnet.magic(ConsensusFork::NoFork), 0).wait().unwrap().1, Err(Error::InvalidMagic));
-		assert_eq!(read_message::<Pong, _>(raw.as_ref(), Network::Mainnet.magic(ConsensusFork::NoFork), 0).wait().unwrap().1, Err(Error::InvalidCommand));
+		assert_eq!(read_message(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::NoFork), 0).wait().unwrap().1, Ok(ping));
+		assert_eq!(read_message::<Ping, _>(raw.as_ref(), Network::Testnet.magic(&ConsensusFork::NoFork), 0).wait().unwrap().1, Err(Error::InvalidMagic));
+		assert_eq!(read_message::<Pong, _>(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::NoFork), 0).wait().unwrap().1, Err(Error::InvalidCommand));
 	}
 
 	#[test]
 	fn test_read_too_short_message() {
 		let raw: Bytes = "f9beb4d970696e6700000000000000000800000083c00c765845303b6da977".into();
-		assert!(read_message::<Ping, _>(raw.as_ref(), Network::Mainnet.magic(ConsensusFork::NoFork), 0).wait().is_err());
+		assert!(read_message::<Ping, _>(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::NoFork), 0).wait().is_err());
 	}
 
 
 	#[test]
 	fn test_read_message_with_invalid_checksum() {
 		let raw: Bytes = "f9beb4d970696e6700000000000000000800000083c01c765845303b6da97786".into();
-		assert_eq!(read_message::<Ping, _>(raw.as_ref(), Network::Mainnet.magic(ConsensusFork::NoFork), 0).wait().unwrap().1, Err(Error::InvalidChecksum));
+		assert_eq!(read_message::<Ping, _>(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::NoFork), 0).wait().unwrap().1, Err(Error::InvalidChecksum));
 	}
 }

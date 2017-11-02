@@ -4,6 +4,6 @@ version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 
 [dependencies]
-serialization = { path = "../serialization" }
+lazy_static = "0.2"
 chain = { path = "../chain" }
 primitives = { path = "../primitives" }

@@ -34,7 +34,7 @@ impl<'a> HeaderProofOfWork<'a> {
 	fn new(header: &'a IndexedBlockHeader, network: Network) -> Self {
 		HeaderProofOfWork {
 			header: header,
-			max_work_bits: network.max_bits(),
+			max_work_bits: network.max_bits().into(),
 		}
 	}
 
