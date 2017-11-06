@@ -75,6 +75,7 @@ mod error;
 mod sigops;
 mod timestamp;
 mod work;
+mod work_bch;
 
 // pre-verification
 mod verify_block;
