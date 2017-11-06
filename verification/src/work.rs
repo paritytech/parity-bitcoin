@@ -82,10 +82,7 @@ pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHea
 		return work_required_testnet(parent_hash, time, height, store, Network::Testnet)
 	}
 
-	match consensus.fork {
-		_ if parent_header.bits == max_bits => parent_header.bits,
-		_ => parent_header.bits,
-	}
+	parent_header.bits,
 }
 
 pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, network: Network) -> Compact {
