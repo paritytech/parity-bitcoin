@@ -42,7 +42,7 @@ pub use types::PeersRef;
 use std::sync::Arc;
 use parking_lot::RwLock;
 use message::Services;
-use network::{Magic, ConsensusParams};
+use network::{Network, ConsensusParams};
 use primitives::hash::H256;
 use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 
@@ -103,7 +103,7 @@ pub fn create_local_sync_node(consensus: ConsensusParams, db: db::SharedStore, p
 	let network = consensus.network;
 	let sync_client_config = SynchronizationConfig {
 		// during regtests, peer is providing us with bad blocks => we shouldn't close connection because of this
-		close_connection_on_bad_block: network != Magic::Regtest,
+		close_connection_on_bad_block: network != Network::Regtest,
 	};
 
 	let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));

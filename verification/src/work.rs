@@ -2,7 +2,7 @@ use std::cmp;
 use primitives::compact::Compact;
 use primitives::hash::H256;
 use primitives::bigint::U256;
-use network::{Magic, ConsensusParams, ConsensusFork};
+use network::{Network, ConsensusParams, ConsensusFork};
 use db::{BlockHeaderProvider, BlockRef};
 use timestamp::median_timestamp_inclusive;
 
@@ -78,8 +78,8 @@ pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHea
 		return work_required_retarget(max_bits, retarget_timestamp, last_timestamp, last_bits);
 	}
 
-	if consensus.network == Magic::Testnet {
-		return work_required_testnet(parent_hash, time, height, store, Magic::Testnet)
+	if consensus.network == Network::Testnet {
+		return work_required_testnet(parent_hash, time, height, store, Network::Testnet)
 	}
 
 	match consensus.fork {
@@ -114,7 +114,7 @@ pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHea
 	}
 }
 
-pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, network: Magic) -> Compact {
+pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, network: Network) -> Compact {
 	assert!(height != 0, "cannot calculate required work for genesis block");
 
 	let mut bits = Vec::new();
@@ -172,7 +172,7 @@ mod tests {
 	use primitives::bytes::Bytes;
 	use primitives::hash::H256;
 	use primitives::compact::Compact;
-	use network::{Magic, ConsensusParams, ConsensusFork};
+	use network::{Network, ConsensusParams, ConsensusFork};
 	use db::{BlockHeaderProvider, BlockRef};
 	use chain::BlockHeader;
 	use super::{work_required, is_valid_proof_of_work_hash, is_valid_proof_of_work, block_reward_satoshi};
@@ -185,14 +185,14 @@ mod tests {
 	#[test]
 	fn test_is_valid_proof_of_work() {
 		// block 2
-		assert!(is_valid_pow(Magic::Mainnet.max_bits(), 486604799u32, "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd"));
+		assert!(is_valid_pow(Network::Mainnet.max_bits(), 486604799u32, "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd"));
 		// block 400_000
-		assert!(is_valid_pow(Magic::Mainnet.max_bits(), 403093919u32, "000000000000000004ec466ce4732fe6f1ed1cddc2ed4b328fff5224276e3f6f"));
+		assert!(is_valid_pow(Network::Mainnet.max_bits(), 403093919u32, "000000000000000004ec466ce4732fe6f1ed1cddc2ed4b328fff5224276e3f6f"));
 
 		// other random tests
-		assert!(is_valid_pow(Magic::Regtest.max_bits(), 0x181bc330u32, "00000000000000001bc330000000000000000000000000000000000000000000"));
-		assert!(!is_valid_pow(Magic::Regtest.max_bits(), 0x181bc330u32, "00000000000000001bc330000000000000000000000000000000000000000001"));
-		assert!(!is_valid_pow(Magic::Regtest.max_bits(), 0x181bc330u32, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
+		assert!(is_valid_pow(Network::Regtest.max_bits(), 0x181bc330u32, "00000000000000001bc330000000000000000000000000000000000000000000"));
+		assert!(!is_valid_pow(Network::Regtest.max_bits(), 0x181bc330u32, "00000000000000001bc330000000000000000000000000000000000000000001"));
+		assert!(!is_valid_pow(Network::Regtest.max_bits(), 0x181bc330u32, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
 	}
 
 	#[test]
@@ -237,8 +237,8 @@ mod tests {
 			}
 		}
 
-		let main_consensus = ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork);
-		let uahf_consensus = ConsensusParams::new(Magic::Mainnet, ConsensusFork::BitcoinCash(1000));
+		let main_consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork);
+		let uahf_consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCash(1000));
 		let mut header_provider = MemoryBlockHeaderProvider::default();
 		header_provider.insert(BlockHeader {
 				version: 0,

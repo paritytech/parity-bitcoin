@@ -1,5 +1,5 @@
 use hash::H256;
-use {Magic, Deployment};
+use {Network, Magic, Deployment};
 
 /// First block of SegWit2x fork.
 pub const SEGWIT2X_FORK_BLOCK: u32 = 494784; // https://segwit2x.github.io/segwit2x-announce.html
@@ -10,7 +10,7 @@ pub const BITCOIN_CASH_FORK_BLOCK: u32 = 478559; // https://blockchair.com/bitco
 /// Parameters that influence chain consensus.
 pub struct ConsensusParams {
 	/// Network.
-	pub network: Magic,
+	pub network: Network,
 	/// Time when BIP16 becomes active.
 	/// See https://github.com/bitcoin/bips/blob/master/bip-0016.mediawiki
 	pub bip16_time: u32,
@@ -58,10 +58,10 @@ pub enum ConsensusFork {
 }
 
 impl ConsensusParams {
-	pub fn new(magic: Magic, fork: ConsensusFork) -> Self {
-		match magic {
-			Magic::Mainnet | Magic::Other(_) => ConsensusParams {
-				network: magic,
+	pub fn new(network: Network, fork: ConsensusFork) -> Self {
+		match network {
+			Network::Mainnet | Network::Other(_) => ConsensusParams {
+				network: network,
 				bip16_time: 1333238400,	// Apr 1 2012
 				bip34_height: 227931,	// 000000000000024b89b42a942fe0d9fea3bb44ab7bd1b19115dd6a759c0808b8
 				bip65_height: 388381,	// 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
@@ -87,8 +87,8 @@ impl ConsensusParams {
 					ConsensusFork::BitcoinCash(_) => None,
 				},
 			},
-			Magic::Testnet => ConsensusParams {
-				network: magic,
+			Network::Testnet => ConsensusParams {
+				network: network,
 				bip16_time: 1333238400,	// Apr 1 2012
 				bip34_height: 21111,	// 0000000023b3a96d3484e5abb3755c413e7d41500f8e2a5c3f0dd01299cd8ef8
 				bip65_height: 581885,	// 00000000007f6655f22f98e72ed80d8b06dc761d5da09df0fa1dc4be4f861eb6
@@ -114,8 +114,8 @@ impl ConsensusParams {
 					ConsensusFork::BitcoinCash(_) => None,
 				},
 			},
-			Magic::Regtest | Magic::Unitest => ConsensusParams {
-				network: magic,
+			Network::Regtest | Network::Unitest => ConsensusParams {
+				network: network,
 				bip16_time: 1333238400,	// Apr 1 2012
 				bip34_height: 100000000,	// not activated on regtest
 				bip65_height: 1351,
@@ -142,6 +142,10 @@ impl ConsensusParams {
 				},
 			},
 		}
+	}
+
+	pub fn magic(&self) -> Magic {
+		self.network.magic(self.fork)
 	}
 
 	pub fn is_bip30_exception(&self, hash: &H256, height: u32) -> bool {
@@ -224,42 +228,42 @@ impl ConsensusFork {
 
 #[cfg(test)]
 mod tests {
-	use super::super::Magic;
+	use super::super::Network;
 	use super::{ConsensusParams, ConsensusFork};
 
 	#[test]
 	fn test_consensus_params_bip34_height() {
-		assert_eq!(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork).bip34_height, 227931);
-		assert_eq!(ConsensusParams::new(Magic::Testnet, ConsensusFork::NoFork).bip34_height, 21111);
-		assert_eq!(ConsensusParams::new(Magic::Regtest, ConsensusFork::NoFork).bip34_height, 100000000);
+		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork).bip34_height, 227931);
+		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::NoFork).bip34_height, 21111);
+		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::NoFork).bip34_height, 100000000);
 	}
 
 	#[test]
 	fn test_consensus_params_bip65_height() {
-		assert_eq!(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork).bip65_height, 388381);
-		assert_eq!(ConsensusParams::new(Magic::Testnet, ConsensusFork::NoFork).bip65_height, 581885);
-		assert_eq!(ConsensusParams::new(Magic::Regtest, ConsensusFork::NoFork).bip65_height, 1351);
+		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork).bip65_height, 388381);
+		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::NoFork).bip65_height, 581885);
+		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::NoFork).bip65_height, 1351);
 	}
 
 	#[test]
 	fn test_consensus_params_bip66_height() {
-		assert_eq!(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork).bip66_height, 363725);
-		assert_eq!(ConsensusParams::new(Magic::Testnet, ConsensusFork::NoFork).bip66_height, 330776);
-		assert_eq!(ConsensusParams::new(Magic::Regtest, ConsensusFork::NoFork).bip66_height, 1251);
+		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork).bip66_height, 363725);
+		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::NoFork).bip66_height, 330776);
+		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::NoFork).bip66_height, 1251);
 	}
 
 	#[test]
 	fn test_consensus_activation_threshold() {
-		assert_eq!(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork).rule_change_activation_threshold, 1916);
-		assert_eq!(ConsensusParams::new(Magic::Testnet, ConsensusFork::NoFork).rule_change_activation_threshold, 1512);
-		assert_eq!(ConsensusParams::new(Magic::Regtest, ConsensusFork::NoFork).rule_change_activation_threshold, 108);
+		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork).rule_change_activation_threshold, 1916);
+		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::NoFork).rule_change_activation_threshold, 1512);
+		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::NoFork).rule_change_activation_threshold, 108);
 	}
 
 	#[test]
 	fn test_consensus_miner_confirmation_window() {
-		assert_eq!(ConsensusParams::new(Magic::Mainnet, ConsensusFork::NoFork).miner_confirmation_window, 2016);
-		assert_eq!(ConsensusParams::new(Magic::Testnet, ConsensusFork::NoFork).miner_confirmation_window, 2016);
-		assert_eq!(ConsensusParams::new(Magic::Regtest, ConsensusFork::NoFork).miner_confirmation_window, 144);
+		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork).miner_confirmation_window, 2016);
+		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::NoFork).miner_confirmation_window, 2016);
+		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::NoFork).miner_confirmation_window, 144);
 	}
 
 	#[test]

@@ -14,7 +14,7 @@ use global_script::Script;
 use chain::OutPoint;
 use verification;
 use ser::serialize;
-use network::Magic;
+use network::Network;
 use primitives::hash::H256 as GlobalH256;
 
 pub struct BlockChainClient<T: BlockChainClientCoreApi> {
@@ -32,12 +32,12 @@ pub trait BlockChainClientCoreApi: Send + Sync + 'static {
 }
 
 pub struct BlockChainClientCore {
-	network: Magic,
+	network: Network,
 	storage: db::SharedStore,
 }
 
 impl BlockChainClientCore {
-	pub fn new(network: Magic, storage: db::SharedStore) -> Self {
+	pub fn new(network: Network, storage: db::SharedStore) -> Self {
 
 		BlockChainClientCore {
 			network: network,
@@ -153,7 +153,7 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 				script_type: script.script_type().into(),
 				addresses: script_addresses.into_iter().map(|a| Address {
 					network: match self.network {
-						Magic::Mainnet => keys::Network::Mainnet,
+						Network::Mainnet => keys::Network::Mainnet,
 						// there's no correct choices for Regtests && Other networks
 						// => let's just make Testnet key
 						_ => keys::Network::Testnet,
@@ -249,7 +249,7 @@ pub mod tests {
 	use v1::types::H256;
 	use v1::types::ScriptType;
 	use chain::OutPoint;
-	use network::Magic;
+	use network::Network;
 	use super::*;
 
 	#[derive(Default)]
@@ -452,7 +452,7 @@ pub mod tests {
 			]
 		));
 
-		let core = BlockChainClientCore::new(Magic::Mainnet, storage);
+		let core = BlockChainClientCore::new(Network::Mainnet, storage);
 
 		// get info on block #1:
 		// https://blockexplorer.com/block/00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048
@@ -589,7 +589,7 @@ pub mod tests {
 	#[test]
 	fn verbose_transaction_out_contents() {
 		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
-		let core = BlockChainClientCore::new(Magic::Mainnet, storage);
+		let core = BlockChainClientCore::new(Network::Mainnet, storage);
 
 		// get info on tx from genesis block:
 		// https://blockchain.info/ru/tx/4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b
