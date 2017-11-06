@@ -144,7 +144,7 @@ impl ConsensusParams {
 						bit: 1,
 						start_time: 0,
 						timeout: ::std::u32::MAX,
-						activation: Some(0),
+						activation: if network == Network::Regtest { Some(0) } else { None },
 					}),
 					ConsensusFork::BitcoinCash(_) => None,
 				},
