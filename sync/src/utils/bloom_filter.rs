@@ -78,9 +78,9 @@ impl BloomFilter {
 	pub fn filter_transaction(&self, tx: &IndexedTransaction) -> bool {
 		// check with bloom filter, if set
 		match self.bloom {
-			/// if no filter is set for the connection => match everything
+			// if no filter is set for the connection => match everything
 			None => true,
-			/// filter using bloom filter, then update
+			// filter using bloom filter, then update
 			Some(ref bloom) => {
 				let mut bloom = bloom.lock();
 				let mut is_match = false;

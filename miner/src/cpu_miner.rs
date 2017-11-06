@@ -38,7 +38,7 @@ impl BlockHeaderBytes {
 
 	/// Set merkle root hash
 	fn set_merkle_root_hash(&mut self, hash: &H256) {
-		let mut merkle_bytes: &mut [u8] = &mut self.data[4 + 32..4 + 32 + 32];
+		let merkle_bytes: &mut [u8] = &mut self.data[4 + 32..4 + 32 + 32];
 		merkle_bytes.copy_from_slice(&**hash);
 	}
 
