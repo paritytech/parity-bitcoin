@@ -206,6 +206,7 @@ impl ConsensusFork {
 		match *self {
 			// size of first fork block must be larger than 1MB
 			ConsensusFork::BitcoinCash(ref fork) if height == fork.height => 1_000_001,
+			ConsensusFork::SegWit2x(ref fork) if height == fork.height => 1_000_001,
 			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) | ConsensusFork::SegWit2x(_) => 0,
 		}
 	}
@@ -314,7 +315,7 @@ mod tests {
 		assert_eq!(ConsensusFork::NoFork.min_block_size(0), 0);
 		let fork = ConsensusFork::SegWit2x(Default::default());
 		assert_eq!(fork.min_block_size(0), 0);
-		assert_eq!(fork.min_block_size(fork.activation_height()), 0);
+		assert_eq!(fork.min_block_size(fork.activation_height()), 1_000_001);
 		let fork = ConsensusFork::BitcoinCash(Default::default());
 		assert_eq!(fork.min_block_size(0), 0);
 		assert_eq!(fork.min_block_size(fork.activation_height()), 1_000_001);
