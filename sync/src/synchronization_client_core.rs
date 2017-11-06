@@ -2134,7 +2134,7 @@ pub mod tests {
 
 		let (_, core, sync) = create_sync(None, None);
 		{
-			let mut core = core.lock(); let mut chain = core.chain();
+			let mut core = core.lock(); let chain = core.chain();
 			chain.mark_dead_end_block(&b0.hash());
 		}
 
@@ -2155,7 +2155,7 @@ pub mod tests {
 
 		let (_, core, sync) = create_sync(None, None);
 		{
-			let mut core = core.lock(); let mut chain = core.chain();
+			let mut core = core.lock(); let chain = core.chain();
 			chain.mark_dead_end_block(&b1.hash());
 		}
 
@@ -2175,7 +2175,7 @@ pub mod tests {
 
 		let (_, core, sync) = create_sync(None, None);
 		{
-			let mut core = core.lock(); let mut chain = core.chain();
+			let mut core = core.lock(); let chain = core.chain();
 			chain.mark_dead_end_block(&b0.hash());
 		}
 
@@ -2195,7 +2195,7 @@ pub mod tests {
 
 		let (_, core, sync) = create_sync(None, None);
 		{
-			let mut core = core.lock(); let mut chain = core.chain();
+			let mut core = core.lock(); let chain = core.chain();
 			chain.mark_dead_end_block(&b0.hash());
 		}
 
