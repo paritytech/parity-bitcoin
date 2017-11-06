@@ -37,8 +37,8 @@ pub fn bitcoin_cash_seednodes() -> Vec<&'static str> {
 
 pub fn bitcoin_cash_testnet_seednodes() -> Vec<&'static str> {
 	vec![
-		"testnet-seed-abc.bitcoinforks.org:8333",
-		"testnet-seed.bitprim.org:8333",
+		"testnet-seed-abc.bitcoinforks.org:18333",
+		"testnet-seed.bitprim.org:18333",
 	]
 }
 
