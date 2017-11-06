@@ -4,7 +4,8 @@ use db;
 use message::Services;
 use network::{Network, ConsensusParams, ConsensusFork, SEGWIT2X_FORK_BLOCK, BITCOIN_CASH_FORK_BLOCK};
 use p2p::InternetProtocol;
-use seednodes::{mainnet_seednodes, testnet_seednodes, segwit2x_seednodes, bitcoin_cash_seednodes, bitcoin_cash_testnet_seednodes};
+use seednodes::{mainnet_seednodes, testnet_seednodes, segwit2x_seednodes, segwit2x_testnet_seednodes,
+	bitcoin_cash_seednodes, bitcoin_cash_testnet_seednodes};
 use rpc_apis::ApiSet;
 use {USER_AGENT, REGTEST_USER_AGENT};
 use primitives::hash::H256;
@@ -107,7 +108,10 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		},
 	};
 	match consensus_fork {
-		ConsensusFork::SegWit2x(_) => seednodes.extend(segwit2x_seednodes().into_iter().map(Into::into)),
+		ConsensusFork::SegWit2x(_) if network == Network::Mainnet =>
+			seednodes.extend(segwit2x_seednodes().into_iter().map(Into::into)),
+		ConsensusFork::SegWit2x(_) if network == Network::Testnet =>
+			seednodes.extend(segwit2x_testnet_seednodes().into_iter().map(Into::into)),
 		_ => (),
 	}
 
@@ -126,7 +130,8 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	let services = Services::default().with_network(true);
 	let services = match consensus.fork {
 		ConsensusFork::BitcoinCash(_) => services.with_bitcoin_cash(true),
-		ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => services.with_witness(true),
+		ConsensusFork::SegWit2x(_) => services.with_witness(true).with_witness2x(true), // TODO: witness must be removed after HF?
+		ConsensusFork::NoFork => services.with_witness(true),
 	};
 
 	let verification_level = match matches.value_of("verification-level") {
