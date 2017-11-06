@@ -50,3 +50,9 @@ pub fn segwit2x_seednodes() -> Vec<&'static str> {
 		"bitcoin.bloqseeds.net:8333",
 	]
 }
+
+pub fn segwit2x_testnet_seednodes() -> Vec<&'static str> {
+	vec![
+		"bitcoin-testnet.bloqseeds.net:8333",
+	]
+}

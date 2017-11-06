@@ -68,6 +68,15 @@ impl Services {
 		self
 	}
 
+	pub fn witness2x(&self) -> bool {
+		self.bit_at(7)
+	}
+
+	pub fn with_witness2x(mut self, v: bool) -> Self {
+		self.set_bit(7, v);
+		self
+	}
+
 	pub fn includes(&self, other: &Self) -> bool {
 		self.0 & other.0 == other.0
 	}
