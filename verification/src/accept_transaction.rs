@@ -306,13 +306,13 @@ impl<'a> TransactionEval<'a> {
 	) -> Self {
 		let verify_p2sh = time >= params.bip16_time;
 		let verify_strictenc = match params.fork {
-			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height => true,
+			ConsensusFork::BitcoinCash(ref fork) if height >= fork.height => true,
 			_ => false,
 		};
 		let verify_locktime = height >= params.bip65_height;
 		let verify_dersig = height >= params.bip66_height;
 		let signature_version = match params.fork {
-			ConsensusFork::BitcoinCash(fork_height) if height >= fork_height => SignatureVersion::ForkId,
+			ConsensusFork::BitcoinCash(ref fork) if height >= fork.height => SignatureVersion::ForkId,
 			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) | ConsensusFork::SegWit2x(_) => SignatureVersion::Base,
 		};
 
@@ -429,9 +429,9 @@ impl<'a> TransactionReturnReplayProtection<'a> {
 	}
 
 	fn check(&self) -> Result<(), TransactionError> {
-		if let ConsensusFork::BitcoinCash(fork_block) = self.consensus.fork {
+		if let ConsensusFork::BitcoinCash(ref fork) = self.consensus.fork {
 			// Transactions with such OP_RETURNs shall be considered valid again for block 530,001 and onwards
-			if self.height >= fork_block && self.height <= 530_000 {
+			if self.height >= fork.height && self.height <= 530_000 {
 				if (*self.transaction).raw.outputs.iter()
 					.any(|out| out.script_pubkey == *BITCOIN_CASH_RETURN_REPLAY_PROTECTION_SCRIPT) {
 					return Err(TransactionError::ReturnReplayProtection)
@@ -492,10 +492,10 @@ mod tests {
 
 		assert_eq!(transaction.raw.outputs[0].script_pubkey.len(), 46 + 2);
 
-		let consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCash(100));
-		let checker = TransactionReturnReplayProtection::new(CanonTransaction::new(&transaction), &consensus, 100);
+		let consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCash(Default::default()));
+		let checker = TransactionReturnReplayProtection::new(CanonTransaction::new(&transaction), &consensus, consensus.fork.activation_height());
 		assert_eq!(checker.check(), Err(TransactionError::ReturnReplayProtection));
-		let checker = TransactionReturnReplayProtection::new(CanonTransaction::new(&transaction), &consensus, 50);
+		let checker = TransactionReturnReplayProtection::new(CanonTransaction::new(&transaction), &consensus, consensus.fork.activation_height() - 1);
 		assert_eq!(checker.check(), Ok(()));
 
 		let consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork);

@@ -4,6 +4,7 @@
 use compact::Compact;
 use chain::Block;
 use primitives::hash::H256;
+use primitives::bigint::U256;
 use {ConsensusFork};
 
 const MAGIC_MAINNET: u32 = 0xD9B4BEF9;
@@ -15,9 +16,14 @@ const BITCOIN_CASH_MAGIC_MAINNET: u32 = 0xE8F3E1E3;
 const BITCOIN_CASH_MAGIC_TESTNET: u32 = 0xF4F3E5F4;
 const BITCOIN_CASH_MAGIC_REGTEST: u32 = 0xFABFB5DA;
 
-const MAX_BITS_MAINNET: u32 = 0x1d00ffff;
-const MAX_BITS_TESTNET: u32 = 0x1d00ffff;
-const MAX_BITS_REGTEST: u32 = 0x207fffff;
+lazy_static! {
+	static ref MAX_BITS_MAINNET: U256 = "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff".parse()
+		.expect("hardcoded value should parse without errors");
+	static ref MAX_BITS_TESTNET: U256 = "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff".parse()
+		.expect("hardcoded value should parse without errors");
+	static ref MAX_BITS_REGTEST: U256 = "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".parse()
+		.expect("hardcoded value should parse without errors");
+}
 
 /// Network magic type.
 pub type Magic = u32;
@@ -38,11 +44,11 @@ pub enum Network {
 }
 
 impl Network {
-	pub fn magic(&self, fork: ConsensusFork) -> Magic {
+	pub fn magic(&self, fork: &ConsensusFork) -> Magic {
 		match (fork, *self) {
-			(ConsensusFork::BitcoinCash(_), Network::Mainnet) => BITCOIN_CASH_MAGIC_MAINNET,
-			(ConsensusFork::BitcoinCash(_), Network::Testnet) => BITCOIN_CASH_MAGIC_TESTNET,
-			(ConsensusFork::BitcoinCash(_), Network::Regtest) => BITCOIN_CASH_MAGIC_REGTEST,
+			(&ConsensusFork::BitcoinCash(_), Network::Mainnet) => BITCOIN_CASH_MAGIC_MAINNET,
+			(&ConsensusFork::BitcoinCash(_), Network::Testnet) => BITCOIN_CASH_MAGIC_TESTNET,
+			(&ConsensusFork::BitcoinCash(_), Network::Regtest) => BITCOIN_CASH_MAGIC_REGTEST,
 			(_, Network::Mainnet) => MAGIC_MAINNET,
 			(_, Network::Testnet) => MAGIC_TESTNET,
 			(_, Network::Regtest) => MAGIC_REGTEST,
@@ -51,12 +57,12 @@ impl Network {
 		}
 	}
 
-	pub fn max_bits(&self) -> Compact {
+	pub fn max_bits(&self) -> U256 {
 		match *self {
-			Network::Mainnet | Network::Other(_) => MAX_BITS_MAINNET.into(),
-			Network::Testnet => MAX_BITS_TESTNET.into(),
-			Network::Regtest => MAX_BITS_REGTEST.into(),
-			Network::Unitest => Compact::max_value(),
+			Network::Mainnet | Network::Other(_) => MAX_BITS_MAINNET.clone(),
+			Network::Testnet => MAX_BITS_TESTNET.clone(),
+			Network::Regtest => MAX_BITS_REGTEST.clone(),
+			Network::Unitest => Compact::max_value().into(),
 		}
 	}
 
@@ -104,18 +110,18 @@ mod tests {
 
 	#[test]
 	fn test_network_magic_number() {
-		assert_eq!(MAGIC_MAINNET, Network::Mainnet.magic(ConsensusFork::NoFork));
-		assert_eq!(MAGIC_TESTNET, Network::Testnet.magic(ConsensusFork::NoFork));
-		assert_eq!(MAGIC_REGTEST, Network::Regtest.magic(ConsensusFork::NoFork));
-		assert_eq!(MAGIC_UNITEST, Network::Unitest.magic(ConsensusFork::NoFork));
+		assert_eq!(MAGIC_MAINNET, Network::Mainnet.magic(&ConsensusFork::NoFork));
+		assert_eq!(MAGIC_TESTNET, Network::Testnet.magic(&ConsensusFork::NoFork));
+		assert_eq!(MAGIC_REGTEST, Network::Regtest.magic(&ConsensusFork::NoFork));
+		assert_eq!(MAGIC_UNITEST, Network::Unitest.magic(&ConsensusFork::NoFork));
 	}
 
 	#[test]
 	fn test_network_max_bits() {
-		assert_eq!(Network::Mainnet.max_bits(), MAX_BITS_MAINNET.into());
-		assert_eq!(Network::Testnet.max_bits(), MAX_BITS_TESTNET.into());
-		assert_eq!(Network::Regtest.max_bits(), MAX_BITS_REGTEST.into());
-		assert_eq!(Network::Unitest.max_bits(), Compact::max_value());
+		assert_eq!(Network::Mainnet.max_bits(), *MAX_BITS_MAINNET);
+		assert_eq!(Network::Testnet.max_bits(), *MAX_BITS_TESTNET);
+		assert_eq!(Network::Regtest.max_bits(), *MAX_BITS_REGTEST);
+		assert_eq!(Network::Unitest.max_bits(), Compact::max_value().into());
 	}
 
 	#[test]

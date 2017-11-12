@@ -40,25 +40,25 @@ mod tests {
 	fn test_read_header() {
 		let raw: Bytes = "f9beb4d96164647200000000000000001f000000ed52399b".into();
 		let expected = MessageHeader {
-			magic: Network::Mainnet.magic(ConsensusFork::NoFork),
+			magic: Network::Mainnet.magic(&ConsensusFork::NoFork),
 			command: "addr".into(),
 			len: 0x1f,
 			checksum: "ed52399b".into(),
 		};
 
-		assert_eq!(read_header(raw.as_ref(), Network::Mainnet.magic(ConsensusFork::NoFork)).wait().unwrap().1, Ok(expected));
-		assert_eq!(read_header(raw.as_ref(), Network::Testnet.magic(ConsensusFork::NoFork)).wait().unwrap().1, Err(Error::InvalidMagic));
+		assert_eq!(read_header(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::NoFork)).wait().unwrap().1, Ok(expected));
+		assert_eq!(read_header(raw.as_ref(), Network::Testnet.magic(&ConsensusFork::NoFork)).wait().unwrap().1, Err(Error::InvalidMagic));
 	}
 
 	#[test]
 	fn test_read_header_with_invalid_magic() {
 		let raw: Bytes = "f9beb4d86164647200000000000000001f000000ed52399b".into();
-		assert_eq!(read_header(raw.as_ref(), Network::Testnet.magic(ConsensusFork::NoFork)).wait().unwrap().1, Err(Error::InvalidMagic));
+		assert_eq!(read_header(raw.as_ref(), Network::Testnet.magic(&ConsensusFork::NoFork)).wait().unwrap().1, Err(Error::InvalidMagic));
 	}
 
 	#[test]
 	fn test_read_too_short_header() {
 		let raw: Bytes = "f9beb4d96164647200000000000000001f000000ed5239".into();
-		assert!(read_header(raw.as_ref(), Network::Mainnet.magic(ConsensusFork::NoFork)).wait().is_err());
+		assert!(read_header(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::NoFork)).wait().is_err());
 	}
 }
