@@ -307,7 +307,7 @@ impl Storage {
 
 		// update score of all packages this transaction is in
 		for ancestor_hash in &entry.ancestors {
-			if let Some(mut ancestor_entry) = self.by_hash.get_mut(ancestor_hash) {
+			if let Some(ancestor_entry) = self.by_hash.get_mut(ancestor_hash) {
 				let removed = self.references.ordered.by_package_score.remove(&(ancestor_entry as &Entry).into());
 
 				ancestor_entry.package_size += entry.size;
@@ -356,7 +356,7 @@ impl Storage {
 		let mut ancestors: Option<Vec<H256>> = None;
 
 		// modify the entry itself
-		if let Some(mut entry) = self.by_hash.get_mut(h) {
+		if let Some(entry) = self.by_hash.get_mut(h) {
 			let insert_to_package_score = self.references.ordered.by_package_score.remove(&(entry as &Entry).into());
 			let insert_to_transaction_score = self.references.ordered.by_transaction_score.remove(&(entry as &Entry).into());
 
@@ -379,7 +379,7 @@ impl Storage {
 		if miner_virtual_fee_change != 0 {
 			ancestors.map(|ancestors| {
 				for ancestor_hash in ancestors {
-					if let Some(mut ancestor_entry) = self.by_hash.get_mut(&ancestor_hash) {
+					if let Some(ancestor_entry) = self.by_hash.get_mut(&ancestor_hash) {
 						let insert_to_package_score = self.references.ordered.by_package_score.remove(&(ancestor_entry as &Entry).into());
 						ancestor_entry.package_miner_virtual_fee += miner_virtual_fee_change;
 						if insert_to_package_score {

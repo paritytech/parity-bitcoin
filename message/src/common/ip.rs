@@ -59,7 +59,7 @@ impl Deserializable for IpAddress {
 		let bytes: &mut [u8] = &mut [0u8; 12];
 		try!(reader.read_slice(bytes));
 		if bytes == &[0u8; 12] {
-			let mut address: &mut [u8] = &mut [0u8; 4];
+			let address: &mut [u8] = &mut [0u8; 4];
 			try!(reader.read_slice(address));
 			let address = net::Ipv4Addr::new(address[0], address[1], address[2], address[3]);
 			Ok(IpAddress(net::IpAddr::V4(address)))

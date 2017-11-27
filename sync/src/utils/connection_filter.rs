@@ -74,7 +74,7 @@ impl ConnectionFilter {
 	/// Convert `Block` to `MerkleBlock` using this filter
 	pub fn build_merkle_block(&self, block: &IndexedBlock) -> Option<MerkleBlockArtefacts> {
 		if !self.bloom_filter.is_set() {
-			/// only respond when bloom filter is set
+			// only respond when bloom filter is set
 			return None;
 		}
 
