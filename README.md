@@ -131,7 +131,7 @@ java -jar pull-tests-f56eec3.jar
 
 By default parity connects to bitcoind-seednodes. Full list is [here](./pbtc/seednodes.rs).
 
-Before starting synchronization, you must decide - which fork to follow - SegWit (`--segwit` flag), SegWit2x (`--segwit2x` flag) or Bitcoin Cash (`--bitcoin-cash` flag). On next start, passing the same flag is optional, as the database is already bound to selected fork and won't be synchronized using other verification rules.
+Before starting synchronization, you must decide - which fork to follow - SegWit (`--segwit` flag) or Bitcoin Cash (`--bitcoin-cash` flag). On next start, passing the same flag is optional, as the database is already bound to selected fork and won't be synchronized using other verification rules.
 
 To start syncing the main network, just start the client, passing selected fork flag. For example:
 
@@ -185,7 +185,6 @@ FLAGS:
     -q, --quiet           Do not show any synchronization information in the console.
         --regtest         Use a private network for regression tests.
         --segwit          Enable SegWit verification rules.
-        --segwit2x        Enable SegWit2x verification rules.
         --testnet         Use the test network (Testnet3).
     -V, --version         Prints version information
 

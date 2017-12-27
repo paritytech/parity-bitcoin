@@ -41,12 +41,3 @@ pub fn bitcoin_cash_testnet_seednodes() -> Vec<&'static str> {
 		"testnet-seed.bitprim.org:18333",
 	]
 }
-
-pub fn segwit2x_seednodes() -> Vec<&'static str> {
-	vec![
-		"seed.mainnet.b-pay.net:8333",
-		"seed.ob1.io:8333",
-		"seed.blockchain.info:8333",
-		"bitcoin.bloqseeds.net:8333",
-	]
-}

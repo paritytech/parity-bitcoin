@@ -1,8 +1,6 @@
 use hash::H256;
 use {Network, Magic, Deployment};
 
-/// First block of SegWit2x fork.
-const SEGWIT2X_FORK_BLOCK: u32 = 494784; // https://segwit2x.github.io/segwit2x-announce.html
 /// First block of BitcoinCash fork.
 const BITCOIN_CASH_FORK_BLOCK: u32 = 478559; // https://blockchair.com/bitcoin-cash/block/478559
 
@@ -47,25 +45,10 @@ pub struct BitcoinCashConsensusParams {
 }
 
 #[derive(Debug, Clone)]
-/// SegWit2x consensus parameters.
-pub struct SegWit2xConsensusParams {
-	/// Initial SegWit2x hard fork height.
-	pub height: u32,
-}
-
-#[derive(Debug, Clone)]
 /// Concurrent consensus rule forks.
 pub enum ConsensusFork {
 	/// No fork.
 	NoFork,
-	/// SegWit2x (aka The New York Agreement).
-	/// `u32` is height of the first block, for which new consensus rules are applied.
-	/// Briefly: SegWit + blocks up to 2MB.
-	/// Technical specification:
-	/// Segregated Witness (Consensus layer) - https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki
-	/// Block size increase to 2MB - https://github.com/bitcoin/bips/blob/master/bip-0102.mediawiki
-	/// Readiness checklist - https://segwit2x.github.io/segwit2x-announce.html
-	SegWit2x(SegWit2xConsensusParams),
 	/// Bitcoin Cash (aka UAHF).
 	/// `u32` is height of the first block, for which new consensus rules are applied.
 	/// Briefly: no SegWit + blocks up to 8MB + replay protection.
@@ -85,7 +68,7 @@ impl ConsensusParams {
 				bip65_height: 388381,	// 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
 				bip66_height: 363725,	// 00000000000000000379eaa19dce8c9b722d46ae6a57c2f1a988119488b50931
 				segwit_deployment: match fork {
-					ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => Some(Deployment {
+					ConsensusFork::NoFork => Some(Deployment {
 						name: "segwit",
 						bit: 1,
 						start_time: 1479168000,
@@ -112,7 +95,7 @@ impl ConsensusParams {
 				bip65_height: 581885,	// 00000000007f6655f22f98e72ed80d8b06dc761d5da09df0fa1dc4be4f861eb6
 				bip66_height: 330776,	// 000000002104c8c45e99a8853285a3b592602a3ccde2b832481da85e9e4ba182
 				segwit_deployment: match fork {
-					ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => Some(Deployment {
+					ConsensusFork::NoFork => Some(Deployment {
 						name: "segwit",
 						bit: 1,
 						start_time: 1462060800,
@@ -139,7 +122,7 @@ impl ConsensusParams {
 				bip65_height: 1351,
 				bip66_height: 1251,		// used only in rpc tests
 				segwit_deployment: match fork {
-					ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) => Some(Deployment {
+					ConsensusFork::NoFork => Some(Deployment {
 						name: "segwit",
 						bit: 1,
 						start_time: 0,
@@ -191,7 +174,6 @@ impl ConsensusFork {
 	pub fn activation_height(&self) -> u32 {
 		match *self {
 			ConsensusFork::NoFork => 0,
-			ConsensusFork::SegWit2x(ref fork) => fork.height,
 			ConsensusFork::BitcoinCash(ref fork) => fork.height,
 		}
 	}
@@ -206,16 +188,14 @@ impl ConsensusFork {
 		match *self {
 			// size of first fork block must be larger than 1MB
 			ConsensusFork::BitcoinCash(ref fork) if height == fork.height => 1_000_001,
-			ConsensusFork::SegWit2x(ref fork) if height == fork.height => 1_000_001,
-			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) | ConsensusFork::SegWit2x(_) => 0,
+			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) => 0,
 		}
 	}
 
 	pub fn max_block_size(&self, height: u32) -> usize {
 		match *self {
-			ConsensusFork::SegWit2x(ref fork) if height >= fork.height => 2_000_000,
 			ConsensusFork::BitcoinCash(ref fork) if height >= fork.height => 8_000_000,
-			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) | ConsensusFork::SegWit2x(_) => 1_000_000,
+			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) => 1_000_000,
 		}
 	}
 
@@ -224,9 +204,7 @@ impl ConsensusFork {
 			// according to REQ-5: max_block_sigops = 20000 * ceil((max(blocksize_bytes, 1000000) / 1000000))
 			ConsensusFork::BitcoinCash(ref fork) if height >= fork.height =>
 				20_000 * (1 + (block_size - 1) / 1_000_000),
-			ConsensusFork::SegWit2x(ref fork) if height >= fork.height =>
-				40_000,
-			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) | ConsensusFork::BitcoinCash(_) => 20_000,
+			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) => 20_000,
 		}
 	}
 
@@ -234,18 +212,14 @@ impl ConsensusFork {
 		match *self {
 			ConsensusFork::BitcoinCash(_) =>
 				self.max_block_sigops(height, block_size) * Self::witness_scale_factor(),
-			ConsensusFork::SegWit2x(ref fork) if height >= fork.height =>
-				160_000,
-			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) =>
+			ConsensusFork::NoFork =>
 				80_000,
 		}
 	}
 
-	pub fn max_block_weight(&self, height: u32) -> usize {
+	pub fn max_block_weight(&self, _height: u32) -> usize {
 		match *self {
-			ConsensusFork::SegWit2x(ref fork) if height >= fork.height =>
-				8_000_000,
-			ConsensusFork::NoFork | ConsensusFork::SegWit2x(_) =>
+			ConsensusFork::NoFork =>
 				4_000_000,
 			ConsensusFork::BitcoinCash(_) =>
 				unreachable!("BitcoinCash has no SegWit; weight is only checked with SegWit activated; qed"),
@@ -258,14 +232,6 @@ impl Default for BitcoinCashConsensusParams {
 		BitcoinCashConsensusParams {
 			height: BITCOIN_CASH_FORK_BLOCK,
 			difficulty_adjustion_time: 1510600000,
-		}
-	}
-}
-
-impl Default for SegWit2xConsensusParams {
-	fn default() -> Self {
-		SegWit2xConsensusParams {
-			height: SEGWIT2X_FORK_BLOCK,
 		}
 	}
 }
@@ -313,9 +279,6 @@ mod tests {
 	#[test]
 	fn test_consensus_fork_min_block_size() {
 		assert_eq!(ConsensusFork::NoFork.min_block_size(0), 0);
-		let fork = ConsensusFork::SegWit2x(Default::default());
-		assert_eq!(fork.min_block_size(0), 0);
-		assert_eq!(fork.min_block_size(fork.activation_height()), 1_000_001);
 		let fork = ConsensusFork::BitcoinCash(Default::default());
 		assert_eq!(fork.min_block_size(0), 0);
 		assert_eq!(fork.min_block_size(fork.activation_height()), 1_000_001);
@@ -324,17 +287,12 @@ mod tests {
 	#[test]
 	fn test_consensus_fork_max_transaction_size() {
 		assert_eq!(ConsensusFork::NoFork.max_transaction_size(), 1_000_000);
-		assert_eq!(ConsensusFork::SegWit2x(Default::default()).max_transaction_size(), 1_000_000);
 		assert_eq!(ConsensusFork::BitcoinCash(Default::default()).max_transaction_size(), 1_000_000);
 	}
 
 	#[test]
 	fn test_consensus_fork_max_block_sigops() {
 		assert_eq!(ConsensusFork::NoFork.max_block_sigops(0, 1_000_000), 20_000);
-		let fork = ConsensusFork::SegWit2x(Default::default());
-		assert_eq!(fork.max_block_sigops(0, 1_000_000), 20_000);
-		assert_eq!(fork.max_block_sigops(fork.activation_height(), 2_000_000), 40_000);
-		assert_eq!(fork.max_block_sigops(fork.activation_height() + 100, 3_000_000), 40_000);
 		let fork = ConsensusFork::BitcoinCash(Default::default());
 		assert_eq!(fork.max_block_sigops(0, 1_000_000), 20_000);
 		assert_eq!(fork.max_block_sigops(fork.activation_height(), 2_000_000), 40_000);

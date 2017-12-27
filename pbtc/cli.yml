@@ -12,9 +12,6 @@ args:
     - segwit:
         long: segwit
         help: Enable SegWit verification rules.
-    - segwit2x:
-        long: segwit2x
-        help: Enable SegWit2x verification rules.
     - bitcoin-cash:
         long: bitcoin-cash
         help: Use Bitcoin Cash verification rules.
