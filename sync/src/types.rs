@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use futures::BoxFuture;
+use futures::Future;
 use parking_lot::{Mutex, RwLock};
 use db;
 use local_node::LocalNode;
@@ -21,7 +21,7 @@ pub type RequestId = u32;
 pub type PeerIndex = usize;
 
 // No-error, no-result future
-pub type EmptyBoxFuture = BoxFuture<(), ()>;
+pub type EmptyBoxFuture = Box<Future<Item=(), Error=()> + Send>;
 
 /// Reference to storage
 pub type StorageRef = db::SharedStore;

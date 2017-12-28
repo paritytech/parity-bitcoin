@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use parking_lot::{Mutex, Condvar};
 use time;
-use futures::{Future, lazy, finished};
+use futures::{lazy, finished};
 use chain::{Transaction, IndexedTransaction, IndexedBlock};
 use message::types;
 use miner::BlockAssembler;
@@ -163,8 +163,8 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 		let lazy_server_task = lazy(move || {
 			server.upgrade().map(|s| s.execute(server_task));
 			finished::<(), ()>(())
-		}).boxed();
-		self.client.after_peer_nearly_blocks_verified(peer_index, lazy_server_task);
+		});
+		self.client.after_peer_nearly_blocks_verified(peer_index, Box::new(lazy_server_task));
 	}
 
 	/// When peer is requesting for memory pool contents
