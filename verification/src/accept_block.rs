@@ -111,7 +111,6 @@ impl<'a> BlockSerializedSize<'a> {
 		// before SegWit: it is main check for size
 		// after SegWit: without witness data, block size should be <= 1_000_000
 		// after BitcoinCash fork: block size is increased to 8_000_000
-		// after SegWit2x fork: without witness data, block size should be <= 2_000_000
 		if size < self.consensus.fork.min_block_size(self.height) ||
 			size > self.consensus.fork.max_block_size(self.height) {
 			return Err(Error::Size(size));
@@ -164,7 +163,6 @@ impl<'a> BlockSigops<'a> {
 		// before SegWit: 20_000
 		// after SegWit: cost of sigops is sigops * 4 and max cost is 80_000 => max sigops is still 20_000
 		// after BitcoinCash fork: 20_000 sigops for each full/partial 1_000_000 bytes of block
-		// after SegWit2x fork: cost of sigops is sigops * 4 and max cost is 160_000 => max sigops is 40_000
 		let size = self.block.size();
 		if sigops > self.consensus.fork.max_block_sigops(self.height, size) {
 			return Err(Error::MaximumSigops);
@@ -174,7 +172,6 @@ impl<'a> BlockSigops<'a> {
 		// before SegWit: no witnesses => cost is sigops * 4 and max cost is 80_000
 		// after SegWit: it is main check for sigops
 		// after BitcoinCash fork: no witnesses => cost is sigops * 4 and max cost depends on block size
-		// after SegWit2x: it is basic check for sigops, limits are increased
 		if sigops_cost > self.consensus.fork.max_block_sigops_cost(self.height, size) {
 			Err(Error::MaximumSigopsCost)
 		} else {
