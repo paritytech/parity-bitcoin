@@ -48,7 +48,7 @@ impl LogFormatter for DateAndColorLogFormatter {
 pub fn init<T>(filters: &str, formatter: T) where T: LogFormatter {
 	let mut builder = LogBuilder::new();
 	let filters = match env::var("RUST_LOG") {
-		Ok(env_filters) => format!("{},{}", env_filters, filters),
+		Ok(env_filters) => format!("{},{}", filters, env_filters),
 		Err(_) => filters.into(),
 	};
 

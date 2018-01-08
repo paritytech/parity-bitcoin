@@ -14,8 +14,8 @@ use constants::{
 /// Returns work required for given header for the post-HF Bitcoin Cash block
 pub fn work_required_bitcoin_cash(parent_header: IndexedBlockHeader, time: u32, height: u32, store: &BlockHeaderProvider, consensus: &ConsensusParams, fork: &BitcoinCashConsensusParams, max_bits: Compact) -> Compact {
 	// special processing of Bitcoin Cash difficulty adjustment hardfork (Nov 2017), where difficulty is adjusted after each block
-	let parent_timestamp = median_timestamp_inclusive(parent_header.hash.clone(), store);
-	if parent_timestamp >= fork.difficulty_adjustion_time {
+	// `height` is the height of the new block => comparison is shifted by one
+	if height.saturating_sub(1) >= fork.difficulty_adjustion_height {
 		return work_required_bitcoin_cash_adjusted(parent_header, time, height, store, consensus);
 	}
 
@@ -40,6 +40,7 @@ pub fn work_required_bitcoin_cash(parent_header: IndexedBlockHeader, time: u32, 
 		.expect("parent_header.bits != max_bits; difficulty is max_bits for first RETARGETING_INTERVAL height; RETARGETING_INTERVAL > 7; qed");
 
 	let ancient_timestamp = median_timestamp_inclusive(ancient_header.hash(), store);
+	let parent_timestamp = median_timestamp_inclusive(parent_header.hash.clone(), store);
 	let timestamp_diff = parent_timestamp.checked_sub(ancient_timestamp).unwrap_or_default();
 	if timestamp_diff < 43_200 {
 		// less than 12h => no difficulty change needed
@@ -215,7 +216,7 @@ mod tests {
 		let main_consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork);
 		let uahf_consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCash(BitcoinCashConsensusParams {
 			height: 1000,
-			difficulty_adjustion_time: 0xffffffff,
+			difficulty_adjustion_height: 0xffffffff,
 		}));
 		let mut header_provider = MemoryBlockHeaderProvider::default();
 		header_provider.insert(BlockHeader {
@@ -267,7 +268,7 @@ mod tests {
 	fn bitcoin_cash_adjusted_difficulty() {
 		let uahf_consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCash(BitcoinCashConsensusParams {
 			height: 1000,
-			difficulty_adjustion_time: 0xffffffff,
+			difficulty_adjustion_height: 0xffffffff,
 		}));
 
 

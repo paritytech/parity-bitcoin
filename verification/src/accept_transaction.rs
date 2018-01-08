@@ -470,7 +470,7 @@ impl<'a> TransactionPrematureWitness<'a> {
 #[cfg(test)]
 mod tests {
 	use chain::{IndexedTransaction, Transaction, TransactionOutput};
-	use network::{Network, ConsensusParams, ConsensusFork};
+	use network::{Network, ConsensusParams, ConsensusFork, BitcoinCashConsensusParams};
 	use script::Builder;
 	use canon::CanonTransaction;
 	use error::TransactionError;
@@ -492,7 +492,7 @@ mod tests {
 
 		assert_eq!(transaction.raw.outputs[0].script_pubkey.len(), 46 + 2);
 
-		let consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCash(Default::default()));
+		let consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Mainnet)));
 		let checker = TransactionReturnReplayProtection::new(CanonTransaction::new(&transaction), &consensus, consensus.fork.activation_height());
 		assert_eq!(checker.check(), Err(TransactionError::ReturnReplayProtection));
 		let checker = TransactionReturnReplayProtection::new(CanonTransaction::new(&transaction), &consensus, consensus.fork.activation_height() - 1);

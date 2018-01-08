@@ -211,7 +211,7 @@ mod tests {
 	use tokio_io::{AsyncRead, AsyncWrite};
 	use bytes::Bytes;
 	use ser::Stream;
-	use network::{Network, ConsensusFork};
+	use network::{Network, ConsensusFork, BitcoinCashConsensusParams};
 	use message::{Message, Error};
 	use message::types::Verack;
 	use message::types::version::{Version, V0, V106, V70001};
@@ -389,7 +389,7 @@ mod tests {
 	#[test]
 	fn test_fails_to_accept_other_fork_node() {
 		let magic1 = Network::Mainnet.magic(&ConsensusFork::NoFork);
-		let magic2 = Network::Mainnet.magic(&ConsensusFork::BitcoinCash(Default::default()));
+		let magic2 = Network::Mainnet.magic(&ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Mainnet)));
 		let version = 70012;
 		let local_version = local_version();
 		let remote_version = remote_version();
