@@ -1,9 +1,6 @@
 use hash::H256;
 use {Network, Magic, Deployment};
 
-/// First block of BitcoinCash fork.
-const BITCOIN_CASH_FORK_BLOCK: u32 = 478559; // https://blockchair.com/bitcoin-cash/block/478559
-
 #[derive(Debug, Clone)]
 /// Parameters that influence chain consensus.
 pub struct ConsensusParams {
@@ -38,10 +35,9 @@ pub struct ConsensusParams {
 pub struct BitcoinCashConsensusParams {
 	/// Initial BCH hard fork height.
 	pub height: u32,
-	/// Time when difficulty adjustment hardfork becomes active (~Nov 13 2017).
+	/// Time when difficulty adjustment hardfork becomes active.
 	/// https://reviews.bitcoinabc.org/D601
-	// TODO: change to height after activation
-	pub difficulty_adjustion_time: u32,
+	pub difficulty_adjustion_height: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -227,11 +223,21 @@ impl ConsensusFork {
 	}
 }
 
-impl Default for BitcoinCashConsensusParams {
-	fn default() -> Self {
-		BitcoinCashConsensusParams {
-			height: BITCOIN_CASH_FORK_BLOCK,
-			difficulty_adjustion_time: 1510600000,
+impl BitcoinCashConsensusParams {
+	pub fn new(network: Network) -> Self {
+		match network {
+			Network::Mainnet | Network::Other(_) => BitcoinCashConsensusParams {
+				height: 478559,
+				difficulty_adjustion_height: 504031,
+			},
+			Network::Testnet => BitcoinCashConsensusParams {
+				height: 1155876,
+				difficulty_adjustion_height: 1188697,
+			},
+			Network::Regtest | Network::Unitest => BitcoinCashConsensusParams {
+				height: 0,
+				difficulty_adjustion_height: 0,
+			},
 		}
 	}
 }
@@ -239,7 +245,7 @@ impl Default for BitcoinCashConsensusParams {
 #[cfg(test)]
 mod tests {
 	use super::super::Network;
-	use super::{ConsensusParams, ConsensusFork};
+	use super::{ConsensusParams, ConsensusFork, BitcoinCashConsensusParams};
 
 	#[test]
 	fn test_consensus_params_bip34_height() {
@@ -279,7 +285,7 @@ mod tests {
 	#[test]
 	fn test_consensus_fork_min_block_size() {
 		assert_eq!(ConsensusFork::NoFork.min_block_size(0), 0);
-		let fork = ConsensusFork::BitcoinCash(Default::default());
+		let fork = ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Mainnet));
 		assert_eq!(fork.min_block_size(0), 0);
 		assert_eq!(fork.min_block_size(fork.activation_height()), 1_000_001);
 	}
@@ -287,13 +293,13 @@ mod tests {
 	#[test]
 	fn test_consensus_fork_max_transaction_size() {
 		assert_eq!(ConsensusFork::NoFork.max_transaction_size(), 1_000_000);
-		assert_eq!(ConsensusFork::BitcoinCash(Default::default()).max_transaction_size(), 1_000_000);
+		assert_eq!(ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Mainnet)).max_transaction_size(), 1_000_000);
 	}
 
 	#[test]
 	fn test_consensus_fork_max_block_sigops() {
 		assert_eq!(ConsensusFork::NoFork.max_block_sigops(0, 1_000_000), 20_000);
-		let fork = ConsensusFork::BitcoinCash(Default::default());
+		let fork = ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Mainnet));
 		assert_eq!(fork.max_block_sigops(0, 1_000_000), 20_000);
 		assert_eq!(fork.max_block_sigops(fork.activation_height(), 2_000_000), 40_000);
 		assert_eq!(fork.max_block_sigops(fork.activation_height() + 100, 3_000_000), 60_000);

@@ -880,7 +880,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		for (header_index, header) in headers.iter().enumerate() {
 			// check that this header is direct child of previous header
 			if &header.raw.previous_header_hash != last_known_hash {
-				self.peers.misbehaving(peer_index, &format!("Neighbour headers in `headers` message are unlinked: Prev: {}, PrevLink: {}, Curr: {}", last_known_hash.to_reversed_str(), header.raw.previous_header_hash.to_reversed_str(), header.hash.to_reversed_str()));
+				self.peers.misbehaving(peer_index, &format!("Neighbour headers in `headers` message are unlinked: Prev: {}, PrevLink: {}, Curr: {}",
+					last_known_hash.to_reversed_str(), header.raw.previous_header_hash.to_reversed_str(), header.hash.to_reversed_str()));
 				return BlocksHeadersVerificationResult::Skip;
 			}
 
@@ -893,8 +894,10 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 					self.peers.misbehaving(peer_index, &format!("Provided dead-end block {:?}", header.hash.to_reversed_str()));
 					return BlocksHeadersVerificationResult::Skip;
 				},
-				_ => {
-					trace!(target: "sync", "Ignoring {} headers from peer#{} - known header in the middle", headers.len(), peer_index);
+				block_state => {
+					trace!(target: "sync", "Ignoring {} headers from peer#{} - known ({:?}) header {} at the {}/{} ({}...{})",
+						headers.len(), peer_index, block_state, header.hash.to_reversed_str(), header_index, headers.len(),
+						headers[0].hash.to_reversed_str(), headers[headers.len() - 1].hash.to_reversed_str());
 					self.peers_tasks.useful_peer(peer_index);
 					return BlocksHeadersVerificationResult::Skip;
 				},

@@ -2,7 +2,7 @@ use std::net;
 use clap;
 use db;
 use message::Services;
-use network::{Network, ConsensusParams, ConsensusFork};
+use network::{Network, ConsensusParams, ConsensusFork, BitcoinCashConsensusParams};
 use p2p::InternetProtocol;
 use seednodes::{mainnet_seednodes, testnet_seednodes, bitcoin_cash_seednodes, bitcoin_cash_testnet_seednodes};
 use rpc_apis::ApiSet;
@@ -57,7 +57,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		(true, true) => return Err("Only one testnet option can be used".into()),
 	};
 
-	let consensus_fork = parse_consensus_fork(&db, &matches)?;
+	let consensus_fork = parse_consensus_fork(network, &db, &matches)?;
 	let consensus = ConsensusParams::new(network, consensus_fork);
 
 	let (in_connections, out_connections) = match network {
@@ -167,7 +167,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	Ok(config)
 }
 
-fn parse_consensus_fork(db: &db::SharedStore, matches: &clap::ArgMatches) -> Result<ConsensusFork, String> {
+fn parse_consensus_fork(network: Network, db: &db::SharedStore, matches: &clap::ArgMatches) -> Result<ConsensusFork, String> {
 	let old_consensus_fork = db.consensus_fork()?;
 	let new_consensus_fork = match (matches.is_present("segwit"), matches.is_present("bitcoin-cash")) {
 		(false, false) => match &old_consensus_fork {
@@ -188,7 +188,7 @@ fn parse_consensus_fork(db: &db::SharedStore, matches: &clap::ArgMatches) -> Res
 
 	Ok(match new_consensus_fork {
 		"segwit" => ConsensusFork::NoFork,
-		"bitcoin-cash" => ConsensusFork::BitcoinCash(Default::default()),
+		"bitcoin-cash" => ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(network)),
 		_ => unreachable!("hardcoded above"),
 	})
 }
