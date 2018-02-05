@@ -11,7 +11,7 @@ futures = "0.1"
 linked-hash-map = "0.3"
 bit-vec = "0.4.3"
 murmur3 = "0.4"
-rand = "0.3"
+rand = "0.4"
 byteorder = "1.0"
 
 chain = { path = "../chain" }
