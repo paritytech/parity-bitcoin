@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 
 [dependencies]
-log = "0.3"
+log = "0.4"
 primitives = { path = "../primitives" }
 chain = { path = "../chain" }
 serialization = { path = "../serialization" }

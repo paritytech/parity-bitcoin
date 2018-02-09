@@ -59,7 +59,7 @@ fn run() -> Result<(), String> {
 			logs::init(LOG_INFO, logs::DateAndColorLogFormatter);
 		}
 	} else {
-		env_logger::init().expect("Logger can be initialized only once");
+		env_logger::init();
 	}
 
 	match matches.subcommand() {

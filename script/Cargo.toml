@@ -9,4 +9,4 @@ chain = { path = "../chain" }
 keys = { path = "../keys" }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
-log = "0.3"
+log = "0.4"
