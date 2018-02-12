@@ -1,5 +1,4 @@
 use std::{str, fmt};
-use std::ascii::AsciiExt;
 use hash::H96;
 use Error;
 
