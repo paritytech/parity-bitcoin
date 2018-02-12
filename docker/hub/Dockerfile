@@ -2,7 +2,7 @@
 # See https://docs.docker.com/engine/userguide/eng-image/multistage-build/
 
 # Build image
-FROM rust:1.21-jessie AS build
+FROM rust:1.23-jessie AS build
 
 #ENV for build TAG
 ARG BUILD_TAG

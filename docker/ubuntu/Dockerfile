@@ -3,7 +3,7 @@
 
 ### Base Image
 # Setup up a base image to use in Build and Runtime images
-FROM rust:1.21-jessie AS build
+FROM rust:1.23-jessie AS build
 
 # rustup directory
 ENV PATH=/root/.cargo/bin:$PATH \
