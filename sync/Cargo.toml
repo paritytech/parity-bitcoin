@@ -5,7 +5,7 @@ authors = ["Ethcore <admin@ethcore.io>"]
 
 [dependencies]
 parking_lot = "0.4"
-log = "0.3"
+log = "0.4"
 time = "0.1"
 futures = "0.1"
 linked-hash-map = "0.3"
