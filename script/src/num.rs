@@ -210,3 +210,19 @@ impl ops::Neg for Num {
 		(-self.value).into()
 	}
 }
+
+impl ops::Div for Num {
+	type Output = Self;
+
+	fn div(self, rhs: Self) -> Self::Output {
+		(self.value / rhs.value).into()
+	}
+}
+
+impl ops::Rem for Num {
+	type Output = Self;
+
+	fn rem(self, rhs: Self) -> Self::Output {
+		(self.value % rhs.value).into()
+	}
+}

@@ -631,6 +631,23 @@ pub fn eval_script(
 					*byte_to_update = *byte_to_update ^ byte_mask;
 				}
 			},
+			Opcode::OP_DIV if flags.verify_div => {
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				if v2.is_zero() {
+					return Err(Error::DivisionByZero);
+				}
+				stack.push((v1 / v2).to_bytes());
+			},
+			Opcode::OP_MOD if flags.verify_mod => {
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				if v2.is_zero() {
+					return Err(Error::DivisionByZero);
+				}
+				stack.push((v1 % v2).to_bytes());
+
+			},
 			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_LEFT | Opcode::OP_RIGHT |
 			Opcode::OP_INVERT | Opcode::OP_AND | Opcode::OP_OR | Opcode::OP_XOR |
 			Opcode::OP_2MUL | Opcode::OP_2DIV | Opcode::OP_MUL | Opcode::OP_DIV |
@@ -3458,5 +3475,203 @@ mod tests {
 		let result = Ok(true);
 		basic_test_with_flags(&script, &VerificationFlags::default().verify_xor(true), result,
 			vec![vec![0x62, 0x2e].into()].into());
+	}
+
+	#[test]
+	fn op_div_disabled_by_default() {
+		let script = Builder::default()
+			.push_num(13.into())
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_DIV)
+			.into_script();
+		let result = Err(Error::DisabledOpcode(Opcode::OP_DIV));
+		basic_test_with_flags(&script, &VerificationFlags::default(), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_div_num_by_nan_fails() {
+		// a b OP_DIV -> failure where !isnum(a) or !isnum(b). Both operands must be valid numbers
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_1SUB)
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_DIV)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_div(true), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_div_nan_by_num_fails() {
+		// a b OP_DIV -> failure where !isnum(a) or !isnum(b). Both operands must be valid numbers
+		let script = Builder::default()
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_1SUB)
+			.push_opcode(Opcode::OP_DIV)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_div(true), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_div_num_by_zero_fails() {
+		// a 0 OP_DIV -> failure. Division by positive zero (all sizes), negative zero (all sizes), OP_0
+		let script = Builder::default()
+			.push_num(0.into())
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_DIV)
+			.into_script();
+		let result = Err(Error::DivisionByZero);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_div(true), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_div_negative_by_negative_succeeds() {
+		let script = Builder::default()
+			.push_num((-5).into())
+			.push_num((-13).into())
+			.push_opcode(Opcode::OP_DIV)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_div(true), result,
+			vec![Num::from(2).to_bytes()].into());
+	}
+
+	#[test]
+	fn op_div_negative_by_positive_succeeds() {
+		let script = Builder::default()
+			.push_num(5.into())
+			.push_num((-13).into())
+			.push_opcode(Opcode::OP_DIV)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_div(true), result,
+			vec![Num::from(-2).to_bytes()].into());
+	}
+
+	#[test]
+	fn op_div_positive_by_negative_succeeds() {
+		let script = Builder::default()
+			.push_num((-5).into())
+			.push_num(13.into())
+			.push_opcode(Opcode::OP_DIV)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_div(true), result,
+			vec![Num::from(-2).to_bytes()].into());
+	}
+
+	#[test]
+	fn op_div_positive_by_positive_succeeds() {
+		let script = Builder::default()
+			.push_num(5.into())
+			.push_num(13.into())
+			.push_opcode(Opcode::OP_DIV)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_div(true), result,
+			vec![Num::from(2).to_bytes()].into());
+	}
+
+	#[test]
+	fn op_mod_disabled_by_default() {
+		let script = Builder::default()
+			.push_num(13.into())
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_MOD)
+			.into_script();
+		let result = Err(Error::DisabledOpcode(Opcode::OP_MOD));
+		basic_test_with_flags(&script, &VerificationFlags::default(), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_mod_num_by_nan_fails() {
+		// a b OP_MOD -> failure where !isnum(a) or !isnum(b). Both operands must be valid numbers
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_1SUB)
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_MOD)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_mod(true), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_mod_nan_by_num_fails() {
+		// a b OP_MOD -> failure where !isnum(a) or !isnum(b). Both operands must be valid numbers
+		let script = Builder::default()
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_1SUB)
+			.push_opcode(Opcode::OP_MOD)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_mod(true), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_mod_num_by_zero_fails() {
+		// a 0 OP_MOD -> failure. Division by positive zero (all sizes), negative zero (all sizes), OP_0
+		let script = Builder::default()
+			.push_num(0.into())
+			.push_num(5.into())
+			.push_opcode(Opcode::OP_MOD)
+			.into_script();
+		let result = Err(Error::DivisionByZero);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_mod(true), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_mod_negative_by_negative_succeeds() {
+		let script = Builder::default()
+			.push_num((-5).into())
+			.push_num((-13).into())
+			.push_opcode(Opcode::OP_MOD)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_mod(true), result,
+			vec![Num::from(-3).to_bytes()].into());
+	}
+
+	#[test]
+	fn op_mod_negative_by_positive_succeeds() {
+		let script = Builder::default()
+			.push_num(5.into())
+			.push_num((-13).into())
+			.push_opcode(Opcode::OP_MOD)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_mod(true), result,
+			vec![Num::from(-3).to_bytes()].into());
+	}
+
+	#[test]
+	fn op_mod_positive_by_negative_succeeds() {
+		let script = Builder::default()
+			.push_num((-5).into())
+			.push_num(13.into())
+			.push_opcode(Opcode::OP_MOD)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_mod(true), result,
+			vec![Num::from(3).to_bytes()].into());
+	}
+
+	#[test]
+	fn op_mod_positive_by_positive_succeeds() {
+		let script = Builder::default()
+			.push_num(5.into())
+			.push_num(13.into())
+			.push_opcode(Opcode::OP_MOD)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_mod(true), result,
+			vec![Num::from(3).to_bytes()].into());
 	}
 }

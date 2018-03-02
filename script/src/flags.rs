@@ -82,6 +82,12 @@ pub struct VerificationFlags {
 
 	/// Support OP_XOR opcode
 	pub verify_xor: bool,
+
+	/// Support OP_DIV opcode
+	pub verify_div: bool,
+
+	/// Support OP_MOD opcode
+	pub verify_mod: bool,
 }
 
 impl VerificationFlags {
@@ -147,6 +153,16 @@ impl VerificationFlags {
 
 	pub fn verify_xor(mut self, value: bool) -> Self {
 		self.verify_xor = value;
+		self
+	}
+
+	pub fn verify_div(mut self, value: bool) -> Self {
+		self.verify_div = value;
+		self
+	}
+
+	pub fn verify_mod(mut self, value: bool) -> Self {
+		self.verify_mod = value;
 		self
 	}
 }

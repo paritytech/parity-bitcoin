@@ -34,6 +34,7 @@ pub enum Error {
 	UnbalancedConditional,
 	InvalidSplitRange,
 	InvalidBitwiseOperation,
+	DivisionByZero,
 
 	// CHECKLOCKTIMEVERIFY and CHECKSEQUENCEVERIFY
 	NegativeLocktime,
@@ -96,6 +97,7 @@ impl fmt::Display for Error {
 			Error::UnbalancedConditional => "Unbalanced conditional".fmt(f),
 			Error::InvalidSplitRange => "Invalid OP_SPLIT range".fmt(f),
 			Error::InvalidBitwiseOperation => "Invalid bitwise operation (check length of inputs)".fmt(f),
+			Error::DivisionByZero => "Invalid division operation".fmt(f),
 
 			// CHECKLOCKTIMEVERIFY and CHECKSEQUENCEVERIFY
 			Error::NegativeLocktime => "Negative locktime".fmt(f),
