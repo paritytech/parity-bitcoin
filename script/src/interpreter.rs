@@ -598,6 +598,39 @@ pub fn eval_script(
 				};
 				stack.push(splitted_value);
 			},
+			Opcode::OP_AND if flags.verify_and => {
+				let mask = stack.pop()?;
+				let mask_len = mask.len();
+				let value_to_update = stack.last_mut()?;
+				if mask_len != value_to_update.len() {
+					return Err(Error::InvalidBitwiseOperation);
+				}
+				for (byte_to_update, byte_mask) in (*value_to_update).iter_mut().zip(mask.iter()) {
+					*byte_to_update = *byte_to_update & byte_mask;
+				}
+			},
+			Opcode::OP_OR if flags.verify_or => {
+				let mask = stack.pop()?;
+				let mask_len = mask.len();
+				let value_to_update = stack.last_mut()?;
+				if mask_len != value_to_update.len() {
+					return Err(Error::InvalidBitwiseOperation);
+				}
+				for (byte_to_update, byte_mask) in (*value_to_update).iter_mut().zip(mask.iter()) {
+					*byte_to_update = *byte_to_update | byte_mask;
+				}
+			},
+			Opcode::OP_XOR if flags.verify_xor => {
+				let mask = stack.pop()?;
+				let mask_len = mask.len();
+				let value_to_update = stack.last_mut()?;
+				if mask_len != value_to_update.len() {
+					return Err(Error::InvalidBitwiseOperation);
+				}
+				for (byte_to_update, byte_mask) in (*value_to_update).iter_mut().zip(mask.iter()) {
+					*byte_to_update = *byte_to_update ^ byte_mask;
+				}
+			},
 			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_LEFT | Opcode::OP_RIGHT |
 			Opcode::OP_INVERT | Opcode::OP_AND | Opcode::OP_OR | Opcode::OP_XOR |
 			Opcode::OP_2MUL | Opcode::OP_2DIV | Opcode::OP_MUL | Opcode::OP_DIV |
@@ -3317,5 +3350,113 @@ mod tests {
 		let result = Err(Error::InvalidStackOperation);
 		basic_test_with_flags(&script, &VerificationFlags::default().verify_split(true), result,
 			vec![].into());
+	}
+
+	#[test]
+	fn op_and_disabled_by_default() {
+		let script = Builder::default()
+			.push_data(&[0x11])
+			.push_data(&[0x22])
+			.push_opcode(Opcode::OP_AND)
+			.into_script();
+		let result = Err(Error::DisabledOpcode(Opcode::OP_AND));
+		basic_test_with_flags(&script, &VerificationFlags::default(), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_and_fails_with_different_len_args() {
+		let script = Builder::default()
+			.push_data(&[0x11, 0x22])
+			.push_data(&[0x22])
+			.push_opcode(Opcode::OP_AND)
+			.into_script();
+		let result = Err(Error::InvalidBitwiseOperation);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_and(true), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_and_succeeds() {
+		let script = Builder::default()
+			.push_data(&[0x34, 0x56])
+			.push_data(&[0x56, 0x78])
+			.push_opcode(Opcode::OP_AND)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_and(true), result,
+			vec![vec![0x14, 0x50].into()].into());
+	}
+
+	#[test]
+	fn op_or_disabled_by_default() {
+		let script = Builder::default()
+			.push_data(&[0x11])
+			.push_data(&[0x22])
+			.push_opcode(Opcode::OP_OR)
+			.into_script();
+		let result = Err(Error::DisabledOpcode(Opcode::OP_OR));
+		basic_test_with_flags(&script, &VerificationFlags::default(), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_or_fails_with_different_len_args() {
+		let script = Builder::default()
+			.push_data(&[0x11, 0x22])
+			.push_data(&[0x22])
+			.push_opcode(Opcode::OP_OR)
+			.into_script();
+		let result = Err(Error::InvalidBitwiseOperation);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_or(true), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_or_succeeds() {
+		let script = Builder::default()
+			.push_data(&[0x34, 0x56])
+			.push_data(&[0x56, 0x78])
+			.push_opcode(Opcode::OP_OR)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_or(true), result,
+			vec![vec![0x76, 0x7e].into()].into());
+	}
+
+	#[test]
+	fn op_xor_disabled_by_default() {
+		let script = Builder::default()
+			.push_data(&[0x11])
+			.push_data(&[0x22])
+			.push_opcode(Opcode::OP_XOR)
+			.into_script();
+		let result = Err(Error::DisabledOpcode(Opcode::OP_XOR));
+		basic_test_with_flags(&script, &VerificationFlags::default(), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_xor_fails_with_different_len_args() {
+		let script = Builder::default()
+			.push_data(&[0x11, 0x22])
+			.push_data(&[0x22])
+			.push_opcode(Opcode::OP_XOR)
+			.into_script();
+		let result = Err(Error::InvalidBitwiseOperation);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_xor(true), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_xor_succeeds() {
+		let script = Builder::default()
+			.push_data(&[0x34, 0x56])
+			.push_data(&[0x56, 0x78])
+			.push_opcode(Opcode::OP_XOR)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_xor(true), result,
+			vec![vec![0x62, 0x2e].into()].into());
 	}
 }
