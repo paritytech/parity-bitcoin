@@ -62,20 +62,20 @@ impl<T> Stack<T> {
 	#[inline]
 	pub fn top(&self, i: usize) -> Result<&T, Error> {
 		let pos = i + 1;
-		try!(self.require(pos));
+		self.require(pos)?;
 		Ok(&self.data[self.data.len() - pos])
 	}
 
 	#[inline]
 	pub fn remove(&mut self, i: usize) -> Result<T, Error> {
 		let pos = i + 1;
-		try!(self.require(pos));
+		self.require(pos)?;
 		let to_remove = self.data.len() - pos;
 		Ok(self.data.remove(to_remove))
 	}
 
 	pub fn drop(&mut self, i: usize) -> Result<(), Error> {
-		try!(self.require(i));
+		self.require(i)?;
 		let mut j = i;
 		while j > 0 {
 			self.data.pop();
@@ -85,7 +85,7 @@ impl<T> Stack<T> {
 	}
 
 	pub fn dup(&mut self, i: usize) -> Result<(), Error> where T: Clone {
-		try!(self.require(i));
+		self.require(i)?;
 		let mut j = i;
 		while j > 0 {
 			let v = self.data[self.data.len() - i].clone();
@@ -97,7 +97,7 @@ impl<T> Stack<T> {
 
 	pub fn over(&mut self, i: usize) -> Result<(), Error> where T: Clone {
 		let mut j = i * 2;
-		try!(self.require(j));
+		self.require(j)?;
 		let to_clone = j;
 		while j > i {
 			let v = self.data[self.data.len() - to_clone].clone();
@@ -109,7 +109,7 @@ impl<T> Stack<T> {
 
 	pub fn rot(&mut self, i: usize) -> Result<(), Error> {
 		let mut j = i * 3;
-		try!(self.require(j));
+		self.require(j)?;
 		let to_remove = self.data.len() - j;
 		let limit = j - i;
 		while j > limit {
@@ -123,7 +123,7 @@ impl<T> Stack<T> {
 	pub fn swap(&mut self, i: usize) -> Result<(), Error> {
 		let mut j = i * 2;
 		let mut k = i;
-		try!(self.require(j));
+		self.require(j)?;
 		let len = self.data.len();
 		while k > 0 {
 			self.data.swap(len - j, len - k);
@@ -134,14 +134,14 @@ impl<T> Stack<T> {
 	}
 
 	pub fn nip(&mut self) -> Result<(), Error> {
-		try!(self.require(2));
+		self.require(2)?;
 		let len = self.data.len();
 		self.data.swap_remove(len - 2);
 		Ok(())
 	}
 
 	pub fn tuck(&mut self) -> Result<(), Error> where T: Clone {
-		try!(self.require(2));
+		self.require(2)?;
 		let len = self.data.len();
 		let v = self.data[len - 1].clone();
 		self.data.insert(len - 2, v);
