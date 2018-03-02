@@ -3101,7 +3101,7 @@ mod tests {
 	}
 
 	#[test]
-	fn op_cat_disbled_by_default() {
+	fn op_cat_disabled_by_default() {
 		// maxlen_x empty OP_CAT → ok
 		let script = Builder::default()
 			.push_data(&[1; 1])
