@@ -65,6 +65,9 @@ pub struct VerificationFlags {
 
 	/// Making v1-v16 witness program non-standard
 	pub verify_discourage_upgradable_witness_program: bool,
+
+	/// Support OP_CAT opcode
+	pub verify_concat: bool,
 }
 
 impl VerificationFlags {
@@ -105,6 +108,11 @@ impl VerificationFlags {
 
 	pub fn verify_discourage_upgradable_witness_program(mut self, value: bool) -> Self {
 		self.verify_discourage_upgradable_witness_program = value;
+		self
+	}
+
+	pub fn verify_concat(mut self, value: bool) -> Self {
+		self.verify_concat = value;
 		self
 	}
 }
