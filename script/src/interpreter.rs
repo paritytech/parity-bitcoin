@@ -582,6 +582,22 @@ pub fn eval_script(
 				}
 				value_to_update.append(&mut value_to_append);
 			},
+			// OP_SPLIT replaces OP_SUBSTR
+			Opcode::OP_SUBSTR if flags.verify_split => {
+				let n = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				if n.is_negative() {
+					return Err(Error::InvalidStackOperation);
+				}
+				let n: usize = n.into();
+				let splitted_value = {
+					let mut value_to_split = stack.last_mut()?;
+					if n > value_to_split.len() {
+						return Err(Error::InvalidSplitRange);
+					}
+					value_to_split.split_off(n)
+				};
+				stack.push(splitted_value);
+			},
 			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_LEFT | Opcode::OP_RIGHT |
 			Opcode::OP_INVERT | Opcode::OP_AND | Opcode::OP_OR | Opcode::OP_XOR |
 			Opcode::OP_2MUL | Opcode::OP_2DIV | Opcode::OP_MUL | Opcode::OP_DIV |
@@ -3102,7 +3118,6 @@ mod tests {
 
 	#[test]
 	fn op_cat_disabled_by_default() {
-		// maxlen_x empty OP_CAT → ok
 		let script = Builder::default()
 			.push_data(&[1; 1])
 			.push_data(&[1; 1])
@@ -3202,5 +3217,105 @@ mod tests {
 		let result = Ok(true);
 		basic_test_with_flags(&script, &VerificationFlags::default().verify_concat(true), result,
 			vec![vec![0x11, 0x22, 0x33].into()].into());
+	}
+
+	#[test]
+	fn op_split_disabled_by_default() {
+		let script = Builder::default()
+			.push_data(&[0x11, 0x22])
+			.push_num(1.into())
+			.push_opcode(Opcode::OP_SUBSTR)
+			.into_script();
+		let result = Err(Error::DisabledOpcode(Opcode::OP_SUBSTR));
+		basic_test_with_flags(&script, &VerificationFlags::default(), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_split_empty_at_zero_succeeds() {
+		// OP_0 0 OP_SPLIT -> OP_0 OP_0
+		let script = Builder::default()
+			.push_opcode(Opcode::OP_0)
+			.push_num(0.into())
+			.push_opcode(Opcode::OP_SUBSTR)
+			.into_script();
+		let result = Ok(false);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_split(true), result,
+			vec![vec![0; 0].into(), vec![0; 0].into()].into());
+	}
+
+	#[test]
+	fn op_split_non_empty_at_zero_succeeds() {
+		// x 0 OP_SPLIT -> OP_0 x
+		let script = Builder::default()
+			.push_data(&[0x00, 0x11, 0x22])
+			.push_num(0.into())
+			.push_opcode(Opcode::OP_SUBSTR)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_split(true), result,
+			vec![vec![0; 0].into(), vec![0x00, 0x11, 0x22].into()].into());
+	}
+
+	#[test]
+	fn op_split_non_empty_at_len_succeeds() {
+		// x len(x) OP_SPLIT -> x OP_0
+		let script = Builder::default()
+			.push_data(&[0x00, 0x11, 0x22])
+			.push_num(3.into())
+			.push_opcode(Opcode::OP_SUBSTR)
+			.into_script();
+		let result = Ok(false);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_split(true), result,
+			vec![vec![0x00, 0x11, 0x22].into(), vec![0; 0].into()].into());
+	}
+
+	#[test]
+	fn op_split_non_empty_at_post_len_fails() {
+		// x (len(x) + 1) OP_SPLIT -> FAIL
+		let script = Builder::default()
+			.push_data(&[0x00, 0x11, 0x22])
+			.push_num(4.into())
+			.push_opcode(Opcode::OP_SUBSTR)
+			.into_script();
+		let result = Err(Error::InvalidSplitRange);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_split(true), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_split_non_empty_at_mid_succeeds() {
+		let script = Builder::default()
+			.push_data(&[0x00, 0x11, 0x22])
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_SUBSTR)
+			.into_script();
+		let result = Ok(true);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_split(true), result,
+			vec![vec![0x00, 0x11].into(), vec![0x22].into()].into());
+	}
+
+	#[test]
+	fn op_split_fails_if_position_is_nan() {
+		let script = Builder::default()
+			.push_data(&[0x00, 0x11, 0x22])
+			.push_opcode(Opcode::OP_1NEGATE) // NaN
+			.push_opcode(Opcode::OP_SUBSTR)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_split(true), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn op_split_fails_if_position_is_negative() {
+		let script = Builder::default()
+			.push_data(&[0x00, 0x11, 0x22])
+			.push_num((-10).into())
+			.push_opcode(Opcode::OP_SUBSTR)
+			.into_script();
+		let result = Err(Error::InvalidStackOperation);
+		basic_test_with_flags(&script, &VerificationFlags::default().verify_split(true), result,
+			vec![].into());
 	}
 }

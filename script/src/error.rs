@@ -32,6 +32,7 @@ pub enum Error {
 	InvalidStackOperation,
 	InvalidAltstackOperation,
 	UnbalancedConditional,
+	InvalidSplitRange,
 
 	// CHECKLOCKTIMEVERIFY and CHECKSEQUENCEVERIFY
 	NegativeLocktime,
@@ -92,6 +93,7 @@ impl fmt::Display for Error {
 			Error::InvalidStackOperation => "Invalid stack operation".fmt(f),
 			Error::InvalidAltstackOperation => "Invalid altstack operation".fmt(f),
 			Error::UnbalancedConditional => "Unbalanced conditional".fmt(f),
+			Error::InvalidSplitRange => "Invalid OP_SPLIT range".fmt(f),
 
 			// CHECKLOCKTIMEVERIFY and CHECKSEQUENCEVERIFY
 			Error::NegativeLocktime => "Negative locktime".fmt(f),

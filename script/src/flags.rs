@@ -68,6 +68,11 @@ pub struct VerificationFlags {
 
 	/// Support OP_CAT opcode
 	pub verify_concat: bool,
+
+	/// Support OP_SPLIT opcode
+	///
+	/// This opcode replaces OP_SUBSTR => enabling both OP_SPLIT && OP_SUBSTR would be an error
+	pub verify_split: bool,
 }
 
 impl VerificationFlags {
@@ -113,6 +118,11 @@ impl VerificationFlags {
 
 	pub fn verify_concat(mut self, value: bool) -> Self {
 		self.verify_concat = value;
+		self
+	}
+
+	pub fn verify_split(mut self, value: bool) -> Self {
+		self.verify_split = value;
 		self
 	}
 }
