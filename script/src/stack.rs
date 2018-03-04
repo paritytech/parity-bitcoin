@@ -50,6 +50,11 @@ impl<T> Stack<T> {
 	}
 
 	#[inline]
+	pub fn last_mut(&mut self) -> Result<&mut T, Error> {
+		self.data.last_mut().ok_or(Error::InvalidStackOperation)
+	}
+
+	#[inline]
 	pub fn pop(&mut self) -> Result<T, Error> {
 		self.data.pop().ok_or(Error::InvalidStackOperation)
 	}

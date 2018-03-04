@@ -24,6 +24,10 @@ impl Bytes {
 	pub fn len(&self) -> usize {
 		self.0.len()
 	}
+
+	pub fn append(&mut self, other: &mut Bytes) {
+		self.0.append(&mut other.0);
+	}
 }
 
 impl HeapSizeOf for Bytes {

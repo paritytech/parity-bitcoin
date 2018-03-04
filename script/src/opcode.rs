@@ -1,5 +1,6 @@
 //! Script opcodes.
 use std::fmt;
+use flags::VerificationFlags;
 
 /// Script opcodes.
 #[repr(u8)]
@@ -433,10 +434,11 @@ impl Opcode {
 		}
 	}
 
-	pub fn is_disabled(&self) -> bool {
+	pub fn is_disabled(&self, flags: &VerificationFlags) -> bool {
 		use self::Opcode::*;
 		match *self {
-			OP_CAT | OP_SUBSTR | OP_LEFT | OP_RIGHT | OP_INVERT | OP_AND | OP_OR |
+			OP_CAT if !flags.verify_concat => true,
+			OP_SUBSTR | OP_LEFT | OP_RIGHT | OP_INVERT | OP_AND | OP_OR |
 				OP_XOR | OP_2MUL | OP_2DIV | OP_MUL | OP_DIV | OP_MOD | OP_LSHIFT |
 				OP_RSHIFT => true,
 			_ => false,
