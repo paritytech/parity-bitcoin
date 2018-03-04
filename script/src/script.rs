@@ -250,7 +250,7 @@ impl Script {
 	}
 
 	pub fn get_instruction(&self, position: usize) -> Result<Instruction, Error> {
-		let opcode = try!(self.get_opcode(position));
+		let opcode = self.get_opcode(position)?;
 		let instruction = match opcode {
 			Opcode::OP_PUSHDATA1 |
 			Opcode::OP_PUSHDATA2 |
@@ -261,9 +261,9 @@ impl Script {
 					_ => 4,
 				};
 
-				let slice = try!(self.take(position + 1, len));
-				let n = try!(read_usize(slice, len));
-				let bytes = try!(self.take(position + 1 + len, n));
+				let slice = self.take(position + 1, len)?;
+				let n = read_usize(slice, len)?;
+				let bytes = self.take(position + 1 + len, n)?;
 				Instruction {
 					opcode: opcode,
 					step: len + n + 1,
@@ -271,7 +271,7 @@ impl Script {
 				}
 			},
 			o if o <= Opcode::OP_PUSHBYTES_75 => {
-				let bytes = try!(self.take(position + 1, opcode as usize));
+				let bytes = self.take(position + 1, opcode as usize)?;
 				Instruction {
 					opcode: o,
 					step: opcode as usize + 1,
@@ -436,7 +436,7 @@ impl Script {
 				while pc < self.len() - 2 {
 					let instruction = self.get_instruction(pc).expect("this method depends on previous check in script_type()");
 					let data = instruction.data.expect("this method depends on previous check in script_type()");
-					let address = try!(Public::from_slice(data)).address_hash();
+					let address = Public::from_slice(data)?.address_hash();
 					addresses.push(ScriptAddress::new_p2pkh(address));
 					pc += instruction.step;
 				}
@@ -559,8 +559,8 @@ impl fmt::Display for Script {
 			};
 
 			match instruction.data {
-				Some(data) => try!(writeln!(f, "{:?} 0x{:?}", instruction.opcode, Bytes::from(data.to_vec()))),
-				None => try!(writeln!(f, "{:?}", instruction.opcode)),
+				Some(data) => writeln!(f, "{:?} 0x{:?}", instruction.opcode, Bytes::from(data.to_vec()))?,
+				None => writeln!(f, "{:?}", instruction.opcode)?,
 			}
 
 			pc += instruction.step;

@@ -175,7 +175,7 @@ fn check_signature_encoding(sig: &[u8], flags: &VerificationFlags, version: Sign
 	}
 
 	if flags.verify_low_s {
-		try!(is_low_der_signature(sig));
+		is_low_der_signature(sig)?;
 	}
 
 	if flags.verify_strictenc && !is_defined_hashtype_signature(version, sig) {
@@ -258,13 +258,13 @@ pub fn verify_script(
 	let mut stack_copy = Stack::new();
 	let mut had_witness = false;
 
-	try!(eval_script(&mut stack, script_sig, flags, checker, version));
+	eval_script(&mut stack, script_sig, flags, checker, version)?;
 
 	if flags.verify_p2sh {
 		stack_copy = stack.clone();
 	}
 
-	let res = try!(eval_script(&mut stack, script_pubkey, flags, checker, version));
+	let res = eval_script(&mut stack, script_pubkey, flags, checker, version)?;
 	if !res {
 		return Err(Error::EvalFalse);
 	}
@@ -298,9 +298,9 @@ pub fn verify_script(
 		// an empty stack and the EvalScript above would return false.
 		assert!(!stack.is_empty());
 
-		let pubkey2: Script = try!(stack.pop()).into();
+		let pubkey2: Script = stack.pop()?.into();
 
-		let res = try!(eval_script(&mut stack, &pubkey2, flags, checker, version));
+		let res = eval_script(&mut stack, &pubkey2, flags, checker, version)?;
 		if !res {
 			return Err(Error::EvalFalse);
 		}
@@ -597,7 +597,7 @@ pub fn eval_script(
 					// Thus as a special case we tell CScriptNum to accept up
 					// to 5-byte bignums, which are good until 2**39-1, well
 					// beyond the 2**32-1 limit of the nLockTime field itself.
-					let lock_time = try!(Num::from_slice(try!(stack.last()), flags.verify_minimaldata, 5));
+					let lock_time = Num::from_slice(stack.last()?, flags.verify_minimaldata, 5)?;
 
 					// In the rare event that the argument may be < 0 due to
 					// some arithmetic being done first, you can always use
@@ -615,7 +615,7 @@ pub fn eval_script(
 			},
 			Opcode::OP_CHECKSEQUENCEVERIFY => {
 				if flags.verify_checksequence {
-					let sequence = try!(Num::from_slice(try!(stack.last()), flags.verify_minimaldata, 5));
+					let sequence = Num::from_slice(stack.last()?, flags.verify_minimaldata, 5)?;
 
 					if sequence.is_negative() {
 						return Err(Error::NegativeLocktime);
@@ -644,7 +644,7 @@ pub fn eval_script(
 			Opcode::OP_IF | Opcode::OP_NOTIF => {
 				let mut exec_value = false;
 				if executing {
-					exec_value = cast_to_bool(&try!(stack.pop().map_err(|_| Error::UnbalancedConditional)));
+					exec_value = cast_to_bool(&stack.pop().map_err(|_| Error::UnbalancedConditional)?);
 					if opcode == Opcode::OP_NOTIF {
 						exec_value = !exec_value;
 					}
@@ -666,7 +666,7 @@ pub fn eval_script(
 				exec_stack.pop();
 			},
 			Opcode::OP_VERIFY => {
-				let exec_value = cast_to_bool(&try!(stack.pop()));
+				let exec_value = cast_to_bool(&stack.pop()?);
 				if !exec_value {
 					return Err(Error::Verify);
 				}
@@ -675,32 +675,32 @@ pub fn eval_script(
 				return Err(Error::ReturnOpcode);
 			},
 			Opcode::OP_TOALTSTACK => {
-				altstack.push(try!(stack.pop()));
+				altstack.push(stack.pop()?);
 			},
 			Opcode::OP_FROMALTSTACK => {
-				stack.push(try!(altstack.pop().map_err(|_| Error::InvalidAltstackOperation)));
+				stack.push(altstack.pop().map_err(|_| Error::InvalidAltstackOperation)?);
 			},
 			Opcode::OP_2DROP => {
-				try!(stack.drop(2));
+				stack.drop(2)?;
 			},
 			Opcode::OP_2DUP => {
-				try!(stack.dup(2));
+				stack.dup(2)?;
 			},
 			Opcode::OP_3DUP => {
-				try!(stack.dup(3));
+				stack.dup(3)?;
 			},
 			Opcode::OP_2OVER => {
-				try!(stack.over(2));
+				stack.over(2)?;
 			},
 			Opcode::OP_2ROT => {
-				try!(stack.rot(2));
+				stack.rot(2)?;
 			},
 			Opcode::OP_2SWAP => {
-				try!(stack.swap(2));
+				stack.swap(2)?;
 			},
 			Opcode::OP_IFDUP => {
-				if cast_to_bool(try!(stack.last())) {
-					try!(stack.dup(1));
+				if cast_to_bool(stack.last()?) {
+					stack.dup(1)?;
 				}
 			},
 			Opcode::OP_DEPTH => {
@@ -708,46 +708,46 @@ pub fn eval_script(
 				stack.push(depth.to_bytes());
 			},
 			Opcode::OP_DROP => {
-				try!(stack.pop());
+				stack.pop()?;
 			},
 			Opcode::OP_DUP => {
-				try!(stack.dup(1));
+				stack.dup(1)?;
 			},
 			Opcode::OP_NIP => {
-				try!(stack.nip());
+				stack.nip()?;
 			},
 			Opcode::OP_OVER => {
-				try!(stack.over(1));
+				stack.over(1)?;
 			},
 			Opcode::OP_PICK | Opcode::OP_ROLL => {
-				let n: i64 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)).into();
+				let n: i64 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?.into();
 				if n < 0 || n >= stack.len() as i64 {
 					return Err(Error::InvalidStackOperation);
 				}
 
 				let v = match opcode {
-					Opcode::OP_PICK => try!(stack.top(n as usize)).clone(),
-					_ => try!(stack.remove(n as usize)),
+					Opcode::OP_PICK => stack.top(n as usize)?.clone(),
+					_ => stack.remove(n as usize)?,
 				};
 
 				stack.push(v);
 			},
 			Opcode::OP_ROT => {
-				try!(stack.rot(1));
+				stack.rot(1)?;
 			},
 			Opcode::OP_SWAP => {
-				try!(stack.swap(1));
+				stack.swap(1)?;
 			},
 			Opcode::OP_TUCK => {
-				try!(stack.tuck());
+				stack.tuck()?;
 			},
 			Opcode::OP_SIZE => {
-				let n = Num::from(try!(stack.last()).len());
+				let n = Num::from(stack.last()?.len());
 				stack.push(n.to_bytes());
 			},
 			Opcode::OP_EQUAL => {
-				let v1 = try!(stack.pop());
-				let v2 = try!(stack.pop());
+				let v1 = stack.pop()?;
+				let v2 = stack.pop()?;
 				if v1 == v2 {
 					stack.push(vec![1].into());
 				} else {
@@ -755,116 +755,116 @@ pub fn eval_script(
 				}
 			},
 			Opcode::OP_EQUALVERIFY => {
-				let equal = try!(stack.pop()) == try!(stack.pop());
+				let equal = stack.pop()? == stack.pop()?;
 				if !equal {
 					return Err(Error::EqualVerify);
 				}
 			},
 			Opcode::OP_1ADD => {
-				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)) + 1.into();
+				let n = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)? + 1.into();
 				stack.push(n.to_bytes());
 			},
 			Opcode::OP_1SUB => {
-				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)) - 1.into();
+				let n = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)? - 1.into();
 				stack.push(n.to_bytes());
 			},
 			Opcode::OP_NEGATE => {
-				let n = -try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let n = -Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				stack.push(n.to_bytes());
 			},
 			Opcode::OP_ABS => {
-				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)).abs();
+				let n = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?.abs();
 				stack.push(n.to_bytes());
 			},
 			Opcode::OP_NOT => {
-				let n = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)).is_zero();
+				let n = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?.is_zero();
 				let n = Num::from(n);
 				stack.push(n.to_bytes());
 			},
 			Opcode::OP_0NOTEQUAL => {
-				let n = !try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4)).is_zero();
+				let n = !Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?.is_zero();
 				let n = Num::from(n);
 				stack.push(n.to_bytes());
 			},
 			Opcode::OP_ADD => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				stack.push((v1 + v2).to_bytes());
 			},
 			Opcode::OP_SUB => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				stack.push((v2 - v1).to_bytes());
 			},
 			Opcode::OP_BOOLAND => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				let v = Num::from(!v1.is_zero() && !v2.is_zero());
 				stack.push(v.to_bytes());
 			},
 			Opcode::OP_BOOLOR => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				let v = Num::from(!v1.is_zero() || !v2.is_zero());
 				stack.push(v.to_bytes());
 			},
 			Opcode::OP_NUMEQUAL => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				let v = Num::from(v1 == v2);
 				stack.push(v.to_bytes());
 			},
 			Opcode::OP_NUMEQUALVERIFY => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				if v1 != v2 {
 					return Err(Error::NumEqualVerify);
 				}
 			},
 			Opcode::OP_NUMNOTEQUAL => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				let v = Num::from(v1 != v2);
 				stack.push(v.to_bytes());
 			},
 			Opcode::OP_LESSTHAN => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				let v = Num::from(v1 > v2);
 				stack.push(v.to_bytes());
 			},
 			Opcode::OP_GREATERTHAN => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				let v = Num::from(v1 < v2);
 				stack.push(v.to_bytes());
 			},
 			Opcode::OP_LESSTHANOREQUAL => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				let v = Num::from(v1 >= v2);
 				stack.push(v.to_bytes());
 			},
 			Opcode::OP_GREATERTHANOREQUAL => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				let v = Num::from(v1 <= v2);
 				stack.push(v.to_bytes());
 			},
 			Opcode::OP_MIN => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				stack.push(cmp::min(v1, v2).to_bytes());
 			},
 			Opcode::OP_MAX => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				stack.push(cmp::max(v1, v2).to_bytes());
 			},
 			Opcode::OP_WITHIN => {
-				let v1 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v2 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
-				let v3 = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let v1 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v2 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				let v3 = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				if v2 <= v3 && v3 < v1 {
 					stack.push(vec![1].into());
 				} else {
@@ -872,31 +872,31 @@ pub fn eval_script(
 				}
 			},
 			Opcode::OP_RIPEMD160 => {
-				let v = ripemd160(&try!(stack.pop()));
+				let v = ripemd160(&stack.pop()?);
 				stack.push(v.to_vec().into());
 			},
 			Opcode::OP_SHA1 => {
-				let v = sha1(&try!(stack.pop()));
+				let v = sha1(&stack.pop()?);
 				stack.push(v.to_vec().into());
 			},
 			Opcode::OP_SHA256 => {
-				let v = sha256(&try!(stack.pop()));
+				let v = sha256(&stack.pop()?);
 				stack.push(v.to_vec().into());
 			},
 			Opcode::OP_HASH160 => {
-				let v = dhash160(&try!(stack.pop()));
+				let v = dhash160(&stack.pop()?);
 				stack.push(v.to_vec().into());
 			},
 			Opcode::OP_HASH256 => {
-				let v = dhash256(&try!(stack.pop()));
+				let v = dhash256(&stack.pop()?);
 				stack.push(v.to_vec().into());
 			},
 			Opcode::OP_CODESEPARATOR => {
 				begincode = pc;
 			},
 			Opcode::OP_CHECKSIG | Opcode::OP_CHECKSIGVERIFY => {
-				let pubkey = try!(stack.pop());
-				let signature = try!(stack.pop());
+				let pubkey = stack.pop()?;
+				let signature = stack.pop()?;
 				let sighash = parse_hash_type(version, &signature);
 				let mut subscript = script.subscript(begincode);
 				match version {
@@ -908,8 +908,8 @@ pub fn eval_script(
 					},
 				}
 
-				try!(check_signature_encoding(&signature, flags, version));
-				try!(check_pubkey_encoding(&pubkey, flags));
+				check_signature_encoding(&signature, flags, version)?;
+				check_pubkey_encoding(&pubkey, flags)?;
 
 				let success = check_signature(checker, signature.into(), pubkey.into(), &subscript, version);
 				match opcode {
@@ -927,21 +927,21 @@ pub fn eval_script(
 				}
 			},
 			Opcode::OP_CHECKMULTISIG | Opcode::OP_CHECKMULTISIGVERIFY => {
-				let keys_count = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let keys_count = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				if keys_count < 0.into() || keys_count > script::MAX_PUBKEYS_PER_MULTISIG.into() {
 					return Err(Error::PubkeyCount);
 				}
 
 				let keys_count: usize = keys_count.into();
-				let keys: Vec<_> = try!((0..keys_count).into_iter().map(|_| stack.pop()).collect());
+				let keys = (0..keys_count).into_iter().map(|_| stack.pop()).collect::<Result<Vec<_>, _>>()?;
 
-				let sigs_count = try!(Num::from_slice(&try!(stack.pop()), flags.verify_minimaldata, 4));
+				let sigs_count = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
 				if sigs_count < 0.into() || sigs_count > keys_count.into() {
 					return Err(Error::SigCount);
 				}
 
 				let sigs_count: usize = sigs_count.into();
-				let sigs: Vec<_> = try!((0..sigs_count).into_iter().map(|_| stack.pop()).collect());
+				let sigs = (0..sigs_count).into_iter().map(|_| stack.pop()).collect::<Result<Vec<_>, _>>()?;
 
 				let mut subscript = script.subscript(begincode);
 
@@ -965,8 +965,8 @@ pub fn eval_script(
 					let key = keys[k].clone();
 					let sig = sigs[s].clone();
 
-					try!(check_signature_encoding(&sig, flags, version));
-					try!(check_pubkey_encoding(&key, flags));
+					check_signature_encoding(&sig, flags, version)?;
+					check_pubkey_encoding(&key, flags)?;
 
 					let ok = check_signature(checker, sig.into(), key.into(), &subscript, version);
 					if ok {
@@ -977,7 +977,7 @@ pub fn eval_script(
 					success = sigs.len() - s <= keys.len() - k;
 				}
 
-				if !try!(stack.pop()).is_empty() && flags.verify_nulldummy {
+				if !stack.pop()?.is_empty() && flags.verify_nulldummy {
 					return Err(Error::SignatureNullDummy);
 				}
 
@@ -1019,7 +1019,7 @@ pub fn eval_script(
 	}
 
 	let success = !stack.is_empty() && {
-		let last = try!(stack.last());
+		let last = stack.last()?;
 		cast_to_bool(last)
 	};
 
