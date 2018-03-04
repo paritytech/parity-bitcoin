@@ -438,9 +438,14 @@ impl Opcode {
 		use self::Opcode::*;
 		match *self {
 			OP_CAT if !flags.verify_concat => true,
-			OP_SUBSTR | OP_LEFT | OP_RIGHT | OP_INVERT | OP_AND | OP_OR |
-				OP_XOR | OP_2MUL | OP_2DIV | OP_MUL | OP_DIV | OP_MOD | OP_LSHIFT |
-				OP_RSHIFT => true,
+			OP_SUBSTR if !flags.verify_split => true,
+			OP_AND if !flags.verify_and => true,
+			OP_OR if !flags.verify_or => true,
+			OP_XOR if !flags.verify_xor => true,
+			OP_DIV if !flags.verify_div => true,
+			OP_MOD if !flags.verify_mod => true,
+			OP_LEFT | OP_RIGHT | OP_INVERT | OP_2MUL | OP_2DIV |
+				OP_MUL | OP_LSHIFT | OP_RSHIFT => true,
 			_ => false,
 		}
 	}

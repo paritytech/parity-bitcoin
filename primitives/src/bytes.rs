@@ -28,6 +28,10 @@ impl Bytes {
 	pub fn append(&mut self, other: &mut Bytes) {
 		self.0.append(&mut other.0);
 	}
+
+	pub fn split_off(&mut self, at: usize) -> Bytes {
+		Bytes(self.0.split_off(at))
+	}
 }
 
 impl HeapSizeOf for Bytes {
