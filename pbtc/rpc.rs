@@ -5,13 +5,13 @@ use ethcore_rpc::{Server, start_http, MetaIoHandler, Compatibility, Remote};
 use network::Network;
 use std::io;
 use sync;
-use db;
+use storage;
 use p2p;
 
 pub struct Dependencies {
 	pub network: Network,
 	pub local_sync_node: sync::LocalNodeRef,
-	pub storage: db::SharedStore,
+	pub storage: storage::SharedStore,
 	pub p2p_context: Arc<p2p::Context>,
 	pub remote: Remote,
 }

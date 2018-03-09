@@ -16,6 +16,7 @@ byteorder = "1.0"
 
 chain = { path = "../chain" }
 bitcrypto = { path = "../crypto" }
+storage = { path = "../storage" }
 db = { path = "../db" }
 message = { path = "../message" }
 miner = { path = "../miner" }

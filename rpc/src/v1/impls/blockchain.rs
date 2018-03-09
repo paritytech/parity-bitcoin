@@ -9,7 +9,7 @@ use v1::helpers::errors::{block_not_found, block_at_height_not_found, transactio
 	transaction_output_not_found, transaction_of_side_branch};
 use jsonrpc_macros::Trailing;
 use jsonrpc_core::Error;
-use {db, chain};
+use {storage, chain};
 use global_script::Script;
 use chain::OutPoint;
 use verification;
@@ -33,11 +33,11 @@ pub trait BlockChainClientCoreApi: Send + Sync + 'static {
 
 pub struct BlockChainClientCore {
 	network: Network,
-	storage: db::SharedStore,
+	storage: storage::SharedStore,
 }
 
 impl BlockChainClientCore {
-	pub fn new(network: Network, storage: db::SharedStore) -> Self {
+	pub fn new(network: Network, storage: storage::SharedStore) -> Self {
 
 		BlockChainClientCore {
 			network: network,

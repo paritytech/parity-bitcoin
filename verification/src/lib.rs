@@ -59,13 +59,15 @@ extern crate log;
 extern crate parking_lot;
 extern crate rayon;
 
-extern crate db;
+extern crate storage;
 extern crate chain;
 extern crate network;
 extern crate primitives;
 extern crate serialization as ser;
 extern crate script;
 extern crate bitcrypto as crypto;
+#[cfg(test)]
+extern crate db;
 
 pub mod constants;
 mod canon;

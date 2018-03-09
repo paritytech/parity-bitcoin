@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use chain::{Transaction, TransactionOutput, OutPoint};
-use db::TransactionOutputProvider;
+use storage::TransactionOutputProvider;
 use miner::{DoubleSpendCheckResult, HashedOutPoint, NonFinalDoubleSpendSet};
 use verification::TransactionError;
 use super::super::types::{MemoryPoolRef, StorageRef};
@@ -96,7 +96,8 @@ mod tests {
 	use std::sync::Arc;
 	use parking_lot::RwLock;
 	use chain::OutPoint;
-	use db::{TransactionOutputProvider, BlockChainDatabase};
+	use storage::{TransactionOutputProvider};
+	use db::BlockChainDatabase;
 	use miner::MemoryPool;
 	use super::MemoryPoolTransactionOutputProvider;
 

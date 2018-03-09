@@ -1,6 +1,6 @@
 use chain::Transaction;
 use ser::Serializable;
-use db::TransactionProvider;
+use storage::TransactionProvider;
 
 pub fn transaction_fee(store: &TransactionProvider, transaction: &Transaction) -> u64 {
 	let inputs_sum = transaction.inputs.iter().map(|input| {
@@ -21,7 +21,8 @@ mod tests {
 	extern crate test_data;
 
 	use std::sync::Arc;
-	use db::{BlockChainDatabase, AsSubstore};
+	use storage::{AsSubstore};
+	use db::BlockChainDatabase;
 	use super::*;
 
 	#[test]

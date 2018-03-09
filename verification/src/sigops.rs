@@ -1,6 +1,6 @@
 use network::ConsensusFork;
 use chain::Transaction;
-use db::TransactionOutputProvider;
+use storage::TransactionOutputProvider;
 use script::{Script, ScriptWitness};
 
 /// Counts signature operations in given transaction

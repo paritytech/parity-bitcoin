@@ -1,10 +1,12 @@
 extern crate chain;
+extern crate storage;
 extern crate db;
 extern crate test_data;
 
 use chain::IndexedBlock;
+use storage::{ForkChain, BlockProvider, SideChainOrigin};
+use db::BlockChainDatabase;
 use db::kv::{MemoryDatabase, SharedMemoryDatabase};
-use db::{BlockChainDatabase, BlockProvider, SideChainOrigin, ForkChain};
 
 #[test]
 fn insert_block() {

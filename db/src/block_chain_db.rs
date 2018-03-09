@@ -19,11 +19,10 @@ use kv::{
 	COL_COUNT, COL_BLOCK_HASHES, COL_BLOCK_HEADERS, COL_BLOCK_TRANSACTIONS, COL_TRANSACTIONS,
 	COL_TRANSACTIONS_META, COL_BLOCK_NUMBERS
 };
-use best_block::BestBlock;
-use {
+use storage::{
 	BlockRef, Error, BlockHeaderProvider, BlockProvider, BlockOrigin, TransactionMeta, IndexedBlockProvider,
 	TransactionMetaProvider, TransactionProvider, TransactionOutputProvider, BlockChain, Store,
-	SideChainOrigin, ForkChain, Forkable, CanonStore, ConfigStore
+	SideChainOrigin, ForkChain, Forkable, CanonStore, ConfigStore, BestBlock
 };
 
 const KEY_BEST_BLOCK_NUMBER: &'static str = "best_block_number";

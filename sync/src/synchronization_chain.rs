@@ -2,7 +2,7 @@ use std::collections::{VecDeque, HashSet};
 use std::fmt;
 use linked_hash_map::LinkedHashMap;
 use chain::{BlockHeader, Transaction, IndexedBlockHeader, IndexedBlock, IndexedTransaction};
-use db;
+use storage;
 use miner::{MemoryPoolOrderingStrategy, MemoryPoolInformation};
 use network::ConsensusParams;
 use primitives::bytes::Bytes;
@@ -103,7 +103,7 @@ pub struct Chain {
 	/// Genesis block hash (stored for optimizations)
 	genesis_block_hash: H256,
 	/// Best storage block (stored for optimizations)
-	best_storage_block: db::BestBlock,
+	best_storage_block: storage::BestBlock,
 	/// Local blocks storage
 	storage: StorageRef,
 	/// Consensus params.
@@ -214,9 +214,9 @@ impl Chain {
 	}
 
 	/// Get best block
-	pub fn best_block(&self) -> db::BestBlock {
+	pub fn best_block(&self) -> storage::BestBlock {
 		match self.hash_chain.back() {
-			Some(hash) => db::BestBlock {
+			Some(hash) => storage::BestBlock {
 				number: self.best_storage_block.number + self.hash_chain.len(),
 				hash: hash.clone(),
 			},
@@ -225,17 +225,17 @@ impl Chain {
 	}
 
 	/// Get best storage block
-	pub fn best_storage_block(&self) -> db::BestBlock {
+	pub fn best_storage_block(&self) -> storage::BestBlock {
 		self.best_storage_block.clone()
 	}
 
 	/// Get best block header
-	pub fn best_block_header(&self) -> db::BestBlock {
+	pub fn best_block_header(&self) -> storage::BestBlock {
 		let headers_chain_information = self.headers_chain.information();
 		if headers_chain_information.best == 0 {
 			return self.best_storage_block()
 		}
-		db::BestBlock {
+		storage::BestBlock {
 			number: self.best_storage_block.number + headers_chain_information.best,
 			hash: self.headers_chain.at(headers_chain_information.best - 1)
 				.expect("got this index above; qed")
@@ -264,7 +264,7 @@ impl Chain {
 	/// Get block header by number
 	pub fn block_header_by_number(&self, number: BlockHeight) -> Option<IndexedBlockHeader> {
 		if number <= self.best_storage_block.number {
-			self.storage.block_header(db::BlockRef::Number(number)).map(Into::into)
+			self.storage.block_header(storage::BlockRef::Number(number)).map(Into::into)
 		} else {
 			self.headers_chain.at(number - self.best_storage_block.number)
 		}
@@ -272,7 +272,7 @@ impl Chain {
 
 	/// Get block header by hash
 	pub fn block_header_by_hash(&self, hash: &H256) -> Option<IndexedBlockHeader> {
-		if let Some(block) = self.storage.block(db::BlockRef::Hash(hash.clone())) {
+		if let Some(block) = self.storage.block(storage::BlockRef::Hash(hash.clone())) {
 			return Some(block.block_header.into());
 		}
 		self.headers_chain.by_hash(hash)
@@ -282,7 +282,7 @@ impl Chain {
 	pub fn block_state(&self, hash: &H256) -> BlockState {
 		match self.hash_chain.contains_in(hash) {
 			Some(queue_index) => BlockState::from_queue_index(queue_index),
-			None => if self.storage.contains_block(db::BlockRef::Hash(hash.clone())) {
+			None => if self.storage.contains_block(storage::BlockRef::Hash(hash.clone())) {
 				BlockState::Stored
 			} else if self.dead_end_blocks.contains(hash) {
 				BlockState::DeadEnd
@@ -351,17 +351,17 @@ impl Chain {
 	}
 
 	/// Insert new best block to storage
-	pub fn insert_best_block(&mut self, block: IndexedBlock) -> Result<BlockInsertionResult, db::Error> {
+	pub fn insert_best_block(&mut self, block: IndexedBlock) -> Result<BlockInsertionResult, storage::Error> {
 		assert_eq!(Some(self.storage.best_block().hash), self.storage.block_hash(self.storage.best_block().number));
 		let block_origin = self.storage.block_origin(&block.header)?;
 		trace!(target: "sync", "insert_best_block {:?} origin: {:?}", block.hash().reversed(), block_origin);
 		match block_origin {
-			db::BlockOrigin::KnownBlock => {
+			storage::BlockOrigin::KnownBlock => {
 				// there should be no known blocks at this point
 				unreachable!();
 			},
 			// case 1: block has been added to the main branch
-			db::BlockOrigin::CanonChain { .. } => {
+			storage::BlockOrigin::CanonChain { .. } => {
 				self.storage.insert(block.clone())?;
 				self.storage.canonize(block.hash())?;
 
@@ -395,7 +395,7 @@ impl Chain {
 				})
 			},
 			// case 2: block has been added to the side branch with reorganization to this branch
-			db::BlockOrigin::SideChainBecomingCanonChain(origin) => {
+			storage::BlockOrigin::SideChainBecomingCanonChain(origin) => {
 				let fork = self.storage.fork(origin.clone())?;
 				fork.store().insert(block.clone())?;
 				fork.store().canonize(block.hash())?;
@@ -463,7 +463,7 @@ impl Chain {
 				Ok(result)
 			},
 			// case 3: block has been added to the side branch without reorganization to this branch
-			db::BlockOrigin::SideChain(_origin) => {
+			storage::BlockOrigin::SideChain(_origin) => {
 				let block_hash = block.hash().clone();
 				self.storage.insert(block)?;
 
@@ -673,7 +673,7 @@ impl Chain {
 	}
 }
 
-impl db::TransactionProvider for Chain {
+impl storage::TransactionProvider for Chain {
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
 		self.memory_pool.read().transaction_bytes(hash)
 			.or_else(|| self.storage.transaction_bytes(hash))
@@ -685,16 +685,16 @@ impl db::TransactionProvider for Chain {
 	}
 }
 
-impl db::BlockHeaderProvider for Chain {
-	fn block_header_bytes(&self, block_ref: db::BlockRef) -> Option<Bytes> {
+impl storage::BlockHeaderProvider for Chain {
+	fn block_header_bytes(&self, block_ref: storage::BlockRef) -> Option<Bytes> {
 		use ser::serialize;
 		self.block_header(block_ref).map(|h| serialize(&h))
 	}
 
-	fn block_header(&self, block_ref: db::BlockRef) -> Option<BlockHeader> {
+	fn block_header(&self, block_ref: storage::BlockRef) -> Option<BlockHeader> {
 		match block_ref {
-			db::BlockRef::Hash(hash) => self.block_header_by_hash(&hash).map(|h| h.raw),
-			db::BlockRef::Number(n) => self.block_header_by_number(n).map(|h| h.raw),
+			storage::BlockRef::Hash(hash) => self.block_header_by_hash(&hash).map(|h| h.raw),
+			storage::BlockRef::Number(n) => self.block_header_by_number(n).map(|h| h.raw),
 		}
 	}
 }

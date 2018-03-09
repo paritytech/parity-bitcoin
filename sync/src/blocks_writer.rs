@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use parking_lot::Mutex;
 use chain;
-use db;
+use storage;
 use network::ConsensusParams;
 use primitives::hash::H256;
 use super::Error;
@@ -58,12 +58,12 @@ impl BlocksWriter {
 	/// Append new block
 	pub fn append_block(&mut self, block: chain::IndexedBlock) -> Result<(), Error> {
 		// do not append block if it is already there
-		if self.storage.contains_block(db::BlockRef::Hash(block.hash().clone())) {
+		if self.storage.contains_block(storage::BlockRef::Hash(block.hash().clone())) {
 			return Ok(());
 		}
 
 		// verify && insert only if parent block is already in the storage
-		if !self.storage.contains_block(db::BlockRef::Hash(block.header.raw.previous_header_hash.clone())) {
+		if !self.storage.contains_block(storage::BlockRef::Hash(block.header.raw.previous_header_hash.clone())) {
 			self.orphaned_blocks_pool.insert_orphaned_block(block);
 			// we can't hold many orphaned blocks in memory during import
 			if self.orphaned_blocks_pool.len() > MAX_ORPHANED_BLOCKS {

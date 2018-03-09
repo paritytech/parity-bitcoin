@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use chain::BlockHeader;
-use db::{BlockRef, BlockHeaderProvider};
+use storage::{BlockRef, BlockHeaderProvider};
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
 
@@ -56,7 +56,8 @@ impl<'a> BlockHeaderProvider for MessageBlockHeadersProvider<'a> {
 mod tests {
 	extern crate test_data;
 
-	use db::{AsSubstore, BlockHeaderProvider, BlockChainDatabase, BlockRef};
+	use storage::{AsSubstore, BlockHeaderProvider, BlockRef};
+	use db::BlockChainDatabase;
 	use primitives::hash::H256;
 	use super::MessageBlockHeadersProvider;
 

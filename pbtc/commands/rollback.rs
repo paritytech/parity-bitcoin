@@ -1,5 +1,5 @@
 use clap::ArgMatches;
-use db::BlockRef;
+use storage::BlockRef;
 use config::Config;
 use primitives::hash::H256;
 use util::init_db;

@@ -1,6 +1,7 @@
 extern crate bitcrypto;
 extern crate byteorder;
 extern crate chain;
+extern crate storage;
 extern crate db;
 #[macro_use]
 extern crate log;
@@ -52,7 +53,7 @@ pub enum Error {
 	/// Too many orphan blocks.
 	TooManyOrphanBlocks,
 	/// Database error.
-	Database(db::Error),
+	Database(storage::Error),
 	/// Block verification error.
 	Verification(String),
 }
@@ -76,7 +77,7 @@ pub trait SyncListener: Send + 'static {
 }
 
 /// Create blocks writer.
-pub fn create_sync_blocks_writer(db: db::SharedStore, consensus: ConsensusParams, verification_params: VerificationParameters) -> blocks_writer::BlocksWriter {
+pub fn create_sync_blocks_writer(db: storage::SharedStore, consensus: ConsensusParams, verification_params: VerificationParameters) -> blocks_writer::BlocksWriter {
 	blocks_writer::BlocksWriter::new(db, consensus, verification_params)
 }
 
@@ -88,7 +89,7 @@ pub fn create_sync_peers() -> PeersRef {
 }
 
 /// Creates local sync node for given `db`
-pub fn create_local_sync_node(consensus: ConsensusParams, db: db::SharedStore, peers: PeersRef, verification_params: VerificationParameters) -> LocalNodeRef {
+pub fn create_local_sync_node(consensus: ConsensusParams, db: storage::SharedStore, peers: PeersRef, verification_params: VerificationParameters) -> LocalNodeRef {
 	use miner::MemoryPool;
 	use synchronization_chain::Chain as SyncChain;
 	use synchronization_executor::LocalSynchronizationTaskExecutor as SyncExecutor;

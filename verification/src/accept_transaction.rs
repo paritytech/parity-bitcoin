@@ -1,6 +1,6 @@
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
-use db::{TransactionMetaProvider, TransactionOutputProvider};
+use storage::{TransactionMetaProvider, TransactionOutputProvider};
 use network::{ConsensusParams, ConsensusFork};
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner, SignatureVersion};
 use duplex_store::DuplexTransactionOutputProvider;

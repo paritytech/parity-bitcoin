@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use primitives::hash::H256;
 use primitives::compact::Compact;
 use chain::{OutPoint, TransactionOutput, IndexedTransaction};
-use db::{SharedStore, TransactionOutputProvider};
+use storage::{SharedStore, TransactionOutputProvider};
 use network::ConsensusParams;
 use memory_pool::{MemoryPool, OrderingStrategy, Entry};
 use verification::{work_required, block_reward_satoshi, transaction_sigops};

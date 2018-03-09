@@ -1,10 +1,10 @@
 use network::ConsensusParams;
-use db::BlockHeaderProvider;
+use storage::BlockHeaderProvider;
 use canon::CanonHeader;
 use error::Error;
 use work::work_required;
-use deployments::BlockDeployments;
 use timestamp::median_timestamp;
+use deployments::Deployments;
 
 pub struct HeaderAcceptor<'a> {
 	pub version: HeaderVersion<'a>,
@@ -13,16 +13,17 @@ pub struct HeaderAcceptor<'a> {
 }
 
 impl<'a> HeaderAcceptor<'a> {
-	pub fn new(
+	pub fn new<D: AsRef<Deployments>>(
 		store: &'a BlockHeaderProvider,
 		consensus: &'a ConsensusParams,
 		header: CanonHeader<'a>,
 		height: u32,
-		deployments: &'a BlockDeployments<'a>,
+		deployments: D,
 	) -> Self {
+		let csv_active = deployments.as_ref().csv(height, store, consensus);
 		HeaderAcceptor {
 			work: HeaderWork::new(header, store, height, consensus),
-			median_timestamp: HeaderMedianTimestamp::new(header, store, deployments),
+			median_timestamp: HeaderMedianTimestamp::new(header, store, csv_active),
 			version: HeaderVersion::new(header, height, consensus),
 		}
 	}
@@ -99,12 +100,11 @@ pub struct HeaderMedianTimestamp<'a> {
 }
 
 impl<'a> HeaderMedianTimestamp<'a> {
-	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, deployments: &'a BlockDeployments<'a>) -> Self {
-		let active = deployments.csv();
+	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, csv_active: bool) -> Self {
 		HeaderMedianTimestamp {
 			header: header,
 			store: store,
-			active: active,
+			active: csv_active,
 		}
 	}
 

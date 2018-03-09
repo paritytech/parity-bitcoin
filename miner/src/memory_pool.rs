@@ -5,7 +5,7 @@
 //! transactions.
 //! It also guarantees that ancestor-descendant relation won't break during ordered removal (ancestors always removed
 //! before descendants). Removal using `remove_by_hash` can break this rule.
-use db::{TransactionProvider, TransactionOutputProvider};
+use storage::{TransactionProvider, TransactionOutputProvider};
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
 use chain::{IndexedTransaction, Transaction, OutPoint, TransactionOutput};

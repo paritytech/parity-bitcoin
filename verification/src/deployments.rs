@@ -3,7 +3,7 @@ use std::collections::hash_map::Entry;
 use parking_lot::Mutex;
 use network::{ConsensusParams, Deployment};
 use hash::H256;
-use db::{BlockHeaderProvider, BlockRef, BlockAncestors, BlockIterator};
+use storage::{BlockHeaderProvider, BlockRef, BlockAncestors, BlockIterator};
 use timestamp::median_timestamp;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -108,6 +108,18 @@ impl<'a> BlockDeployments<'a> {
 	pub fn segwit(&self) -> bool {
 		self.deployments.segwit(self.number, self.headers, self.consensus)
 	}
+}
+
+impl AsRef<Deployments> for Deployments {
+	fn as_ref(&self) -> &Deployments {
+		&self
+	}
+}
+
+impl<'a> AsRef<Deployments> for BlockDeployments<'a> {
+	fn as_ref(&self) -> &Deployments {
+		self.deployments
+	} 
 }
 
 /// Calculates threshold state of given deployment
@@ -255,7 +267,7 @@ mod tests {
 	use std::sync::atomic::{AtomicUsize, Ordering};
 	use std::collections::HashMap;
 	use chain::BlockHeader;
-	use db::{BlockHeaderProvider, BlockRef};
+	use storage::{BlockHeaderProvider, BlockRef};
 	use network::Deployment;
 	use hash::H256;
 	use primitives::bytes::Bytes;

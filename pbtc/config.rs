@@ -1,6 +1,6 @@
 use std::net;
 use clap;
-use db;
+use storage;
 use message::Services;
 use network::{Network, ConsensusParams, ConsensusFork, BitcoinCashConsensusParams};
 use p2p::InternetProtocol;
@@ -31,7 +31,7 @@ pub struct Config {
 	pub rpc_config: RpcHttpConfig,
 	pub block_notify_command: Option<String>,
 	pub verification_params: VerificationParameters,
-	pub db: db::SharedStore,
+	pub db: storage::SharedStore,
 }
 
 pub const DEFAULT_DB_CACHE: usize = 512;
@@ -167,7 +167,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	Ok(config)
 }
 
-fn parse_consensus_fork(network: Network, db: &db::SharedStore, matches: &clap::ArgMatches) -> Result<ConsensusFork, String> {
+fn parse_consensus_fork(network: Network, db: &storage::SharedStore, matches: &clap::ArgMatches) -> Result<ConsensusFork, String> {
 	let old_consensus_fork = db.consensus_fork()?;
 	let new_consensus_fork = match (matches.is_present("segwit"), matches.is_present("bitcoin-cash")) {
 		(false, false) => match &old_consensus_fork {

@@ -3,7 +3,7 @@ use primitives::hash::H256;
 use primitives::bigint::{Uint, U256};
 use chain::{IndexedBlockHeader, BlockHeader};
 use network::{Network, ConsensusParams, BitcoinCashConsensusParams};
-use db::BlockHeaderProvider;
+use storage::BlockHeaderProvider;
 use timestamp::median_timestamp_inclusive;
 use work::{is_retarget_height, work_required_testnet, work_required_retarget};
 
@@ -178,7 +178,7 @@ mod tests {
 	use primitives::hash::H256;
 	use primitives::bigint::U256;
 	use network::{Network, ConsensusParams, BitcoinCashConsensusParams, ConsensusFork};
-	use db::{BlockHeaderProvider, BlockRef};
+	use storage::{BlockHeaderProvider, BlockRef};
 	use chain::BlockHeader;
 	use work::work_required;
 	use super::work_required_bitcoin_cash_adjusted;

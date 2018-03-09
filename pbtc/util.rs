@@ -2,11 +2,12 @@ use std::sync::Arc;
 use std::path::PathBuf;
 use std::fs::create_dir_all;
 use app_dirs::{app_dir, AppDataType};
-use {db, APP_INFO};
+use {storage, APP_INFO};
+use db;
 use config::Config;
 use chain::IndexedBlock;
 
-pub fn open_db(data_dir: &Option<String>, db_cache: usize) -> db::SharedStore {
+pub fn open_db(data_dir: &Option<String>, db_cache: usize) -> storage::SharedStore {
 	let db_path = match *data_dir {
 		Some(ref data_dir) => custom_path(&data_dir, "db"),
 		None => app_dir(AppDataType::UserData, &APP_INFO, "db").expect("Failed to get app dir"),

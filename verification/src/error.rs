@@ -1,6 +1,6 @@
 use hash::H256;
 use compact::Compact;
-use db::Error as DBError;
+use storage::Error as DBError;
 use script::Error as SignatureError;
 
 #[derive(Debug, PartialEq)]

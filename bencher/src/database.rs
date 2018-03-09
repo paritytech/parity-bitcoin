@@ -1,5 +1,6 @@
 use chain::IndexedBlock;
-use db::{BlockProvider, BlockRef, BlockChainDatabase, BlockOrigin, ForkChain};
+use storage::{BlockProvider, BlockRef, BlockOrigin, ForkChain};
+use db::BlockChainDatabase;
 use test_data;
 
 use super::Benchmark;

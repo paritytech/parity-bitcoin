@@ -16,6 +16,7 @@ cargo test\
 	-p script\
 	-p serialization\
 	-p serialization_derive\
+	-p storage\
 	-p sync\
 	-p test-data\
 	-p verification

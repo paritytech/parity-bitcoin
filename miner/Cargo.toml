@@ -8,6 +8,7 @@ byteorder = "1.0"
 heapsize = "0.4"
 bitcrypto = { path = "../crypto" }
 chain = { path = "../chain" }
+storage = { path = "../storage" }
 db = { path = "../db" }
 network = { path = "../network" }
 primitives = { path = "../primitives" }
