@@ -1,5 +1,5 @@
 use chain::BlockHeader;
-use db::{BlockHeaderProvider, BlockAncestors};
+use storage::{BlockHeaderProvider, BlockAncestors};
 use primitives::hash::H256;
 
 /// Returns median timestamp, of given header ancestors.

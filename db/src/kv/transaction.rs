@@ -2,7 +2,7 @@ use bytes::Bytes;
 use hash::H256;
 use ser::{serialize, List, deserialize};
 use chain::{Transaction as ChainTransaction, BlockHeader};
-use {TransactionMeta};
+use storage::{TransactionMeta};
 
 pub const COL_COUNT: u32 = 10;
 pub const COL_META: u32 = 0;

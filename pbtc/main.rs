@@ -8,6 +8,7 @@ extern crate env_logger;
 extern crate app_dirs;
 extern crate libc;
 
+extern crate storage;
 extern crate db;
 extern crate chain;
 extern crate keys;

@@ -2,7 +2,7 @@
 
 use hash::H256;
 use chain::{IndexedBlock, IndexedBlockHeader, BlockHeader, Transaction};
-use db::{SharedStore, TransactionOutputProvider, BlockHeaderProvider, BlockOrigin};
+use storage::{SharedStore, TransactionOutputProvider, BlockHeaderProvider, BlockOrigin};
 use network::ConsensusParams;
 use error::{Error, TransactionError};
 use canon::{CanonBlock, CanonTransaction};
@@ -143,7 +143,8 @@ mod tests {
 
 	use std::sync::Arc;
 	use chain::IndexedBlock;
-	use db::{BlockChainDatabase, Error as DBError};
+	use storage::{Error as DBError};
+	use db::BlockChainDatabase;
 	use network::{Network, ConsensusParams, ConsensusFork};
 	use script;
 	use super::BackwardsCompatibleChainVerifier as ChainVerifier;

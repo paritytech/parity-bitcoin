@@ -6,6 +6,7 @@ authors = ["Ethcore <admin@ethcore.io>"]
 description = "Parity bitcoin client."
 
 [dependencies]
+storage = { path = "../storage" }
 db = { path = "../db" }
 verification = { path = "../verification" }
 network = { path = "../network" }

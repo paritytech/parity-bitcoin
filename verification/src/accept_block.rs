@@ -1,6 +1,6 @@
 use network::{ConsensusParams, ConsensusFork};
 use crypto::dhash256;
-use db::{TransactionOutputProvider, BlockHeaderProvider};
+use storage::{TransactionOutputProvider, BlockHeaderProvider};
 use script;
 use ser::Stream;
 use sigops::{transaction_sigops, transaction_sigops_cost}	;

@@ -1,5 +1,5 @@
 use rayon::prelude::{IntoParallelRefIterator, IndexedParallelIterator, ParallelIterator};
-use db::Store;
+use storage::Store;
 use network::ConsensusParams;
 use error::Error;
 use canon::CanonBlock;

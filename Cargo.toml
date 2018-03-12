@@ -18,6 +18,7 @@ network = { path = "network" }
 miner = { path = "miner" }
 p2p = { path = "p2p" }
 script = { path = "script" }
+storage = { path = "storage" }
 db = { path = "db" }
 verification = { path = "verification" }
 sync = { path = "sync" }

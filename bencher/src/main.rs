@@ -1,3 +1,4 @@
+extern crate storage;
 extern crate db;
 extern crate chain;
 extern crate test_data;

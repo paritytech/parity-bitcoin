@@ -4,7 +4,7 @@ use primitives::hash::H256;
 use primitives::bigint::U256;
 use chain::{IndexedBlockHeader, BlockHeader};
 use network::{Network, ConsensusParams, ConsensusFork};
-use db::{BlockHeaderProvider, BlockRef};
+use storage::{BlockHeaderProvider, BlockRef};
 use work_bch::work_required_bitcoin_cash;
 
 use constants::{

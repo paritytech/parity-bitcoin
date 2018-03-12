@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use futures::Future;
 use parking_lot::{Mutex, RwLock};
-use db;
+use storage;
 use local_node::LocalNode;
 use miner::MemoryPool;
 use super::SyncListener;
@@ -24,7 +24,7 @@ pub type PeerIndex = usize;
 pub type EmptyBoxFuture = Box<Future<Item=(), Error=()> + Send>;
 
 /// Reference to storage
-pub type StorageRef = db::SharedStore;
+pub type StorageRef = storage::SharedStore;
 
 /// Reference to memory pool
 pub type MemoryPoolRef = Arc<RwLock<MemoryPool>>;

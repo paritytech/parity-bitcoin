@@ -14,8 +14,9 @@ chain = { path = "../chain"  }
 serialization = { path = "../serialization" }
 script = { path = "../script" }
 network = { path = "../network" }
-db = { path = "../db" }
+storage = { path = "../storage" }
 bitcrypto = { path = "../crypto" }
 
 [dev-dependencies]
 test-data = { path = "../test-data" }
+db = { path = "../db" }

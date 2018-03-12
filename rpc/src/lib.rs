@@ -15,6 +15,7 @@ extern crate serialization as ser;
 extern crate primitives;
 extern crate p2p;
 extern crate network;
+extern crate storage;
 extern crate db;
 extern crate miner;
 extern crate verification;
