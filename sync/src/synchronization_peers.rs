@@ -143,7 +143,7 @@ impl Peers for PeersImpl {
 	}
 
 	fn connection(&self, peer_index: PeerIndex) -> Option<OutboundSyncConnectionRef> {
-		self.peers.read().get(&peer_index).map(|peer| peer.connection.clone())
+		self.peers.read().get(&peer_index).cloned()
 	}
 }
 
