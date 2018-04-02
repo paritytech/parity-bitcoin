@@ -648,7 +648,7 @@ pub fn eval_script(
 				stack.push((v1 % v2).to_bytes());
 
 			},
-			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_LEFT | Opcode::OP_RIGHT |
+			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_NUM2BIN | Opcode::OP_BIN2NUM |
 			Opcode::OP_INVERT | Opcode::OP_AND | Opcode::OP_OR | Opcode::OP_XOR |
 			Opcode::OP_2MUL | Opcode::OP_2DIV | Opcode::OP_MUL | Opcode::OP_DIV |
 			Opcode::OP_MOD | Opcode::OP_LSHIFT | Opcode::OP_RSHIFT => {

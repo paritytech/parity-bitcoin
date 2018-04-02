@@ -142,8 +142,8 @@ pub enum Opcode {
 	// splice ops
 	OP_CAT = 0x7e,
 	OP_SUBSTR = 0x7f,
-	OP_LEFT = 0x80,
-	OP_RIGHT = 0x81,
+	OP_NUM2BIN = 0x80,
+	OP_BIN2NUM = 0x81,
 	OP_SIZE = 0x82,
 
 	// bit logic
@@ -359,8 +359,8 @@ impl Opcode {
 			// splice ops
 			0x7e => Some(OP_CAT),
 			0x7f => Some(OP_SUBSTR),
-			0x80 => Some(OP_LEFT),
-			0x81 => Some(OP_RIGHT),
+			0x80 => Some(OP_NUM2BIN),
+			0x81 => Some(OP_BIN2NUM),
 			0x82 => Some(OP_SIZE),
 
 			// bit logic
@@ -444,7 +444,7 @@ impl Opcode {
 			OP_XOR if !flags.verify_xor => true,
 			OP_DIV if !flags.verify_div => true,
 			OP_MOD if !flags.verify_mod => true,
-			OP_LEFT | OP_RIGHT | OP_INVERT | OP_2MUL | OP_2DIV |
+			OP_NUM2BIN | OP_BIN2NUM | OP_INVERT | OP_2MUL | OP_2DIV |
 				OP_MUL | OP_LSHIFT | OP_RSHIFT => true,
 			_ => false,
 		}
