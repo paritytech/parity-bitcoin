@@ -444,7 +444,8 @@ impl Opcode {
 			OP_XOR if !flags.verify_xor => true,
 			OP_DIV if !flags.verify_div => true,
 			OP_MOD if !flags.verify_mod => true,
-			OP_NUM2BIN | OP_BIN2NUM | OP_INVERT | OP_2MUL | OP_2DIV |
+			OP_BIN2NUM if !flags.verify_bin2num => true,
+			OP_NUM2BIN | OP_INVERT | OP_2MUL | OP_2DIV |
 				OP_MUL | OP_LSHIFT | OP_RSHIFT => true,
 			_ => false,
 		}
@@ -617,8 +618,8 @@ mod tests {
 		// splice ops
 		assert_eq!(Opcode::OP_CAT, Opcode::from_u8(Opcode::OP_CAT as u8).unwrap());
 		assert_eq!(Opcode::OP_SUBSTR, Opcode::from_u8(Opcode::OP_SUBSTR as u8).unwrap());
-		assert_eq!(Opcode::OP_LEFT, Opcode::from_u8(Opcode::OP_LEFT as u8).unwrap());
-		assert_eq!(Opcode::OP_RIGHT, Opcode::from_u8(Opcode::OP_RIGHT as u8).unwrap());
+		assert_eq!(Opcode::OP_NUM2BIN, Opcode::from_u8(Opcode::OP_NUM2BIN as u8).unwrap());
+		assert_eq!(Opcode::OP_BIN2NUM, Opcode::from_u8(Opcode::OP_BIN2NUM as u8).unwrap());
 		assert_eq!(Opcode::OP_SIZE, Opcode::from_u8(Opcode::OP_SIZE as u8).unwrap());
 
 		// bit logic
