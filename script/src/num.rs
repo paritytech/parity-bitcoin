@@ -85,7 +85,7 @@ impl From<Num> for usize {
 }
 
 impl Num {
-	// Reduce the data size to its minimal, and then try to convert it to a num.
+	/// Reduce the data size to its minimal, and then try to convert it to a num.
 	pub fn minimally_encode(data: &[u8], max_size: usize) -> Result<Self, Error> {
 		match data.last() {
 			None => Num::from_slice(data, true, max_size),
