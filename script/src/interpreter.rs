@@ -648,7 +648,7 @@ pub fn eval_script(
 				stack.push((v1 % v2).to_bytes());
 			},
 			Opcode::OP_BIN2NUM if flags.verify_bin2num => {
-				let mut bin = stack.pop()?;
+				let bin = stack.pop()?;
 				let n = Num::minimally_encode(&bin, 4)?;
 				stack.push(n.to_bytes());
 			},
