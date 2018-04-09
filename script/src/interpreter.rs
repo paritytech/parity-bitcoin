@@ -647,12 +647,12 @@ pub fn eval_script(
 				}
 				stack.push((v1 % v2).to_bytes());
 			},
-			Opcode::OP_BIN2NUM if flags.verify_bin2num => {
+			Opcode::OP_RIGHT if flags.verify_right => {
 				let bin = stack.pop()?;
 				let n = Num::minimally_encode(&bin, 4)?;
 				stack.push(n.to_bytes());
 			},
-			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_NUM2BIN | Opcode::OP_BIN2NUM |
+			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_LEFT | Opcode::OP_RIGHT |
 			Opcode::OP_INVERT | Opcode::OP_AND | Opcode::OP_OR | Opcode::OP_XOR |
 			Opcode::OP_2MUL | Opcode::OP_2DIV | Opcode::OP_MUL | Opcode::OP_DIV |
 			Opcode::OP_MOD | Opcode::OP_LSHIFT | Opcode::OP_RSHIFT => {
@@ -2029,7 +2029,7 @@ mod tests {
 	fn test_bin2num(input: &[u8], result: Result<bool, Error>, output: Vec<u8>) {
 		let script = Builder::default()
 			.push_bytes(input)
-			.push_opcode(Opcode::OP_BIN2NUM)
+			.push_opcode(Opcode::OP_RIGHT)
 			.into_script();
 		let stack = if result.is_ok() {
 			vec![output.into()].into()
@@ -2037,7 +2037,7 @@ mod tests {
 			vec![]
 		}.into();
 		let flags = VerificationFlags::default()
-			.verify_bin2num(true);
+			.verify_right(true);
 		basic_test_with_flags(&script, &flags, result, stack);
 	}
 
