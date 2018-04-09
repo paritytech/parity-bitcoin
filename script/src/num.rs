@@ -87,40 +87,41 @@ impl From<Num> for usize {
 impl Num {
 	// Reduce the data size to its minimal, and then try to convert it to a num.
 	pub fn minimally_encode(data: &[u8], max_size: usize) -> Result<Self, Error> {
-		if data.is_empty() {
-			return Num::from_slice(data, true, max_size);
+		match data.last() {
+			None => Num::from_slice(data, true, max_size),
+			Some(last) => {
+				if *last != 0x00 && *last != 0x80 {
+					return Num::from_slice(data, true, max_size);
+				}
+
+				if data.len() == 1 {
+					return Num::from_slice(&[], true, max_size);
+				}
+
+				if data[data.len() - 2] & 0x80 == 0x80 {
+					return Num::from_slice(data, true, max_size);
+				}
+
+				// We are not minimally encoded. Create a vector so that we can trim the result. The last byte is not included,
+				// as we first trim all zeros. And then a conditional to decide what to do with the last byte.
+				let mut data: Vec<u8> = data[0..(data.len()-1)].iter().map(|x| *x).rev().skip_while(|x| *x == 0x00).collect();
+				data.reverse();
+
+				if data.len() == 0 {
+					// At this point, last is either equal to 0x00 or 0x80. The result is empty.
+					return Num::from_slice(&[], true, max_size);
+				}
+
+				let second_last = *data.last().expect("vec emptiness is checked above; qed");
+				if second_last & 0x80 == 0x80 {
+					data.push(*last);
+				} else {
+					*data.last_mut().expect("vec emptiness is checked above; qed") |= *last
+				}
+
+				Num::from_slice(&data, true, max_size)
+			}
 		}
-
-		let last = *data.last().unwrap();
-		if last != 0x00 && last != 0x80 {
-			return Num::from_slice(data, true, max_size);
-		}
-
-		if data.len() == 1 {
-			return Num::from_slice(&[], true, max_size);
-		}
-
-		if data[data.len() - 2] & 0x80 == 0x80 {
-			return Num::from_slice(data, true, max_size);
-		}
-
-		// We are not minimally encoded. Create a vector so that we can trim the result. The last byte is not included,
-		// as we first trim all zeros. And then a conditional to decide what to do with the last byte.
-		let mut data: Vec<u8> = data[0..(data.len()-1)].iter().map(|x| *x).rev().skip_while(|x| *x == 0x00).collect();
-		data.reverse();
-
-		if data.len() == 0 {
-			// At this point, last is either equal to 0x00 or 0x80. The result is empty.
-			return Num::from_slice(&[], true, max_size);
-		}
-
-		if data.last().unwrap() & 0x80 == 0x80 {
-			data.push(last);
-		} else {
-			*data.last_mut().unwrap() |= last;
-		}
-
-		Num::from_slice(&data, true, max_size)
 	}
 
 	pub fn from_slice(data: &[u8], require_minimal: bool, max_size: usize) -> Result<Self, Error> {
