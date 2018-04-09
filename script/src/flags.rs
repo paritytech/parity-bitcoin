@@ -88,6 +88,9 @@ pub struct VerificationFlags {
 
 	/// Support OP_MOD opcode
 	pub verify_mod: bool,
+
+	/// Support OP_RIGHT/OP_BIN2NUM opcode
+	pub verify_right: bool,
 }
 
 impl VerificationFlags {
@@ -165,5 +168,9 @@ impl VerificationFlags {
 		self.verify_mod = value;
 		self
 	}
-}
 
+	pub fn verify_right(mut self, value: bool) -> Self {
+		self.verify_right = value;
+		self
+	}
+}
