@@ -104,7 +104,7 @@ impl Num {
 
 				// We are not minimally encoded. Create a vector so that we can trim the result. The last byte is not included,
 				// as we first trim all zeros. And then a conditional to decide what to do with the last byte.
-				let mut data: Vec<u8> = data[0..(data.len()-1)].iter().map(|x| *x).rev().skip_while(|x| *x == 0x00).collect();
+				let mut data: Vec<u8> = data[0..(data.len()-1)].iter().cloned().rev().skip_while(|x| *x == 0x00).collect();
 				data.reverse();
 
 				if data.len() == 0 {
