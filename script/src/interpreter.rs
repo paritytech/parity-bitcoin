@@ -653,6 +653,36 @@ pub fn eval_script(
 				let n = Num::minimally_encode(&bin, 4)?;
 				stack.push(n.to_bytes());
 			},
+			// OP_NUM2BIN replaces OP_LEFT
+			Opcode::OP_LEFT if flags.verify_num2bin => {
+				let bin_size = Num::from_slice(&stack.pop()?, flags.verify_minimaldata, 4)?;
+				if bin_size.is_negative() || bin_size > MAX_SCRIPT_ELEMENT_SIZE.into() {
+					return Err(Error::PushSize);
+				}
+
+				let bin_size: usize = bin_size.into();
+				let num = Num::minimally_encode(&stack.pop()?, 4)?;
+				let mut num = num.to_bytes();
+
+				// check if we can fit number into array of bin_size length
+				if num.len() > bin_size {
+					return Err(Error::ImpossibleEncoding);
+				}
+
+				// check if we need to extend binary repr with zero-bytes
+				if num.len() < bin_size {
+					let sign_byte = num.last_mut().map(|last_byte| {
+						let sign_byte = *last_byte & 0x80;
+						*last_byte = *last_byte & 0x7f;
+						sign_byte
+					}).unwrap_or(0x00);
+
+					num.resize(bin_size - 1, 0x00);
+					num.push(sign_byte);
+				}
+
+				stack.push(num);
+			},
 			Opcode::OP_CAT | Opcode::OP_SUBSTR | Opcode::OP_LEFT | Opcode::OP_RIGHT |
 			Opcode::OP_INVERT | Opcode::OP_AND | Opcode::OP_OR | Opcode::OP_XOR |
 			Opcode::OP_2MUL | Opcode::OP_2DIV | Opcode::OP_MUL | Opcode::OP_DIV |
@@ -3681,6 +3711,17 @@ mod tests {
 	}
 
 	#[test]
+	fn op_bin2num_disabled_by_default() {
+		let script = Builder::default()
+			.push_num(0.into())
+			.push_opcode(Opcode::OP_RIGHT)
+			.into_script();
+		let result = Err(Error::DisabledOpcode(Opcode::OP_RIGHT));
+		basic_test_with_flags(&script, &VerificationFlags::default(), result,
+			vec![].into());
+	}
+
+	#[test]
 	fn test_bin2num_all() {
 		fn test_bin2num(input: &[u8], result: Result<bool, Error>, output: Vec<u8>) {
 			let script = Builder::default()
@@ -3705,5 +3746,61 @@ mod tests {
 		test_bin2num(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80], Ok(true), vec![0x81]);
 		test_bin2num(&[0x80], Ok(false), vec![]);
 		test_bin2num(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80], Ok(false), vec![]);
+	}
+
+	#[test]
+	fn op_num2bin_disabled_by_default() {
+		let script = Builder::default()
+			.push_num(1.into())
+			.push_num(1.into())
+			.push_opcode(Opcode::OP_LEFT)
+			.into_script();
+		let result = Err(Error::DisabledOpcode(Opcode::OP_LEFT));
+		basic_test_with_flags(&script, &VerificationFlags::default(), result,
+			vec![].into());
+	}
+
+	#[test]
+	fn test_num2bin_all() {
+		fn test_num2bin(num: &[u8], size: &[u8], result: Result<bool, Error>, output: Vec<u8>) {
+			let script = Builder::default()
+				.push_data(num)
+				.push_data(size)
+				.push_opcode(Opcode::OP_LEFT)
+				.into_script();
+			let stack = if result.is_ok() {
+				vec![output.into()].into()
+			} else {
+				vec![]
+			}.into();
+
+			let flags = VerificationFlags::default()
+				.verify_num2bin(true);
+			basic_test_with_flags(&script, &flags, result, stack);
+		}
+
+		fn test_num2bin_num(num: Num, size: Num, result: Result<bool, Error>, output: Vec<u8>) {
+			test_num2bin(&*num.to_bytes(), &*size.to_bytes(), result, output)
+		}
+
+		test_num2bin_num(256.into(), 1.into(), Err(Error::ImpossibleEncoding), vec![0x00]);
+		test_num2bin_num(1.into(), (MAX_SCRIPT_ELEMENT_SIZE + 1).into(), Err(Error::PushSize), vec![0x00]);
+
+		test_num2bin_num(0.into(), 0.into(), Ok(false), vec![]);
+		test_num2bin_num(0.into(), 1.into(), Ok(false), vec![0x00]);
+		test_num2bin_num(0.into(), 7.into(), Ok(false), vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+		test_num2bin_num(1.into(), 1.into(), Ok(true), vec![0x01]);
+		test_num2bin_num((-42).into(), 1.into(), Ok(true), Num::from(-42).to_bytes().to_vec());
+		test_num2bin_num((-42).into(), 2.into(), Ok(true), vec![0x2a, 0x80]);
+		test_num2bin_num((-42).into(), 10.into(), Ok(true), vec![0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80]);
+		test_num2bin_num((-42).into(), 520.into(), Ok(true), ::std::iter::once(0x2a)
+			.chain(::std::iter::repeat(0x00).take(518))
+			.chain(::std::iter::once(0x80)).collect());
+		test_num2bin_num((-42).into(), 521.into(), Err(Error::PushSize), vec![]);
+		test_num2bin_num((-42).into(), (-3).into(), Err(Error::PushSize), vec![]);
+
+		test_num2bin(&vec![0xab, 0xcd, 0xef, 0x42, 0x80], &vec![0x04], Ok(true), vec![0xab, 0xcd, 0xef, 0xc2]);
+		test_num2bin(&vec![0x80], &vec![0x00], Ok(false), vec![]);
+		test_num2bin(&vec![0x80], &vec![0x03], Ok(false), vec![0x00, 0x00, 0x00]);
 	}
 }

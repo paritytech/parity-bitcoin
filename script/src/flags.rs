@@ -93,6 +93,11 @@ pub struct VerificationFlags {
 	///
 	/// This opcode replaces OP_RIGHT => enabling both OP_BIN2NUM && OP_RIGHT would be an error
 	pub verify_bin2num: bool,
+
+	/// Support OP_NUM2BIN opcode
+	///
+	/// This opcode replaces OP_LEFT => enabling both OP_NUM2BIN && OP_LEFT would be an error
+	pub verify_num2bin: bool,
 }
 
 impl VerificationFlags {
@@ -173,6 +178,11 @@ impl VerificationFlags {
 
 	pub fn verify_bin2num(mut self, value: bool) -> Self {
 		self.verify_bin2num = value;
+		self
+	}
+
+	pub fn verify_num2bin(mut self, value: bool) -> Self {
+		self.verify_num2bin = value;
 		self
 	}
 }
