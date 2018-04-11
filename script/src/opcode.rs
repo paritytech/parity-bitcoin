@@ -444,7 +444,7 @@ impl Opcode {
 			OP_XOR if !flags.verify_xor => true,
 			OP_DIV if !flags.verify_div => true,
 			OP_MOD if !flags.verify_mod => true,
-			OP_RIGHT if !flags.verify_right => true,
+			OP_RIGHT if !flags.verify_bin2num => true,
 			OP_LEFT | OP_INVERT | OP_2MUL | OP_2DIV |
 				OP_MUL | OP_LSHIFT | OP_RSHIFT => true,
 			_ => false,

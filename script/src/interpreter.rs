@@ -647,7 +647,8 @@ pub fn eval_script(
 				}
 				stack.push((v1 % v2).to_bytes());
 			},
-			Opcode::OP_RIGHT if flags.verify_right => {
+			// OP_BIN2NUM replaces OP_RIGHT
+			Opcode::OP_RIGHT if flags.verify_bin2num => {
 				let bin = stack.pop()?;
 				let n = Num::minimally_encode(&bin, 4)?;
 				stack.push(n.to_bytes());
@@ -2024,35 +2025,6 @@ mod tests {
 		let result = Ok(false);
 		let stack = vec![vec![0].into()].into();
 		basic_test(&script, result, stack);
-	}
-
-	fn test_right(input: &[u8], result: Result<bool, Error>, output: Vec<u8>) {
-		let script = Builder::default()
-			.push_bytes(input)
-			.push_opcode(Opcode::OP_RIGHT)
-			.into_script();
-		let stack = if result.is_ok() {
-			vec![output.into()].into()
-		} else {
-			vec![]
-		}.into();
-		let flags = VerificationFlags::default()
-			.verify_right(true);
-		basic_test_with_flags(&script, &flags, result, stack);
-	}
-
-	#[test]
-	fn test_right_all() {
-		use error::Error;
-
-		test_right(&[0x02, 0x00, 0x00, 0x00, 0x00], Ok(true), vec![0x02]);
-		test_right(&[0x05, 0x00, 0x80], Ok(true), vec![0x85]);
-		test_right(&[0x02, 0x02, 0x02, 0x02, 0x02], Err(Error::NumberOverflow), vec![]);
-		test_right(&[0x00], Ok(false), vec![]);
-		test_right(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], Ok(true), vec![0x01]);
-		test_right(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80], Ok(true), vec![0x81]);
-		test_right(&[0x80], Ok(false), vec![]);
-		test_right(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80], Ok(false), vec![]);
 	}
 
 	#[test]
@@ -3706,5 +3678,32 @@ mod tests {
 		let result = Ok(true);
 		basic_test_with_flags(&script, &VerificationFlags::default().verify_mod(true), result,
 			vec![Num::from(3).to_bytes()].into());
+	}
+
+	#[test]
+	fn test_bin2num_all() {
+		fn test_bin2num(input: &[u8], result: Result<bool, Error>, output: Vec<u8>) {
+			let script = Builder::default()
+				.push_bytes(input)
+				.push_opcode(Opcode::OP_RIGHT)
+				.into_script();
+			let stack = if result.is_ok() {
+				vec![output.into()].into()
+			} else {
+				vec![]
+			}.into();
+			let flags = VerificationFlags::default()
+				.verify_bin2num(true);
+			basic_test_with_flags(&script, &flags, result, stack);
+		}
+
+		test_bin2num(&[0x02, 0x00, 0x00, 0x00, 0x00], Ok(true), vec![0x02]);
+		test_bin2num(&[0x05, 0x00, 0x80], Ok(true), vec![0x85]);
+		test_bin2num(&[0x02, 0x02, 0x02, 0x02, 0x02], Err(Error::NumberOverflow), vec![]);
+		test_bin2num(&[0x00], Ok(false), vec![]);
+		test_bin2num(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], Ok(true), vec![0x01]);
+		test_bin2num(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80], Ok(true), vec![0x81]);
+		test_bin2num(&[0x80], Ok(false), vec![]);
+		test_bin2num(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80], Ok(false), vec![]);
 	}
 }
