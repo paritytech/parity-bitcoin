@@ -35,9 +35,12 @@ pub struct ConsensusParams {
 pub struct BitcoinCashConsensusParams {
 	/// Initial BCH hard fork height.
 	pub height: u32,
-	/// Time when difficulty adjustment hardfork becomes active.
+	/// Height of difficulty adjustment hardfork.
 	/// https://reviews.bitcoinabc.org/D601
 	pub difficulty_adjustion_height: u32,
+	/// Height of monolith (aka May 2018) hardfork.
+	/// https://github.com/bitcoincashorg/spec/blob/4fbb0face661e293bcfafe1a2a4744dcca62e50d/may-2018-hardfork.md
+	pub monolith_height: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -154,7 +157,7 @@ impl ConsensusParams {
 impl ConsensusFork {
 	/// Absolute (across all forks) maximum block size. Currently is 8MB for post-HF BitcoinCash
 	pub fn absolute_maximum_block_size() -> usize {
-		8_000_000
+		32_000_000
 	}
 
 	/// Absolute (across all forks) maximum number of sigops in single block. Currently is max(sigops) for 8MB post-HF BitcoinCash block
@@ -190,6 +193,7 @@ impl ConsensusFork {
 
 	pub fn max_block_size(&self, height: u32) -> usize {
 		match *self {
+			ConsensusFork::BitcoinCash(ref fork) if height >= fork.monolith_height => 32_000_000,
 			ConsensusFork::BitcoinCash(ref fork) if height >= fork.height => 8_000_000,
 			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) => 1_000_000,
 		}
@@ -229,14 +233,17 @@ impl BitcoinCashConsensusParams {
 			Network::Mainnet | Network::Other(_) => BitcoinCashConsensusParams {
 				height: 478559,
 				difficulty_adjustion_height: 504031,
+				monolith_height: ::std::u32::MAX, // TODO: change me + tests
 			},
 			Network::Testnet => BitcoinCashConsensusParams {
 				height: 1155876,
 				difficulty_adjustion_height: 1188697,
+				monolith_height: ::std::u32::MAX, // TODO: change me
 			},
 			Network::Regtest | Network::Unitest => BitcoinCashConsensusParams {
 				height: 0,
 				difficulty_adjustion_height: 0,
+				monolith_height: ::std::u32::MAX, // TODO: change me
 			},
 		}
 	}
