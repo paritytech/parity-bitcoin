@@ -291,6 +291,7 @@ pub struct TransactionEval<'a> {
 	verify_dersig: bool,
 	verify_witness: bool,
 	verify_nulldummy: bool,
+	verify_monolith_opcodes: bool,
 	signature_version: SignatureVersion,
 }
 
@@ -311,6 +312,10 @@ impl<'a> TransactionEval<'a> {
 		};
 		let verify_locktime = height >= params.bip65_height;
 		let verify_dersig = height >= params.bip66_height;
+		let verify_monolith_opcodes = match params.fork {
+			ConsensusFork::BitcoinCash(ref fork) if height >= fork.monolith_height => true,
+			_ => false,
+		};
 		let signature_version = match params.fork {
 			ConsensusFork::BitcoinCash(ref fork) if height >= fork.height => SignatureVersion::ForkId,
 			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) => SignatureVersion::Base,
@@ -331,6 +336,7 @@ impl<'a> TransactionEval<'a> {
 			verify_dersig: verify_dersig,
 			verify_witness: verify_witness,
 			verify_nulldummy: verify_nulldummy,
+			verify_monolith_opcodes: verify_monolith_opcodes,
 			signature_version: signature_version,
 		}
 	}
@@ -371,7 +377,16 @@ impl<'a> TransactionEval<'a> {
 				.verify_checksequence(self.verify_checksequence)
 				.verify_dersig(self.verify_dersig)
 				.verify_nulldummy(self.verify_nulldummy)
-				.verify_witness(self.verify_witness);
+				.verify_witness(self.verify_witness)
+				.verify_concat(self.verify_monolith_opcodes)
+				.verify_split(self.verify_monolith_opcodes)
+				.verify_and(self.verify_monolith_opcodes)
+				.verify_or(self.verify_monolith_opcodes)
+				.verify_xor(self.verify_monolith_opcodes)
+				.verify_div(self.verify_monolith_opcodes)
+				.verify_mod(self.verify_monolith_opcodes)
+				.verify_bin2num(self.verify_monolith_opcodes)
+				.verify_num2bin(self.verify_monolith_opcodes);
 
 			try!(verify_script(&input, &output, &script_witness, &flags, &checker, self.signature_version)
 				.map_err(|e| TransactionError::Signature(index, e)));
