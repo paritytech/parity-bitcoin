@@ -3803,4 +3803,44 @@ mod tests {
 		test_num2bin(&vec![0x80], &vec![0x00], Ok(false), vec![]);
 		test_num2bin(&vec![0x80], &vec![0x03], Ok(false), vec![0x00, 0x00, 0x00]);
 	}
+
+	#[test]
+	fn test_num_bin_conversions_are_reverse_ops() {
+		let script = Builder::default()
+			// convert num2bin
+			.push_num(123456789.into())
+			.push_num(8.into())
+			.push_opcode(Opcode::OP_LEFT)
+			// and then back bin2num
+			.push_opcode(Opcode::OP_RIGHT)
+			// check that numbers are the same
+			.push_num(123456789.into())
+			.push_opcode(Opcode::OP_EQUAL)
+			.into_script();
+
+		let flags = VerificationFlags::default()
+			.verify_num2bin(true)
+			.verify_bin2num(true);
+		basic_test_with_flags(&script, &flags, Ok(true), vec![vec![0x01].into()].into());
+	}
+
+	#[test]
+	fn test_split_cat_are_reverse_ops() {
+		let script = Builder::default()
+			// split array
+			.push_data(&vec![0x01, 0x02, 0x03, 0x04, 0x05])
+			.push_num(2.into())
+			.push_opcode(Opcode::OP_SUBSTR)
+			// and then concat again
+			.push_opcode(Opcode::OP_CAT)
+			// check that numbers are the same
+			.push_data(&vec![0x01, 0x02, 0x03, 0x04, 0x05])
+			.push_opcode(Opcode::OP_EQUAL)
+			.into_script();
+
+		let flags = VerificationFlags::default()
+			.verify_concat(true)
+			.verify_split(true);
+		basic_test_with_flags(&script, &flags, Ok(true), vec![vec![0x01].into()].into());
+	}
 }
