@@ -313,7 +313,7 @@ impl<'a> TransactionEval<'a> {
 		let verify_dersig = height >= params.bip66_height;
 		let signature_version = match params.fork {
 			ConsensusFork::BitcoinCash(ref fork) if height >= fork.height => SignatureVersion::ForkId,
-			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) => SignatureVersion::Base,
+			ConsensusFork::BitcoinCore | ConsensusFork::BitcoinCash(_) => SignatureVersion::Base,
 		};
 
 		let verify_checksequence = deployments.csv();
@@ -498,7 +498,7 @@ mod tests {
 		let checker = TransactionReturnReplayProtection::new(CanonTransaction::new(&transaction), &consensus, consensus.fork.activation_height() - 1);
 		assert_eq!(checker.check(), Ok(()));
 
-		let consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork);
+		let consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore);
 		let checker = TransactionReturnReplayProtection::new(CanonTransaction::new(&transaction), &consensus, 100);
 		assert_eq!(checker.check(), Ok(()));
 	}

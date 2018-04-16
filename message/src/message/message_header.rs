@@ -69,7 +69,7 @@ mod tests {
 	fn test_message_header_serialization() {
 		let expected = "f9beb4d96164647200000000000000001f000000ed52399b".into();
 		let header = MessageHeader {
-			magic: Network::Mainnet.magic(&ConsensusFork::NoFork),
+			magic: Network::Mainnet.magic(&ConsensusFork::BitcoinCore),
 			command: "addr".into(),
 			len: 0x1f,
 			checksum: "ed52399b".into(),
@@ -82,12 +82,12 @@ mod tests {
 	fn test_message_header_deserialization() {
 		let raw: Bytes = "f9beb4d96164647200000000000000001f000000ed52399b".into();
 		let expected = MessageHeader {
-			magic: Network::Mainnet.magic(&ConsensusFork::NoFork),
+			magic: Network::Mainnet.magic(&ConsensusFork::BitcoinCore),
 			command: "addr".into(),
 			len: 0x1f,
 			checksum: "ed52399b".into(),
 		};
 
-		assert_eq!(expected, MessageHeader::deserialize(&raw, Network::Mainnet.magic(&ConsensusFork::NoFork)).unwrap());
+		assert_eq!(expected, MessageHeader::deserialize(&raw, Network::Mainnet.magic(&ConsensusFork::BitcoinCore)).unwrap());
 	}
 }

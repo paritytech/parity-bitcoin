@@ -9,12 +9,12 @@ args:
     - regtest:
         long: regtest
         help: Use a private network for regression tests.
-    - segwit:
-        long: segwit
-        help: Enable SegWit verification rules.
-    - bitcoin-cash:
-        long: bitcoin-cash
-        help: Use Bitcoin Cash verification rules.
+    - btc:
+        long: btc
+        help: Use Bitcoin Core verification rules (BTC).
+    - bch:
+        long: bch
+        help: Use Bitcoin Cash verification rules (BCH).
     - connect:
         short: c
         long: connect

@@ -351,7 +351,7 @@ pub mod tests {
 	#[test]
 	fn verifier_wrapper_switches_to_full_mode() {
 		let storage: StorageRef = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
-		let verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork)));
+		let verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore)));
 
 		// switching to full verification when block is already in db
 		assert_eq!(ChainVerifierWrapper::new(verifier.clone(), &storage, VerificationParameters {
@@ -392,7 +392,7 @@ pub mod tests {
 		let coinbase_transaction_hash = blocks[0].transactions[0].hash.clone();
 		let last_block_hash = blocks[blocks.len() - 1].hash().clone();
 		let storage: StorageRef = Arc::new(BlockChainDatabase::init_test_chain(blocks));
-		let verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork)));
+		let verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore)));
 		let bad_transaction_block: IndexedBlock = test_data::block_builder()
 			.transaction().coinbase().output().value(50).build().build()
 			.transaction()
@@ -424,7 +424,7 @@ pub mod tests {
 	#[test]
 	fn verification_level_none_accept_incorrect_block() {
 		let storage: StorageRef = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
-		let verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork)));
+		let verifier = Arc::new(ChainVerifier::new(storage.clone(), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore)));
 		let bad_block: IndexedBlock = test_data::block_builder().header().build().build().into();
 
 		// Ok(()) when nothing is verified
