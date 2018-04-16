@@ -169,14 +169,14 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 
 fn parse_consensus_fork(network: Network, db: &storage::SharedStore, matches: &clap::ArgMatches) -> Result<ConsensusFork, String> {
 	let old_consensus_fork = db.consensus_fork()?;
-	let new_consensus_fork = match (matches.is_present("segwit"), matches.is_present("bitcoin-cash")) {
+	let new_consensus_fork = match (matches.is_present("btc"), matches.is_present("bch")) {
 		(false, false) => match &old_consensus_fork {
 			&Some(ref old_consensus_fork) => old_consensus_fork,
-			&None => return Err("You must select fork on first run: --segwit, --bitcoin-cash".into()),
+			&None => return Err("You must select fork on first run: --btc, --bch".into()),
 		},
-		(true, false) => "segwit",
-		(false, true) => "bitcoin-cash",
-		_ => return Err("You can only pass single fork argument: --segwit, --bitcoin-cash".into()),
+		(true, false) => "btc",
+		(false, true) => "bch",
+		_ => return Err("You can only pass single fork argument: --btc, --bch".into()),
 	};
 
 	match &old_consensus_fork {
@@ -187,8 +187,8 @@ fn parse_consensus_fork(network: Network, db: &storage::SharedStore, matches: &c
 	}
 
 	Ok(match new_consensus_fork {
-		"segwit" => ConsensusFork::BitcoinCore,
-		"bitcoin-cash" => ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(network)),
+		"btc" => ConsensusFork::BitcoinCore,
+		"bch" => ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(network)),
 		_ => unreachable!("hardcoded above"),
 	})
 }
