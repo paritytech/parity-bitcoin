@@ -117,7 +117,7 @@ It's also possible to run regtests manually:
 
 ```
 # let's start pbtc in regtest compatible mode
-./target/release/pbtc --segwit --regtest
+./target/release/pbtc --btc --regtest
 
 # now in second shell window
 cd $HOME
@@ -131,24 +131,24 @@ java -jar pull-tests-f56eec3.jar
 
 By default parity connects to bitcoind-seednodes. Full list is [here](./pbtc/seednodes.rs).
 
-Before starting synchronization, you must decide - which fork to follow - SegWit (`--segwit` flag) or Bitcoin Cash (`--bitcoin-cash` flag). On next start, passing the same flag is optional, as the database is already bound to selected fork and won't be synchronized using other verification rules.
+Before starting synchronization, you must decide - which fork to follow - Bitcoin Core (`--btc` flag) or Bitcoin Cash (`--bch` flag). On next start, passing the same flag is optional, as the database is already bound to selected fork and won't be synchronized using other verification rules.
 
 To start syncing the main network, just start the client, passing selected fork flag. For example:
 
 ```
-./target/release/pbtc --segwit
+./target/release/pbtc --btc
 ```
 
 To start syncing the testnet:
 
 ```
-./target/release/pbtc --segwit --testnet
+./target/release/pbtc --btc --testnet
 ```
 
 To not print any syncing progress add `--quiet` flag:
 
 ```
-./target/release/pbtc --segwit --quiet
+./target/release/pbtc --btc --quiet
 ```
 
 ## Importing bitcoind database
@@ -163,7 +163,7 @@ It it is possible to import existing `bitcoind` database:
 By default import verifies imported the blocks. You can disable this, by adding `--verification-level==none` flag.
 
 ```
-./target/release/pbtc import "#BITCOIND_DB/Bitcoin/blocks" --segwit --skip-verification
+./target/release/pbtc import "#BITCOIND_DB/Bitcoin/blocks" --btc --skip-verification
 ```
 
 ## Command line interface
@@ -179,12 +179,12 @@ USAGE:
     pbtc [FLAGS] [OPTIONS] [SUBCOMMAND]
 
 FLAGS:
-        --bitcoin-cash    Use Bitcoin Cash verification rules.
+        --bch             Use Bitcoin Cash verification rules (BCH).
+        --btc             Enable Bitcoin Core verification rules (BTC).
     -h, --help            Prints help information
         --no-jsonrpc      Disable the JSON-RPC API server.
     -q, --quiet           Do not show any synchronization information in the console.
         --regtest         Use a private network for regression tests.
-        --segwit          Enable SegWit verification rules.
         --testnet         Use the test network (Testnet3).
     -V, --version         Prints version information
 
@@ -338,7 +338,7 @@ This is a section only for developers and power users.
 You can enable detailed client logging by setting the environment variable `RUST_LOG`, e.g.,
 
 ```
-RUST_LOG=verification=info ./target/release/pbtc --segwit
+RUST_LOG=verification=info ./target/release/pbtc --btc
 ```
 
 `pbtc` started with this environment variable will print all logs coming from `verification` module with verbosity `info` or higher. Available log levels are:
@@ -352,7 +352,7 @@ RUST_LOG=verification=info ./target/release/pbtc --segwit
 It's also possible to start logging from multiple modules in the same time:
 
 ```
-RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace ./target/release/pbtc --segwit
+RUST_LOG=sync=trace,p2p=trace,verification=trace,db=trace ./target/release/pbtc --btc
 ```
 
 ## Internal documentation
