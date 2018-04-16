@@ -180,7 +180,7 @@ USAGE:
 
 FLAGS:
         --bch             Use Bitcoin Cash verification rules (BCH).
-        --btc             Enable Bitcoin Core verification rules (BTC).
+        --btc             Use Bitcoin Core verification rules (BTC).
     -h, --help            Prints help information
         --no-jsonrpc      Disable the JSON-RPC API server.
     -q, --quiet           Do not show any synchronization information in the console.
