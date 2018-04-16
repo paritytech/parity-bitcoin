@@ -110,10 +110,10 @@ mod tests {
 
 	#[test]
 	fn test_network_magic_number() {
-		assert_eq!(MAGIC_MAINNET, Network::Mainnet.magic(&ConsensusFork::NoFork));
-		assert_eq!(MAGIC_TESTNET, Network::Testnet.magic(&ConsensusFork::NoFork));
-		assert_eq!(MAGIC_REGTEST, Network::Regtest.magic(&ConsensusFork::NoFork));
-		assert_eq!(MAGIC_UNITEST, Network::Unitest.magic(&ConsensusFork::NoFork));
+		assert_eq!(MAGIC_MAINNET, Network::Mainnet.magic(&ConsensusFork::BitcoinCore));
+		assert_eq!(MAGIC_TESTNET, Network::Testnet.magic(&ConsensusFork::BitcoinCore));
+		assert_eq!(MAGIC_REGTEST, Network::Regtest.magic(&ConsensusFork::BitcoinCore));
+		assert_eq!(MAGIC_UNITEST, Network::Unitest.magic(&ConsensusFork::BitcoinCore));
 	}
 
 	#[test]

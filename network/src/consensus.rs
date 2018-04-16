@@ -44,7 +44,7 @@ pub struct BitcoinCashConsensusParams {
 /// Concurrent consensus rule forks.
 pub enum ConsensusFork {
 	/// No fork.
-	NoFork,
+	BitcoinCore,
 	/// Bitcoin Cash (aka UAHF).
 	/// `u32` is height of the first block, for which new consensus rules are applied.
 	/// Briefly: no SegWit + blocks up to 8MB + replay protection.
@@ -64,7 +64,7 @@ impl ConsensusParams {
 				bip65_height: 388381,	// 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
 				bip66_height: 363725,	// 00000000000000000379eaa19dce8c9b722d46ae6a57c2f1a988119488b50931
 				segwit_deployment: match fork {
-					ConsensusFork::NoFork => Some(Deployment {
+					ConsensusFork::BitcoinCore => Some(Deployment {
 						name: "segwit",
 						bit: 1,
 						start_time: 1479168000,
@@ -91,7 +91,7 @@ impl ConsensusParams {
 				bip65_height: 581885,	// 00000000007f6655f22f98e72ed80d8b06dc761d5da09df0fa1dc4be4f861eb6
 				bip66_height: 330776,	// 000000002104c8c45e99a8853285a3b592602a3ccde2b832481da85e9e4ba182
 				segwit_deployment: match fork {
-					ConsensusFork::NoFork => Some(Deployment {
+					ConsensusFork::BitcoinCore => Some(Deployment {
 						name: "segwit",
 						bit: 1,
 						start_time: 1462060800,
@@ -118,7 +118,7 @@ impl ConsensusParams {
 				bip65_height: 1351,
 				bip66_height: 1251,		// used only in rpc tests
 				segwit_deployment: match fork {
-					ConsensusFork::NoFork => Some(Deployment {
+					ConsensusFork::BitcoinCore => Some(Deployment {
 						name: "segwit",
 						bit: 1,
 						start_time: 0,
@@ -169,7 +169,7 @@ impl ConsensusFork {
 
 	pub fn activation_height(&self) -> u32 {
 		match *self {
-			ConsensusFork::NoFork => 0,
+			ConsensusFork::BitcoinCore => 0,
 			ConsensusFork::BitcoinCash(ref fork) => fork.height,
 		}
 	}
@@ -184,14 +184,14 @@ impl ConsensusFork {
 		match *self {
 			// size of first fork block must be larger than 1MB
 			ConsensusFork::BitcoinCash(ref fork) if height == fork.height => 1_000_001,
-			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) => 0,
+			ConsensusFork::BitcoinCore | ConsensusFork::BitcoinCash(_) => 0,
 		}
 	}
 
 	pub fn max_block_size(&self, height: u32) -> usize {
 		match *self {
 			ConsensusFork::BitcoinCash(ref fork) if height >= fork.height => 8_000_000,
-			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) => 1_000_000,
+			ConsensusFork::BitcoinCore | ConsensusFork::BitcoinCash(_) => 1_000_000,
 		}
 	}
 
@@ -200,7 +200,7 @@ impl ConsensusFork {
 			// according to REQ-5: max_block_sigops = 20000 * ceil((max(blocksize_bytes, 1000000) / 1000000))
 			ConsensusFork::BitcoinCash(ref fork) if height >= fork.height =>
 				20_000 * (1 + (block_size - 1) / 1_000_000),
-			ConsensusFork::NoFork | ConsensusFork::BitcoinCash(_) => 20_000,
+			ConsensusFork::BitcoinCore | ConsensusFork::BitcoinCash(_) => 20_000,
 		}
 	}
 
@@ -208,14 +208,14 @@ impl ConsensusFork {
 		match *self {
 			ConsensusFork::BitcoinCash(_) =>
 				self.max_block_sigops(height, block_size) * Self::witness_scale_factor(),
-			ConsensusFork::NoFork =>
+			ConsensusFork::BitcoinCore =>
 				80_000,
 		}
 	}
 
 	pub fn max_block_weight(&self, _height: u32) -> usize {
 		match *self {
-			ConsensusFork::NoFork =>
+			ConsensusFork::BitcoinCore =>
 				4_000_000,
 			ConsensusFork::BitcoinCash(_) =>
 				unreachable!("BitcoinCash has no SegWit; weight is only checked with SegWit activated; qed"),
@@ -249,42 +249,42 @@ mod tests {
 
 	#[test]
 	fn test_consensus_params_bip34_height() {
-		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork).bip34_height, 227931);
-		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::NoFork).bip34_height, 21111);
-		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::NoFork).bip34_height, 100000000);
+		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore).bip34_height, 227931);
+		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::BitcoinCore).bip34_height, 21111);
+		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::BitcoinCore).bip34_height, 100000000);
 	}
 
 	#[test]
 	fn test_consensus_params_bip65_height() {
-		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork).bip65_height, 388381);
-		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::NoFork).bip65_height, 581885);
-		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::NoFork).bip65_height, 1351);
+		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore).bip65_height, 388381);
+		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::BitcoinCore).bip65_height, 581885);
+		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::BitcoinCore).bip65_height, 1351);
 	}
 
 	#[test]
 	fn test_consensus_params_bip66_height() {
-		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork).bip66_height, 363725);
-		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::NoFork).bip66_height, 330776);
-		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::NoFork).bip66_height, 1251);
+		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore).bip66_height, 363725);
+		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::BitcoinCore).bip66_height, 330776);
+		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::BitcoinCore).bip66_height, 1251);
 	}
 
 	#[test]
 	fn test_consensus_activation_threshold() {
-		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork).rule_change_activation_threshold, 1916);
-		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::NoFork).rule_change_activation_threshold, 1512);
-		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::NoFork).rule_change_activation_threshold, 108);
+		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore).rule_change_activation_threshold, 1916);
+		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::BitcoinCore).rule_change_activation_threshold, 1512);
+		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::BitcoinCore).rule_change_activation_threshold, 108);
 	}
 
 	#[test]
 	fn test_consensus_miner_confirmation_window() {
-		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork).miner_confirmation_window, 2016);
-		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::NoFork).miner_confirmation_window, 2016);
-		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::NoFork).miner_confirmation_window, 144);
+		assert_eq!(ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore).miner_confirmation_window, 2016);
+		assert_eq!(ConsensusParams::new(Network::Testnet, ConsensusFork::BitcoinCore).miner_confirmation_window, 2016);
+		assert_eq!(ConsensusParams::new(Network::Regtest, ConsensusFork::BitcoinCore).miner_confirmation_window, 144);
 	}
 
 	#[test]
 	fn test_consensus_fork_min_block_size() {
-		assert_eq!(ConsensusFork::NoFork.min_block_size(0), 0);
+		assert_eq!(ConsensusFork::BitcoinCore.min_block_size(0), 0);
 		let fork = ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Mainnet));
 		assert_eq!(fork.min_block_size(0), 0);
 		assert_eq!(fork.min_block_size(fork.activation_height()), 1_000_001);
@@ -292,13 +292,13 @@ mod tests {
 
 	#[test]
 	fn test_consensus_fork_max_transaction_size() {
-		assert_eq!(ConsensusFork::NoFork.max_transaction_size(), 1_000_000);
+		assert_eq!(ConsensusFork::BitcoinCore.max_transaction_size(), 1_000_000);
 		assert_eq!(ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Mainnet)).max_transaction_size(), 1_000_000);
 	}
 
 	#[test]
 	fn test_consensus_fork_max_block_sigops() {
-		assert_eq!(ConsensusFork::NoFork.max_block_sigops(0, 1_000_000), 20_000);
+		assert_eq!(ConsensusFork::BitcoinCore.max_block_sigops(0, 1_000_000), 20_000);
 		let fork = ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Mainnet));
 		assert_eq!(fork.max_block_sigops(0, 1_000_000), 20_000);
 		assert_eq!(fork.max_block_sigops(fork.activation_height(), 2_000_000), 40_000);

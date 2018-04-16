@@ -72,7 +72,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 
 	// to skip idiotic 30 seconds delay in test-scripts
 	let user_agent_suffix = match consensus.fork {
-		ConsensusFork::NoFork => "",
+		ConsensusFork::BitcoinCore => "",
 		ConsensusFork::BitcoinCash(_) => "/UAHF",
 	};
 	let user_agent = match network {
@@ -121,7 +121,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	let services = Services::default().with_network(true);
 	let services = match &consensus.fork {
 		&ConsensusFork::BitcoinCash(_) => services.with_bitcoin_cash(true),
-		&ConsensusFork::NoFork => services.with_witness(true),
+		&ConsensusFork::BitcoinCore => services.with_witness(true),
 	};
 
 	let verification_level = match matches.value_of("verification-level") {
@@ -187,7 +187,7 @@ fn parse_consensus_fork(network: Network, db: &storage::SharedStore, matches: &c
 	}
 
 	Ok(match new_consensus_fork {
-		"segwit" => ConsensusFork::NoFork,
+		"segwit" => ConsensusFork::BitcoinCore,
 		"bitcoin-cash" => ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(network)),
 		_ => unreachable!("hardcoded above"),
 	})

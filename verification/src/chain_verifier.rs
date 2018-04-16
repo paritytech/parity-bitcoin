@@ -154,7 +154,7 @@ mod tests {
 	fn verify_orphan() {
 		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let b2 = test_data::block_h2().into();
-		let verifier = ChainVerifier::new(storage, ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork));
+		let verifier = ChainVerifier::new(storage, ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 		assert_eq!(Err(Error::Database(DBError::UnknownParent)), verifier.verify(VerificationLevel::Full, &b2));
 	}
 
@@ -162,7 +162,7 @@ mod tests {
 	fn verify_smoky() {
 		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let b1 = test_data::block_h1();
-		let verifier = ChainVerifier::new(storage, ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork));
+		let verifier = ChainVerifier::new(storage, ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 		assert!(verifier.verify(VerificationLevel::Full, &b1.into()).is_ok());
 	}
 
@@ -175,7 +175,7 @@ mod tests {
 				test_data::block_h1().into(),
 			]);
 		let b1 = test_data::block_h2();
-		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork));
+		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 		assert!(verifier.verify(VerificationLevel::Full, &b1.into()).is_ok());
 	}
 
@@ -204,7 +204,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork));
+		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 
 		let expected = Err(Error::Transaction(
 			1,
@@ -242,7 +242,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork));
+		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 		assert!(verifier.verify(VerificationLevel::Full, &block.into()).is_ok());
 	}
 
@@ -278,7 +278,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork));
+		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 		assert!(verifier.verify(VerificationLevel::Full, &block.into()).is_ok());
 	}
 
@@ -317,7 +317,7 @@ mod tests {
 			.merkled_header().parent(genesis.hash()).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork));
+		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 
 		let expected = Err(Error::Transaction(2, TransactionError::Overspend));
 		assert_eq!(expected, verifier.verify(VerificationLevel::Full, &block.into()));
@@ -359,7 +359,7 @@ mod tests {
 			.merkled_header().parent(best_hash).build()
 			.build();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork));
+		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 		assert!(verifier.verify(VerificationLevel::Full, &block.into()).is_ok());
 	}
 
@@ -406,7 +406,7 @@ mod tests {
 			.build()
 			.into();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork));
+		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 		let expected = Err(Error::MaximumSigops);
 		assert_eq!(expected, verifier.verify(VerificationLevel::Full, &block.into()));
 	}
@@ -428,7 +428,7 @@ mod tests {
 			.build()
 			.into();
 
-		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork));
+		let verifier = ChainVerifier::new(Arc::new(storage), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 
 		let expected = Err(Error::CoinbaseOverspend {
 			expected_max: 5000000000,

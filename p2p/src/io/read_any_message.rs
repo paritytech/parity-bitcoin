@@ -74,20 +74,20 @@ mod tests {
 		let nonce = "5845303b6da97786".into();
 		let expected = (name, nonce);
 
-		assert_eq!(read_any_message(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::NoFork)).wait().unwrap(), Ok(expected));
-		assert_eq!(read_any_message(raw.as_ref(), Network::Testnet.magic(&ConsensusFork::NoFork)).wait().unwrap(), Err(Error::InvalidMagic));
+		assert_eq!(read_any_message(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::BitcoinCore)).wait().unwrap(), Ok(expected));
+		assert_eq!(read_any_message(raw.as_ref(), Network::Testnet.magic(&ConsensusFork::BitcoinCore)).wait().unwrap(), Err(Error::InvalidMagic));
 	}
 
 	#[test]
 	fn test_read_too_short_any_message() {
 		let raw: Bytes = "f9beb4d970696e6700000000000000000800000083c00c765845303b6da977".into();
-		assert!(read_any_message(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::NoFork)).wait().is_err());
+		assert!(read_any_message(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::BitcoinCore)).wait().is_err());
 	}
 
 
 	#[test]
 	fn test_read_any_message_with_invalid_checksum() {
 		let raw: Bytes = "f9beb4d970696e6700000000000000000800000083c01c765845303b6da97786".into();
-		assert_eq!(read_any_message(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::NoFork)).wait().unwrap(), Err(Error::InvalidChecksum));
+		assert_eq!(read_any_message(raw.as_ref(), Network::Mainnet.magic(&ConsensusFork::BitcoinCore)).wait().unwrap(), Err(Error::InvalidChecksum));
 	}
 }

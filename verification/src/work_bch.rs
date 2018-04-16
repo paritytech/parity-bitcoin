@@ -133,7 +133,7 @@ fn work_required_bitcoin_cash_adjusted(parent_header: IndexedBlockHeader, time: 
 		// 2^256 - W as the complement of W.
 		(!work) / work
 	}
- 
+
 	// This cannot handle the genesis block and early blocks in general.
 	debug_assert!(height > 0);
 
@@ -213,7 +213,7 @@ mod tests {
 	// https://github.com/bitcoinclassic/bitcoinclassic/blob/8bf1fb856df44d1b790b0b835e4c1969be736e25/src/test/pow_tests.cpp#L108
 	#[test]
 	fn bitcoin_cash_req7() {
-		let main_consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::NoFork);
+		let main_consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore);
 		let uahf_consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCash(BitcoinCashConsensusParams {
 			height: 1000,
 			difficulty_adjustion_height: 0xffffffff,

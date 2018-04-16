@@ -94,7 +94,7 @@ pub fn main(benchmark: &mut Benchmark) {
 
 	assert_eq!(store.best_block().hash, rolling_hash);
 
-	let chain_verifier = ChainVerifier::new(store.clone(), ConsensusParams::new(Network::Unitest, ConsensusFork::NoFork));
+	let chain_verifier = ChainVerifier::new(store.clone(), ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 
 	// bench
 	benchmark.start();
