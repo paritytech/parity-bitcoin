@@ -10,7 +10,7 @@ confinement: strict
 apps:
   parity-bitcoin:
     command: pbtc
-    plugs: [network, network-bind]
+    plugs: [home, network, network-bind]
 
 parts:
   parity-bitcoin:
