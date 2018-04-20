@@ -35,6 +35,7 @@ pub enum Error {
 	InvalidSplitRange,
 	InvalidBitwiseOperation,
 	DivisionByZero,
+	ImpossibleEncoding,
 
 	// CHECKLOCKTIMEVERIFY and CHECKSEQUENCEVERIFY
 	NegativeLocktime,
@@ -98,6 +99,7 @@ impl fmt::Display for Error {
 			Error::InvalidSplitRange => "Invalid OP_SPLIT range".fmt(f),
 			Error::InvalidBitwiseOperation => "Invalid bitwise operation (check length of inputs)".fmt(f),
 			Error::DivisionByZero => "Invalid division operation".fmt(f),
+			Error::ImpossibleEncoding => "The requested encoding is impossible to satisfy".fmt(f),
 
 			// CHECKLOCKTIMEVERIFY and CHECKSEQUENCEVERIFY
 			Error::NegativeLocktime => "Negative locktime".fmt(f),

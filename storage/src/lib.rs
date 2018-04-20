@@ -1,7 +1,5 @@
 extern crate elastic_array;
 extern crate parking_lot;
-#[macro_use]
-extern crate log;
 extern crate bit_vec;
 extern crate lru_cache;
 #[macro_use]

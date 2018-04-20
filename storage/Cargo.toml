@@ -6,7 +6,6 @@ authors = ["Parity Technologies <admin@parity.io>"]
 [dependencies]
 elastic-array = "0.6"
 parking_lot = "0.4"
-log = "0.4"
 bit-vec = "0.4"
 lru-cache = "0.1"
 primitives = { path = "../primitives" }
