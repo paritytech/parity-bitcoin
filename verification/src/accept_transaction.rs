@@ -36,6 +36,7 @@ impl<'a> TransactionAcceptor<'a> {
 		block_hash: &'a H256,
 		height: u32,
 		time: u32,
+		median_time_past: u32,
 		transaction_index: usize,
 		deployments: &'a BlockDeployments<'a>,
 	) -> Self {
@@ -48,7 +49,7 @@ impl<'a> TransactionAcceptor<'a> {
 			overspent: TransactionOverspent::new(transaction, output_store),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
 			return_replay_protection: TransactionReturnReplayProtection::new(transaction, consensus, height),
-			eval: TransactionEval::new(transaction, output_store, consensus, verification_level, height, time, deployments),
+			eval: TransactionEval::new(transaction, output_store, consensus, verification_level, height, time, median_time_past, deployments),
 		}
 	}
 
@@ -85,11 +86,12 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		transaction: CanonTransaction<'a>,
 		height: u32,
 		time: u32,
+		median_time_past: u32,
 		deployments: &'a BlockDeployments<'a>,
 	) -> Self {
 		trace!(target: "verification", "Mempool-Tx verification {}", transaction.hash.to_reversed_str());
 		let transaction_index = 0;
-		let max_block_sigops = consensus.fork.max_block_sigops(height, consensus.fork.max_block_size(height));
+		let max_block_sigops = consensus.fork.max_block_sigops(height, consensus.fork.max_block_size(height, median_time_past));
 		MemoryPoolTransactionAcceptor {
 			missing_inputs: TransactionMissingInputs::new(transaction, output_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
@@ -97,7 +99,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 			sigops: TransactionSigops::new(transaction, output_store, consensus, max_block_sigops, time),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
 			return_replay_protection: TransactionReturnReplayProtection::new(transaction, consensus, height),
-			eval: TransactionEval::new(transaction, output_store, consensus, VerificationLevel::Full, height, time, deployments),
+			eval: TransactionEval::new(transaction, output_store, consensus, VerificationLevel::Full, height, time, median_time_past, deployments),
 		}
 	}
 
@@ -303,6 +305,7 @@ impl<'a> TransactionEval<'a> {
 		verification_level: VerificationLevel,
 		height: u32,
 		time: u32,
+		median_timestamp: u32,
 		deployments: &'a BlockDeployments,
 	) -> Self {
 		let verify_p2sh = time >= params.bip16_time;
@@ -313,7 +316,7 @@ impl<'a> TransactionEval<'a> {
 		let verify_locktime = height >= params.bip65_height;
 		let verify_dersig = height >= params.bip66_height;
 		let verify_monolith_opcodes = match params.fork {
-			ConsensusFork::BitcoinCash(ref fork) if height >= fork.monolith_height => true,
+			ConsensusFork::BitcoinCash(ref fork) if median_timestamp >= fork.monolith_time => true,
 			_ => false,
 		};
 		let signature_version = match params.fork {

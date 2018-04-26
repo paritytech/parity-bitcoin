@@ -13,6 +13,7 @@ use verify_transaction::MemoryPoolTransactionVerifier;
 use accept_chain::ChainAcceptor;
 use accept_transaction::MemoryPoolTransactionAcceptor;
 use deployments::{Deployments, BlockDeployments};
+use timestamp::median_timestamp_inclusive;
 use {Verify, VerificationLevel};
 
 pub struct BackwardsCompatibleChainVerifier {
@@ -43,6 +44,8 @@ impl BackwardsCompatibleChainVerifier {
 		assert_eq!(Some(self.store.best_block().hash), self.store.block_hash(self.store.best_block().number));
 		let block_origin = self.store.block_origin(&block.header)?;
 		trace!(target: "verification", "verify_block: {:?} best_block: {:?} block_origin: {:?}", block.hash().reversed(), self.store.best_block(), block_origin);
+
+		let median_time_past = median_timestamp_inclusive(block.header.raw.previous_header_hash.clone(), self.store.as_block_header_provider());
 		match block_origin {
 			BlockOrigin::KnownBlock => {
 				// there should be no known blocks at this point
@@ -52,7 +55,8 @@ impl BackwardsCompatibleChainVerifier {
 				let header_provider = self.store.as_store().as_block_header_provider();
 				let deployments = BlockDeployments::new(&self.deployments, block_number, header_provider, &self.consensus);
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(self.store.as_store(), &self.consensus, verification_level, canon_block, block_number, &deployments);
+				let chain_acceptor = ChainAcceptor::new(self.store.as_store(), &self.consensus, verification_level,
+					canon_block, block_number, median_time_past, &deployments);
 				chain_acceptor.check()?;
 			},
 			BlockOrigin::SideChain(origin) => {
@@ -61,7 +65,8 @@ impl BackwardsCompatibleChainVerifier {
 				let deployments = BlockDeployments::new(&self.deployments, block_number, header_provider, &self.consensus);
 				let fork = self.store.fork(origin)?;
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(fork.store(), &self.consensus, verification_level, canon_block, block_number, &deployments);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), &self.consensus, verification_level, canon_block,
+					block_number, median_time_past, &deployments);
 				chain_acceptor.check()?;
 			},
 			BlockOrigin::SideChainBecomingCanonChain(origin) => {
@@ -70,7 +75,8 @@ impl BackwardsCompatibleChainVerifier {
 				let deployments = BlockDeployments::new(&self.deployments, block_number, header_provider, &self.consensus);
 				let fork = self.store.fork(origin)?;
 				let canon_block = CanonBlock::new(block);
-				let chain_acceptor = ChainAcceptor::new(fork.store(), &self.consensus, verification_level, canon_block, block_number, &deployments);
+				let chain_acceptor = ChainAcceptor::new(fork.store(), &self.consensus, verification_level, canon_block,
+					block_number, median_time_past, &deployments);
 				chain_acceptor.check()?;
 			},
 		}
@@ -111,6 +117,11 @@ impl BackwardsCompatibleChainVerifier {
 		// now let's do full verification
 		let noop = NoopStore;
 		let output_store = DuplexTransactionOutputProvider::new(prevout_provider, &noop);
+		let previous_block_number = height.checked_sub(1)
+			.expect("height is the height of future block of new tx; genesis block can't be in the future; qed");
+		let previous_block_header = block_header_provider.block_header(previous_block_number.into())
+			.expect("blocks up to height should be in db; qed");
+		let median_time_past = median_timestamp_inclusive(previous_block_header.hash(), block_header_provider);
 		let tx_acceptor = MemoryPoolTransactionAcceptor::new(
 			self.store.as_transaction_meta_provider(),
 			output_store,
@@ -118,6 +129,7 @@ impl BackwardsCompatibleChainVerifier {
 			canon_tx,
 			height,
 			time,
+			median_time_past,
 			&deployments,
 		);
 		tx_acceptor.check()
