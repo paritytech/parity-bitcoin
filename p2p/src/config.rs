@@ -13,7 +13,7 @@ pub struct Config {
 	pub outbound_connections: u32,
 	/// Configuration for every connection.
 	pub connection: NetConfig,
-	/// Connect only ot these nodes.
+	/// Connect only to these nodes.
 	pub peers: Vec<net::SocketAddr>,
 	/// Connect to these nodes to retrieve peer addresses, and disconnect.
 	pub seeds: Vec<String>,
