@@ -96,7 +96,7 @@ sudo snap install parity-bitcoin --edge
 Assuming that repository is already cloned, we can run unit tests with this command:
 
 ```
-./tools/test.sh
+cargo test --all
 ```
 
 #### Running external integration tests

@@ -21,8 +21,8 @@ linux-stable-test:
     - master
   script:
     - rustup default stable
-    - echo 'Running tests from /tools/test.sh' && echo -en 'gitlab_fold:start:tests'
-    - ./tools/test.sh
+    - echo 'Running tests' && echo -en 'gitlab_fold:start:tests'
+    - cargo test --all
     - echo -en 'gitlab_fold:end:tests'
   tags:
     - rust
