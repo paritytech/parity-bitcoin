@@ -217,6 +217,7 @@ mod tests {
 		let uahf_consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCash(BitcoinCashConsensusParams {
 			height: 1000,
 			difficulty_adjustion_height: 0xffffffff,
+			monolith_time: 0xffffffff,
 		}));
 		let mut header_provider = MemoryBlockHeaderProvider::default();
 		header_provider.insert(BlockHeader {
@@ -269,6 +270,7 @@ mod tests {
 		let uahf_consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCash(BitcoinCashConsensusParams {
 			height: 1000,
 			difficulty_adjustion_height: 0xffffffff,
+			monolith_time: 0xffffffff,
 		}));
 
 

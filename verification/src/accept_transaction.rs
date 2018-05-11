@@ -36,6 +36,7 @@ impl<'a> TransactionAcceptor<'a> {
 		block_hash: &'a H256,
 		height: u32,
 		time: u32,
+		median_time_past: u32,
 		transaction_index: usize,
 		deployments: &'a BlockDeployments<'a>,
 	) -> Self {
@@ -48,7 +49,7 @@ impl<'a> TransactionAcceptor<'a> {
 			overspent: TransactionOverspent::new(transaction, output_store),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
 			return_replay_protection: TransactionReturnReplayProtection::new(transaction, consensus, height),
-			eval: TransactionEval::new(transaction, output_store, consensus, verification_level, height, time, deployments),
+			eval: TransactionEval::new(transaction, output_store, consensus, verification_level, height, time, median_time_past, deployments),
 		}
 	}
 
@@ -85,11 +86,12 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		transaction: CanonTransaction<'a>,
 		height: u32,
 		time: u32,
+		median_time_past: u32,
 		deployments: &'a BlockDeployments<'a>,
 	) -> Self {
 		trace!(target: "verification", "Mempool-Tx verification {}", transaction.hash.to_reversed_str());
 		let transaction_index = 0;
-		let max_block_sigops = consensus.fork.max_block_sigops(height, consensus.fork.max_block_size(height));
+		let max_block_sigops = consensus.fork.max_block_sigops(height, consensus.fork.max_block_size(height, median_time_past));
 		MemoryPoolTransactionAcceptor {
 			missing_inputs: TransactionMissingInputs::new(transaction, output_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
@@ -97,7 +99,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 			sigops: TransactionSigops::new(transaction, output_store, consensus, max_block_sigops, time),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),
 			return_replay_protection: TransactionReturnReplayProtection::new(transaction, consensus, height),
-			eval: TransactionEval::new(transaction, output_store, consensus, VerificationLevel::Full, height, time, deployments),
+			eval: TransactionEval::new(transaction, output_store, consensus, VerificationLevel::Full, height, time, median_time_past, deployments),
 		}
 	}
 
@@ -291,6 +293,7 @@ pub struct TransactionEval<'a> {
 	verify_dersig: bool,
 	verify_witness: bool,
 	verify_nulldummy: bool,
+	verify_monolith_opcodes: bool,
 	signature_version: SignatureVersion,
 }
 
@@ -302,6 +305,7 @@ impl<'a> TransactionEval<'a> {
 		verification_level: VerificationLevel,
 		height: u32,
 		time: u32,
+		median_timestamp: u32,
 		deployments: &'a BlockDeployments,
 	) -> Self {
 		let verify_p2sh = time >= params.bip16_time;
@@ -311,6 +315,10 @@ impl<'a> TransactionEval<'a> {
 		};
 		let verify_locktime = height >= params.bip65_height;
 		let verify_dersig = height >= params.bip66_height;
+		let verify_monolith_opcodes = match params.fork {
+			ConsensusFork::BitcoinCash(ref fork) if median_timestamp >= fork.monolith_time => true,
+			_ => false,
+		};
 		let signature_version = match params.fork {
 			ConsensusFork::BitcoinCash(ref fork) if height >= fork.height => SignatureVersion::ForkId,
 			ConsensusFork::BitcoinCore | ConsensusFork::BitcoinCash(_) => SignatureVersion::Base,
@@ -331,6 +339,7 @@ impl<'a> TransactionEval<'a> {
 			verify_dersig: verify_dersig,
 			verify_witness: verify_witness,
 			verify_nulldummy: verify_nulldummy,
+			verify_monolith_opcodes: verify_monolith_opcodes,
 			signature_version: signature_version,
 		}
 	}
@@ -371,7 +380,16 @@ impl<'a> TransactionEval<'a> {
 				.verify_checksequence(self.verify_checksequence)
 				.verify_dersig(self.verify_dersig)
 				.verify_nulldummy(self.verify_nulldummy)
-				.verify_witness(self.verify_witness);
+				.verify_witness(self.verify_witness)
+				.verify_concat(self.verify_monolith_opcodes)
+				.verify_split(self.verify_monolith_opcodes)
+				.verify_and(self.verify_monolith_opcodes)
+				.verify_or(self.verify_monolith_opcodes)
+				.verify_xor(self.verify_monolith_opcodes)
+				.verify_div(self.verify_monolith_opcodes)
+				.verify_mod(self.verify_monolith_opcodes)
+				.verify_bin2num(self.verify_monolith_opcodes)
+				.verify_num2bin(self.verify_monolith_opcodes);
 
 			try!(verify_script(&input, &output, &script_witness, &flags, &checker, self.signature_version)
 				.map_err(|e| TransactionError::Signature(index, e)));

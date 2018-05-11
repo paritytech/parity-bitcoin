@@ -27,12 +27,13 @@ impl<'a> BlockAcceptor<'a> {
 		consensus: &'a ConsensusParams,
 		block: CanonBlock<'a>,
 		height: u32,
+		median_time_past: u32,
 		deployments: &'a BlockDeployments<'a>,
 		headers: &'a BlockHeaderProvider,
 	) -> Self {
 		BlockAcceptor {
 			finality: BlockFinality::new(block, height, deployments, headers),
-			serialized_size: BlockSerializedSize::new(block, consensus, deployments, height),
+			serialized_size: BlockSerializedSize::new(block, consensus, deployments, height, median_time_past),
 			coinbase_script: BlockCoinbaseScript::new(block, consensus, height),
 			coinbase_claim: BlockCoinbaseClaim::new(block, store, height),
 			sigops: BlockSigops::new(block, store, consensus, height),
@@ -89,17 +90,19 @@ pub struct BlockSerializedSize<'a> {
 	block: CanonBlock<'a>,
 	consensus: &'a ConsensusParams,
 	height: u32,
+	median_time_past: u32,
 	segwit_active: bool,
 }
 
 impl<'a> BlockSerializedSize<'a> {
-	fn new(block: CanonBlock<'a>, consensus: &'a ConsensusParams, deployments: &'a BlockDeployments<'a>, height: u32) -> Self {
+	fn new(block: CanonBlock<'a>, consensus: &'a ConsensusParams, deployments: &'a BlockDeployments<'a>, height: u32, median_time_past: u32) -> Self {
 		let segwit_active = deployments.segwit();
 
 		BlockSerializedSize {
 			block: block,
 			consensus: consensus,
 			height: height,
+			median_time_past: median_time_past,
 			segwit_active: segwit_active,
 		}
 	}
@@ -112,7 +115,7 @@ impl<'a> BlockSerializedSize<'a> {
 		// after SegWit: without witness data, block size should be <= 1_000_000
 		// after BitcoinCash fork: block size is increased to 8_000_000
 		if size < self.consensus.fork.min_block_size(self.height) ||
-			size > self.consensus.fork.max_block_size(self.height) {
+			size > self.consensus.fork.max_block_size(self.height, self.median_time_past) {
 			return Err(Error::Size(size));
 		}
 
