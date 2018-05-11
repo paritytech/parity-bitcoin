@@ -7,7 +7,7 @@ authors = ["Nikolay Volf <nikvolf@gmail.com>"]
 time = "0.1"
 lazy_static = "1.0"
 log = "0.4"
-rayon = "0.8"
+rayon = "1.0"
 parking_lot = "0.4"
 primitives = { path = "../primitives" }
 chain = { path = "../chain"  }
