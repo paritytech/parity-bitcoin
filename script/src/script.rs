@@ -575,7 +575,7 @@ pub type ScriptWitness = Vec<Bytes>;
 /// Passed bytes array is a commitment script?
 /// https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#Commitment_structure
 pub fn is_witness_commitment_script(script: &[u8]) -> bool {
-	script.len() >= 36 &&
+	script.len() >= 38 &&
 		script[0] == Opcode::OP_RETURN as u8 &&
 		script[1] == 0x24 &&
 		script[2] == 0xAA &&
