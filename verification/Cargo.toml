@@ -5,7 +5,7 @@ authors = ["Nikolay Volf <nikvolf@gmail.com>"]
 
 [dependencies]
 time = "0.1"
-lazy_static = "0.2"
+lazy_static = "1.0"
 log = "0.4"
 rayon = "0.8"
 parking_lot = "0.4"
