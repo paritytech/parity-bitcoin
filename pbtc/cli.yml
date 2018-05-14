@@ -95,6 +95,9 @@ args:
         help: Non-default verification-level is applied until a block with given hash is met.
         takes_value: true
         value_name: BLOCK
+    - prune:
+        long: prune
+        help: Turns on database pruning (removing old blocks and transactions).
 subcommands:
     - import:
         about: Import blocks from a Bitcoin Core database.

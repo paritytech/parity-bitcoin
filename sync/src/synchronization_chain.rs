@@ -272,17 +272,19 @@ impl Chain {
 
 	/// Get block header by hash
 	pub fn block_header_by_hash(&self, hash: &H256) -> Option<IndexedBlockHeader> {
-		if let Some(block) = self.storage.block(storage::BlockRef::Hash(hash.clone())) {
-			return Some(block.block_header.into());
-		}
-		self.headers_chain.by_hash(hash)
+		self.storage.block_header(hash.clone().into())
+			.map(Into::into)
+			.or_else(|| self.headers_chain.by_hash(hash))
 	}
 
 	/// Get block state
 	pub fn block_state(&self, hash: &H256) -> BlockState {
 		match self.hash_chain.contains_in(hash) {
 			Some(queue_index) => BlockState::from_queue_index(queue_index),
-			None => if self.storage.contains_block(storage::BlockRef::Hash(hash.clone())) {
+			// because of pruning, the header might be missing from db
+			// because of side chains, the block number can be missing from db
+			// => use double check here to find if block is in the database
+			None => if self.storage.block_number(hash).is_some() || self.storage.contains_block(hash.clone().into()) {
 				BlockState::Stored
 			} else if self.dead_end_blocks.contains(hash) {
 				BlockState::DeadEnd

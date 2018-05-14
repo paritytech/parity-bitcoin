@@ -7,7 +7,7 @@ use bytes::Bytes;
 /// Do not serialize transaction witness data.
 pub const SERIALIZE_TRANSACTION_WITNESS: u32 = 0x40000000;
 
-pub fn serialize<T>(t: &T) -> Bytes where T: Serializable{
+pub fn serialize<T>(t: &T) -> Bytes where T: Serializable {
 	let mut stream = Stream::default();
 	stream.append(t);
 	stream.out()

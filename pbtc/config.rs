@@ -1,5 +1,6 @@
 use std::net;
 use clap;
+use db;
 use storage;
 use message::Services;
 use network::{Network, ConsensusParams, ConsensusFork, BitcoinCashConsensusParams};
@@ -47,7 +48,12 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => None,
 	};
 
-	let db = open_db(&data_dir, db_cache);
+	let is_pruning_active = matches.is_present("prune");
+	let pruning_params = db::PruningParams {
+		is_active: is_pruning_active,
+		..Default::default()
+	};
+	let db = open_db(&data_dir, db_cache, pruning_params);
 
 	let quiet = matches.is_present("quiet");
 	let network = match (matches.is_present("testnet"), matches.is_present("regtest")) {
@@ -118,7 +124,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => None,
 	};
 
-	let services = Services::default().with_network(true);
+	let services = Services::default().with_network(!is_pruning_active);
 	let services = match &consensus.fork {
 		&ConsensusFork::BitcoinCash(_) => services.with_bitcoin_cash(true),
 		&ConsensusFork::BitcoinCore => services.with_witness(true),

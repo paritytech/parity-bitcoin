@@ -203,10 +203,10 @@ mod tests {
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let mut blocks_target = BlocksWriter::new(db.clone(), ConsensusParams::new(Network::Testnet, ConsensusFork::BitcoinCore), default_verification_params());
 
-		assert!(blocks_target.append_block(test_data::genesis().into()).is_ok());
+		assert_eq!(blocks_target.append_block(test_data::genesis().into()), Ok(()));
 		assert_eq!(db.best_block().number, 0);
 
-		assert!(blocks_target.append_block(test_data::block_h1().into()).is_ok());
+		assert_eq!(blocks_target.append_block(test_data::block_h1().into()), Ok(()));
 		assert_eq!(db.best_block().number, 1);
 	}
 }

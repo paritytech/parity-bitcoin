@@ -11,6 +11,12 @@ pub trait CanonStore: Store + Forkable + ConfigStore {
 
 /// Configuration storage interface
 pub trait ConfigStore {
+	/// get db version
+	fn db_version(&self) -> u8;
+
+	/// set db version
+	fn set_db_version(&self, version: u8) -> Result<(), Error>;
+
 	/// get consensus_fork this database is configured for
 	fn consensus_fork(&self) -> Result<Option<String>, Error>;
 

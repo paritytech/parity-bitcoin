@@ -1,5 +1,6 @@
 use parking_lot::Mutex;
-use kv::{Transaction, Value, KeyValueDatabase, MemoryDatabase, KeyState, Key};
+use kv::{Transaction, Value, KeyValueDatabase, MemoryDatabase,
+	MemoryDatabaseCore, KeyState, Key, Operation};
 
 pub struct OverlayDatabase<'a, T> where T: 'a + KeyValueDatabase {
 	db: &'a T,
@@ -78,4 +79,18 @@ impl<T> Drop for AutoFlushingOverlayDatabase<T> where T: KeyValueDatabase {
 	fn drop(&mut self) {
 		self.flush().expect("Failed to save database");
 	}
+}
+
+pub fn overlay_get<D>(overlay: &MemoryDatabaseCore, db: &D, key: &Key) -> Option<Value>
+	where
+		D: KeyValueDatabase
+{
+	overlay.get(key)
+		.ok().and_then(KeyState::into_option)
+		.or_else(|| db.get(key).ok().and_then(KeyState::into_option))
+
+}
+
+pub fn overlay_write(overlay: &mut MemoryDatabaseCore, op: Operation) {
+	overlay.write(op)
 }

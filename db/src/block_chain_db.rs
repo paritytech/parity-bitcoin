@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use parking_lot::RwLock;
@@ -13,26 +12,41 @@ use ser::{
 };
 use kv::{
 	KeyValueDatabase, OverlayDatabase, Transaction as DBTransaction, Value, DiskDatabase,
-	DatabaseConfig, MemoryDatabase, AutoFlushingOverlayDatabase, KeyValue, Key, KeyState, CacheDatabase
+	DatabaseConfig, MemoryDatabase, AutoFlushingOverlayDatabase, KeyValue, Key, KeyState, CacheDatabase,
+	MemoryDatabaseCore, Operation, overlay_get, overlay_write,
 };
 use kv::{
-	COL_COUNT, COL_BLOCK_HASHES, COL_BLOCK_HEADERS, COL_BLOCK_TRANSACTIONS, COL_TRANSACTIONS,
-	COL_TRANSACTIONS_META, COL_BLOCK_NUMBERS
+	COL_COUNT, COL_BLOCK_HASHES, COL_BLOCK_NUMBERS, COL_BLOCK_HEADERS,
+	COL_BLOCK_TRANSACTIONS, COL_TRANSACTION_PRUNABLE, COL_TRANSACTION_META,
+	COL_TRANSACTION_OUTPUT,
 };
 use storage::{
 	BlockRef, Error, BlockHeaderProvider, BlockProvider, BlockOrigin, TransactionMeta, IndexedBlockProvider,
 	TransactionMetaProvider, TransactionProvider, TransactionOutputProvider, BlockChain, Store,
-	SideChainOrigin, ForkChain, Forkable, CanonStore, ConfigStore, BestBlock
+	SideChainOrigin, ForkChain, Forkable, CanonStore, ConfigStore, BestBlock, TransactionPrunableData,
+	TransactionOutputMeta,
 };
 
 const KEY_BEST_BLOCK_NUMBER: &'static str = "best_block_number";
 const KEY_BEST_BLOCK_HASH: &'static str = "best_block_hash";
+const KEY_CONSENSUS_FORK: &'static str = "consensus_fork";
+const KEY_DB_VERSION: &'static str = "db_version";
 
-const MAX_FORK_ROUTE_PRESET: usize = 2048;
+const MAX_FORK_ROUTE_PRESET: u32 = 2048;
+
+/// Database pruning parameters.
+pub struct PruningParams {
+	/// Pruning depth (i.e. we're saving pruning_depth last blocks because we believe
+	/// that fork still can affect these blocks).
+	pub pruning_depth: u32,
+	/// Prune blocks and transactions that can not became a part of reorg process.
+	pub is_active: bool,
+}
 
 pub struct BlockChainDatabase<T> where T: KeyValueDatabase {
 	best_block: RwLock<BestBlock>,
 	db: T,
+	pruning: PruningParams,
 }
 
 pub struct ForkChainDatabase<'a, T> where T: 'a + KeyValueDatabase {
@@ -54,15 +68,21 @@ impl BlockChainDatabase<CacheDatabase<AutoFlushingOverlayDatabase<DiskDatabase>>
 		fs::create_dir_all(path.as_ref()).map_err(|err| Error::DatabaseError(err.to_string()))?;
 		let mut cfg = DatabaseConfig::with_columns(Some(COL_COUNT));
 
-		cfg.set_cache(Some(COL_TRANSACTIONS), total_cache / 4);
-		cfg.set_cache(Some(COL_TRANSACTIONS_META), total_cache / 4);
-		cfg.set_cache(Some(COL_BLOCK_HEADERS), total_cache / 4);
+		// 'big' columns taking 2/14 of the cache
+		let big_column_cache = total_cache * 2 / 14;
+		cfg.set_cache(Some(COL_BLOCK_HEADERS), big_column_cache);
+		cfg.set_cache(Some(COL_BLOCK_TRANSACTIONS), big_column_cache);
+		cfg.set_cache(Some(COL_TRANSACTION_PRUNABLE), big_column_cache);
+		cfg.set_cache(Some(COL_TRANSACTION_META), big_column_cache);
+		cfg.set_cache(Some(COL_TRANSACTION_OUTPUT), big_column_cache);
 
-		cfg.set_cache(Some(COL_BLOCK_HASHES), total_cache / 12);
-		cfg.set_cache(Some(COL_BLOCK_TRANSACTIONS), total_cache / 12);
-		cfg.set_cache(Some(COL_BLOCK_NUMBERS), total_cache / 12);
+		// 'small' columns taking 1/14 of the cache
+		let small_column_cache = total_cache * 2 / 14;
+		cfg.set_cache(Some(COL_BLOCK_HASHES), small_column_cache);
+		cfg.set_cache(Some(COL_BLOCK_NUMBERS), small_column_cache);
 
-		cfg.bloom_filters.insert(Some(COL_TRANSACTIONS_META), 32);
+		cfg.bloom_filters.insert(Some(COL_TRANSACTION_META), 32);
+		cfg.bloom_filters.insert(Some(COL_TRANSACTION_OUTPUT), 32);
 
 		match DiskDatabase::open(cfg, path) {
 			Ok(db) => Ok(Self::open_with_cache(db)),
@@ -91,6 +111,7 @@ impl<T> BlockChainDatabase<CacheDatabase<AutoFlushingOverlayDatabase<T>>> where 
 		BlockChainDatabase {
 			best_block: RwLock::new(best_block),
 			db: db,
+			pruning: Default::default(),
 		}
 	}
 }
@@ -115,7 +136,18 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		BlockChainDatabase {
 			best_block: RwLock::new(best_block),
 			db: db,
+			pruning: Default::default(),
 		}
+	}
+
+	pub fn set_pruning_params(&mut self, params: PruningParams) {
+		// 11 is the because we take 11 last headers to calculate MTP. This limit must be
+		// raised to at least MAX_FORK_ROUTE_PRESET and assert replaced with Err before
+		// passing control over this to cli
+		// right now it is 11 to speed up tests
+		assert!(params.pruning_depth >= 11);
+
+		self.pruning = params;
 	}
 
 	pub fn best_block(&self) -> BestBlock {
@@ -213,8 +245,23 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		let tx_hashes = block.transactions.iter().map(|tx| tx.hash.clone()).collect::<Vec<_>>();
 		update.insert(KeyValue::BlockTransactions(block.header.hash.clone(), List::from(tx_hashes)));
 
-		for tx in block.transactions.into_iter() {
-			update.insert(KeyValue::Transaction(tx.hash, tx.raw));
+		for tx in block.transactions {
+			// insert transaction outputs
+			let total_outputs = tx.raw.outputs.len() as u32;
+			for (tx_out_index, tx_out) in tx.raw.outputs.into_iter().enumerate() {
+				let tx_out_key = OutPoint { hash: tx.hash.clone(), index: tx_out_index as u32 };
+				let tx_out = TransactionOutputMeta::new(tx_out);
+				update.insert(KeyValue::TransactionOutput(tx_out_key, tx_out));
+			}
+
+			// insert prunable transaction data
+			let tx_prunable = TransactionPrunableData {
+				version: tx.raw.version,
+				lock_time: tx.raw.lock_time,
+				inputs: tx.raw.inputs,
+				total_outputs,
+			};
+			update.insert(KeyValue::TransactionPrunable(tx.hash, tx_prunable));
 		}
 
 		self.db.write(update).map_err(Error::DatabaseError)
@@ -222,7 +269,8 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 
 	/// Rollbacks single best block
 	fn rollback_best(&self) -> Result<H256, Error> {
-		let decanonized = match self.block(self.best_block.read().hash.clone().into()) {
+		let best_block: BestBlock = self.best_block.read().clone();
+		let decanonized = match self.block(best_block.hash.clone().into()) {
 			Some(block) => block,
 			None => return Ok(H256::default()),
 		};
@@ -233,12 +281,7 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		// all code currently works in assumption that origin of all blocks is one of:
 		// {CanonChain, SideChain, SideChainBecomingCanonChain}
 		let mut update = DBTransaction::new();
-		update.delete(Key::BlockHeader(decanonized_hash.clone()));
-		update.delete(Key::BlockTransactions(decanonized_hash.clone()));
-		for tx in decanonized.transactions.into_iter() {
-			update.delete(Key::Transaction(tx.hash()));
-		}
-
+		self.delete_canon_block(best_block.number, &mut update, true);
 		self.db.write(update).map_err(Error::DatabaseError)?;
 
 		Ok(self.best_block().hash)
@@ -253,7 +296,6 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			Some(block) => block,
 			None => return Err(Error::CannotCanonize),
 		};
-
 		if best_block.hash != block.header.raw.previous_header_hash {
 			return Err(Error::CannotCanonize);
 		}
@@ -276,36 +318,37 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		update.insert(KeyValue::Meta(KEY_BEST_BLOCK_HASH, serialize(&new_best_block.hash)));
 		update.insert(KeyValue::Meta(KEY_BEST_BLOCK_NUMBER, serialize(&new_best_block.number)));
 
-		let mut modified_meta: HashMap<H256, TransactionMeta> = HashMap::new();
-		if let Some(tx) = block.transactions.first() {
-			let meta = TransactionMeta::new_coinbase(new_best_block.number, tx.raw.outputs.len());
-			modified_meta.insert(tx.hash.clone(), meta);
-		}
+		let mut overlay = MemoryDatabaseCore::default();
+		for (tx_index, tx) in block.transactions.into_iter().enumerate() {
+			// insert tx meta
+			let is_coinbase = tx_index == 0;
+			let tx_meta = TransactionMeta::new(is_coinbase, new_best_block.number, tx.raw.outputs.len() as u32);
+			overlay_write(&mut overlay, Operation::Insert(KeyValue::TransactionMeta(tx.hash.clone(), tx_meta)));
 
-		for tx in block.transactions.iter().skip(1) {
-			modified_meta.insert(tx.hash.clone(), TransactionMeta::new(new_best_block.number, tx.raw.outputs.len()));
+			// mark spent outputs as spent
+			if !is_coinbase {
+				for tx_input in tx.raw.inputs {
+					// update transaction meta
+					let tx_out_key = tx_input.previous_output;
+					let mut tx_meta = overlay_get(&overlay, &self.db, &Key::TransactionMeta(tx_out_key.hash.clone()))
+						.and_then(Value::as_transaction_meta)
+						.expect("canonized tx is verified; verification includes check that previous outputs exists; meta is never pruned; qed");
+					tx_meta.add_spent_output();
+					overlay_write(&mut overlay, Operation::Insert(KeyValue::TransactionMeta(tx_out_key.hash.clone(), tx_meta)));
 
-			for input in &tx.raw.inputs {
-				use std::collections::hash_map::Entry;
-
-				match modified_meta.entry(input.previous_output.hash.clone()) {
-					Entry::Occupied(mut entry) => {
-						let meta = entry.get_mut();
-						meta.denote_used(input.previous_output.index as usize);
-					},
-					Entry::Vacant(entry) => {
-						let mut meta = self.transaction_meta(&input.previous_output.hash)
-							.ok_or(Error::CannotCanonize)?;
-						meta.denote_used(input.previous_output.index as usize);
-						entry.insert(meta);
-					}
+					// update output
+					let mut tx_out = overlay_get(&overlay, &self.db, &Key::TransactionOutput(tx_out_key.clone()))
+						.and_then(Value::as_transaction_output)
+						.expect("canonized tx is verified; verification includes check that previous outputs exists; it is within reorg depth => not pruned; qed");
+					tx_out.is_spent = true;
+					overlay_write(&mut overlay, Operation::Insert(KeyValue::TransactionOutput(tx_out_key, tx_out)));
 				}
 			}
 		}
 
-		for (hash, meta) in modified_meta.into_iter() {
-			update.insert(KeyValue::TransactionMeta(hash, meta));
-		}
+		update.operations.extend(overlay.drain_operations());
+
+		self.prune_ancient_block_transactions(&mut update, new_best_block.number);
 
 		self.db.write(update).map_err(Error::DatabaseError)?;
 		*best_block = new_best_block;
@@ -320,7 +363,6 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		};
 		let block_number = best_block.number;
 		let block_hash = best_block.hash.clone();
-
 		let new_best_block = BestBlock {
 			hash: block.header.raw.previous_header_hash.clone(),
 			number: if best_block.number > 0 {
@@ -339,33 +381,35 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		update.insert(KeyValue::Meta(KEY_BEST_BLOCK_HASH, serialize(&new_best_block.hash)));
 		update.insert(KeyValue::Meta(KEY_BEST_BLOCK_NUMBER, serialize(&new_best_block.number)));
 
-		let mut modified_meta: HashMap<H256, TransactionMeta> = HashMap::new();
-		for tx in block.transactions.iter().skip(1) {
-			for input in &tx.raw.inputs {
-				use std::collections::hash_map::Entry;
+		let mut overlay = MemoryDatabaseCore::default();
+		for (tx_index, tx) in block.transactions.into_iter().enumerate().rev() {
+			// delete tx meta
+			overlay_write(&mut overlay, Operation::Delete(Key::TransactionMeta(tx.hash.clone())));
 
-				match modified_meta.entry(input.previous_output.hash.clone()) {
-					Entry::Occupied(mut entry) => {
-						let meta = entry.get_mut();
-						meta.denote_unused(input.previous_output.index as usize);
-					},
-					Entry::Vacant(entry) => {
-						let mut meta = self.transaction_meta(&input.previous_output.hash)
-							.ok_or(Error::CannotCanonize)?;
-						meta.denote_unused(input.previous_output.index as usize);
-						entry.insert(meta);
-					}
+			// mark spent outputs as non-spent
+			let is_coinbase = tx_index == 0;
+			if !is_coinbase {
+				for tx_input in tx.raw.inputs {
+					// update transaction meta
+					let tx_out_key = tx_input.previous_output;
+					let mut tx_meta = overlay_get(&overlay, &self.db, &Key::TransactionMeta(tx_out_key.hash.clone()))
+						.and_then(Value::as_transaction_meta)
+						.expect("canonized tx is verified; verification includes check that previous outputs exists; meta is never pruned; qed");
+					tx_meta.remove_spent_output();
+					overlay_write(&mut overlay, Operation::Insert(KeyValue::TransactionMeta(tx_out_key.hash.clone(), tx_meta)));
+
+					// update output
+					let mut tx_out = overlay_get(&overlay, &self.db, &Key::TransactionOutput(tx_out_key.clone()))
+						.and_then(Value::as_transaction_output)
+						.expect("on non-pruned db: previous outputs of canonized tx are stored in TransactionOutput column forever;\
+							on pruned db: previous outputs of canonized tx are stored in TransactionOutput column until decanonization is impossible; qed");
+					tx_out.is_spent = false;
+					overlay_write(&mut overlay, Operation::Insert(KeyValue::TransactionOutput(tx_out_key, tx_out)));
 				}
 			}
 		}
 
-		for (hash, meta) in modified_meta {
-			update.insert(KeyValue::TransactionMeta(hash, meta));
-		}
-
-		for tx in block.transactions {
-			update.delete(Key::TransactionMeta(tx.hash));
-		}
+		update.operations.extend(overlay.drain_operations());
 
 		self.db.write(update).map_err(Error::DatabaseError)?;
 		*best_block = new_best_block;
@@ -382,11 +426,63 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			BlockRef::Hash(h) => Some(h),
 		}
 	}
+
+	fn delete_canon_block(&self, block_number: u32, update: &mut DBTransaction, leave_no_traces: bool) -> bool {
+		let block_hash = match self.block_hash(block_number) {
+			Some(block_hash) => block_hash,
+			None => return false,
+		};
+
+		if self.get(Key::BlockHeader(block_hash.clone())).is_none() {
+			return false;
+		}
+
+		update.delete(Key::BlockHeader(block_hash.clone()));
+		update.delete(Key::BlockTransactions(block_hash.clone()));
+		if leave_no_traces {
+			update.delete(Key::BlockHash(block_number));
+			update.delete(Key::BlockNumber(block_hash.clone()));
+
+			let block_transactions_hashes = self.block_transaction_hashes(block_hash.clone().into());
+			for (tx_hash, tx) in block_transactions_hashes.into_iter().filter_map(|h| self.transaction(&h).map(|t| (h, t))) {
+				update.delete(Key::TransactionPrunable(tx_hash.clone()));
+				update.delete(Key::TransactionMeta(tx_hash.clone()));
+				for tx_out_index in 0..tx.outputs.len() {
+					update.delete(Key::TransactionOutput(OutPoint { hash: tx_hash.clone(), index: tx_out_index as u32 }));
+				}
+			}
+		}
+
+		true
+	}
+
+	fn prune_ancient_block_transactions(&self, update: &mut DBTransaction, new_best_block_number: u32) {
+		if !self.pruning.is_active {
+			return;
+		}
+
+		let ancient_block = match new_best_block_number.checked_sub(self.pruning.pruning_depth).and_then(|n| self.block_hash(n)) {
+			Some(ancient_block) => ancient_block,
+			None => return,
+		};
+
+		// we can delete: block header (takes almost no space => leave as is) + block transactions
+		// for each transaction: prunable data + outputs that it has spent
+		let txs = self.block_transactions(ancient_block.clone().into());
+		update.delete(Key::BlockTransactions(ancient_block.clone()));
+		for tx in txs {
+			update.delete(Key::TransactionPrunable(tx.hash()));
+			for input in tx.inputs {
+				update.delete(Key::TransactionOutput(input.previous_output));
+			}
+		}
+	}
 }
 
 impl<T> BlockHeaderProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
 	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes> {
-		self.block_header(block_ref).map(|header| serialize(&header))
+		self.block_header(block_ref)
+			.map(|header| serialize(&header))
 	}
 
 	fn block_header(&self, block_ref: BlockRef) -> Option<BlockHeader> {
@@ -419,8 +515,7 @@ impl<T> BlockProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
 	}
 
 	fn contains_block(&self, block_ref: BlockRef) -> bool {
-		self.resolve_hash(block_ref)
-			.and_then(|hash| self.get(Key::BlockHeader(hash)))
+		self.block_header(block_ref)
 			.is_some()
 	}
 
@@ -435,8 +530,7 @@ impl<T> BlockProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
 	fn block_transactions(&self, block_ref: BlockRef) -> Vec<Transaction> {
 		self.block_transaction_hashes(block_ref)
 			.into_iter()
-			.filter_map(|hash| self.get(Key::Transaction(hash)))
-			.filter_map(Value::as_transaction)
+			.filter_map(|t| self.transaction(&t))
 			.collect()
 	}
 }
@@ -445,8 +539,7 @@ impl<T> IndexedBlockProvider for BlockChainDatabase<T> where T: KeyValueDatabase
 	fn indexed_block_header(&self, block_ref: BlockRef) -> Option<IndexedBlockHeader> {
 		self.resolve_hash(block_ref)
 			.and_then(|block_hash| {
-				self.get(Key::BlockHeader(block_hash.clone()))
-					.and_then(Value::as_block_header)
+				self.block_header(block_hash.clone().into())
 					.map(|header| IndexedBlockHeader::new(block_hash, header))
 			})
 	}
@@ -465,10 +558,9 @@ impl<T> IndexedBlockProvider for BlockChainDatabase<T> where T: KeyValueDatabase
 	fn indexed_block_transactions(&self, block_ref: BlockRef) -> Vec<IndexedTransaction> {
 		self.block_transaction_hashes(block_ref)
 			.into_iter()
-			.filter_map(|hash| {
-				self.get(Key::Transaction(hash.clone()))
-					.and_then(Value::as_transaction)
-					.map(|tx| IndexedTransaction::new(hash, tx))
+			.filter_map(|tx_hash| {
+				self.transaction(&tx_hash)
+					.map(|tx| IndexedTransaction::new(tx_hash, tx))
 			})
 			.collect()
 	}
@@ -483,26 +575,44 @@ impl<T> TransactionMetaProvider for BlockChainDatabase<T> where T: KeyValueDatab
 
 impl<T> TransactionProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes> {
-		self.transaction(hash).map(|tx| serialize(&tx))
+		self.transaction(hash)
+			.map(|tx| serialize(&tx))
 	}
 
 	fn transaction(&self, hash: &H256) -> Option<Transaction> {
-		self.get(Key::Transaction(hash.clone()))
-			.and_then(Value::as_transaction)
+		self.get(Key::TransactionPrunable(hash.clone()))
+			.and_then(Value::as_transaction_prunable)
+			.and_then(|tx| {
+				// only return tx if all its outputs are not pruned
+				let outputs = (0..tx.total_outputs)
+					.filter_map(|index| self.transaction_output(&OutPoint { hash: hash.clone(), index }, 0))
+					.collect::<Vec<_>>();
+				if outputs.len() != tx.total_outputs as usize {
+					return None;
+				}
+
+				Some(Transaction {
+					version: tx.version,
+					inputs: tx.inputs,
+					outputs: outputs,
+					lock_time: tx.lock_time,
+				})
+			})
 	}
 }
 
 impl<T> TransactionOutputProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
 	fn transaction_output(&self, prevout: &OutPoint, _transaction_index: usize) -> Option<TransactionOutput> {
-		// return previous transaction outputs only for canon chain transactions
-		self.transaction_meta(&prevout.hash)
-			.and_then(|_| self.transaction(&prevout.hash))
-			.and_then(|tx| tx.outputs.into_iter().nth(prevout.index as usize))
-	}
+		self.get(Key::TransactionOutput(prevout.clone()))
+			.and_then(Value::as_transaction_output)
+			.map(|o| o.output)
+}
 
 	fn is_spent(&self, prevout: &OutPoint) -> bool {
-		self.transaction_meta(&prevout.hash)
-			.and_then(|meta| meta.is_spent(prevout.index as usize))
+		self.get(Key::TransactionMeta(prevout.hash.clone()))
+			.and_then(|_| self.get(Key::TransactionOutput(prevout.clone())))
+			.and_then(Value::as_transaction_output)
+			.map(|o| o.is_spent)
 			.unwrap_or(false)
 	}
 }
@@ -568,21 +678,40 @@ impl<T> Store for BlockChainDatabase<T> where T: KeyValueDatabase {
 }
 
 impl<T> ConfigStore for BlockChainDatabase<T> where T: KeyValueDatabase {
+	fn db_version(&self) -> u8 {
+		self.get(Key::Meta(KEY_DB_VERSION))
+			.and_then(Value::as_meta)
+			.and_then(|v| v.get(0).cloned())
+			.unwrap_or_default()
+	}
+
+	fn set_db_version(&self, version: u8) -> Result<(), Error> {
+		let mut update = DBTransaction::new();
+		update.insert(KeyValue::Meta(KEY_DB_VERSION, vec![version].into()));
+		self.db.write(update).map_err(Error::DatabaseError)
+	}
+	
 	fn consensus_fork(&self) -> Result<Option<String>, Error> {
-		match self.db.get(&Key::Configuration("consensus_fork"))
-			.map(KeyState::into_option)
-			.map(|x| x.and_then(Value::as_configuration)) {
-			Ok(Some(consensus_fork)) => String::from_utf8(consensus_fork.into())
+		match self.get(Key::Meta(KEY_CONSENSUS_FORK)).and_then(Value::as_meta) {
+			Some(consensus_fork) => String::from_utf8(consensus_fork.into())
 				.map_err(|e| Error::DatabaseError(format!("{}", e)))
 				.map(Some),
-			Ok(None) => Ok(None),
-			Err(e) => Err(Error::DatabaseError(e.into())),
+			None => Ok(None),
 		}
 	}
 
 	fn set_consensus_fork(&self, consensus_fork: &str) -> Result<(), Error> {
 		let mut update = DBTransaction::new();
-		update.insert(KeyValue::Configuration("consensus_fork", consensus_fork.as_bytes().into()));
+		update.insert(KeyValue::Meta(KEY_CONSENSUS_FORK, consensus_fork.as_bytes().into()));
 		self.db.write(update).map_err(Error::DatabaseError)
+	}
+}
+
+impl Default for PruningParams {
+	fn default() -> Self {
+		PruningParams {
+			pruning_depth: MAX_FORK_ROUTE_PRESET,
+			is_active: false,
+		}
 	}
 }

@@ -1,18 +1,45 @@
 use bytes::Bytes;
 use hash::H256;
 use ser::{serialize, List, deserialize};
-use chain::{Transaction as ChainTransaction, BlockHeader};
-use storage::{TransactionMeta};
+use chain::{BlockHeader, OutPoint};
+use storage::{TransactionMeta, TransactionPrunableData, TransactionOutputMeta};
 
+/// Total number of columns in database.
 pub const COL_COUNT: u32 = 10;
+/// Database metadata information.
 pub const COL_META: u32 = 0;
+/// Mapping of { block height => block hash }.
+/// Only contains entries for canonized blocks.
 pub const COL_BLOCK_HASHES: u32 = 1;
-pub const COL_BLOCK_HEADERS: u32 = 2;
-pub const COL_BLOCK_TRANSACTIONS: u32 = 3;
-pub const COL_TRANSACTIONS: u32 = 4;
-pub const COL_TRANSACTIONS_META: u32 = 5;
-pub const COL_BLOCK_NUMBERS: u32 = 6;
-pub const COL_CONFIGURATION: u32 = 7;
+/// Mapping of { block hash => block number }.
+/// Only contains entries for canonized blocks.
+pub const COL_BLOCK_NUMBERS: u32 = 2;
+/// Mapping of { block hash => block header }.
+/// Can be pruned for ancient blocks.
+pub const COL_BLOCK_HEADERS: u32 = 3;
+/// Mapping of { block hash => block transactions hashes }.
+/// Can be pruned for ancient blocks.
+pub const COL_BLOCK_TRANSACTIONS: u32 = 4;
+/// Mapping of { transaction hash => prunable transaction data }.
+/// Contains all tx fields that can be pruned when tx block becames ancient:
+/// - version: is only used for serialization/deserialization;
+/// - lock_time: is only used when tx is verified
+/// - inputs: are used only when tx is verified
+/// - total number of transaction outputs
+pub const COL_TRANSACTION_PRUNABLE: u32 = 5;
+/// Mapping of { transaction hash => non-prunable transaction meta data }.
+/// Only contains entries for transactions from canonized blocks.
+/// Contains:
+/// - height of block for coinbase transactions (to check coinbase maturity)
+/// - total number of transaction outputs
+/// - total number of spent transaction outputs
+pub const COL_TRANSACTION_META: u32 = 6;
+/// Mapping of { { transaction hash, index } => transaction output }.
+/// Only contains entries for:
+/// - spent outputs
+/// - outputs of non-canonized transactions
+/// Can be pruned for spent outputs, which have been spent in transactions from ancient blocks.
+pub const COL_TRANSACTION_OUTPUT: u32 = 7;
 
 #[derive(Debug)]
 pub enum Operation {
@@ -24,36 +51,36 @@ pub enum Operation {
 pub enum KeyValue {
 	Meta(&'static str, Bytes),
 	BlockHash(u32, H256),
+	BlockNumber(H256, u32),
 	BlockHeader(H256, BlockHeader),
 	BlockTransactions(H256, List<H256>),
-	Transaction(H256, ChainTransaction),
+	TransactionPrunable(H256, TransactionPrunableData),
 	TransactionMeta(H256, TransactionMeta),
-	BlockNumber(H256, u32),
-	Configuration(&'static str, Bytes),
+	TransactionOutput(OutPoint, TransactionOutputMeta),
 }
 
 #[derive(Debug)]
 pub enum Key {
 	Meta(&'static str),
 	BlockHash(u32),
+	BlockNumber(H256),
 	BlockHeader(H256),
 	BlockTransactions(H256),
-	Transaction(H256),
+	TransactionPrunable(H256),
 	TransactionMeta(H256),
-	BlockNumber(H256),
-	Configuration(&'static str),
+	TransactionOutput(OutPoint),
 }
 
 #[derive(Debug, Clone)]
 pub enum Value {
 	Meta(Bytes),
 	BlockHash(H256),
+	BlockNumber(u32),
 	BlockHeader(BlockHeader),
 	BlockTransactions(List<H256>),
-	Transaction(ChainTransaction),
+	TransactionPrunable(TransactionPrunableData),
 	TransactionMeta(TransactionMeta),
-	BlockNumber(u32),
-	Configuration(Bytes),
+	TransactionOutput(TransactionOutputMeta),
 }
 
 impl Value {
@@ -61,12 +88,12 @@ impl Value {
 		match *key {
 			Key::Meta(_) => deserialize(bytes).map(Value::Meta),
 			Key::BlockHash(_) => deserialize(bytes).map(Value::BlockHash),
+			Key::BlockNumber(_) => deserialize(bytes).map(Value::BlockNumber),
 			Key::BlockHeader(_) => deserialize(bytes).map(Value::BlockHeader),
 			Key::BlockTransactions(_) => deserialize(bytes).map(Value::BlockTransactions),
-			Key::Transaction(_) => deserialize(bytes).map(Value::Transaction),
+			Key::TransactionPrunable(_) => deserialize(bytes).map(Value::TransactionPrunable),
 			Key::TransactionMeta(_) => deserialize(bytes).map(Value::TransactionMeta),
-			Key::BlockNumber(_) => deserialize(bytes).map(Value::BlockNumber),
-			Key::Configuration(_) => deserialize(bytes).map(Value::Configuration),
+			Key::TransactionOutput(_) => deserialize(bytes).map(Value::TransactionOutput),
 		}.map_err(|e| format!("{:?}", e))
 	}
 
@@ -80,6 +107,13 @@ impl Value {
 	pub fn as_block_hash(self) -> Option<H256> {
 		match self {
 			Value::BlockHash(block_hash) => Some(block_hash),
+			_ => None,
+		}
+	}
+
+	pub fn as_block_number(self) -> Option<u32> {
+		match self {
+			Value::BlockNumber(number) => Some(number),
 			_ => None,
 		}
 	}
@@ -98,9 +132,9 @@ impl Value {
 		}
 	}
 
-	pub fn as_transaction(self) -> Option<ChainTransaction> {
+	pub fn as_transaction_prunable(self) -> Option<TransactionPrunableData> {
 		match self {
-			Value::Transaction(transaction) => Some(transaction),
+			Value::TransactionPrunable(transaction_prunable) => Some(transaction_prunable),
 			_ => None,
 		}
 	}
@@ -112,16 +146,9 @@ impl Value {
 		}
 	}
 
-	pub fn as_block_number(self) -> Option<u32> {
+	pub fn as_transaction_output(self) -> Option<TransactionOutputMeta> {
 		match self {
-			Value::BlockNumber(number) => Some(number),
-			_ => None,
-		}
-	}
-
-	pub fn as_configuration(self) -> Option<Bytes> {
-		match self {
-			Value::Configuration(bytes) => Some(bytes),
+			Value::TransactionOutput(output) => Some(output),
 			_ => None,
 		}
 	}
@@ -206,11 +233,13 @@ impl From<u32> for Location {
 	}
 }
 
+#[derive(Debug)]
 pub enum RawOperation {
 	Insert(RawKeyValue),
 	Delete(RawKey),
 }
 
+#[derive(Debug)]
 pub struct RawKeyValue {
 	pub location: Location,
 	pub key: Bytes,
@@ -222,12 +251,12 @@ impl<'a> From<&'a KeyValue> for RawKeyValue {
 		let (location, key, value) = match *i {
 			KeyValue::Meta(ref key, ref value) => (COL_META, serialize(key), serialize(value)),
 			KeyValue::BlockHash(ref key, ref value) => (COL_BLOCK_HASHES, serialize(key), serialize(value)),
+			KeyValue::BlockNumber(ref key, ref value) => (COL_BLOCK_NUMBERS, serialize(key), serialize(value)),
 			KeyValue::BlockHeader(ref key, ref value) => (COL_BLOCK_HEADERS, serialize(key), serialize(value)),
 			KeyValue::BlockTransactions(ref key, ref value) => (COL_BLOCK_TRANSACTIONS, serialize(key), serialize(value)),
-			KeyValue::Transaction(ref key, ref value) => (COL_TRANSACTIONS, serialize(key), serialize(value)),
-			KeyValue::TransactionMeta(ref key, ref value) => (COL_TRANSACTIONS_META, serialize(key), serialize(value)),
-			KeyValue::BlockNumber(ref key, ref value) => (COL_BLOCK_NUMBERS, serialize(key), serialize(value)),
-			KeyValue::Configuration(ref key, ref value) => (COL_CONFIGURATION, serialize(key), serialize(value)),
+			KeyValue::TransactionPrunable(ref key, ref value) => (COL_TRANSACTION_PRUNABLE, serialize(key), serialize(value)),
+			KeyValue::TransactionMeta(ref key, ref value) => (COL_TRANSACTION_META, serialize(key), serialize(value)),
+			KeyValue::TransactionOutput(ref key, ref value) => (COL_TRANSACTION_OUTPUT, serialize(key), serialize(value)),
 		};
 
 		RawKeyValue {
@@ -238,6 +267,7 @@ impl<'a> From<&'a KeyValue> for RawKeyValue {
 	}
 }
 
+#[derive(Debug)]
 pub struct RawKey {
 	pub location: Location,
 	pub key: Bytes,
@@ -257,12 +287,12 @@ impl<'a> From<&'a Key> for RawKey {
 		let (location, key) = match *d {
 			Key::Meta(ref key) => (COL_META, serialize(key)),
 			Key::BlockHash(ref key) => (COL_BLOCK_HASHES, serialize(key)),
+			Key::BlockNumber(ref key) => (COL_BLOCK_NUMBERS, serialize(key)),
 			Key::BlockHeader(ref key) => (COL_BLOCK_HEADERS, serialize(key)),
 			Key::BlockTransactions(ref key) => (COL_BLOCK_TRANSACTIONS, serialize(key)),
-			Key::Transaction(ref key) => (COL_TRANSACTIONS, serialize(key)),
-			Key::TransactionMeta(ref key) => (COL_TRANSACTIONS_META, serialize(key)),
-			Key::BlockNumber(ref key) => (COL_BLOCK_NUMBERS, serialize(key)),
-			Key::Configuration(ref key) => (COL_CONFIGURATION, serialize(key)),
+			Key::TransactionPrunable(ref key) => (COL_TRANSACTION_PRUNABLE, serialize(key)),
+			Key::TransactionMeta(ref key) => (COL_TRANSACTION_META, serialize(key)),
+			Key::TransactionOutput(ref key) => (COL_TRANSACTION_OUTPUT, serialize(key)),
 		};
 
 		RawKey {

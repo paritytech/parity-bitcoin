@@ -14,5 +14,5 @@ extern crate storage;
 pub mod kv;
 mod block_chain_db;
 
-pub use block_chain_db::{BlockChainDatabase, ForkChainDatabase};
+pub use block_chain_db::{BlockChainDatabase, ForkChainDatabase, PruningParams};
 pub use primitives::{hash, bytes};

@@ -48,7 +48,7 @@ use primitives::hash::H256;
 use verification::BackwardsCompatibleChainVerifier as ChainVerifier;
 
 /// Sync errors.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
 	/// Too many orphan blocks.
 	TooManyOrphanBlocks,
