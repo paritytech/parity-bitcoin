@@ -55,6 +55,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		Some(s) => return Err(format!("Invalid prune mode: {}", s)),
 		None => (false, false),
 	};
+	let is_pruning_active = prune_ancient_blocks || prune_spent_transactions;
 
 	let pruning_params = db::PruningParams {
 		prune_ancient_blocks,
@@ -132,7 +133,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => None,
 	};
 
-	let services = Services::default().with_network(true);
+	let services = Services::default().with_network(!is_pruning_active);
 	let services = match &consensus.fork {
 		&ConsensusFork::BitcoinCash(_) => services.with_bitcoin_cash(true),
 		&ConsensusFork::BitcoinCore => services.with_witness(true),
