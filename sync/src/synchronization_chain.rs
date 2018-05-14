@@ -272,10 +272,9 @@ impl Chain {
 
 	/// Get block header by hash
 	pub fn block_header_by_hash(&self, hash: &H256) -> Option<IndexedBlockHeader> {
-		if let Some(block) = self.storage.block(storage::BlockRef::Hash(hash.clone())) {
-			return Some(block.block_header.into());
-		}
-		self.headers_chain.by_hash(hash)
+		self.storage.block_header(hash.clone().into())
+			.map(Into::into)
+			.or_else(|| self.headers_chain.by_hash(hash))
 	}
 
 	/// Get block state

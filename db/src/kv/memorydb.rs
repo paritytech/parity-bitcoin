@@ -19,6 +19,7 @@ struct InnerDatabase {
 	transaction_meta: HashMap<H256, KeyState<TransactionMeta>>,
 	block_number: HashMap<H256, KeyState<u32>>,
 	configuration: HashMap<&'static str, KeyState<Bytes>>,
+	spent_transactions: HashMap<u32, KeyState<List<H256>>>,
 }
 
 #[derive(Default, Debug)]
@@ -81,6 +82,7 @@ impl KeyValueDatabase for MemoryDatabase {
 					KeyValue::TransactionMeta(key, value) => { db.transaction_meta.insert(key, KeyState::Insert(value)); },
 					KeyValue::BlockNumber(key, value) => { db.block_number.insert(key, KeyState::Insert(value)); },
 					KeyValue::Configuration(key, value) => { db.configuration.insert(key, KeyState::Insert(value)); },
+					KeyValue::SpentTransactions(key, value) => { db.spent_transactions.insert(key, KeyState::Insert(value)); },
 				},
 				Operation::Delete(delete) => match delete {
 					Key::Meta(key) => { db.meta.insert(key, KeyState::Delete); }
@@ -91,6 +93,7 @@ impl KeyValueDatabase for MemoryDatabase {
 					Key::TransactionMeta(key) => { db.transaction_meta.insert(key, KeyState::Delete); }
 					Key::BlockNumber(key) => { db.block_number.insert(key, KeyState::Delete); }
 					Key::Configuration(key) => { db.configuration.insert(key, KeyState::Delete); }
+					Key::SpentTransactions(key) => { db.spent_transactions.insert(key, KeyState::Delete); },
 				}
 			}
 		}
@@ -108,6 +111,7 @@ impl KeyValueDatabase for MemoryDatabase {
 			Key::TransactionMeta(ref key) => db.transaction_meta.get(key).cloned().unwrap_or_default().map(Value::TransactionMeta),
 			Key::BlockNumber(ref key) => db.block_number.get(key).cloned().unwrap_or_default().map(Value::BlockNumber),
 			Key::Configuration(ref key) => db.configuration.get(key).cloned().unwrap_or_default().map(Value::Configuration),
+			Key::SpentTransactions(ref key) => db.spent_transactions.get(key).cloned().unwrap_or_default().map(Value::SpentTransactions),
 		};
 
 		Ok(result)

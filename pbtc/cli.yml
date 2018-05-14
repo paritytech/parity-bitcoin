@@ -95,6 +95,11 @@ args:
         help: Non-default verification-level is applied until a block with given hash is met.
         takes_value: true
         value_name: BLOCK
+    - prune-mode:
+        long: prune-mode
+        help: Sets the pruning mode to none (default), header (headers of ancient blocks are pruned), or full (fully spent transactions are pruned in addition to blocks headers).
+        takes_value: true
+        value_name: MODE
 subcommands:
     - import:
         about: Import blocks from a Bitcoin Core database.
