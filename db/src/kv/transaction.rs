@@ -13,6 +13,7 @@ pub const COL_TRANSACTIONS: u32 = 4;
 pub const COL_TRANSACTIONS_META: u32 = 5;
 pub const COL_BLOCK_NUMBERS: u32 = 6;
 pub const COL_CONFIGURATION: u32 = 7;
+pub const COL_SPENT_TRANSACTIONS: u32 = 8;
 
 #[derive(Debug)]
 pub enum Operation {
@@ -30,6 +31,7 @@ pub enum KeyValue {
 	TransactionMeta(H256, TransactionMeta),
 	BlockNumber(H256, u32),
 	Configuration(&'static str, Bytes),
+	SpentTransactions(u32, List<H256>),
 }
 
 #[derive(Debug)]
@@ -42,6 +44,7 @@ pub enum Key {
 	TransactionMeta(H256),
 	BlockNumber(H256),
 	Configuration(&'static str),
+	SpentTransactions(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +57,7 @@ pub enum Value {
 	TransactionMeta(TransactionMeta),
 	BlockNumber(u32),
 	Configuration(Bytes),
+	SpentTransactions(List<H256>),
 }
 
 impl Value {
@@ -67,6 +71,7 @@ impl Value {
 			Key::TransactionMeta(_) => deserialize(bytes).map(Value::TransactionMeta),
 			Key::BlockNumber(_) => deserialize(bytes).map(Value::BlockNumber),
 			Key::Configuration(_) => deserialize(bytes).map(Value::Configuration),
+			Key::SpentTransactions(_) => deserialize(bytes).map(Value::SpentTransactions),
 		}.map_err(|e| format!("{:?}", e))
 	}
 
@@ -122,6 +127,13 @@ impl Value {
 	pub fn as_configuration(self) -> Option<Bytes> {
 		match self {
 			Value::Configuration(bytes) => Some(bytes),
+			_ => None,
+		}
+	}
+
+	pub fn as_spent_transactions(self) -> Option<List<H256>> {
+		match self {
+			Value::SpentTransactions(list) => Some(list),
 			_ => None,
 		}
 	}
@@ -228,6 +240,7 @@ impl<'a> From<&'a KeyValue> for RawKeyValue {
 			KeyValue::TransactionMeta(ref key, ref value) => (COL_TRANSACTIONS_META, serialize(key), serialize(value)),
 			KeyValue::BlockNumber(ref key, ref value) => (COL_BLOCK_NUMBERS, serialize(key), serialize(value)),
 			KeyValue::Configuration(ref key, ref value) => (COL_CONFIGURATION, serialize(key), serialize(value)),
+			KeyValue::SpentTransactions(ref key, ref value) => (COL_SPENT_TRANSACTIONS, serialize(key), serialize(value)),
 		};
 
 		RawKeyValue {
@@ -263,6 +276,7 @@ impl<'a> From<&'a Key> for RawKey {
 			Key::TransactionMeta(ref key) => (COL_TRANSACTIONS_META, serialize(key)),
 			Key::BlockNumber(ref key) => (COL_BLOCK_NUMBERS, serialize(key)),
 			Key::Configuration(ref key) => (COL_CONFIGURATION, serialize(key)),
+			Key::SpentTransactions(ref key) => (COL_SPENT_TRANSACTIONS, serialize(key)),
 		};
 
 		RawKey {

@@ -7,12 +7,14 @@ use db;
 use config::Config;
 use chain::IndexedBlock;
 
-pub fn open_db(data_dir: &Option<String>, db_cache: usize) -> storage::SharedStore {
+pub fn open_db(data_dir: &Option<String>, db_cache: usize, pruning: db::PruningParams) -> storage::SharedStore {
 	let db_path = match *data_dir {
 		Some(ref data_dir) => custom_path(&data_dir, "db"),
 		None => app_dir(AppDataType::UserData, &APP_INFO, "db").expect("Failed to get app dir"),
 	};
-	Arc::new(db::BlockChainDatabase::open_at_path(db_path, db_cache).expect("Failed to open database"))
+	let mut db = db::BlockChainDatabase::open_at_path(db_path, db_cache).expect("Failed to open database");
+	db.set_pruning_params(pruning);
+	Arc::new(db)
 }
 
 pub fn node_table_path(cfg: &Config) -> PathBuf {

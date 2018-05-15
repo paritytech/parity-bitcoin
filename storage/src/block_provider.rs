@@ -23,9 +23,7 @@ pub trait BlockProvider: BlockHeaderProvider {
 	fn block(&self, block_ref: BlockRef) -> Option<Block>;
 
 	/// returns true if store contains given block
-	fn contains_block(&self, block_ref: BlockRef) -> bool {
-		self.block_header_bytes(block_ref).is_some()
-	}
+	fn contains_block(&self, block_ref: BlockRef) -> bool;
 
 	/// resolves list of block transactions by block reference (number/hash)
 	fn block_transaction_hashes(&self, block_ref: BlockRef) -> Vec<H256>;

@@ -28,11 +28,23 @@ use storage::{
 const KEY_BEST_BLOCK_NUMBER: &'static str = "best_block_number";
 const KEY_BEST_BLOCK_HASH: &'static str = "best_block_hash";
 
-const MAX_FORK_ROUTE_PRESET: usize = 2048;
+const MAX_FORK_ROUTE_PRESET: u32 = 2048;
+
+/// Database pruning parameters.
+pub struct PruningParams {
+	/// Pruning depth (i.e. we're saving pruning_depth last blocks because we believe
+	/// that fork still can affect these blocks).
+	pub pruning_depth: u32,
+	/// Prune blocks that can not became a part of reorg process.
+	pub prune_ancient_blocks: bool,
+	/// Prune fully spent transactions that can not not became a part of reorg process.
+	pub prune_spent_transactions: bool,
+}
 
 pub struct BlockChainDatabase<T> where T: KeyValueDatabase {
 	best_block: RwLock<BestBlock>,
 	db: T,
+	pruning: PruningParams,
 }
 
 pub struct ForkChainDatabase<'a, T> where T: 'a + KeyValueDatabase {
@@ -91,6 +103,7 @@ impl<T> BlockChainDatabase<CacheDatabase<AutoFlushingOverlayDatabase<T>>> where 
 		BlockChainDatabase {
 			best_block: RwLock::new(best_block),
 			db: db,
+			pruning: Default::default(),
 		}
 	}
 }
@@ -115,7 +128,18 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		BlockChainDatabase {
 			best_block: RwLock::new(best_block),
 			db: db,
+			pruning: Default::default(),
 		}
+	}
+
+	pub fn set_pruning_params(&mut self, params: PruningParams) {
+		// 11 is the because we take 11 last headers to calculate MTP. This limit must be
+		// raised to at least MAX_FORK_ROUTE_PRESET and assert replaced with Err before
+		// passing control over this to cli
+		// right now it is 11 to speed up tests
+		assert!(params.pruning_depth >= 11);
+
+		self.pruning = params;
 	}
 
 	pub fn best_block(&self) -> BestBlock {
@@ -222,7 +246,8 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 
 	/// Rollbacks single best block
 	fn rollback_best(&self) -> Result<H256, Error> {
-		let decanonized = match self.block(self.best_block.read().hash.clone().into()) {
+		let best_block: BestBlock = self.best_block.read().clone();
+		let decanonized = match self.block(best_block.hash.clone().into()) {
 			Some(block) => block,
 			None => return Ok(H256::default()),
 		};
@@ -233,12 +258,7 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		// all code currently works in assumption that origin of all blocks is one of:
 		// {CanonChain, SideChain, SideChainBecomingCanonChain}
 		let mut update = DBTransaction::new();
-		update.delete(Key::BlockHeader(decanonized_hash.clone()));
-		update.delete(Key::BlockTransactions(decanonized_hash.clone()));
-		for tx in decanonized.transactions.into_iter() {
-			update.delete(Key::Transaction(tx.hash()));
-		}
-
+		self.delete_canon_block(best_block.number, &mut update, true);
 		self.db.write(update).map_err(Error::DatabaseError)?;
 
 		Ok(self.best_block().hash)
@@ -302,6 +322,9 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 				}
 			}
 		}
+
+		self.prune_ancient_blocks(&mut update, new_best_block.number);
+		self.prune_spent_transactions(&mut update, new_best_block.number, &modified_meta);
 
 		for (hash, meta) in modified_meta.into_iter() {
 			update.insert(KeyValue::TransactionMeta(hash, meta));
@@ -367,6 +390,8 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			update.delete(Key::TransactionMeta(tx.hash));
 		}
 
+		self.revert_spent_transactions_pruning(&mut update, block_number);
+
 		self.db.write(update).map_err(Error::DatabaseError)?;
 		*best_block = new_best_block;
 		Ok(block_hash)
@@ -381,6 +406,99 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			BlockRef::Number(n) => self.block_hash(n),
 			BlockRef::Hash(h) => Some(h),
 		}
+	}
+
+	fn prune_ancient_blocks(&self, update: &mut DBTransaction, new_best_block_number: u32) {
+		// if blocks pruning is enabled, prune ancient blocks (i.e. blocks that are
+		// older than pruning_depth)
+		if !self.pruning.prune_ancient_blocks {
+			return;
+		}
+
+		// we are never pruning the genesis block
+		// we are saving last pruning_depth blocks
+		// we are only pruning blocks from canon chain (because there are currently no
+		//   way to find descendant blocks, except for the canon chain case)
+		if let Some(last_block_to_prune) = new_best_block_number.checked_sub(self.pruning.pruning_depth) {
+			for block_number in (1..last_block_to_prune + 1).rev() {
+				match self.delete_canon_block(block_number, update, false) {
+					true => trace!(target: "prune", "pruning canon block {} at {}", block_number, new_best_block_number),
+					false => break,
+				}
+			}
+		}
+	}
+
+	fn prune_spent_transactions(&self, update: &mut DBTransaction, new_best_block_number: u32, modified_meta: &HashMap<H256, TransactionMeta>) {
+		// if transaction pruning is enabled, prune fully spent transactions (TX1) when we are
+		// sure that last transaction TX2, making TX1 fully spent, is older than pruning_depth
+		if !self.pruning.prune_spent_transactions {
+			return;
+		}
+
+		// first, remember hashes of transactions that could be pruned in the future
+		let txs_to_prune: Vec<_> = modified_meta.iter()
+			.filter(|(_, m)| m.is_fully_spent())
+			.map(|(t, _)| t)
+			.collect();
+		if !txs_to_prune.is_empty() {
+			let txs_prune_block = self.spent_transaction_pruning_block(new_best_block_number);
+			trace!(target: "prune", "seheduling pruning of {} fully spent transactions at {}",
+				txs_to_prune.len(), txs_prune_block);
+
+			update.insert(KeyValue::SpentTransactions(
+				txs_prune_block,
+				List::from(txs_to_prune.into_iter().cloned().collect())));
+		}
+
+		// and now remove transactions that have been scheduled for pruning pruning_depth blocks ago
+		let txs_to_prune = self.get(Key::SpentTransactions(new_best_block_number))
+			.and_then(Value::as_spent_transactions)
+			.map(List::into);
+		if let Some(txs_to_prune) = txs_to_prune {
+			trace!(target: "prune", "pruning {} fully spent transactions at {}", txs_to_prune.len(), new_best_block_number);
+
+			update.delete(Key::SpentTransactions(new_best_block_number));
+			for tx_to_prune in txs_to_prune {
+				update.delete(Key::Transaction(tx_to_prune.clone()));
+				update.delete(Key::TransactionMeta(tx_to_prune));
+			}
+		}
+	}
+
+	fn revert_spent_transactions_pruning(&self, update: &mut DBTransaction, block_number: u32) {
+		let txs_prune_block = self.spent_transaction_pruning_block(block_number);
+		update.delete(Key::SpentTransactions(txs_prune_block));
+	}
+
+	fn delete_canon_block(&self, block_number: u32, update: &mut DBTransaction, leave_no_traces: bool) -> bool {
+		let block_hash = match self.block_hash(block_number) {
+			Some(block_hash) => block_hash,
+			None => return false,
+		};
+
+		if self.get(Key::BlockHeader(block_hash.clone())).is_none() {
+			return false;
+		}
+
+		update.delete(Key::BlockHeader(block_hash.clone()));
+		update.delete(Key::BlockTransactions(block_hash.clone()));
+		if leave_no_traces {
+			update.delete(Key::BlockHash(block_number));
+			update.delete(Key::BlockNumber(block_hash.clone()));
+
+			let block_transactions = self.block_transaction_hashes(block_hash.clone().into());
+			for tx_hash in block_transactions {
+				update.delete(Key::Transaction(tx_hash.clone()));
+				update.delete(Key::TransactionMeta(tx_hash));
+			}
+		}
+
+		true
+	}
+
+	fn spent_transaction_pruning_block(&self, best_block_number: u32) -> u32 {
+		best_block_number + self.pruning.pruning_depth + 1
 	}
 }
 
@@ -584,5 +702,15 @@ impl<T> ConfigStore for BlockChainDatabase<T> where T: KeyValueDatabase {
 		let mut update = DBTransaction::new();
 		update.insert(KeyValue::Configuration("consensus_fork", consensus_fork.as_bytes().into()));
 		self.db.write(update).map_err(Error::DatabaseError)
+	}
+}
+
+impl Default for PruningParams {
+	fn default() -> Self {
+		PruningParams {
+			pruning_depth: MAX_FORK_ROUTE_PRESET,
+			prune_ancient_blocks: false,
+			prune_spent_transactions: false,
+		}
 	}
 }
