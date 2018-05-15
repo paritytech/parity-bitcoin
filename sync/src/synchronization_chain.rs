@@ -281,7 +281,10 @@ impl Chain {
 	pub fn block_state(&self, hash: &H256) -> BlockState {
 		match self.hash_chain.contains_in(hash) {
 			Some(queue_index) => BlockState::from_queue_index(queue_index),
-			None => if self.storage.contains_block(storage::BlockRef::Hash(hash.clone())) {
+			// because of pruning, the header might be missing from db
+			// because of side chains, the block number can be missing from db
+			// => use double check here to find if block is in the database
+			None => if self.storage.block_number(hash).is_some() || self.storage.contains_block(hash.clone().into()) {
 				BlockState::Stored
 			} else if self.dead_end_blocks.contains(hash) {
 				BlockState::DeadEnd
