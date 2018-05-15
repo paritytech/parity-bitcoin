@@ -501,7 +501,7 @@ impl<T> BlockHeaderProvider for BlockChainDatabase<T> where T: KeyValueDatabase 
 }
 
 impl<T> BlockProvider for BlockChainDatabase<T> where T: KeyValueDatabase {
-		fn block_number(&self, hash: &H256) -> Option<u32> {
+	fn block_number(&self, hash: &H256) -> Option<u32> {
 		self.get(Key::BlockNumber(hash.clone()))
 			.and_then(Value::as_block_number)
 	}
