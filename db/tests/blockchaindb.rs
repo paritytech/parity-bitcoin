@@ -278,3 +278,59 @@ fn spent_transactions_are_pruned() {
 	assert!(store.transaction(&tx).is_none());
 	assert!(store.transaction_meta(&tx).is_none());
 }
+
+#[test]
+fn spent_transactions_is_not_pruned_if_spend_is_reverted() {
+	let pruning_depth = 11;
+	let mut store = BlockChainDatabase::open(MemoryDatabase::default());
+	store.set_pruning_params(PruningParams {
+		pruning_depth,
+		prune_ancient_blocks: false,
+		prune_spent_transactions: true,
+	});
+
+	// insert genesis
+	store.insert(test_data::genesis().into()).unwrap();
+	store.canonize(&test_data::genesis().hash()).unwrap();
+
+	// insert block with TX we're going to prune later
+	// genesis -> tx
+	let block_with_input_tx = test_data::block_builder()
+		.header().nonce(1).parent(test_data::genesis().hash()).build()
+		.transaction().coinbase().build()
+		.transaction()
+			.output().value(10).build()
+			.build()
+		.build();
+	let tx = block_with_input_tx.transactions[1].hash();
+
+	store.insert(block_with_input_tx.clone().into()).unwrap();
+	store.canonize(&block_with_input_tx.hash()).unwrap();
+
+	// now insert block with tx, fully spending initial tx
+	// genesis -> tx -> spend
+	let spending = test_data::block_builder()
+		.header().nonce(1).parent(block_with_input_tx.hash()).build()
+		.transaction().coinbase().build()
+		.transaction()
+			.input().hash(tx.clone()).index(0).build()
+			.output().value(10).build()
+			.build()
+		.build();
+	store.insert(spending.clone().into()).unwrap();
+	store.canonize(&spending.hash()).unwrap();
+
+	// decanonize spending block
+	// genesis -> tx
+	store.decanonize().unwrap();
+
+	// now insert pruning_depth + 2 empty blocks and check that tx is not pruned
+	// genesis -> tx -> pruning_depth+2 x empty
+	let blocks = test_data::build_n_empty_blocks_from(pruning_depth + 2, 2, &block_with_input_tx.header());
+	for block in &blocks {
+		store.insert(block.clone().into()).unwrap();
+		store.canonize(&block.hash()).unwrap();
+	}
+	assert!(store.transaction(&tx).is_some());
+	assert!(store.transaction_meta(&tx).is_some());
+}

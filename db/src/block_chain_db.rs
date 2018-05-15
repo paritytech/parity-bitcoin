@@ -390,6 +390,8 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			update.delete(Key::TransactionMeta(tx.hash));
 		}
 
+		self.revert_spent_transactions_pruning(&mut update, block_number);
+
 		self.db.write(update).map_err(Error::DatabaseError)?;
 		*best_block = new_best_block;
 		Ok(block_hash)
@@ -440,10 +442,12 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			.map(|(t, _)| t)
 			.collect();
 		if !txs_to_prune.is_empty() {
+			let txs_prune_block = self.spent_transaction_pruning_block(new_best_block_number);
 			trace!(target: "prune", "seheduling pruning of {} fully spent transactions at {}",
-				txs_to_prune.len(), new_best_block_number + self.pruning.pruning_depth + 1);
+				txs_to_prune.len(), txs_prune_block);
+
 			update.insert(KeyValue::SpentTransactions(
-				new_best_block_number + self.pruning.pruning_depth + 1,
+				txs_prune_block,
 				List::from(txs_to_prune.into_iter().cloned().collect())));
 		}
 
@@ -452,13 +456,19 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 			.and_then(Value::as_spent_transactions)
 			.map(List::into);
 		if let Some(txs_to_prune) = txs_to_prune {
-			trace!(target: "db", "pruning {} fully spent transactions at {}", txs_to_prune.len(), new_best_block_number);
 			trace!(target: "prune", "pruning {} fully spent transactions at {}", txs_to_prune.len(), new_best_block_number);
+
+			update.delete(Key::SpentTransactions(new_best_block_number));
 			for tx_to_prune in txs_to_prune {
 				update.delete(Key::Transaction(tx_to_prune.clone()));
 				update.delete(Key::TransactionMeta(tx_to_prune));
 			}
 		}
+	}
+
+	fn revert_spent_transactions_pruning(&self, update: &mut DBTransaction, block_number: u32) {
+		let txs_prune_block = self.spent_transaction_pruning_block(block_number);
+		update.delete(Key::SpentTransactions(txs_prune_block));
 	}
 
 	fn delete_canon_block(&self, block_number: u32, update: &mut DBTransaction, leave_no_traces: bool) -> bool {
@@ -485,6 +495,10 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 		}
 
 		true
+	}
+
+	fn spent_transaction_pruning_block(&self, best_block_number: u32) -> u32 {
+		best_block_number + self.pruning.pruning_depth + 1
 	}
 }
 
