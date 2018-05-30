@@ -34,6 +34,7 @@ pub fn main(benchmark: &mut Benchmark) {
 		LittleEndian::write_u64(&mut coinbase_nonce[..], x as u64);
 		let next_block = test_data::block_builder()
 			.transaction()
+				.lock_time(x as u32)
 				.input()
 					.coinbase()
 					.signature_bytes(coinbase_nonce.to_vec().into())
@@ -62,6 +63,7 @@ pub fn main(benchmark: &mut Benchmark) {
 		LittleEndian::write_u64(&mut coinbase_nonce[..], (b + BLOCKS_INITIAL) as u64);
 		let mut builder = test_data::block_builder()
 			.transaction()
+				.lock_time(b as u32)
 				.input().coinbase().signature_bytes(coinbase_nonce.to_vec().into()).build()
 				.output().value(5000000000).build()
 				.build();
