@@ -96,7 +96,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 			protocol_version: PROTOCOL_VERSION,
 			protocol_minimum: PROTOCOL_MINIMUM,
 			magic: cfg.consensus.magic(),
-			local_address: SocketAddr::new("127.0.0.1".parse().unwrap(), cfg.port),
+			local_address: SocketAddr::new(cfg.host, cfg.port),
 			services: cfg.services,
 			user_agent: cfg.user_agent,
 			start_height: 0,

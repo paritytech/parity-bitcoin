@@ -21,6 +21,12 @@ args:
         value_name: IP
         help: Connect only to the specified node.
         takes_value: true
+    - host:
+        short: h
+        long: host
+        value_name: HOST
+        help: Listen for connections on HOST.
+        takes_value: true
     - seednode:
         short: s
         long: seednode
