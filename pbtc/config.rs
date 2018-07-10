@@ -113,19 +113,12 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 	};
 
 	let host =  match matches.value_of("host") {
-		Some(s) => Some(match s.parse::<net::IpAddr>() {
-			Err(_) => s.parse::<net::IpAddr>()
-				.map_err(|_| "Invalid host".to_owned()),
-			Ok(a) => Ok(a),
-		}?),
-		None => None,
-	}.unwrap_or(
-		match only_net {
+		Some(s) => s.parse::<net::IpAddr>().map_err(|_| "Invalid host".to_owned())?,
+		None => match only_net {
 			InternetProtocol::IpV6 => "::".parse().unwrap(),
-			InternetProtocol::IpV4 => "0.0.0.0".parse().unwrap(),
-			InternetProtocol::Any => "0.0.0.0".parse().unwrap(),
+			_ => "0.0.0.0".parse().unwrap(),
 		}
-	);
+	};
 
 	let rpc_config = parse_rpc_config(network, matches)?;
 
