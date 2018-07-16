@@ -19,6 +19,7 @@ pub struct Config {
 	pub services: Services,
 	pub port: u16,
 	pub connect: Option<net::SocketAddr>,
+	pub host: net::IpAddr,
 	pub seednodes: Vec<String>,
 	pub quiet: bool,
 	pub inbound_connections: u32,
@@ -111,6 +112,14 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		None => InternetProtocol::default(),
 	};
 
+	let host =  match matches.value_of("host") {
+		Some(s) => s.parse::<net::IpAddr>().map_err(|_| "Invalid host".to_owned())?,
+		None => match only_net {
+			InternetProtocol::IpV6 => "::".parse().unwrap(),
+			_ => "0.0.0.0".parse().unwrap(),
+		}
+	};
+
 	let rpc_config = parse_rpc_config(network, matches)?;
 
 	let block_notify_command = match matches.value_of("blocknotify") {
@@ -147,6 +156,7 @@ pub fn parse(matches: &clap::ArgMatches) -> Result<Config, String> {
 		services: services,
 		port: port,
 		connect: connect,
+		host: host,
 		seednodes: seednodes,
 		inbound_connections: in_connections,
 		outbound_connections: out_connections,
