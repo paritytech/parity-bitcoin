@@ -30,14 +30,20 @@ pub fn testnet_seednodes() -> Vec<&'static str> {
 
 pub fn bitcoin_cash_seednodes() -> Vec<&'static str> {
 	vec![
-		"cash-seed.bitcoin.thomaszander.se:8333",
+		"seed.bitcoinabc.org:8333",
+		"seed-abc.bitcoinforks.org:8333",
 		"seed.bitprim.org:8333",
+		"seed.deadalnix.me:8333",
+		"seeder.criptolayer.net:8333"
 	]
 }
 
 pub fn bitcoin_cash_testnet_seednodes() -> Vec<&'static str> {
 	vec![
+		"testnet-seed.bitcoinabc.org:18333",
 		"testnet-seed-abc.bitcoinforks.org:18333",
 		"testnet-seed.bitprim.org:18333",
+		"testnet-seed.deadalnix.me:18333",
+		"testnet-seeder.criptolayer.net:18333"
 	]
 }
