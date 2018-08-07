@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 
 [dependencies]
-rust-crypto = "0.2.36"
+digest = "0.7"
+sha-1 = "0.7"
+sha2 = "0.7"
+ripemd160 = "0.7"
 siphasher = "0.1.1"
 primitives = { path = "../primitives" }
