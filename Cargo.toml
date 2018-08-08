@@ -38,9 +38,6 @@ panic = 'abort'
 [profile.test]
 debug = true
 
-[profile.doc]
-debug = true
-
 [[bin]]
 path = "pbtc/main.rs"
 name = "pbtc"
