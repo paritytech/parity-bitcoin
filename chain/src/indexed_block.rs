@@ -84,7 +84,7 @@ impl IndexedBlock {
 
 impl From<&'static str> for IndexedBlock {
 	fn from(s: &'static str) -> Self {
-		deserialize(&s.from_hex().unwrap() as &[u8]).unwrap()
+		deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap()
 	}
 }
 

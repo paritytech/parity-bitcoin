@@ -67,7 +67,7 @@ macro_rules! impl_hash {
 			type Err = FromHexError;
 
 			fn from_str(s: &str) -> Result<Self, Self::Err> {
-				let vec = try!(s.from_hex());
+				let vec: Vec<u8> = try!(s.from_hex());
 				match vec.len() {
 					$size => {
 						let mut result = [0u8; $size];
@@ -81,13 +81,13 @@ macro_rules! impl_hash {
 
 		impl fmt::Debug for $name {
 			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-				f.write_str(&self.0.to_hex())
+				f.write_str(&self.0.to_hex::<String>())
 			}
 		}
 
 		impl fmt::Display for $name {
 			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-				f.write_str(&self.0.to_hex())
+				f.write_str(&self.0.to_hex::<String>())
 			}
 		}
 

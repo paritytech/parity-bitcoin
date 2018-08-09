@@ -13,7 +13,7 @@ pub struct Block {
 
 impl From<&'static str> for Block {
 	fn from(s: &'static str) -> Self {
-		deserialize(&s.from_hex().unwrap() as &[u8]).unwrap()
+		deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap()
 	}
 }
 

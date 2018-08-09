@@ -1,7 +1,7 @@
 //! Bitcoin keys.
 
 extern crate rand;
-extern crate rustc_serialize;
+extern crate rustc_hex as hex;
 #[macro_use]
 extern crate lazy_static;
 extern crate base58;
@@ -19,7 +19,6 @@ mod private;
 mod public;
 mod signature;
 
-pub use rustc_serialize::hex;
 pub use primitives::{hash, bytes};
 
 pub use address::{Type, Address};

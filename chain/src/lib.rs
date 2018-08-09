@@ -1,4 +1,4 @@
-extern crate rustc_serialize;
+extern crate rustc_hex as hex;
 extern crate heapsize;
 extern crate primitives;
 extern crate bitcrypto as crypto;
@@ -23,7 +23,6 @@ pub trait RepresentH256 {
 	fn h256(&self) -> hash::H256;
 }
 
-pub use rustc_serialize::hex;
 pub use primitives::{hash, bytes, bigint, compact};
 
 pub use block::Block;
