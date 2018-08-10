@@ -375,8 +375,9 @@ impl<T> NodeTable<T> where T: Time {
 
 	/// Save node table in csv format.
 	pub fn save<W>(&self, write: W) -> Result<(), io::Error> where W: io::Write {
-		let mut writer = csv::Writer::from_writer(write)
-			.delimiter(b' ');
+		let mut writer = csv::WriterBuilder::new()
+			.delimiter(b' ')
+			.from_writer(write);
 		let iter = self.by_score.iter()
 			.map(|node| &node.0)
 			.take(1000);
@@ -385,7 +386,7 @@ impl<T> NodeTable<T> where T: Time {
 
 		for n in iter {
 			let record = (n.addr.to_string(), n.time, u64::from(n.services), n.failures);
-			try!(writer.encode(record).map_err(|_| err()));
+			try!(writer.serialize(record).map_err(|_| err()));
 		}
 
 		Ok(())
@@ -393,16 +394,17 @@ impl<T> NodeTable<T> where T: Time {
 
 	/// Loads table in from a csv source.
 	pub fn load<R>(preferable_services: Services, read: R) -> Result<Self, io::Error> where R: io::Read, T: Default {
-		let mut rdr = csv::Reader::from_reader(read)
+		let mut rdr = csv::ReaderBuilder::new()
 			.has_headers(false)
-			.delimiter(b' ');
+			.delimiter(b' ')
+			.from_reader(read);
 
 		let mut node_table = NodeTable::default();
 		node_table.preferable_services = preferable_services;
 
 		let err = || io::Error::new(io::ErrorKind::Other, "Load csv error");
 
-		for row in rdr.decode() {
+		for row in rdr.deserialize() {
 			let (addr, time, services, failures): (String, i64, u64, u32) = try!(row.map_err(|_| err()));
 
 			let services = services.into();
