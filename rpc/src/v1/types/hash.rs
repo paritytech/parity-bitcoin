@@ -22,7 +22,7 @@ macro_rules! impl_hash {
 
 		impl fmt::Debug for $name {
 			fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-				write!(f, "{}", $other::from(self.0.clone()).to_hex())
+				write!(f, "{}", $other::from(self.0.clone()).to_hex::<String>())
 			}
 		}
 
@@ -89,7 +89,7 @@ macro_rules! impl_hash {
 			fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
 			where S: serde::Serializer {
 				let mut hex = String::new();
-				hex.push_str(&$other::from(self.0.clone()).to_hex());
+				hex.push_str(&$other::from(self.0.clone()).to_hex::<String>());
 				serializer.serialize_str(&hex)
 			}
 		}
@@ -111,7 +111,7 @@ macro_rules! impl_hash {
 							return Err(E::invalid_value(Unexpected::Str(value), &self))
 						}
 
-						match value[..].from_hex() {
+						match value[..].from_hex::<Vec<u8>>() {
 							Ok(ref v) => {
 								let mut result = [0u8; $size];
 								result.copy_from_slice(v);

@@ -92,14 +92,14 @@ impl PartialEq for Public {
 impl fmt::Debug for Public {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match *self {
-			Public::Normal(ref hash) => writeln!(f, "normal: {}", hash.to_hex()),
-			Public::Compressed(ref hash) => writeln!(f, "compressed: {}", hash.to_hex()),
+			Public::Normal(ref hash) => writeln!(f, "normal: {}", hash.to_hex::<String>()),
+			Public::Compressed(ref hash) => writeln!(f, "compressed: {}", hash.to_hex::<String>()),
 		}
 	}
 }
 
 impl fmt::Display for Public {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		self.to_hex().fmt(f)
+		self.to_hex::<String>().fmt(f)
 	}
 }

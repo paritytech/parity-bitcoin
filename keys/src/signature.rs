@@ -12,13 +12,13 @@ pub struct Signature(Vec<u8>);
 
 impl fmt::Debug for Signature {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		self.0.to_hex().fmt(f)
+		self.0.to_hex::<String>().fmt(f)
 	}
 }
 
 impl fmt::Display for Signature {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		self.0.to_hex().fmt(f)
+		self.0.to_hex::<String>().fmt(f)
 	}
 }
 
@@ -74,13 +74,13 @@ pub struct CompactSignature(H520);
 
 impl fmt::Debug for CompactSignature {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		f.write_str(&self.0.to_hex())
+		f.write_str(&self.0.to_hex::<String>())
 	}
 }
 
 impl fmt::Display for CompactSignature {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		f.write_str(&self.0.to_hex())
+		f.write_str(&self.0.to_hex::<String>())
 	}
 }
 

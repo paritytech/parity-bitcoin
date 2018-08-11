@@ -84,7 +84,7 @@ impl io::Write for Bytes {
 
 impl fmt::Debug for Bytes {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		f.write_str(&self.0.to_hex())
+		f.write_str(&self.0.to_hex::<String>())
 	}
 }
 
