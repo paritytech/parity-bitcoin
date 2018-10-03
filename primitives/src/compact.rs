@@ -85,11 +85,17 @@ impl Compact {
 	}
 
 	pub fn to_f64(&self) -> f64 {
-    	let max_body = f64::from(0x00ffff).ln();
-    	let scaland = f64::from(256).ln();
-    	let ln1 = f64::from(self.0 & 0x00ffffff).ln();
-    	let s1 = scaland * f64::from(0x1d - ((self.0 & 0xff000000) >> 24));
-		(max_body - ln1 + s1).exp()
+		let mut shift = (self.0 >> 24) & 0xff;
+		let mut diff = f64::from(0x0000ffffu32) / f64::from(self.0 & 0x00ffffffu32);
+		while shift < 29 {
+			diff *= f64::from(256);
+			shift += 1;
+		}
+		while shift > 29 {
+			diff /= f64::from(256.0);
+			shift -= 1;
+		}
+		diff
 	}
 }
 
@@ -132,7 +138,19 @@ mod tests {
 
 	#[test]
 	fn difficulty() {
-		let nbits = Compact::new(0x1b0404cb);
-		assert_eq!(nbits.to_f64(), 16307.420938523994f64);
+		fn compare_f64(v1: f64, v2: f64) -> bool {
+			(v1 - v2).abs() < 0.00001
+		}
+
+		assert!(compare_f64(Compact::new(0x1b0404cb).to_f64(), 16307.42094));
+	
+		// tests from original bitcoin client:
+		// https://github.com/bitcoin/bitcoin/blob/1e8f88e071019907785b260477bd359bef6f9a8f/src/test/blockchain_tests.cpp
+
+		assert!(compare_f64(Compact::new(0x1f111111).to_f64(), 0.000001));
+		assert!(compare_f64(Compact::new(0x1ef88f6f).to_f64(), 0.000016));
+		assert!(compare_f64(Compact::new(0x1df88f6f).to_f64(), 0.004023));
+		assert!(compare_f64(Compact::new(0x1cf88f6f).to_f64(), 1.029916));
+		assert!(compare_f64(Compact::new(0x12345678).to_f64(), 5913134931067755359633408.0));
 	}
 }
