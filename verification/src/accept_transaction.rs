@@ -3,7 +3,7 @@ use primitives::bytes::Bytes;
 use storage::{TransactionMetaProvider, TransactionOutputProvider};
 use network::{ConsensusParams, ConsensusFork};
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner, SignatureVersion};
-use duplex_store::DuplexTransactionOutputProvider;
+use duplex_store::{DuplexTransactionOutputProvider, transaction_index_for_output_check};
 use deployments::BlockDeployments;
 use script::Builder;
 use sigops::transaction_sigops;
@@ -41,10 +41,12 @@ impl<'a> TransactionAcceptor<'a> {
 		deployments: &'a BlockDeployments<'a>,
 	) -> Self {
 		trace!(target: "verification", "Tx verification {}", transaction.hash.to_reversed_str());
+		let tx_ordering = consensus.fork.transaction_ordering(median_time_past);
+		let missing_input_tx_index = transaction_index_for_output_check(tx_ordering,transaction_index);
 		TransactionAcceptor {
 			premature_witness: TransactionPrematureWitness::new(transaction, deployments),
 			bip30: TransactionBip30::new_for_sync(transaction, meta_store, consensus, block_hash, height),
-			missing_inputs: TransactionMissingInputs::new(transaction, output_store, transaction_index),
+			missing_inputs: TransactionMissingInputs::new(transaction, output_store, missing_input_tx_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, output_store),
 			double_spent: TransactionDoubleSpend::new(transaction, output_store),

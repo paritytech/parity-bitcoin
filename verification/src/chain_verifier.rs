@@ -154,11 +154,12 @@ mod tests {
 	extern crate test_data;
 
 	use std::sync::Arc;
-	use chain::IndexedBlock;
-	use storage::{Error as DBError};
+	use chain::{IndexedBlock, Transaction, Block};
+	use storage::Error as DBError;
 	use db::BlockChainDatabase;
-	use network::{Network, ConsensusParams, ConsensusFork};
+	use network::{Network, ConsensusParams, ConsensusFork, BitcoinCashConsensusParams};
 	use script;
+	use constants::DOUBLE_SPACING_SECONDS;
 	use super::BackwardsCompatibleChainVerifier as ChainVerifier;
 	use {Verify, Error, TransactionError, VerificationLevel};
 
@@ -177,7 +178,6 @@ mod tests {
 		let verifier = ChainVerifier::new(storage, ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore));
 		assert!(verifier.verify(VerificationLevel::Full, &b1.into()).is_ok());
 	}
-
 
 	#[test]
 	fn first_tx() {
@@ -333,6 +333,66 @@ mod tests {
 
 		let expected = Err(Error::Transaction(2, TransactionError::Overspend));
 		assert_eq!(expected, verifier.verify(VerificationLevel::Full, &block.into()));
+	}
+
+	#[test]
+	fn transaction_references_same_block_and_goes_before_previous() {
+		let mut blocks = vec![test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(50).build()
+				.build()
+			.merkled_header().build()
+			.build()];
+		let input_tx = blocks[0].transactions()[0].clone();
+		let mut parent_hash = blocks[0].hash();
+		// waiting 100 blocks for genesis coinbase to become valid
+		for _ in 0..100 {
+			let block: Block = test_data::block_builder()
+				.transaction().coinbase().build()
+				.merkled_header().parent(parent_hash).build()
+				.build()
+				.into();
+			parent_hash = block.hash();
+			blocks.push(block);
+		}
+
+		let storage = Arc::new(BlockChainDatabase::init_test_chain(blocks.into_iter().map(Into::into).collect()));
+
+		let tx1: Transaction = test_data::TransactionBuilder::with_version(4)
+			.add_input(&input_tx, 0)
+			.add_output(40)
+			.into();
+		let tx2: Transaction = test_data::TransactionBuilder::with_version(1)
+			.add_input(&tx1, 0)
+			.add_output(30)
+			.into();
+		let block = test_data::block_builder()
+			.transaction()
+				.coinbase()
+				.output().value(2).build()
+				.build()
+			.with_transaction(tx2)
+			.with_transaction(tx1)
+			.merkled_header()
+				.time(DOUBLE_SPACING_SECONDS + 101) // to pass BCH work check
+				.parent(parent_hash)
+				.build()
+			.build();
+
+		// when topological order is required
+		let topological_consensus = ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore);
+		let verifier = ChainVerifier::new(storage.clone(), topological_consensus);
+		let expected = Err(Error::Transaction(1, TransactionError::Overspend));
+		assert_eq!(expected, verifier.verify(VerificationLevel::Header, &block.clone().into()));
+
+		// when canonical order is required
+		let mut canonical_params = BitcoinCashConsensusParams::new(Network::Unitest);
+		canonical_params.magnetic_anomaly_time = 0;
+		let canonical_consensus = ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCash(canonical_params));
+		let verifier = ChainVerifier::new(storage, canonical_consensus);
+		let expected = Ok(());
+		assert_eq!(expected, verifier.verify(VerificationLevel::Header, &block.into()));
 	}
 
 	#[test]

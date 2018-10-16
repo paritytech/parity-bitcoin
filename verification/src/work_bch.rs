@@ -141,7 +141,7 @@ fn work_required_bitcoin_cash_adjusted(parent_header: IndexedBlockHeader, time: 
 	// If the new block's timestamp is more than 2 * 10 minutes then allow
 	// mining of a min-difficulty block.
 	let max_bits = consensus.network.max_bits();
-	if consensus.network == Network::Testnet {
+	if consensus.network == Network::Testnet || consensus.network == Network::Unitest {
 		let max_time_gap = parent_header.raw.time + DOUBLE_SPACING_SECONDS;
 		if time > max_time_gap {
 			return max_bits.into();
@@ -218,6 +218,7 @@ mod tests {
 			height: 1000,
 			difficulty_adjustion_height: 0xffffffff,
 			monolith_time: 0xffffffff,
+			magnetic_anomaly_time: 0xffffffff,
 		}));
 		let mut header_provider = MemoryBlockHeaderProvider::default();
 		header_provider.insert(BlockHeader {
@@ -271,6 +272,7 @@ mod tests {
 			height: 1000,
 			difficulty_adjustion_height: 0xffffffff,
 			monolith_time: 0xffffffff,
+			magnetic_anomaly_time: 0xffffffff,
 		}));
 
 
