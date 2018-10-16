@@ -163,7 +163,7 @@ impl<'a> BlockSigops<'a> {
 	fn check(&self) -> Result<(), Error> {
 		// We cannot know if bip16 is enabled at this point so we disable it.
 		let sigops = self.block.transactions.iter()
-			.map(|tx| transaction_sigops(&tx.raw, &NoopStore, false))
+			.map(|tx| transaction_sigops(&tx.raw, &NoopStore, false, false))
 			.sum::<usize>();
 
 		if sigops > self.max_sigops {
