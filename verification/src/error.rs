@@ -80,6 +80,8 @@ pub enum TransactionError {
 	CoinbaseSignatureLength(usize),
 	/// Transaction size exceeds block size limit
 	MaxSize,
+	/// Transaction size is below min size limit
+	MinSize,
 	/// Transaction has more sigops than it's allowed
 	MaxSigops,
 	/// Transaction is a part of memory pool, but is a coinbase

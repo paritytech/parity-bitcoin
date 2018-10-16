@@ -1,5 +1,6 @@
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
+use ser::Serializable;
 use storage::{TransactionMetaProvider, TransactionOutputProvider};
 use network::{ConsensusParams, ConsensusFork};
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner, SignatureVersion};
@@ -13,6 +14,7 @@ use error::TransactionError;
 use VerificationLevel;
 
 pub struct TransactionAcceptor<'a> {
+	pub size: TransactionSize<'a>,
 	pub premature_witness: TransactionPrematureWitness<'a>,
 	pub bip30: TransactionBip30<'a>,
 	pub missing_inputs: TransactionMissingInputs<'a>,
@@ -44,6 +46,7 @@ impl<'a> TransactionAcceptor<'a> {
 		let tx_ordering = consensus.fork.transaction_ordering(median_time_past);
 		let missing_input_tx_index = transaction_index_for_output_check(tx_ordering,transaction_index);
 		TransactionAcceptor {
+			size: TransactionSize::new(transaction, consensus, median_time_past),
 			premature_witness: TransactionPrematureWitness::new(transaction, deployments),
 			bip30: TransactionBip30::new_for_sync(transaction, meta_store, consensus, block_hash, height),
 			missing_inputs: TransactionMissingInputs::new(transaction, output_store, missing_input_tx_index),
@@ -56,6 +59,7 @@ impl<'a> TransactionAcceptor<'a> {
 	}
 
 	pub fn check(&self) -> Result<(), TransactionError> {
+		try!(self.size.check());
 		try!(self.premature_witness.check());
 		try!(self.bip30.check());
 		try!(self.missing_inputs.check());
@@ -69,6 +73,7 @@ impl<'a> TransactionAcceptor<'a> {
 }
 
 pub struct MemoryPoolTransactionAcceptor<'a> {
+	pub size: TransactionSize<'a>,
 	pub missing_inputs: TransactionMissingInputs<'a>,
 	pub maturity: TransactionMaturity<'a>,
 	pub overspent: TransactionOverspent<'a>,
@@ -95,6 +100,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 		let transaction_index = 0;
 		let max_block_sigops = consensus.fork.max_block_sigops(height, consensus.fork.max_block_size(height, median_time_past));
 		MemoryPoolTransactionAcceptor {
+			size: TransactionSize::new(transaction, consensus, median_time_past),
 			missing_inputs: TransactionMissingInputs::new(transaction, output_store, transaction_index),
 			maturity: TransactionMaturity::new(transaction, meta_store, height),
 			overspent: TransactionOverspent::new(transaction, output_store),
@@ -108,6 +114,7 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 	pub fn check(&self) -> Result<(), TransactionError> {
 		// Bip30 is not checked because we don't need to allow tx pool acceptance of an unspent duplicate.
 		// Tx pool validation is not strinctly a matter of consensus.
+		try!(self.size.check());
 		try!(self.missing_inputs.check());
 		try!(self.maturity.check());
 		try!(self.overspent.check());
@@ -498,6 +505,30 @@ impl<'a> TransactionPrematureWitness<'a> {
 	}
 }
 
+pub struct TransactionSize<'a> {
+	transaction: CanonTransaction<'a>,
+	min_transaction_size: usize,
+}
+
+impl<'a> TransactionSize<'a> {
+	fn new(transaction: CanonTransaction<'a>, consensus: &'a ConsensusParams, median_time_past: u32) -> Self {
+		let min_transaction_size = consensus.fork.min_transaction_size(median_time_past);
+		TransactionSize {
+			transaction: transaction,
+			min_transaction_size,
+		}
+	}
+
+	fn check(&self) -> Result<(), TransactionError> {
+		let size = self.transaction.raw.serialized_size();
+		if size < self.min_transaction_size {
+			Err(TransactionError::MinSize)
+		} else {
+			Ok(())
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use chain::{IndexedTransaction, Transaction, TransactionOutput};
@@ -505,7 +536,7 @@ mod tests {
 	use script::Builder;
 	use canon::CanonTransaction;
 	use error::TransactionError;
-	use super::TransactionReturnReplayProtection;
+	use super::{TransactionReturnReplayProtection, TransactionSize};
 
 	#[test]
 	fn return_replay_protection_works() {
@@ -532,5 +563,30 @@ mod tests {
 		let consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore);
 		let checker = TransactionReturnReplayProtection::new(CanonTransaction::new(&transaction), &consensus, 100);
 		assert_eq!(checker.check(), Ok(()));
+	}
+
+	#[test]
+	fn transaction_size_works() {
+		let small_tx = Transaction::default();
+		let big_tx: Transaction = "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000".into();
+		let small_tx = IndexedTransaction::new(small_tx.hash(), small_tx);
+		let big_tx = IndexedTransaction::new(big_tx.hash(), big_tx);
+		let small_tx = CanonTransaction::new(&small_tx);
+		let big_tx = CanonTransaction::new(&big_tx);
+
+		let unrestricted_consensus = ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore);
+		let restricted_consensus = ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Unitest)));
+
+		// no restrictions
+		let checker = TransactionSize::new(small_tx, &unrestricted_consensus, 10000000);
+		assert_eq!(checker.check(), Ok(()));
+
+		// big + restricted
+		let checker = TransactionSize::new(big_tx, &restricted_consensus, 2000000000);
+		assert_eq!(checker.check(), Ok(()));
+
+		// small + restricted
+		let checker = TransactionSize::new(small_tx, &restricted_consensus, 2000000000);
+		assert_eq!(checker.check(), Err(TransactionError::MinSize));
 	}
 }

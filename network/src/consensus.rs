@@ -191,6 +191,13 @@ impl ConsensusFork {
 		}
 	}
 
+	pub fn min_transaction_size(&self, median_time_past: u32) -> usize {
+		match *self {
+			ConsensusFork::BitcoinCash(ref fork) if median_time_past >= fork.magnetic_anomaly_time => 100,
+			_ => 0,
+		}
+	}
+
 	pub fn max_transaction_size(&self) -> usize {
 		// BitcoinCash: according to REQ-5: max size of tx is still 1_000_000
 		// SegWit: size * 4 <= 4_000_000 ===> max size of tx is still 1_000_000
@@ -326,6 +333,14 @@ mod tests {
 	fn test_consensus_fork_max_transaction_size() {
 		assert_eq!(ConsensusFork::BitcoinCore.max_transaction_size(), 1_000_000);
 		assert_eq!(ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Mainnet)).max_transaction_size(), 1_000_000);
+	}
+
+	#[test]
+	fn test_consensus_fork_min_transaction_size() {
+		assert_eq!(ConsensusFork::BitcoinCore.min_transaction_size(0), 0);
+		assert_eq!(ConsensusFork::BitcoinCore.min_transaction_size(2000000000), 0);
+		assert_eq!(ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Mainnet)).min_transaction_size(0), 0);
+		assert_eq!(ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(Network::Mainnet)).min_transaction_size(2000000000), 100);
 	}
 
 	#[test]
