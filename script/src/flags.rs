@@ -144,6 +144,11 @@ impl VerificationFlags {
 		self
 	}
 
+	pub fn verify_cleanstack(mut self, value: bool) -> Self {
+		self.verify_cleanstack = value;
+		self
+	}
+
 	pub fn verify_discourage_upgradable_witness_program(mut self, value: bool) -> Self {
 		self.verify_discourage_upgradable_witness_program = value;
 		self

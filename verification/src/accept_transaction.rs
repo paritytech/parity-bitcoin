@@ -309,6 +309,7 @@ pub struct TransactionEval<'a> {
 	verify_monolith_opcodes: bool,
 	verify_magnetic_anomaly_opcodes: bool,
 	verify_sigpushonly: bool,
+	verify_cleanstack: bool,
 	signature_version: SignatureVersion,
 }
 
@@ -347,6 +348,7 @@ impl<'a> TransactionEval<'a> {
 		let verify_witness = deployments.segwit();
 		let verify_nulldummy = verify_witness;
 		let verify_sigpushonly = verify_magnetic_anomaly_opcodes;
+		let verify_cleanstack = verify_magnetic_anomaly_opcodes;
 
 		TransactionEval {
 			transaction: transaction,
@@ -362,6 +364,7 @@ impl<'a> TransactionEval<'a> {
 			verify_monolith_opcodes: verify_monolith_opcodes,
 			verify_magnetic_anomaly_opcodes: verify_magnetic_anomaly_opcodes,
 			verify_sigpushonly: verify_sigpushonly,
+			verify_cleanstack: verify_cleanstack,
 			signature_version: signature_version,
 		}
 	}
@@ -413,7 +416,8 @@ impl<'a> TransactionEval<'a> {
 				.verify_bin2num(self.verify_monolith_opcodes)
 				.verify_num2bin(self.verify_monolith_opcodes)
 				.verify_checkdatasig(self.verify_magnetic_anomaly_opcodes)
-				.verify_sigpushonly(self.verify_sigpushonly);
+				.verify_sigpushonly(self.verify_sigpushonly)
+				.verify_cleanstack(self.verify_cleanstack);
 
 			try!(verify_script(&input, &output, &script_witness, &flags, &checker, self.signature_version)
 				.map_err(|e| TransactionError::Signature(index, e)));
