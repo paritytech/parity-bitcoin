@@ -212,6 +212,8 @@ SUBCOMMANDS:
 
 ## JSON-RPC
 
+The JSON-RPC interface is served on port :8332 for mainnet and :18332 for testnet unless you specified otherwise. So if you are using testnet, you will need to change the port in the sample curl requests shown below.
+
 #### Network
 
 The Parity-bitcoin `network` interface.
