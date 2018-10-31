@@ -196,11 +196,11 @@ fn parse_consensus_fork(network: Network, db: &storage::SharedStore, matches: &c
 			return Err(format!("Cannot select '{}' fork with non-empty database of '{}' fork", new_consensus_fork, old_consensus_fork)),
 	}
 
-	Ok(match new_consensus_fork {
-		"btc" => ConsensusFork::BitcoinCore,
-		"bch" => ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(network)),
-		_ => unreachable!("hardcoded above"),
-	})
+	return match new_consensus_fork {
+		"btc" => Ok(ConsensusFork::BitcoinCore),
+		"bch" => Ok(ConsensusFork::BitcoinCash(BitcoinCashConsensusParams::new(network))),
+		_ => Err(String::from("Fork mandatory")),
+	};
 }
 
 fn parse_rpc_config(network: Network, matches: &clap::ArgMatches) -> Result<RpcHttpConfig, String> {
