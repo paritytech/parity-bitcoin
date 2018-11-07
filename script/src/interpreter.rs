@@ -1140,17 +1140,12 @@ pub fn eval_script(
 				let message = stack.pop()?;
 				let signature = stack.pop()?;
 
-				if message.len() != 32 {
-					return Err(Error::InvalidOperandSize);
-				}
-
-				let message = message[0..32].into();
-
 				check_signature_encoding(&signature, flags, version)?;
 				check_pubkey_encoding(&pubkey, flags)?;
 
 				let signature: Vec<u8> = signature.into();
-				let success = verify_signature(checker, signature.into(), pubkey.into(), message);
+				let message_hash = sha256(&message);
+				let success = verify_signature(checker, signature.into(), pubkey.into(), message_hash);
 				match opcode {
 					Opcode::OP_CHECKDATASIG => {
 						if success {
@@ -1191,6 +1186,7 @@ pub fn eval_script(
 mod tests {
 	use bytes::Bytes;
 	use chain::Transaction;
+	use crypto::sha256;
 	use keys::{KeyPair, Private, Message, Network};
 	use sign::SignatureVersion;
 	use script::MAX_SCRIPT_ELEMENT_SIZE;
@@ -3904,8 +3900,8 @@ mod tests {
 		let kp = KeyPair::from_private(Private { network: Network::Mainnet, secret: 1.into(), compressed: false, }).unwrap();
 		
 		let pubkey = kp.public().clone();
-		let message: Message = [42u8; 32].into();
-		let correct_signature = kp.private().sign(&message).unwrap();
+		let message = vec![42u8; 32];
+		let correct_signature = kp.private().sign(&Message::from(sha256(&message))).unwrap();
 		let correct_signature_for_other_message = kp.private().sign(&[43u8; 32].into()).unwrap();
 		let mut correct_signature = correct_signature.to_vec();
 		let mut correct_signature_for_other_message = correct_signature_for_other_message.to_vec();
@@ -3986,8 +3982,8 @@ mod tests {
 		let kp = KeyPair::from_private(Private { network: Network::Mainnet, secret: 1.into(), compressed: false, }).unwrap();
 		
 		let pubkey = kp.public().clone();
-		let message: Message = [42u8; 32].into();
-		let correct_signature = kp.private().sign(&message).unwrap();
+		let message = vec![42u8; 32];
+		let correct_signature = kp.private().sign(&Message::from(sha256(&message))).unwrap();
 		let correct_signature_for_other_message = kp.private().sign(&[43u8; 32].into()).unwrap();
 		let mut correct_signature = correct_signature.to_vec();
 		let mut correct_signature_for_other_message = correct_signature_for_other_message.to_vec();
