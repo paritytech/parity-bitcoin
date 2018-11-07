@@ -520,8 +520,7 @@ impl<'a> TransactionSize<'a> {
 	}
 
 	fn check(&self) -> Result<(), TransactionError> {
-		let size = self.transaction.raw.serialized_size();
-		if size < self.min_transaction_size {
+		if self.min_transaction_size != 0 && self.transaction.raw.serialized_size() < self.min_transaction_size {
 			Err(TransactionError::MinSize)
 		} else {
 			Ok(())
