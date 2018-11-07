@@ -9,7 +9,6 @@ use primitives::bytes::Bytes;
 use primitives::hash::H256;
 use utils::{BestHeadersChain, BestHeadersChainInformation, HashQueueChain, HashPosition};
 use types::{BlockHeight, StorageRef, MemoryPoolRef};
-use verification::Deployments;
 
 /// Index of 'verifying' queue
 const VERIFYING_QUEUE: usize = 0;
@@ -106,8 +105,6 @@ pub struct Chain {
 	best_storage_block: storage::BestBlock,
 	/// Local blocks storage
 	storage: StorageRef,
-	/// Consensus params.
-	consensus: ConsensusParams,
 	/// In-memory queue of blocks hashes
 	hash_chain: HashQueueChain,
 	/// In-memory queue of blocks headers
@@ -118,10 +115,9 @@ pub struct Chain {
 	memory_pool: MemoryPoolRef,
 	/// Blocks that have been marked as dead-ends
 	dead_end_blocks: HashSet<H256>,
-	/// Deployments cache
-	deployments: Deployments,
-	/// Is SegWit active?
-	is_segwit_active: bool,
+	/// Is SegWit is possible on this chain? SegWit inventory types are used when block/tx-es are
+	/// requested and this flag is true.
+	is_segwit_possible: bool,
 }
 
 impl BlockState {
@@ -152,21 +148,18 @@ impl Chain {
 			.expect("storage with genesis block is required");
 		let best_storage_block = storage.best_block();
 		let best_storage_block_hash = best_storage_block.hash.clone();
-		let deployments = Deployments::new();
-		let is_segwit_active = deployments.segwit(best_storage_block.number, storage.as_block_header_provider(), &consensus);
+		let is_segwit_possible = consensus.is_segwit_possible();
 
 		Chain {
 			genesis_block_hash: genesis_block_hash,
 			best_storage_block: best_storage_block,
 			storage: storage,
-			consensus: consensus,
 			hash_chain: HashQueueChain::with_number_of_queues(NUMBER_OF_QUEUES),
 			headers_chain: BestHeadersChain::new(best_storage_block_hash),
 			verifying_transactions: LinkedHashMap::new(),
 			memory_pool: memory_pool,
 			dead_end_blocks: HashSet::new(),
-			deployments: deployments,
-			is_segwit_active: is_segwit_active,
+			is_segwit_possible,
 		}
 	}
 
@@ -193,8 +186,8 @@ impl Chain {
 	}
 
 	/// Is segwit active
-	pub fn is_segwit_active(&self) -> bool {
-		self.is_segwit_active
+	pub fn is_segwit_possible(&self) -> bool {
+		self.is_segwit_possible
 	}
 
 	/// Get number of blocks in given state
@@ -367,7 +360,6 @@ impl Chain {
 
 				// remember new best block hash
 				self.best_storage_block = self.storage.as_store().best_block();
-				self.is_segwit_active = self.deployments.segwit(self.best_storage_block.number, self.storage.as_block_header_provider(), &self.consensus);
 
 				// remove inserted block + handle possible reorganization in headers chain
 				// TODO: mk, not sure if we need both of those params
@@ -403,7 +395,6 @@ impl Chain {
 
 				// remember new best block hash
 				self.best_storage_block = self.storage.best_block();
-				self.is_segwit_active = self.deployments.segwit(self.best_storage_block.number, self.storage.as_block_header_provider(), &self.consensus);
 
 				// remove inserted block + handle possible reorganization in headers chain
 				// TODO: mk, not sure if we need both of those params

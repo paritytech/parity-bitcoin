@@ -152,6 +152,15 @@ impl ConsensusParams {
 		(height == 91842 && hash == &H256::from_reversed_str("00000000000a4d0a398161ffc163c503763b1f4360639393e0e4c8e300e0caec")) ||
 		(height == 91880 && hash == &H256::from_reversed_str("00000000000743f190a18c5577a3c2d2a1f610ae9601ac046a38084ccb7cd721"))
 	}
+
+	/// Returns true if SegWit is possible on this chain.
+	pub fn is_segwit_possible(&self) -> bool {
+		match self.fork {
+			// SegWit is not supported in (our?) regtests
+			ConsensusFork::BitcoinCore if self.network != Network::Regtest => true,
+			ConsensusFork::BitcoinCore | ConsensusFork::BitcoinCash(_) => false,
+		}
+	}
 }
 
 impl ConsensusFork {

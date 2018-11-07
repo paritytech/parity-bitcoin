@@ -6,7 +6,7 @@ use futures::Future;
 use parking_lot::Mutex;
 use time::precise_time_s;
 use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
-use message::{types, Services};
+use message::types;
 use message::common::{InventoryType, InventoryVector};
 use miner::transaction_fee_rate;
 use primitives::hash::H256;
@@ -226,16 +226,16 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		// else ask for all unknown transactions and blocks
-		let is_segwit_active = self.chain.is_segwit_active();
-		let ask_for_witness = is_segwit_active && self.peers.is_segwit_enabled(peer_index);
+		let is_segwit_possible = self.chain.is_segwit_possible();
 		let unknown_inventory: Vec<_> = message.inventory.into_iter()
 			.filter(|item| {
 				match item.inv_type {
 					// check that transaction is unknown to us
-					InventoryType::MessageTx => self.chain.transaction_state(&item.hash) == TransactionState::Unknown
-						&& !self.orphaned_transactions_pool.contains(&item.hash),
+					InventoryType::MessageTx| InventoryType::MessageWitnessTx =>
+						self.chain.transaction_state(&item.hash) == TransactionState::Unknown
+							&& !self.orphaned_transactions_pool.contains(&item.hash),
 					// check that block is unknown to us
-					InventoryType::MessageBlock => match self.chain.block_state(&item.hash) {
+					InventoryType::MessageBlock | InventoryType::MessageWitnessBlock => match self.chain.block_state(&item.hash) {
 						BlockState::Unknown => !self.orphaned_blocks_pool.contains_unknown_block(&item.hash),
 						BlockState::DeadEnd if !self.config.close_connection_on_bad_block => true,
 						BlockState::DeadEnd if self.config.close_connection_on_bad_block => {
@@ -246,8 +246,8 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 					},
 					// we never ask for merkle blocks && we never ask for compact blocks
 					InventoryType::MessageCompactBlock | InventoryType::MessageFilteredBlock
-						| InventoryType::MessageWitnessBlock | InventoryType::MessageWitnessFilteredBlock
-						| InventoryType::MessageWitnessTx => false,
+						| InventoryType::MessageWitnessFilteredBlock
+						 => false,
 					// unknown inventory type
 					InventoryType::Error => {
 						self.peers.misbehaving(peer_index, &format!("Provided unknown inventory type {:?}", item.hash.to_reversed_str()));
@@ -258,7 +258,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 			// we are not synchronizing =>
 			// 1) either segwit is active and we are connected to segwit-enabled nodes => we could ask for witness
 			// 2) or segwit is inactive => we shall not ask for witness
-			.map(|item| if !ask_for_witness {
+			.map(|item| if !is_segwit_possible {
 					item
 				} else {
 					match item.inv_type {
@@ -973,8 +973,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		let chunk_size = min(limits.max_blocks_in_request, max(hashes.len() as BlockHeight, limits.min_blocks_in_request));
 		let last_peer_index = peers.len() - 1;
 		let mut tasks: Vec<Task> = Vec::new();
-		let is_segwit_active = self.chain.is_segwit_active();
-		let inv_type = if is_segwit_active { InventoryType::MessageWitnessBlock } else { InventoryType::MessageBlock };
+		let is_segwit_possible = self.chain.is_segwit_possible();
+		let inv_type = if is_segwit_possible { InventoryType::MessageWitnessBlock } else { InventoryType::MessageBlock };
 		for (peer_index, peer) in peers.into_iter().enumerate() {
 			// we have to request all blocks => we will request last peer for all remaining blocks
 			let peer_chunk_size = if peer_index == last_peer_index { hashes.len() } else { min(hashes.len(), chunk_size as usize) };
@@ -1073,9 +1073,6 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		// update block processing speed
 		self.block_speed_meter.checkpoint();
 
-		// remember if SegWit was active before this block
-		let segwit_was_active = self.chain.is_segwit_active();
-
 		// remove flags
 		let needs_relay = !self.do_not_relay.remove(block.hash());
 
@@ -1095,13 +1092,6 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			Ok(insert_result) => {
 				// update shared state
 				self.shared_state.update_best_storage_block_height(self.chain.best_storage_block().number);
-
-				// if SegWit activated after this block insertion:
-				// 1) no more connections to !NODE_WITNESS nodes
-				// 2) disconnect from all nodes without NODE_WITNESS support
-				if !segwit_was_active && self.chain.is_segwit_active() {
-					self.peers.require_peer_services(Services::default().with_witness(true));
-				}
 
 				// notify listener
 				if let Some(best_block_hash) = insert_result.canonized_blocks_hashes.last() {
@@ -1349,7 +1339,7 @@ pub mod tests {
 
 	fn request_blocks(peer_index: PeerIndex, hashes: Vec<H256>) -> Task {
 		Task::GetData(peer_index, types::GetData {
-			inventory: hashes.into_iter().map(InventoryVector::block).collect(),
+			inventory: hashes.into_iter().map(InventoryVector::witness_block).collect(),
 		})
 	}
 
@@ -1749,13 +1739,13 @@ pub mod tests {
 
 		sync.on_block(1, test_data::block_h2().into());
 		sync.on_inventory(1, types::Inv::with_inventory(vec![
-			InventoryVector::block(test_data::block_h1().hash()),
-			InventoryVector::block(test_data::block_h2().hash()),
+			InventoryVector::witness_block(test_data::block_h1().hash()),
+			InventoryVector::witness_block(test_data::block_h2().hash()),
 		]));
 
 		let tasks = executor.take_tasks();
 		assert_eq!(tasks, vec![Task::GetData(1, types::GetData::with_inventory(vec![
-			InventoryVector::block(test_data::block_h1().hash())
+			InventoryVector::witness_block(test_data::block_h1().hash())
 		]))]);
 	}
 
@@ -1883,11 +1873,11 @@ pub mod tests {
 	fn transaction_is_requested_when_not_synchronizing() {
 		let (executor, core, sync) = create_sync(None, None);
 
-		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
+		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::witness_tx(H256::from(0))]));
 
 		{
 			let tasks = executor.take_tasks();
-			assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![InventoryVector::tx(H256::from(0))]))]);
+			assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![InventoryVector::witness_tx(H256::from(0))]))]);
 		}
 
 		let b1 = test_data::block_h1();
@@ -1896,28 +1886,28 @@ pub mod tests {
 		assert!(core.lock().information().state.is_nearly_saturated());
 		{ executor.take_tasks(); } // forget tasks
 
-		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(1))]));
+		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::witness_tx(H256::from(1))]));
 
 		let tasks = executor.take_tasks();
-		assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![InventoryVector::tx(H256::from(1))]))]);
+		assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![InventoryVector::witness_tx(H256::from(1))]))]);
 	}
 
 	#[test]
 	fn same_transaction_can_be_requested_twice() {
 		let (executor, _, sync) = create_sync(None, None);
 
-		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
+		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::witness_tx(H256::from(0))]));
 
 		let tasks = executor.take_tasks();
 		assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![
-			InventoryVector::tx(H256::from(0))
+			InventoryVector::witness_tx(H256::from(0))
 		]))]);
 
-		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
+		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::witness_tx(H256::from(0))]));
 
 		let tasks = executor.take_tasks();
 		assert_eq!(tasks, vec![Task::GetData(0, types::GetData::with_inventory(vec![
-			InventoryVector::tx(H256::from(0))
+			InventoryVector::witness_tx(H256::from(0))
 		]))]);
 	}
 
@@ -1926,11 +1916,11 @@ pub mod tests {
 		let (executor, _, sync) = create_sync(None, None);
 
 		sync.on_inventory(0, types::Inv::with_inventory(vec![
-			InventoryVector::tx(test_data::genesis().transactions[0].hash()),
-			InventoryVector::tx(H256::from(0)),
+			InventoryVector::witness_tx(test_data::genesis().transactions[0].hash()),
+			InventoryVector::witness_tx(H256::from(0)),
 		]));
 		assert_eq!(executor.take_tasks(), vec![Task::GetData(0, types::GetData::with_inventory(vec![
-			InventoryVector::tx(H256::from(0))
+			InventoryVector::witness_tx(H256::from(0))
 		]))]);
 	}
 
