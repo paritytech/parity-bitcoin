@@ -6,7 +6,7 @@ use futures::Future;
 use parking_lot::Mutex;
 use time::precise_time_s;
 use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
-use message::{types, Services};
+use message::types;
 use message::common::{InventoryType, InventoryVector};
 use miner::transaction_fee_rate;
 use primitives::hash::H256;
@@ -226,8 +226,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 
 		// else ask for all unknown transactions and blocks
-		let is_segwit_active = self.chain.is_segwit_active();
-		let ask_for_witness = is_segwit_active && self.peers.is_segwit_enabled(peer_index);
+		let is_segwit_possible = self.chain.is_segwit_possible();
 		let unknown_inventory: Vec<_> = message.inventory.into_iter()
 			.filter(|item| {
 				match item.inv_type {
@@ -258,7 +257,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 			// we are not synchronizing =>
 			// 1) either segwit is active and we are connected to segwit-enabled nodes => we could ask for witness
 			// 2) or segwit is inactive => we shall not ask for witness
-			.map(|item| if !ask_for_witness {
+			.map(|item| if !is_segwit_possible {
 					item
 				} else {
 					match item.inv_type {
@@ -973,8 +972,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		let chunk_size = min(limits.max_blocks_in_request, max(hashes.len() as BlockHeight, limits.min_blocks_in_request));
 		let last_peer_index = peers.len() - 1;
 		let mut tasks: Vec<Task> = Vec::new();
-		let is_segwit_active = self.chain.is_segwit_active();
-		let inv_type = if is_segwit_active { InventoryType::MessageWitnessBlock } else { InventoryType::MessageBlock };
+		let is_segwit_possible = self.chain.is_segwit_possible();
+		let inv_type = if is_segwit_possible { InventoryType::MessageWitnessBlock } else { InventoryType::MessageBlock };
 		for (peer_index, peer) in peers.into_iter().enumerate() {
 			// we have to request all blocks => we will request last peer for all remaining blocks
 			let peer_chunk_size = if peer_index == last_peer_index { hashes.len() } else { min(hashes.len(), chunk_size as usize) };
@@ -1073,9 +1072,6 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 		// update block processing speed
 		self.block_speed_meter.checkpoint();
 
-		// remember if SegWit was active before this block
-		let segwit_was_active = self.chain.is_segwit_active();
-
 		// remove flags
 		let needs_relay = !self.do_not_relay.remove(block.hash());
 
@@ -1095,13 +1091,6 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			Ok(insert_result) => {
 				// update shared state
 				self.shared_state.update_best_storage_block_height(self.chain.best_storage_block().number);
-
-				// if SegWit activated after this block insertion:
-				// 1) no more connections to !NODE_WITNESS nodes
-				// 2) disconnect from all nodes without NODE_WITNESS support
-				if !segwit_was_active && self.chain.is_segwit_active() {
-					self.peers.require_peer_services(Services::default().with_witness(true));
-				}
 
 				// notify listener
 				if let Some(best_block_hash) = insert_result.canonized_blocks_hashes.last() {

@@ -170,6 +170,14 @@ impl ConsensusFork {
 		4
 	}
 
+	/// Returns true if SegWit is possible on this chain.
+	pub fn is_segwit_possible(&self) -> bool {
+		match *self {
+			ConsensusFork::BitcoinCore => true,
+			ConsensusFork::BitcoinCash(_) => false,
+		}
+	}
+
 	pub fn activation_height(&self) -> u32 {
 		match *self {
 			ConsensusFork::BitcoinCore => 0,
