@@ -64,9 +64,23 @@ impl InventoryVector {
 		}
 	}
 
+	pub fn witness_tx(hash: H256) -> Self {
+		InventoryVector {
+			inv_type: InventoryType::MessageWitnessTx,
+			hash: hash,
+		}
+	}
+
 	pub fn block(hash: H256) -> Self {
 		InventoryVector {
 			inv_type: InventoryType::MessageBlock,
+			hash: hash,
+		}
+	}
+
+	pub fn witness_block(hash: H256) -> Self {
+		InventoryVector {
+			inv_type: InventoryType::MessageWitnessBlock,
 			hash: hash,
 		}
 	}

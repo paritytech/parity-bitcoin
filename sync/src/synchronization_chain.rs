@@ -148,7 +148,7 @@ impl Chain {
 			.expect("storage with genesis block is required");
 		let best_storage_block = storage.best_block();
 		let best_storage_block_hash = best_storage_block.hash.clone();
-		let is_segwit_possible = consensus.fork.is_segwit_possible();
+		let is_segwit_possible = consensus.is_segwit_possible();
 
 		Chain {
 			genesis_block_hash: genesis_block_hash,
