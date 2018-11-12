@@ -361,16 +361,20 @@ mod tests {
 
 		let tx1: Transaction = test_data::TransactionBuilder::with_version(4)
 			.add_input(&input_tx, 0)
-			.add_output(40)
+			.add_output(10).add_output(10).add_output(10)
+			.add_output(5).add_output(5).add_output(5)
 			.into();
 		let tx2: Transaction = test_data::TransactionBuilder::with_version(1)
 			.add_input(&tx1, 0)
-			.add_output(30)
+			.add_output(1).add_output(1).add_output(1)
+			.add_output(2).add_output(2).add_output(2)
 			.into();
+		assert!(tx1.hash() > tx2.hash());
+
 		let block = test_data::block_builder()
 			.transaction()
 				.coinbase()
-				.output().value(2).build()
+				.output().value(2).script_pubkey_with_sigops(100).build()
 				.build()
 			.with_transaction(tx2)
 			.with_transaction(tx1)
