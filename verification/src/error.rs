@@ -57,6 +57,8 @@ pub enum Error {
 	WitnessMerkleCommitmentMismatch,
 	/// SegWit: unexpected witness
 	UnexpectedWitness,
+	/// Non-canonical tranasctions ordering within block
+	NonCanonicalTransactionOrdering,
 	/// Database error
 	Database(DBError),
 }

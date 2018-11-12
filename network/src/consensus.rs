@@ -41,6 +41,9 @@ pub struct BitcoinCashConsensusParams {
 	/// Time of monolith (aka May 2018) hardfork.
 	/// https://github.com/bitcoincashorg/spec/blob/4fbb0face661e293bcfafe1a2a4744dcca62e50d/may-2018-hardfork.md
 	pub monolith_time: u32,
+	/// Time of magnetic anomaly (aka Nov 2018) hardfork.
+	/// https://github.com/bitcoincashorg/bitcoincash.org/blob/f92f5412f2ed60273c229f68dd8703b6d5d09617/spec/2018-nov-upgrade.md
+	pub magnetic_anomaly_time: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -55,6 +58,17 @@ pub enum ConsensusFork {
 	/// UAHF Technical Specification - https://github.com/Bitcoin-UAHF/spec/blob/master/uahf-technical-spec.md
 	/// BUIP-HF Digest for replay protected signature verification across hard forks - https://github.com/Bitcoin-UAHF/spec/blob/master/replay-protected-sighash.md
 	BitcoinCash(BitcoinCashConsensusParams),
+}
+
+#[derive(Debug, Clone, Copy)]
+/// Describes the ordering of transactions within single block.
+pub enum TransactionOrdering {
+	/// Topological tranasaction ordering: if tx TX2 depends on tx TX1,
+	/// it should come AFTER TX1 (not necessary **right** after it).
+	Topological,
+	/// Canonical transaction ordering: transactions are ordered by their
+	/// hash (in ascending order).
+	Canonical,
 }
 
 impl ConsensusParams {
@@ -234,6 +248,14 @@ impl ConsensusFork {
 				unreachable!("BitcoinCash has no SegWit; weight is only checked with SegWit activated; qed"),
 		}
 	}
+
+	pub fn transaction_ordering(&self, median_time_past: u32) -> TransactionOrdering {
+		match *self {
+			ConsensusFork::BitcoinCash(ref fork) if median_time_past >= fork.magnetic_anomaly_time
+				=> TransactionOrdering::Canonical,
+			_ => TransactionOrdering::Topological,
+		}
+	}
 }
 
 impl BitcoinCashConsensusParams {
@@ -243,16 +265,19 @@ impl BitcoinCashConsensusParams {
 				height: 478559,
 				difficulty_adjustion_height: 504031,
 				monolith_time: 1526400000,
+				magnetic_anomaly_time: 1542300000,
 			},
 			Network::Testnet => BitcoinCashConsensusParams {
 				height: 1155876,
 				difficulty_adjustion_height: 1188697,
 				monolith_time: 1526400000,
+				magnetic_anomaly_time: 1542300000,
 			},
 			Network::Regtest | Network::Unitest => BitcoinCashConsensusParams {
 				height: 0,
 				difficulty_adjustion_height: 0,
 				monolith_time: 1526400000,
+				magnetic_anomaly_time: 1542300000,
 			},
 		}
 	}
