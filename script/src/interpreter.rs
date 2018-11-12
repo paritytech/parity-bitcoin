@@ -346,7 +346,6 @@ pub fn verify_script(
         // Disallow CLEANSTACK without P2SH, as otherwise a switch CLEANSTACK->P2SH+CLEANSTACK
         // would be possible, which is not a softfork (and P2SH should be one).
 		assert!(flags.verify_p2sh);
-		assert!(flags.verify_witness);
 		if stack.len() != 1 {
 			return Err(Error::Cleanstack);
 		}
