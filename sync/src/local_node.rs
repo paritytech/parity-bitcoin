@@ -286,7 +286,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 			max_block_sigops: self.consensus.fork.max_block_sigops(new_block_height, max_block_size) as u32,
 		};
 		let memory_pool = &*self.memory_pool.read();
-		block_assembler.create_new_block(&self.storage, memory_pool, time::get_time().sec as u32, &self.consensus)
+		block_assembler.create_new_block(&self.storage, memory_pool, time::get_time().sec as u32, median_timestamp, &self.consensus)
 	}
 
 	/// Install synchronization events listener

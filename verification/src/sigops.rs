@@ -10,11 +10,12 @@ use script::{Script, ScriptWitness};
 pub fn transaction_sigops(
 	transaction: &Transaction,
 	store: &TransactionOutputProvider,
-	bip16_active: bool
+	bip16_active: bool,
+	checkdatasig_active: bool,
 ) -> usize {
 	let output_sigops: usize = transaction.outputs.iter().map(|output| {
 		let output_script: Script = output.script_pubkey.clone().into();
-		output_script.sigops_count(false)
+		output_script.sigops_count(checkdatasig_active, false)
 	}).sum();
 
 	// TODO: bitcoin/bitcoin also includes input_sigops here
@@ -27,14 +28,14 @@ pub fn transaction_sigops(
 
 	for input in &transaction.inputs {
 		let input_script: Script = input.script_sig.clone().into();
-		input_sigops += input_script.sigops_count(false);
+		input_sigops += input_script.sigops_count(checkdatasig_active, false);
 		if bip16_active {
 			let previous_output = match store.transaction_output(&input.previous_output, usize::max_value()) {
 				Some(output) => output,
 				None => continue,
 			};
 			let prevout_script: Script = previous_output.script_pubkey.into();
-			bip16_sigops += input_script.pay_to_script_hash_sigops(&prevout_script);
+			bip16_sigops += input_script.pay_to_script_hash_sigops(checkdatasig_active, &prevout_script);
 		}
 	}
 
@@ -86,7 +87,7 @@ fn witness_program_sigops(
 	match witness_version {
 		0 if witness_program.len() == 20 => 1,
 		0 if witness_program.len() == 32 => match script_witness.last() {
-			Some(subscript) => Script::new(subscript.clone()).sigops_count(true),
+			Some(subscript) => Script::new(subscript.clone()).sigops_count(false, true),
 			_ => 0,
 		},
 		_ => 0,

@@ -37,7 +37,7 @@ impl<'a> BlockAcceptor<'a> {
 			serialized_size: BlockSerializedSize::new(block, consensus, deployments, height, median_time_past),
 			coinbase_script: BlockCoinbaseScript::new(block, consensus, height),
 			coinbase_claim: BlockCoinbaseClaim::new(block, consensus, store, height, median_time_past),
-			sigops: BlockSigops::new(block, store, consensus, height),
+			sigops: BlockSigops::new(block, store, consensus, height, median_time_past),
 			witness: BlockWitness::new(block, deployments),
 			ordering: BlockTransactionOrdering::new(block, consensus, median_time_past),
 		}
@@ -140,18 +140,30 @@ pub struct BlockSigops<'a> {
 	consensus: &'a ConsensusParams,
 	height: u32,
 	bip16_active: bool,
+	checkdatasig_active: bool,
 }
 
 impl<'a> BlockSigops<'a> {
-	fn new(block: CanonBlock<'a>, store: &'a TransactionOutputProvider, consensus: &'a ConsensusParams, height: u32) -> Self {
+	fn new(
+		block: CanonBlock<'a>,
+		store: &'a TransactionOutputProvider,
+		consensus: &'a ConsensusParams,
+		height: u32,
+		median_time_past: u32,
+	) -> Self {
 		let bip16_active = block.header.raw.time >= consensus.bip16_time;
+		let checkdatasig_active = match consensus.fork {
+			ConsensusFork::BitcoinCash(ref fork) => median_time_past >= fork.magnetic_anomaly_time,
+			_ => false,
+		};
 
 		BlockSigops {
 			block: block,
 			store: store,
 			consensus: consensus,
 			height: height,
-			bip16_active: bip16_active,
+			bip16_active,
+			checkdatasig_active,
 		}
 	}
 
@@ -159,7 +171,7 @@ impl<'a> BlockSigops<'a> {
 		let store = DuplexTransactionOutputProvider::new(self.store, &*self.block);
 		let (sigops, sigops_cost) = self.block.transactions.iter()
 			.map(|tx| {
-				let tx_sigops = transaction_sigops(&tx.raw, &store, self.bip16_active);
+				let tx_sigops = transaction_sigops(&tx.raw, &store, self.bip16_active, self.checkdatasig_active);
 				let tx_sigops_cost = transaction_sigops_cost(&tx.raw, &store, tx_sigops);
 				(tx_sigops, tx_sigops_cost)
 			})

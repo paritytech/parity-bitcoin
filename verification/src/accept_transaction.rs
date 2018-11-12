@@ -275,7 +275,11 @@ impl<'a> TransactionSigops<'a> {
 
 	fn check(&self) -> Result<(), TransactionError> {
 		let bip16_active = self.time >= self.consensus_params.bip16_time;
-		let sigops = transaction_sigops(&self.transaction.raw, &self.store, bip16_active);
+		let checkdatasig_active = match self.consensus_params.fork {
+			ConsensusFork::BitcoinCash(ref fork) => self.time >= fork.magnetic_anomaly_time,
+			_ => false
+		};
+		let sigops = transaction_sigops(&self.transaction.raw, &self.store, bip16_active, checkdatasig_active);
 		if sigops > self.max_sigops {
 			Err(TransactionError::MaxSigops)
 		} else {
@@ -296,6 +300,7 @@ pub struct TransactionEval<'a> {
 	verify_witness: bool,
 	verify_nulldummy: bool,
 	verify_monolith_opcodes: bool,
+	verify_magnetic_anomaly_opcodes: bool,
 	signature_version: SignatureVersion,
 }
 
@@ -318,7 +323,11 @@ impl<'a> TransactionEval<'a> {
 		let verify_locktime = height >= params.bip65_height;
 		let verify_dersig = height >= params.bip66_height;
 		let verify_monolith_opcodes = match params.fork {
-			ConsensusFork::BitcoinCash(ref fork) if median_timestamp >= fork.monolith_time => true,
+			ConsensusFork::BitcoinCash(ref fork) => median_timestamp >= fork.monolith_time,
+			_ => false,
+		};
+		let verify_magnetic_anomaly_opcodes = match params.fork {
+			ConsensusFork::BitcoinCash(ref fork) => median_timestamp >= fork.magnetic_anomaly_time,
 			_ => false,
 		};
 		let signature_version = match params.fork {
@@ -342,6 +351,7 @@ impl<'a> TransactionEval<'a> {
 			verify_witness: verify_witness,
 			verify_nulldummy: verify_nulldummy,
 			verify_monolith_opcodes: verify_monolith_opcodes,
+			verify_magnetic_anomaly_opcodes: verify_magnetic_anomaly_opcodes,
 			signature_version: signature_version,
 		}
 	}
@@ -391,7 +401,8 @@ impl<'a> TransactionEval<'a> {
 				.verify_div(self.verify_monolith_opcodes)
 				.verify_mod(self.verify_monolith_opcodes)
 				.verify_bin2num(self.verify_monolith_opcodes)
-				.verify_num2bin(self.verify_monolith_opcodes);
+				.verify_num2bin(self.verify_monolith_opcodes)
+				.verify_checkdatasig(self.verify_magnetic_anomaly_opcodes);
 
 			try!(verify_script(&input, &output, &script_witness, &flags, &checker, self.signature_version)
 				.map_err(|e| TransactionError::Signature(index, e)));

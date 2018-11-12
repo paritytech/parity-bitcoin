@@ -367,7 +367,7 @@ impl Script {
 		Opcodes { position: 0, script: self }
 	}
 
-	pub fn sigops_count(&self, serialized_script: bool) -> usize {
+	pub fn sigops_count(&self, checkdatasig_active: bool, serialized_script: bool) -> usize {
 		let mut last_opcode = Opcode::OP_0;
 		let mut total = 0;
 		for opcode in self.opcodes() {
@@ -379,6 +379,9 @@ impl Script {
 
 			match opcode {
 				Opcode::OP_CHECKSIG | Opcode::OP_CHECKSIGVERIFY => {
+					total += 1;
+				},
+				Opcode::OP_CHECKDATASIG | Opcode::OP_CHECKDATASIGVERIFY if checkdatasig_active => {
 					total += 1;
 				},
 				Opcode::OP_CHECKMULTISIG | Opcode::OP_CHECKMULTISIGVERIFY => {
@@ -454,7 +457,7 @@ impl Script {
 		}
 	}
 
-	pub fn pay_to_script_hash_sigops(&self, prev_out: &Script) -> usize {
+	pub fn pay_to_script_hash_sigops(&self, checkdatasig_active: bool, prev_out: &Script) -> usize {
 		if !prev_out.is_pay_to_script_hash() {
 			return 0;
 		}
@@ -470,7 +473,7 @@ impl Script {
 			.to_vec()
 			.into();
 
-		script.sigops_count(true)
+		script.sigops_count(checkdatasig_active, true)
 	}
 }
 
@@ -669,11 +672,11 @@ OP_ADD
 
 	#[test]
 	fn test_sigops_count() {
-		assert_eq!(1usize, Script::from("76a914aab76ba4877d696590d94ea3e02948b55294815188ac").sigops_count(false));
-		assert_eq!(2usize, Script::from("522102004525da5546e7603eefad5ef971e82f7dad2272b34e6b3036ab1fe3d299c22f21037d7f2227e6c646707d1c61ecceb821794124363a2cf2c1d2a6f28cf01e5d6abe52ae").sigops_count(true));
-		assert_eq!(20usize, Script::from("522102004525da5546e7603eefad5ef971e82f7dad2272b34e6b3036ab1fe3d299c22f21037d7f2227e6c646707d1c61ecceb821794124363a2cf2c1d2a6f28cf01e5d6abe52ae").sigops_count(false));
-		assert_eq!(0usize, Script::from("a9146262b64aec1f4a4c1d21b32e9c2811dd2171fd7587").sigops_count(false));
-		assert_eq!(1usize, Script::from("4104ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84cac").sigops_count(false));
+		assert_eq!(1usize, Script::from("76a914aab76ba4877d696590d94ea3e02948b55294815188ac").sigops_count(false, false));
+		assert_eq!(2usize, Script::from("522102004525da5546e7603eefad5ef971e82f7dad2272b34e6b3036ab1fe3d299c22f21037d7f2227e6c646707d1c61ecceb821794124363a2cf2c1d2a6f28cf01e5d6abe52ae").sigops_count(false, true));
+		assert_eq!(20usize, Script::from("522102004525da5546e7603eefad5ef971e82f7dad2272b34e6b3036ab1fe3d299c22f21037d7f2227e6c646707d1c61ecceb821794124363a2cf2c1d2a6f28cf01e5d6abe52ae").sigops_count(false, false));
+		assert_eq!(0usize, Script::from("a9146262b64aec1f4a4c1d21b32e9c2811dd2171fd7587").sigops_count(false, false));
+		assert_eq!(1usize, Script::from("4104ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84cac").sigops_count(false, false));
 	}
 
 	#[test]
@@ -688,7 +691,7 @@ OP_ADD
 		script[max_block_sigops - block_sigops + 3] = (overmax >> 16) as u8;
 		script[max_block_sigops - block_sigops + 4] = (overmax >> 24) as u8;
 		let script: Script = script.into();
-		assert_eq!(script.sigops_count(false), 20001);
+		assert_eq!(script.sigops_count(false, false), 20001);
 	}
 
 	#[test]
@@ -702,7 +705,7 @@ OP_ADD
 		script[max_block_sigops - block_sigops + 4] = 0xff;
 		script[max_block_sigops - block_sigops + 5] = 0xff;
 		let script: Script = script.into();
-		assert_eq!(script.sigops_count(false), 20001);
+		assert_eq!(script.sigops_count(false, false), 20001);
 	}
 
 	#[test]
@@ -801,5 +804,15 @@ OP_ADD
 			.into_script();
 		assert_eq!(script.script_type(), ScriptType::ScriptHash);
 		assert_eq!(script.num_signatures_required(), 1);
+	}
+
+	#[test]
+	fn test_num_signatures_with_checkdatasig() {
+		let script = Builder::default().push_opcode(Opcode::OP_CHECKDATASIG).into_script();
+		assert_eq!(script.sigops_count(false, false), 0);
+		assert_eq!(script.sigops_count(true, false), 1);
+		let script = Builder::default().push_opcode(Opcode::OP_CHECKDATASIGVERIFY).into_script();
+		assert_eq!(script.sigops_count(false, false), 0);
+		assert_eq!(script.sigops_count(true, false), 1);
 	}
 }

@@ -1,4 +1,4 @@
-use keys::{Public, Signature};
+use keys::{Public, Signature, Message};
 use chain::constants::{
 	SEQUENCE_FINAL, SEQUENCE_LOCKTIME_DISABLE_FLAG,
 	SEQUENCE_LOCKTIME_MASK, SEQUENCE_LOCKTIME_TYPE_FLAG, LOCKTIME_THRESHOLD
@@ -8,6 +8,13 @@ use {Script, TransactionInputSigner, Num};
 
 /// Checks transaction signature
 pub trait SignatureChecker {
+	fn verify_signature(
+		&self,
+		signature: &Signature,
+		public: &Public,
+		hash: &Message,
+	) -> bool;
+
 	fn check_signature(
 		&self,
 		signature: &Signature,
@@ -25,6 +32,10 @@ pub trait SignatureChecker {
 pub struct NoopSignatureChecker;
 
 impl SignatureChecker for NoopSignatureChecker {
+	fn verify_signature(&self, signature: &Signature, public: &Public, hash: &Message) -> bool {
+		public.verify(hash, signature).unwrap_or(false)
+	}
+
 	fn check_signature(&self, _: &Signature, _: &Public, _: &Script, _: u32, _: SignatureVersion) -> bool {
 		false
 	}
@@ -46,6 +57,15 @@ pub struct TransactionSignatureChecker {
 }
 
 impl SignatureChecker for TransactionSignatureChecker {
+	fn verify_signature(
+		&self,
+		signature: &Signature,
+		public: &Public,
+		hash: &Message,
+	) -> bool {
+		public.verify(hash, signature).unwrap_or(false)
+	}
+
 	fn check_signature(
 		&self,
 		signature: &Signature,
@@ -55,7 +75,7 @@ impl SignatureChecker for TransactionSignatureChecker {
 		version: SignatureVersion
 	) -> bool {
 		let hash = self.signer.signature_hash(self.input_index, self.input_amount, script_code, version, sighashtype);
-		public.verify(&hash, signature).unwrap_or(false)
+		self.verify_signature(signature, public, &hash)
 	}
 
 	fn check_lock_time(&self, lock_time: Num) -> bool {

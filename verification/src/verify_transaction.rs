@@ -186,7 +186,7 @@ impl<'a> TransactionSigops<'a> {
 	}
 
 	fn check(&self) -> Result<(), TransactionError> {
-		let sigops = transaction_sigops(&self.transaction.raw, &NoopStore, false);
+		let sigops = transaction_sigops(&self.transaction.raw, &NoopStore, false, false);
 		if sigops > self.max_sigops {
 			Err(TransactionError::MaxSigops)
 		} else {

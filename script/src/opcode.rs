@@ -213,6 +213,10 @@ pub enum Opcode {
 	OP_NOP8 = 0xb7,
 	OP_NOP9 = 0xb8,
 	OP_NOP10 = 0xb9,
+
+	// BCH crypto
+	OP_CHECKDATASIG = 0xba,
+	OP_CHECKDATASIGVERIFY = 0xbb,
 }
 
 impl fmt::Display for Opcode {
@@ -430,6 +434,11 @@ impl Opcode {
 			0xb7 => Some(OP_NOP8),
 			0xb8 => Some(OP_NOP9),
 			0xb9 => Some(OP_NOP10),
+
+			// BCH crypto
+			0xba => Some(OP_CHECKDATASIG),
+			0xbb => Some(OP_CHECKDATASIGVERIFY),
+
 			_ => None,
 		}
 	}
@@ -688,5 +697,9 @@ mod tests {
 		assert_eq!(Opcode::OP_NOP8, Opcode::from_u8(Opcode::OP_NOP8 as u8).unwrap());
 		assert_eq!(Opcode::OP_NOP9, Opcode::from_u8(Opcode::OP_NOP9 as u8).unwrap());
 		assert_eq!(Opcode::OP_NOP10, Opcode::from_u8(Opcode::OP_NOP10 as u8).unwrap());
+	
+		// BCH crypto
+		assert_eq!(Opcode::OP_CHECKDATASIG, Opcode::from_u8(Opcode::OP_CHECKDATASIG as u8).unwrap());
+		assert_eq!(Opcode::OP_CHECKDATASIGVERIFY, Opcode::from_u8(Opcode::OP_CHECKDATASIGVERIFY as u8).unwrap());
 	}
 }

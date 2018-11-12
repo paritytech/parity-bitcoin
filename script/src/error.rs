@@ -19,11 +19,13 @@ pub enum Error {
 	NumberNotMinimallyEncoded,
 	SigCount,
 	PubkeyCount,
+	InvalidOperandSize,
 
 	// Failed verify operations
 	Verify,
 	EqualVerify,
 	CheckSigVerify,
+	CheckDataSigVerify,
 	NumEqualVerify,
 
 	// Logical/Format/Canonical errors.
@@ -33,7 +35,6 @@ pub enum Error {
 	InvalidAltstackOperation,
 	UnbalancedConditional,
 	InvalidSplitRange,
-	InvalidBitwiseOperation,
 	DivisionByZero,
 	ImpossibleEncoding,
 
@@ -78,6 +79,7 @@ impl fmt::Display for Error {
 			Error::Verify => "Failed verify operation".fmt(f),
 			Error::EqualVerify => "Failed equal verify operation".fmt(f),
 			Error::CheckSigVerify => "Failed signature check".fmt(f),
+			Error::CheckDataSigVerify => "Failed data signature check".fmt(f),
 			Error::NumEqualVerify => "Failed num equal verify operation".fmt(f),
 			Error::SigCount => "Maximum number of signature exceeded".fmt(f),
 			Error::PubkeyCount => "Maximum number of pubkeys per multisig exceeded".fmt(f),
@@ -97,7 +99,7 @@ impl fmt::Display for Error {
 			Error::InvalidAltstackOperation => "Invalid altstack operation".fmt(f),
 			Error::UnbalancedConditional => "Unbalanced conditional".fmt(f),
 			Error::InvalidSplitRange => "Invalid OP_SPLIT range".fmt(f),
-			Error::InvalidBitwiseOperation => "Invalid bitwise operation (check length of inputs)".fmt(f),
+			Error::InvalidOperandSize => "Invalid operand size".fmt(f),
 			Error::DivisionByZero => "Invalid division operation".fmt(f),
 			Error::ImpossibleEncoding => "The requested encoding is impossible to satisfy".fmt(f),
 
