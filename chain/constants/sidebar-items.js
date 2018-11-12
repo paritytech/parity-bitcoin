@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["LOCKTIME_THRESHOLD","Threshold for `nLockTime`: below this value it is interpreted as block number, otherwise as UNIX timestamp."],["SATOSHIS_IN_COIN","Number of Satoshis in single coin"],["SEQUENCE_FINAL",""],["SEQUENCE_LOCKTIME_DISABLE_FLAG",""],["SEQUENCE_LOCKTIME_MASK",""],["SEQUENCE_LOCKTIME_TYPE_FLAG",""]]});

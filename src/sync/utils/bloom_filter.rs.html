@@ -1,0 +1,609 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source to the Rust file `sync/src/utils/bloom_filter.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>bloom_filter.rs.html -- source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css"><link rel="stylesheet" type="text/css" href="../../../light.css" id="themeStyle"><script src="../../../storage.js"></script></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form js-only"><div class="search-container"><input class="search-input" name="search" autocomplete="off" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<span id="2">  2</span>
+<span id="3">  3</span>
+<span id="4">  4</span>
+<span id="5">  5</span>
+<span id="6">  6</span>
+<span id="7">  7</span>
+<span id="8">  8</span>
+<span id="9">  9</span>
+<span id="10"> 10</span>
+<span id="11"> 11</span>
+<span id="12"> 12</span>
+<span id="13"> 13</span>
+<span id="14"> 14</span>
+<span id="15"> 15</span>
+<span id="16"> 16</span>
+<span id="17"> 17</span>
+<span id="18"> 18</span>
+<span id="19"> 19</span>
+<span id="20"> 20</span>
+<span id="21"> 21</span>
+<span id="22"> 22</span>
+<span id="23"> 23</span>
+<span id="24"> 24</span>
+<span id="25"> 25</span>
+<span id="26"> 26</span>
+<span id="27"> 27</span>
+<span id="28"> 28</span>
+<span id="29"> 29</span>
+<span id="30"> 30</span>
+<span id="31"> 31</span>
+<span id="32"> 32</span>
+<span id="33"> 33</span>
+<span id="34"> 34</span>
+<span id="35"> 35</span>
+<span id="36"> 36</span>
+<span id="37"> 37</span>
+<span id="38"> 38</span>
+<span id="39"> 39</span>
+<span id="40"> 40</span>
+<span id="41"> 41</span>
+<span id="42"> 42</span>
+<span id="43"> 43</span>
+<span id="44"> 44</span>
+<span id="45"> 45</span>
+<span id="46"> 46</span>
+<span id="47"> 47</span>
+<span id="48"> 48</span>
+<span id="49"> 49</span>
+<span id="50"> 50</span>
+<span id="51"> 51</span>
+<span id="52"> 52</span>
+<span id="53"> 53</span>
+<span id="54"> 54</span>
+<span id="55"> 55</span>
+<span id="56"> 56</span>
+<span id="57"> 57</span>
+<span id="58"> 58</span>
+<span id="59"> 59</span>
+<span id="60"> 60</span>
+<span id="61"> 61</span>
+<span id="62"> 62</span>
+<span id="63"> 63</span>
+<span id="64"> 64</span>
+<span id="65"> 65</span>
+<span id="66"> 66</span>
+<span id="67"> 67</span>
+<span id="68"> 68</span>
+<span id="69"> 69</span>
+<span id="70"> 70</span>
+<span id="71"> 71</span>
+<span id="72"> 72</span>
+<span id="73"> 73</span>
+<span id="74"> 74</span>
+<span id="75"> 75</span>
+<span id="76"> 76</span>
+<span id="77"> 77</span>
+<span id="78"> 78</span>
+<span id="79"> 79</span>
+<span id="80"> 80</span>
+<span id="81"> 81</span>
+<span id="82"> 82</span>
+<span id="83"> 83</span>
+<span id="84"> 84</span>
+<span id="85"> 85</span>
+<span id="86"> 86</span>
+<span id="87"> 87</span>
+<span id="88"> 88</span>
+<span id="89"> 89</span>
+<span id="90"> 90</span>
+<span id="91"> 91</span>
+<span id="92"> 92</span>
+<span id="93"> 93</span>
+<span id="94"> 94</span>
+<span id="95"> 95</span>
+<span id="96"> 96</span>
+<span id="97"> 97</span>
+<span id="98"> 98</span>
+<span id="99"> 99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+</pre><pre class="rust ">
+<span class="kw">use</span> <span class="ident">parking_lot</span>::<span class="ident">Mutex</span>;
+<span class="kw">use</span> <span class="ident">bit_vec</span>::<span class="ident">BitVec</span>;
+<span class="kw">use</span> <span class="ident">murmur3</span>::<span class="ident">murmur3_32</span>;
+<span class="kw">use</span> <span class="ident">chain</span>::{<span class="ident">IndexedTransaction</span>, <span class="ident">OutPoint</span>};
+<span class="kw">use</span> <span class="ident">message</span>::<span class="ident">types</span>;
+<span class="kw">use</span> <span class="ident">ser</span>::<span class="ident">serialize</span>;
+<span class="kw">use</span> <span class="ident">script</span>::<span class="ident">Script</span>;
+
+<span class="doccomment">/// Constant optimized to create large differences in the seed for different values of `hash_functions_num`.</span>
+<span class="kw">const</span> <span class="ident">SEED_OFFSET</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">0xFBA4C795</span>;
+
+<span class="doccomment">/// Connection bloom filter</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">BloomFilter</span> {
+	<span class="doccomment">/// Bloom data. Filter can be updated when transaction is matched =&gt; we have to use some kind of lock here.</span>
+	<span class="doccomment">/// Mutex is an only choice, because:</span>
+	<span class="doccomment">/// 1) we do not know if transaction matches the filter in advance</span>
+	<span class="doccomment">/// 2) RwLock is non-upgradeable in Rust</span>
+	<span class="ident">bloom</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">BloomFilterData</span><span class="op">&gt;&gt;</span>,
+	<span class="doccomment">/// Filter update type.</span>
+	<span class="ident">filter_flags</span>: <span class="ident">types</span>::<span class="ident">FilterFlags</span>,
+}
+
+<span class="doccomment">/// Bloom filter data implemented as described in:</span>
+<span class="doccomment">/// https://github.com/bitcoin/bips/blob/master/bip-0037.mediawiki</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Default</span>)]</span>
+<span class="kw">struct</span> <span class="ident">BloomFilterData</span> {
+	<span class="doccomment">/// Filter storage</span>
+	<span class="ident">filter</span>: <span class="ident">BitVec</span>,
+	<span class="doccomment">/// Number of hash functions to use in bloom filter</span>
+	<span class="ident">hash_functions_num</span>: <span class="ident">u32</span>,
+	<span class="doccomment">/// Value to add to Murmur3 hash seed when calculating hash</span>
+	<span class="ident">tweak</span>: <span class="ident">u32</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">BloomFilter</span> {
+	<span class="kw">fn</span> <span class="ident">default</span>() <span class="op">-&gt;</span> <span class="self">Self</span> {
+		<span class="ident">BloomFilter</span> {
+			<span class="ident">bloom</span>: <span class="prelude-val">None</span>,
+			<span class="ident">filter_flags</span>: <span class="ident">types</span>::<span class="ident">FilterFlags</span>::<span class="prelude-val">None</span>,
+		}
+	}
+}
+
+<span class="kw">impl</span> <span class="ident">BloomFilter</span> {
+	<span class="doccomment">/// Create with given parameters</span>
+	<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
+	<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_filter_load</span>(<span class="ident">message</span>: <span class="ident">types</span>::<span class="ident">FilterLoad</span>) <span class="op">-&gt;</span> <span class="self">Self</span> {
+		<span class="ident">BloomFilter</span> {
+			<span class="ident">filter_flags</span>: <span class="ident">message</span>.<span class="ident">flags</span>,
+			<span class="ident">bloom</span>: <span class="prelude-val">Some</span>(<span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">BloomFilterData</span>::<span class="ident">with_filter_load</span>(<span class="ident">message</span>))),
+		}
+	}
+
+	<span class="doccomment">/// Returns true if bloom filter is set</span>
+	<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_set</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+		<span class="self">self</span>.<span class="ident">bloom</span>.<span class="ident">is_some</span>()
+	}
+
+	<span class="doccomment">/// Sets bloom filter to given value</span>
+	<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_bloom_filter</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">message</span>: <span class="ident">types</span>::<span class="ident">FilterLoad</span>) {
+		<span class="self">self</span>.<span class="ident">bloom</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">BloomFilterData</span>::<span class="ident">with_filter_load</span>(<span class="ident">message</span>)));
+	}
+
+	<span class="doccomment">/// Adds given data to current filter, so that new transactions can be accepted</span>
+	<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">update_bloom_filter</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">message</span>: <span class="ident">types</span>::<span class="ident">FilterAdd</span>) {
+		<span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="kw-2">ref</span> <span class="kw-2">mut</span> <span class="ident">bloom</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">bloom</span> {
+			<span class="ident">bloom</span>.<span class="ident">lock</span>().<span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="ident">message</span>.<span class="ident">data</span>);
+		}
+	}
+
+	<span class="doccomment">/// Removes bloom filter, so that all transactions are now accepted by this filter</span>
+	<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">remove_bloom_filter</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+		<span class="self">self</span>.<span class="ident">bloom</span> <span class="op">=</span> <span class="prelude-val">None</span>;
+	}
+
+	<span class="doccomment">/// Filters transaction using bloom filter data</span>
+	<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">tx</span>: <span class="kw-2">&amp;</span><span class="ident">IndexedTransaction</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+		<span class="comment">// check with bloom filter, if set</span>
+		<span class="kw">match</span> <span class="self">self</span>.<span class="ident">bloom</span> {
+			<span class="comment">// if no filter is set for the connection =&gt; match everything</span>
+			<span class="prelude-val">None</span> <span class="op">=&gt;</span> <span class="bool-val">true</span>,
+			<span class="comment">// filter using bloom filter, then update</span>
+			<span class="prelude-val">Some</span>(<span class="kw-2">ref</span> <span class="ident">bloom</span>) <span class="op">=&gt;</span> {
+				<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">bloom</span> <span class="op">=</span> <span class="ident">bloom</span>.<span class="ident">lock</span>();
+				<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">is_match</span> <span class="op">=</span> <span class="bool-val">false</span>;
+
+				<span class="comment">// match if filter contains any arbitrary script data element in any scriptPubKey in tx</span>
+				<span class="kw">for</span> (<span class="ident">output_index</span>, <span class="ident">output</span>) <span class="kw">in</span> <span class="ident">tx</span>.<span class="ident">raw</span>.<span class="ident">outputs</span>.<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
+					<span class="kw">let</span> <span class="ident">script</span> <span class="op">=</span> <span class="ident">Script</span>::<span class="ident">new</span>(<span class="ident">output</span>.<span class="ident">script_pubkey</span>.<span class="ident">clone</span>());
+					<span class="kw">let</span> <span class="ident">is_update_needed</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">filter_flags</span> <span class="op">==</span> <span class="ident">types</span>::<span class="ident">FilterFlags</span>::<span class="ident">All</span>
+						<span class="op">||</span> (<span class="self">self</span>.<span class="ident">filter_flags</span> <span class="op">==</span> <span class="ident">types</span>::<span class="ident">FilterFlags</span>::<span class="ident">PubKeyOnly</span> <span class="op">&amp;&amp;</span> (<span class="ident">script</span>.<span class="ident">is_pay_to_public_key</span>() <span class="op">||</span> <span class="ident">script</span>.<span class="ident">is_multisig_script</span>()));
+					<span class="kw">for</span> <span class="ident">instruction</span> <span class="kw">in</span> <span class="ident">script</span>.<span class="ident">iter</span>().<span class="ident">filter_map</span>(<span class="op">|</span><span class="ident">i</span><span class="op">|</span> <span class="ident">i</span>.<span class="ident">ok</span>()) {
+						<span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">instruction_data</span>) <span class="op">=</span> <span class="ident">instruction</span>.<span class="ident">data</span> {
+							<span class="kw">if</span> <span class="ident">bloom</span>.<span class="ident">contains</span>(<span class="ident">instruction_data</span>) {
+								<span class="ident">is_match</span> <span class="op">=</span> <span class="bool-val">true</span>;
+
+								<span class="kw">if</span> <span class="ident">is_update_needed</span> {
+									<span class="ident">bloom</span>.<span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">OutPoint</span> {
+										<span class="ident">hash</span>: <span class="ident">tx</span>.<span class="ident">hash</span>.<span class="ident">clone</span>(),
+										<span class="ident">index</span>: <span class="ident">output_index</span> <span class="kw">as</span> <span class="ident">u32</span>,
+									}));
+								}
+							}
+						}
+					}
+				}
+
+				<span class="comment">// filter is updated only above =&gt; we can early-return from now</span>
+				<span class="kw">if</span> <span class="ident">is_match</span> {
+					<span class="kw">return</span> <span class="ident">is_match</span>;
+				}
+
+				<span class="comment">// match if filter contains transaction itself</span>
+				<span class="kw">if</span> <span class="ident">bloom</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">tx</span>.<span class="ident">hash</span>) {
+					<span class="kw">return</span> <span class="bool-val">true</span>;
+				}
+
+				<span class="comment">// match if filter contains an outpoint this transaction spends</span>
+				<span class="kw">for</span> <span class="ident">input</span> <span class="kw">in</span> <span class="kw-2">&amp;</span><span class="ident">tx</span>.<span class="ident">raw</span>.<span class="ident">inputs</span> {
+					<span class="comment">// check if match previous output</span>
+					<span class="kw">let</span> <span class="ident">previous_output</span> <span class="op">=</span> <span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">input</span>.<span class="ident">previous_output</span>);
+					<span class="ident">is_match</span> <span class="op">=</span> <span class="ident">bloom</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">previous_output</span>);
+					<span class="kw">if</span> <span class="ident">is_match</span> {
+						<span class="kw">return</span> <span class="bool-val">true</span>;
+					}
+
+					<span class="comment">// check if match any arbitrary script data element in any scriptSig in tx</span>
+					<span class="kw">let</span> <span class="ident">script</span> <span class="op">=</span> <span class="ident">Script</span>::<span class="ident">new</span>(<span class="ident">input</span>.<span class="ident">script_sig</span>.<span class="ident">clone</span>());
+					<span class="kw">for</span> <span class="ident">instruction</span> <span class="kw">in</span> <span class="ident">script</span>.<span class="ident">iter</span>().<span class="ident">filter_map</span>(<span class="op">|</span><span class="ident">i</span><span class="op">|</span> <span class="ident">i</span>.<span class="ident">ok</span>()) {
+						<span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">instruction_data</span>) <span class="op">=</span> <span class="ident">instruction</span>.<span class="ident">data</span> {
+							<span class="ident">is_match</span> <span class="op">=</span> <span class="ident">bloom</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">instruction_data</span>);
+							<span class="kw">if</span> <span class="ident">is_match</span> {
+								<span class="kw">return</span> <span class="bool-val">true</span>;
+							}
+						}
+					}
+				}
+
+				<span class="comment">// no matches</span>
+				<span class="bool-val">false</span>
+			},
+		}
+	}
+}
+
+<span class="kw">impl</span> <span class="ident">BloomFilterData</span> {
+	<span class="doccomment">/// Create with given parameters</span>
+	<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_filter_load</span>(<span class="ident">message</span>: <span class="ident">types</span>::<span class="ident">FilterLoad</span>) <span class="op">-&gt;</span> <span class="self">Self</span> {
+		<span class="ident">BloomFilterData</span> {
+			<span class="ident">filter</span>: <span class="ident">BitVec</span>::<span class="ident">from_bytes</span>(<span class="kw-2">&amp;</span><span class="ident">message</span>.<span class="ident">filter</span>),
+			<span class="ident">hash_functions_num</span>: <span class="ident">message</span>.<span class="ident">hash_functions</span>,
+			<span class="ident">tweak</span>: <span class="ident">message</span>.<span class="ident">tweak</span>,
+		}
+	}
+
+	<span class="doccomment">/// True if filter contains given bytes</span>
+	<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+		<span class="kw">for</span> <span class="ident">hash_function_idx</span> <span class="kw">in</span> <span class="number">0</span>..<span class="self">self</span>.<span class="ident">hash_functions_num</span> {
+			<span class="kw">let</span> <span class="ident">murmur_seed</span> <span class="op">=</span> <span class="ident">hash_function_idx</span>.<span class="ident">overflowing_mul</span>(<span class="ident">SEED_OFFSET</span>).<span class="number">0</span>.<span class="ident">overflowing_add</span>(<span class="self">self</span>.<span class="ident">tweak</span>).<span class="number">0</span>;
+			<span class="kw">let</span> <span class="ident">murmur_hash</span> <span class="op">=</span> <span class="ident">murmur3_32</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">data</span>.<span class="ident">as_ref</span>(), <span class="ident">murmur_seed</span>) <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="self">self</span>.<span class="ident">filter</span>.<span class="ident">len</span>();
+			<span class="kw">let</span> <span class="ident">index</span> <span class="op">=</span> (<span class="ident">murmur_hash</span> <span class="op">&amp;</span> <span class="op">!</span><span class="number">7usize</span>) <span class="op">|</span> ((<span class="ident">murmur_hash</span> <span class="op">&amp;</span> <span class="number">7</span>) <span class="op">^</span> <span class="number">7</span>);
+			<span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">filter</span>.<span class="ident">get</span>(<span class="ident">index</span>).<span class="ident">expect</span>(<span class="string">&quot;murmur_hash is result of mod operation by filter len; qed&quot;</span>) {
+				<span class="kw">return</span> <span class="bool-val">false</span>;
+			}
+		}
+		<span class="bool-val">true</span>
+	}
+
+	<span class="doccomment">/// Add bytes to the filter</span>
+	<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) {
+		<span class="kw">for</span> <span class="ident">hash_function_idx</span> <span class="kw">in</span> <span class="number">0</span>..<span class="self">self</span>.<span class="ident">hash_functions_num</span> {
+			<span class="kw">let</span> <span class="ident">murmur_seed</span> <span class="op">=</span> <span class="ident">hash_function_idx</span>.<span class="ident">overflowing_mul</span>(<span class="ident">SEED_OFFSET</span>).<span class="number">0</span>.<span class="ident">overflowing_add</span>(<span class="self">self</span>.<span class="ident">tweak</span>).<span class="number">0</span>;
+			<span class="kw">let</span> <span class="ident">murmur_hash</span> <span class="op">=</span> <span class="ident">murmur3_32</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">data</span>.<span class="ident">as_ref</span>(), <span class="ident">murmur_seed</span>) <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="self">self</span>.<span class="ident">filter</span>.<span class="ident">len</span>();
+			<span class="kw">let</span> <span class="ident">index</span> <span class="op">=</span> (<span class="ident">murmur_hash</span> <span class="op">&amp;</span> <span class="op">!</span><span class="number">7usize</span>) <span class="op">|</span> ((<span class="ident">murmur_hash</span> <span class="op">&amp;</span> <span class="number">7</span>) <span class="op">^</span> <span class="number">7</span>);
+			<span class="self">self</span>.<span class="ident">filter</span>.<span class="ident">set</span>(<span class="ident">index</span>, <span class="bool-val">true</span>);
+		}
+	}
+}
+
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
+<span class="kw">mod</span> <span class="ident">tests</span> {
+	<span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">test_data</span>;
+
+	<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">iter</span>::<span class="ident">repeat</span>;
+	<span class="kw">use</span> <span class="ident">chain</span>::<span class="ident">IndexedTransaction</span>;
+	<span class="kw">use</span> <span class="ident">message</span>::<span class="ident">types</span>;
+	<span class="kw">use</span> <span class="ident">primitives</span>::<span class="ident">bytes</span>::<span class="ident">Bytes</span>;
+	<span class="kw">use</span> <span class="ident">primitives</span>::<span class="ident">hash</span>::<span class="ident">H256</span>;
+	<span class="kw">use</span> <span class="ident">ser</span>::<span class="ident">serialize</span>;
+	<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">BloomFilter</span>, <span class="ident">BloomFilterData</span>};
+
+	<span class="kw">fn</span> <span class="ident">default_filterload</span>() <span class="op">-&gt;</span> <span class="ident">types</span>::<span class="ident">FilterLoad</span> {
+		<span class="ident">types</span>::<span class="ident">FilterLoad</span> {
+			<span class="ident">filter</span>: <span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">repeat</span>(<span class="number">0u8</span>).<span class="ident">take</span>(<span class="number">1024</span>).<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;&gt;</span>()),
+			<span class="ident">hash_functions</span>: <span class="number">10</span>,
+			<span class="ident">tweak</span>: <span class="number">5</span>,
+			<span class="ident">flags</span>: <span class="ident">types</span>::<span class="ident">FilterFlags</span>::<span class="prelude-val">None</span>,
+		}
+	}
+
+	<span class="kw">fn</span> <span class="ident">make_filteradd</span>(<span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-&gt;</span> <span class="ident">types</span>::<span class="ident">FilterAdd</span> {
+		<span class="ident">types</span>::<span class="ident">FilterAdd</span> {
+			<span class="ident">data</span>: <span class="ident">data</span>.<span class="ident">into</span>(),
+		}
+	}
+
+	<span class="attribute">#[<span class="ident">test</span>]</span>
+	<span class="kw">fn</span> <span class="ident">bloom_insert_data</span>() {
+		<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">bloom</span> <span class="op">=</span> <span class="ident">BloomFilterData</span>::<span class="ident">with_filter_load</span>(<span class="ident">default_filterload</span>());
+
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">bloom</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">H256</span>::<span class="ident">default</span>()));
+
+		<span class="ident">bloom</span>.<span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">H256</span>::<span class="ident">default</span>());
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="ident">bloom</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">H256</span>::<span class="ident">default</span>()));
+	}
+
+	<span class="attribute">#[<span class="ident">test</span>]</span>
+	<span class="kw">fn</span> <span class="ident">bloom_filter_matches_transaction_by_hash</span>() {
+		<span class="kw">let</span> <span class="ident">tx1</span>: <span class="ident">IndexedTransaction</span> <span class="op">=</span> <span class="ident">test_data</span>::<span class="ident">TransactionBuilder</span>::<span class="ident">with_output</span>(<span class="number">10</span>).<span class="ident">into</span>();
+		<span class="kw">let</span> <span class="ident">tx2</span>: <span class="ident">IndexedTransaction</span> <span class="op">=</span> <span class="ident">test_data</span>::<span class="ident">TransactionBuilder</span>::<span class="ident">with_output</span>(<span class="number">20</span>).<span class="ident">into</span>();
+
+		<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">filter</span> <span class="op">=</span> <span class="ident">BloomFilter</span>::<span class="ident">with_filter_load</span>(<span class="ident">default_filterload</span>());
+
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx1</span>));
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx2</span>));
+
+		<span class="ident">filter</span>.<span class="ident">update_bloom_filter</span>(<span class="ident">make_filteradd</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">tx1</span>.<span class="ident">hash</span>));
+
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx1</span>));
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx2</span>));
+	}
+
+	<span class="attribute">#[<span class="ident">test</span>]</span>
+	<span class="kw">fn</span> <span class="ident">bloom_filter_matches_transaction_by_output_script_data_element</span>() {
+		<span class="comment">// https://webbtc.com/tx/eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb</span>
+		<span class="comment">// output script: OP_DUP OP_HASH160 380cb3c594de4e7e9b8e18db182987bebb5a4f70 OP_EQUALVERIFY OP_CHECKSIG</span>
+		<span class="kw">let</span> <span class="ident">tx1</span>: <span class="ident">IndexedTransaction</span> <span class="op">=</span> <span class="string">&quot;01000000024de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8000000006b48304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b0121035aa98d5f77cd9a2d88710e6fc66212aff820026f0dad8f32d1f7ce87457dde50ffffffff4de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8010000006f004730440220276d6dad3defa37b5f81add3992d510d2f44a317fd85e04f93a1e2daea64660202200f862a0da684249322ceb8ed842fb8c859c0cb94c81e1c5308b4868157a428ee01ab51210232abdc893e7f0631364d7fd01cb33d24da45329a00357b3a7886211ab414d55a51aeffffffff02e0fd1c00000000001976a914380cb3c594de4e7e9b8e18db182987bebb5a4f7088acc0c62d000000000017142a9bc5447d664c1d0141392a842d23dba45c4f13b17500000000&quot;</span>.<span class="ident">into</span>();
+		<span class="kw">let</span> <span class="ident">tx1_out_data</span>: <span class="ident">Bytes</span> <span class="op">=</span> <span class="string">&quot;380cb3c594de4e7e9b8e18db182987bebb5a4f70&quot;</span>.<span class="ident">into</span>();
+		<span class="kw">let</span> <span class="ident">tx2</span> <span class="op">=</span> <span class="ident">IndexedTransaction</span>::<span class="ident">default</span>();
+
+		<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">filter</span> <span class="op">=</span> <span class="ident">BloomFilter</span>::<span class="ident">with_filter_load</span>(<span class="ident">default_filterload</span>());
+
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx1</span>));
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx2</span>));
+
+		<span class="ident">filter</span>.<span class="ident">update_bloom_filter</span>(<span class="ident">make_filteradd</span>(<span class="kw-2">&amp;</span><span class="ident">tx1_out_data</span>));
+
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx1</span>));
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx2</span>));
+	}
+
+	<span class="attribute">#[<span class="ident">test</span>]</span>
+	<span class="kw">fn</span> <span class="ident">bloom_filter_matches_transaction_by_previous_output_point</span>() {
+		<span class="comment">// https://webbtc.com/tx/eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb</span>
+		<span class="kw">let</span> <span class="ident">tx1</span>: <span class="ident">IndexedTransaction</span> <span class="op">=</span> <span class="string">&quot;01000000024de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8000000006b48304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b0121035aa98d5f77cd9a2d88710e6fc66212aff820026f0dad8f32d1f7ce87457dde50ffffffff4de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8010000006f004730440220276d6dad3defa37b5f81add3992d510d2f44a317fd85e04f93a1e2daea64660202200f862a0da684249322ceb8ed842fb8c859c0cb94c81e1c5308b4868157a428ee01ab51210232abdc893e7f0631364d7fd01cb33d24da45329a00357b3a7886211ab414d55a51aeffffffff02e0fd1c00000000001976a914380cb3c594de4e7e9b8e18db182987bebb5a4f7088acc0c62d000000000017142a9bc5447d664c1d0141392a842d23dba45c4f13b17500000000&quot;</span>.<span class="ident">into</span>();
+		<span class="kw">let</span> <span class="ident">tx1_previous_output</span>: <span class="ident">Bytes</span> <span class="op">=</span> <span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">tx1</span>.<span class="ident">raw</span>.<span class="ident">inputs</span>[<span class="number">0</span>].<span class="ident">previous_output</span>);
+		<span class="kw">let</span> <span class="ident">tx2</span> <span class="op">=</span> <span class="ident">IndexedTransaction</span>::<span class="ident">default</span>();
+
+		<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">filter</span> <span class="op">=</span> <span class="ident">BloomFilter</span>::<span class="ident">with_filter_load</span>(<span class="ident">default_filterload</span>());
+
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx1</span>));
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx2</span>));
+
+		<span class="ident">filter</span>.<span class="ident">update_bloom_filter</span>(<span class="ident">make_filteradd</span>(<span class="kw-2">&amp;</span><span class="ident">tx1_previous_output</span>));
+
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx1</span>));
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx2</span>));
+	}
+
+	<span class="attribute">#[<span class="ident">test</span>]</span>
+	<span class="kw">fn</span> <span class="ident">connection_filter_matches_transaction_by_input_script_data_element</span>() {
+		<span class="comment">// https://webbtc.com/tx/eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb</span>
+		<span class="comment">// input script: PUSH DATA 304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b01</span>
+		<span class="kw">let</span> <span class="ident">tx1</span>: <span class="ident">IndexedTransaction</span> <span class="op">=</span> <span class="string">&quot;01000000024de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8000000006b48304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b0121035aa98d5f77cd9a2d88710e6fc66212aff820026f0dad8f32d1f7ce87457dde50ffffffff4de8b0c4c2582db95fa6b3567a989b664484c7ad6672c85a3da413773e63fdb8010000006f004730440220276d6dad3defa37b5f81add3992d510d2f44a317fd85e04f93a1e2daea64660202200f862a0da684249322ceb8ed842fb8c859c0cb94c81e1c5308b4868157a428ee01ab51210232abdc893e7f0631364d7fd01cb33d24da45329a00357b3a7886211ab414d55a51aeffffffff02e0fd1c00000000001976a914380cb3c594de4e7e9b8e18db182987bebb5a4f7088acc0c62d000000000017142a9bc5447d664c1d0141392a842d23dba45c4f13b17500000000&quot;</span>.<span class="ident">into</span>();
+		<span class="kw">let</span> <span class="ident">tx1_input_data</span>: <span class="ident">Bytes</span> <span class="op">=</span> <span class="string">&quot;304502205b282fbc9b064f3bc823a23edcc0048cbb174754e7aa742e3c9f483ebe02911c022100e4b0b3a117d36cab5a67404dddbf43db7bea3c1530e0fe128ebc15621bd69a3b01&quot;</span>.<span class="ident">into</span>();
+		<span class="kw">let</span> <span class="ident">tx2</span> <span class="op">=</span> <span class="ident">IndexedTransaction</span>::<span class="ident">default</span>();
+
+		<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">filter</span> <span class="op">=</span> <span class="ident">BloomFilter</span>::<span class="ident">with_filter_load</span>(<span class="ident">default_filterload</span>());
+
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx1</span>));
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx2</span>));
+
+		<span class="ident">filter</span>.<span class="ident">update_bloom_filter</span>(<span class="ident">make_filteradd</span>(<span class="kw-2">&amp;</span><span class="ident">tx1_input_data</span>));
+
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx1</span>));
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">filter</span>.<span class="ident">filter_transaction</span>(<span class="kw-2">&amp;</span><span class="ident">tx2</span>));
+	}
+
+	<span class="attribute">#[<span class="ident">test</span>]</span>
+	<span class="kw">fn</span> <span class="ident">bloom_filter_data_works_on_address</span>() {
+		<span class="kw">use</span> <span class="ident">message</span>::{<span class="ident">types</span>, <span class="ident">deserialize_payload</span>};
+
+		<span class="comment">// real world message</span>
+		<span class="kw">let</span> <span class="ident">payload</span>: <span class="ident">Bytes</span> <span class="op">=</span> <span class="string">&quot;fd77078732c06c257f2818a0d14738804d6a18a0f0a9800e039be473286d591f48040c99e96d2e0cd8480b03c0823fdd79310e0e04c86314ae24cabaa931f39852c813172e524c4b231020557dda2023130b0f1f309de822014bf6d4305d238ea013b8539e9c138053076a22020335bc1042e543f260787993a07a155a7a560c1475f75ec109b73822491c5880924303a5545ffc465132960fe40a8822010f919c38910f31c546be6940090f0476a02570de8d28258ee8081dea073829386a9de01b0070348f0f2fb48c6a1b4e92292de7b60dbafb8df3a6cab6a824e50005744018b384f080c8265152e406b1c85906d5325d1c83ac880d02214ad401ddc07657002c47708e338020bd14fcc147bfe49335647062074a4d3276e0d3a5110826a05d4fb025129f48c26e5819dd878d851b84802b7a211097813ef952410390c95bb294a7a8faca3667f0068489a69d9c9e8405c035442874a6a8c448c60600834a22041ce36a8065b086469bbb1b46d326b7a9923054ad4e32e4b7231aa203c5acab1f5821b92d2f00728819e587e1e6ff9fa6e66ff52fb54bce3648a7b043cbd19469aa5af0891eb4979def822f06522f080830b411545b4240e01195b0f0962e628050f0f8290269c45c20aa16559d17ceca68b81a21370909a1086614531577600ad8480ae1023c9173260bc6385c0e2d46806c05401a17ac969edfe65fd4000007e1c8a13ac651922edfa5a3235a0bcc10cc0067b4404d64260aea022391b007d3010c8380fda9c821d37258e47a0ab6485baff88876ba55cd190edf730970875f75522010e40f8c28e4872a2065c96390041bef9273a6a1c05d2bd28193b205b2cf25e44c5290926a4d392450b3135a0db7cc2c0696384eee68a65a4280ac3c44207264243fd18795c69588f4e418a26d4e21d1cee894325a2fc869b03fec68fd3e86b31998f9f9a6402dd672227451b1b5419a89c90ae96b9292a1ca83848bc026dcd00ec740342496730a7ab8e48200c7ea240d0e34a07890a9203938ee188475b3d6dd2f50399019c249536955894917fa3acc400ce04ec42d5e89e2d48aa085ae129226d0ea2a4d0038db88fd5ec0688768cea449171280438e8f5164d8682c40b91a2dab042800b1f312b22460e4905dccee59842a2bc9f807d542e08388fec013696d281c0356880040b0610ac4cb148a95a5924875891b2217040bbab7bba21f14898203ae87153206601c20c484f072216c1714ac5ded41a6d213fc09962f195129ac09d85dc05501a773163646021100481cb385a0fdb1609e8d1bc042942f169884e60482ae2004924fc2eb0b7061855858b5e54a4517352084778f38c09f1f004431da4531059c1296436d4c89e8839d34506a27b07c94fa80d2a0a9b73208a79982f0a5d16e0b723d38816a6a666c09bceae5a46d8a032248302224ae43c7e4801004ea6671c6d08142b67e27269a4ac6418748d74f481fc2dbbac5852afc645026cb462f790347d32a26e0b88209f2168110eb4e88394dd0f3bc27958994803238059d581d8cda73493a994c433fad902e20093ad40b1570543af928bc4830c3976d2802635400c0ac5a25833008f00b8bb691c1d9ce026373d05ac03fa6851402e05c6f109fa1754da54a20aa9f4f4782e68966a5113ae141d495d2a53d64bb6a023616b243e0333e2e0c65f2078559a98f48e8637f7b2ff326572a32532e2ec9e9651c092c52a522a5120249a159fa49d56d304806b502c425e3981275409f38b20418bc8206d21e884401c05c3c7d0b7404cf2a97706092b5a818638122ce750ce8780812900f501f4f02cb90fd5ea615e611006e010920072d08ca01b535741460c9aa1ab567ac2f79a004400e523fdcf95320bc08a37f54aaa01b2a2d0aa343ec13205131124b445a2c1b9a7542c63c6ced549447462099c12a9c613838995d718849650300056845311b2c93a1d35a66622466e0a3cef68594faa11021751c0e5358027721d2a2362fc9353655680c80fa5cad35685a0454932251aa121cb50583ae987c2a6e8009f3342048019509760b7e233de62cdcb636344d8a012af9f61a539ec66801c46a56b3d8ea6825e95430d1cc71fcc0bc977e4ea27f83e284cab0aea0a5085e67039901252a722054e33168a89d160a5908a325b63654016da1e94450548bac84a1b22fcc92ce7e2018967755711480e9048f5ded20b5d3960f21b559f1a0be84a53721f7b0f283d7d1bc2bd7f5d7550d3213814eb56e13f0b106acc07b05ece2c518117e934409843f1f889c2d84845c540514badb4ca00864e8bde78e50b0837478104c018cd5996977196e4f064002480a2761489000984d44d0077df65696f306930c893c50b08516e9ea82e02eb0400bc3d1adade23161b45e5210e08e981568f8af232bdf0f3c460349a8800c9f2c510eecc8ccee39e8b0898d329560aaf4d9594a551186423f79aa6806ce8c541506283a54e8859a840814012cad0289627f8659658218f6e58926af0849b4b23b40ac76280061b90c940f71617e0397ea145968250b1060608e4002432021195635dc52e0495c69fa67768a4a89ec32206fa30f62a85503de8c79df940f808c0de2f1723c0c84d89f317c4c1287a40759946d9cc8c43044a817dd6bb8ed326e4ab800fd8815482910de3cc360d40080a8d956e049ec6d1000000000943a3102&quot;</span>.<span class="ident">parse</span>().<span class="ident">unwrap</span>();
+		<span class="kw">let</span> <span class="ident">message</span>: <span class="ident">types</span>::<span class="ident">FilterLoad</span> <span class="op">=</span> <span class="ident">deserialize_payload</span>(<span class="kw-2">&amp;</span><span class="ident">payload</span>, <span class="number">70001</span>).<span class="ident">unwrap</span>();
+		<span class="comment">// containing this address</span>
+		<span class="kw">let</span> <span class="ident">address</span>: <span class="ident">Bytes</span> <span class="op">=</span> <span class="string">&quot;BA99435B59DEBDBB5E207C0B33FF55752DBC5EFF&quot;</span>.<span class="ident">parse</span>().<span class="ident">unwrap</span>();
+
+		<span class="kw">let</span> <span class="ident">bloom</span> <span class="op">=</span> <span class="ident">BloomFilterData</span>::<span class="ident">with_filter_load</span>(<span class="ident">message</span>);
+		<span class="macro">assert</span><span class="macro">!</span>(<span class="ident">bloom</span>.<span class="ident">contains</span>(<span class="ident">address</span>.<span class="ident">as_slice</span>()));
+	}
+}
+</pre>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><aside id="help" class="hidden"><div><h1 class="hidden">Help</h1><div class="shortcuts"><h2>Keyboard Shortcuts</h2><dl><dt><kbd>?</kbd></dt><dd>Show this help dialog</dd><dt><kbd>S</kbd></dt><dd>Focus the search field</dd><dt><kbd>↑</kbd></dt><dd>Move up in search results</dd><dt><kbd>↓</kbd></dt><dd>Move down in search results</dd><dt><kbd>↹</kbd></dt><dd>Switch tab</dd><dt><kbd>&#9166;</kbd></dt><dd>Go to active search result</dd><dt><kbd>+</kbd></dt><dd>Expand all sections</dd><dt><kbd>-</kbd></dt><dd>Collapse all sections</dd></dl></div><div class="infos"><h2>Search Tricks</h2><p>Prefix searches with a type followed by a colon (e.g. <code>fn:</code>) to restrict the search to a given type.</p><p>Accepted types are: <code>fn</code>, <code>mod</code>, <code>struct</code>, <code>enum</code>, <code>trait</code>, <code>type</code>, <code>macro</code>, and <code>const</code>.</p><p>Search functions by type signature (e.g. <code>vec -> usize</code> or <code>* -> vec</code>)</p><p>Search multiple things at once by splitting your query with comma (e.g. <code>str,u8</code> or <code>String,struct:Vec,test</code>)</p></div></div></aside><script>window.rootPath = "../../../";window.currentCrate = "sync";</script><script src="../../../aliases.js"></script><script src="../../../main.js"></script><script defer src="../../../search-index.js"></script></body></html>

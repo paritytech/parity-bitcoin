@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["open_blk_dir","Creates iterator over bitcoind database blocks"]],"mod":[["bytes","Wrapper around `Vec<u8>`"],["hash","Fixed-size hashes"]],"struct":[["BlkDir","Bitcoind database blocks iterator"]]});

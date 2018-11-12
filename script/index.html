@@ -1,0 +1,169 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="API documentation for the Rust `script` crate."><meta name="keywords" content="rust, rustlang, rust-lang, script"><title>script - Rust</title><link rel="stylesheet" type="text/css" href="../normalize.css"><link rel="stylesheet" type="text/css" href="../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../dark.css"><link rel="stylesheet" type="text/css" href="../light.css" id="themeStyle"><script src="../storage.js"></script></head><body class="rustdoc mod"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><p class='location'>Crate script</p><div class="sidebar-elems"><div class="block items"><ul><li><a href="#modules">Modules</a></li><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li><li><a href="#traits">Traits</a></li><li><a href="#functions">Functions</a></li><li><a href="#types">Type Definitions</a></li></ul></div><p class='location'></p><script>window.sidebarCurrent = {name: 'script', ty: 'mod', relpath: '../'};</script></div></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../theme.js"></script><nav class="sub"><form class="search-form js-only"><div class="search-container"><input class="search-input" name="search" autocomplete="off" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><a id="settings-menu" href="../settings.html"><img src="../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><h1 class='fqn'><span class='out-of-band'><span id='render-detail'><a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class='inner'>&#x2212;</span>]</a></span><a class='srclink' href='../src/script/lib.rs.html#1-30' title='goto source code'>[src]</a></span><span class='in-band'>Crate <a class="mod" href=''>script</a></span></h1><h2 id='modules' class='section-header'><a href="#modules">Modules</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class="mod" href="bytes/index.html"
+                                  title='mod script::bytes'>bytes</a></td>
+                           <td class='docblock-short'>
+                                <p>Wrapper around <code>Vec&lt;u8&gt;</code></p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="mod" href="hash/index.html"
+                                  title='mod script::hash'>hash</a></td>
+                           <td class='docblock-short'>
+                                <p>Fixed-size hashes</p>
+
+                           </td>
+                       </tr></table><h2 id='structs' class='section-header'><a href="#structs">Structs</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.Builder.html"
+                                  title='struct script::Builder'>Builder</a></td>
+                           <td class='docblock-short'>
+                                <p>Script builder</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.NoopSignatureChecker.html"
+                                  title='struct script::NoopSignatureChecker'>NoopSignatureChecker</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.Num.html"
+                                  title='struct script::Num'>Num</a></td>
+                           <td class='docblock-short'>
+                                <p>Script numeric</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.Script.html"
+                                  title='struct script::Script'>Script</a></td>
+                           <td class='docblock-short'>
+                                <p>Serialized script, used inside transaction inputs and outputs.</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.ScriptAddress.html"
+                                  title='struct script::ScriptAddress'>ScriptAddress</a></td>
+                           <td class='docblock-short'>
+                                <p>Address from Script</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.Stack.html"
+                                  title='struct script::Stack'>Stack</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.TransactionInputSigner.html"
+                                  title='struct script::TransactionInputSigner'>TransactionInputSigner</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.TransactionSignatureChecker.html"
+                                  title='struct script::TransactionSignatureChecker'>TransactionSignatureChecker</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.UnsignedTransactionInput.html"
+                                  title='struct script::UnsignedTransactionInput'>UnsignedTransactionInput</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.VerificationFlags.html"
+                                  title='struct script::VerificationFlags'>VerificationFlags</a></td>
+                           <td class='docblock-short'>
+                                <p>Script interpreter verification flags</p>
+
+                           </td>
+                       </tr></table><h2 id='enums' class='section-header'><a href="#enums">Enums</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class="enum" href="enum.Error.html"
+                                  title='enum script::Error'>Error</a></td>
+                           <td class='docblock-short'>
+                                <p>Interpreter errors</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="enum" href="enum.Opcode.html"
+                                  title='enum script::Opcode'>Opcode</a></td>
+                           <td class='docblock-short'>
+                                <p>Script opcodes.</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="enum" href="enum.ScriptType.html"
+                                  title='enum script::ScriptType'>ScriptType</a></td>
+                           <td class='docblock-short'>
+                                <p>Classified script type</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="enum" href="enum.SignatureVersion.html"
+                                  title='enum script::SignatureVersion'>SignatureVersion</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr></table><h2 id='traits' class='section-header'><a href="#traits">Traits</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class="trait" href="trait.SignatureChecker.html"
+                                  title='trait script::SignatureChecker'>SignatureChecker</a></td>
+                           <td class='docblock-short'>
+                                <p>Checks transaction signature</p>
+
+                           </td>
+                       </tr></table><h2 id='functions' class='section-header'><a href="#functions">Functions</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class="fn" href="fn.eval_script.html"
+                                  title='fn script::eval_script'>eval_script</a></td>
+                           <td class='docblock-short'>
+                                <p>Evaluautes the script</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="fn" href="fn.is_witness_commitment_script.html"
+                                  title='fn script::is_witness_commitment_script'>is_witness_commitment_script</a></td>
+                           <td class='docblock-short'>
+                                <p>Passed bytes array is a commitment script?
+https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#Commitment_structure</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="fn" href="fn.verify_script.html"
+                                  title='fn script::verify_script'>verify_script</a></td>
+                           <td class='docblock-short'>
+                                <p>Verifies script signature and pubkey</p>
+
+                           </td>
+                       </tr></table><h2 id='types' class='section-header'><a href="#types">Type Definitions</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class="type" href="type.ScriptWitness.html"
+                                  title='type script::ScriptWitness'>ScriptWitness</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr></table></section><section id="search" class="content hidden"></section><section class="footer"></section><aside id="help" class="hidden"><div><h1 class="hidden">Help</h1><div class="shortcuts"><h2>Keyboard Shortcuts</h2><dl><dt><kbd>?</kbd></dt><dd>Show this help dialog</dd><dt><kbd>S</kbd></dt><dd>Focus the search field</dd><dt><kbd>↑</kbd></dt><dd>Move up in search results</dd><dt><kbd>↓</kbd></dt><dd>Move down in search results</dd><dt><kbd>↹</kbd></dt><dd>Switch tab</dd><dt><kbd>&#9166;</kbd></dt><dd>Go to active search result</dd><dt><kbd>+</kbd></dt><dd>Expand all sections</dd><dt><kbd>-</kbd></dt><dd>Collapse all sections</dd></dl></div><div class="infos"><h2>Search Tricks</h2><p>Prefix searches with a type followed by a colon (e.g. <code>fn:</code>) to restrict the search to a given type.</p><p>Accepted types are: <code>fn</code>, <code>mod</code>, <code>struct</code>, <code>enum</code>, <code>trait</code>, <code>type</code>, <code>macro</code>, and <code>const</code>.</p><p>Search functions by type signature (e.g. <code>vec -> usize</code> or <code>* -> vec</code>)</p><p>Search multiple things at once by splitting your query with comma (e.g. <code>str,u8</code> or <code>String,struct:Vec,test</code>)</p></div></div></aside><script>window.rootPath = "../";window.currentCrate = "script";</script><script src="../aliases.js"></script><script src="../main.js"></script><script defer src="../search-index.js"></script></body></html>

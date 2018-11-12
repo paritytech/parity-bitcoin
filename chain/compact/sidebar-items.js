@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Compact","Compact representation of `U256`"]]});

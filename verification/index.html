@@ -1,0 +1,279 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="API documentation for the Rust `verification` crate."><meta name="keywords" content="rust, rustlang, rust-lang, verification"><title>verification - Rust</title><link rel="stylesheet" type="text/css" href="../normalize.css"><link rel="stylesheet" type="text/css" href="../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../dark.css"><link rel="stylesheet" type="text/css" href="../light.css" id="themeStyle"><script src="../storage.js"></script></head><body class="rustdoc mod"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><p class='location'>Crate verification</p><div class="sidebar-elems"><div class="block items"><ul><li><a href="#modules">Modules</a></li><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li><li><a href="#traits">Traits</a></li><li><a href="#functions">Functions</a></li></ul></div><p class='location'></p><script>window.sidebarCurrent = {name: 'verification', ty: 'mod', relpath: '../'};</script></div></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../theme.js"></script><nav class="sub"><form class="search-form js-only"><div class="search-container"><input class="search-input" name="search" autocomplete="off" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><a id="settings-menu" href="../settings.html"><img src="../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><h1 class='fqn'><span class='out-of-band'><span id='render-detail'><a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class='inner'>&#x2212;</span>]</a></span><a class='srclink' href='../src/verification/lib.rs.html#1-131' title='goto source code'>[src]</a></span><span class='in-band'>Crate <a class="mod" href=''>verification</a></span></h1><div class='docblock'><p>Bitcoin consensus verification</p>
+<p>Full block verification consists of two phases:</p>
+<ul>
+<li>pre-verification</li>
+<li>full-verification</li>
+</ul>
+<p>In this library, pre-verification is done by <code>VerifyXXX</code> structures
+Full-verification is done by <code>AcceptXXX</code> structures</p>
+<p>Use cases:</p>
+<p>--&gt; A. on_new_block:</p>
+<p>A.1 VerifyHeader
+A.2 VerifyBlock,
+A.3 VerifyTransaction for each tx</p>
+<p>A.4.a if it is block from canon chain
+A.4.a.1 AcceptHeader
+A.4.a.2 AcceptBlock
+A.4.a.3 AcceptTransaction for each tx</p>
+<p>A.4.b if it is block from side chain becoming canon
+decanonize old canon chain blocks
+canonize new canon chain blocks (without currently processed block)
+A.4.b.1 AcceptHeader for each header
+A.4.b.2 AcceptBlock for each block
+A.4.b.3 AcceptTransaction for each tx in each block
+A.4.b.4 AcceptHeader
+A.4.b.5 AcceptBlock
+A.4.b.6 AcceptTransaction for each tx
+if any step failed, revert chain back to old canon</p>
+<p>A.4.c if it is block from side chain do nothing</p>
+<p>--&gt; B. on_memory_pool_transaction</p>
+<p>B.1 VerifyMemoryPoolTransaction
+B.2 AcceptMemoryPoolTransaction</p>
+<p>--&gt; C. on_block_header</p>
+<p>C.1 VerifyHeader
+C.2 AcceptHeader (?)</p>
+<p>--&gt; D. after successfull chain_reorganization</p>
+<p>D.1 AcceptMemoryPoolTransaction on each tx in memory pool</p>
+<p>--&gt; E. D might be super inefficient when memory pool is large
+so instead we might want to call AcceptMemoryPoolTransaction on each tx
+that is inserted into assembled block</p>
+</div><h2 id='modules' class='section-header'><a href="#modules">Modules</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class="mod" href="bigint/index.html"
+                                  title='mod verification::bigint'>bigint</a></td>
+                           <td class='docblock-short'>
+                                <p>Efficient large, fixed-size big integers and hashes.</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="mod" href="compact/index.html"
+                                  title='mod verification::compact'>compact</a></td>
+                           <td class='docblock-short'>
+                                <p>Compact representation of <code>U256</code></p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="mod" href="constants/index.html"
+                                  title='mod verification::constants'>constants</a></td>
+                           <td class='docblock-short'>
+                                <p>Consenus constants</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="mod" href="hash/index.html"
+                                  title='mod verification::hash'>hash</a></td>
+                           <td class='docblock-short'>
+                                <p>Fixed-size hashes</p>
+
+                           </td>
+                       </tr></table><h2 id='structs' class='section-header'><a href="#structs">Structs</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.BackwardsCompatibleChainVerifier.html"
+                                  title='struct verification::BackwardsCompatibleChainVerifier'>BackwardsCompatibleChainVerifier</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.BlockAcceptor.html"
+                                  title='struct verification::BlockAcceptor'>BlockAcceptor</a></td>
+                           <td class='docblock-short'>
+                                <p>Flexible verification of ordered block</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.BlockVerifier.html"
+                                  title='struct verification::BlockVerifier'>BlockVerifier</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.CanonBlock.html"
+                                  title='struct verification::CanonBlock'>CanonBlock</a></td>
+                           <td class='docblock-short'>
+                                <p>Blocks whose parents are known to be in the chain</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.CanonHeader.html"
+                                  title='struct verification::CanonHeader'>CanonHeader</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.CanonTransaction.html"
+                                  title='struct verification::CanonTransaction'>CanonTransaction</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.ChainAcceptor.html"
+                                  title='struct verification::ChainAcceptor'>ChainAcceptor</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.ChainVerifier.html"
+                                  title='struct verification::ChainVerifier'>ChainVerifier</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.Deployments.html"
+                                  title='struct verification::Deployments'>Deployments</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.HeaderAcceptor.html"
+                                  title='struct verification::HeaderAcceptor'>HeaderAcceptor</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.HeaderVerifier.html"
+                                  title='struct verification::HeaderVerifier'>HeaderVerifier</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.MemoryPoolTransactionAcceptor.html"
+                                  title='struct verification::MemoryPoolTransactionAcceptor'>MemoryPoolTransactionAcceptor</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.MemoryPoolTransactionVerifier.html"
+                                  title='struct verification::MemoryPoolTransactionVerifier'>MemoryPoolTransactionVerifier</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.TransactionAcceptor.html"
+                                  title='struct verification::TransactionAcceptor'>TransactionAcceptor</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="struct" href="struct.TransactionVerifier.html"
+                                  title='struct verification::TransactionVerifier'>TransactionVerifier</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr></table><h2 id='enums' class='section-header'><a href="#enums">Enums</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class="enum" href="enum.Error.html"
+                                  title='enum verification::Error'>Error</a></td>
+                           <td class='docblock-short'>
+                                <p>All possible verification errors</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="enum" href="enum.TransactionError.html"
+                                  title='enum verification::TransactionError'>TransactionError</a></td>
+                           <td class='docblock-short'>
+                                <p>Possible transactions verification errors</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="enum" href="enum.VerificationLevel.html"
+                                  title='enum verification::VerificationLevel'>VerificationLevel</a></td>
+                           <td class='docblock-short'>
+                                <p>Blocks verification level.</p>
+
+                           </td>
+                       </tr></table><h2 id='traits' class='section-header'><a href="#traits">Traits</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class="trait" href="trait.Verify.html"
+                                  title='trait verification::Verify'>Verify</a></td>
+                           <td class='docblock-short'>
+                                <p>Interface for block verification</p>
+
+                           </td>
+                       </tr></table><h2 id='functions' class='section-header'><a href="#functions">Functions</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class="fn" href="fn.block_reward_satoshi.html"
+                                  title='fn verification::block_reward_satoshi'>block_reward_satoshi</a></td>
+                           <td class='docblock-short'>
+                                
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="fn" href="fn.is_valid_proof_of_work.html"
+                                  title='fn verification::is_valid_proof_of_work'>is_valid_proof_of_work</a></td>
+                           <td class='docblock-short'>
+                                <p>Returns true if hash is lower or equal than target and target is lower or equal
+than current network maximum</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="fn" href="fn.is_valid_proof_of_work_hash.html"
+                                  title='fn verification::is_valid_proof_of_work_hash'>is_valid_proof_of_work_hash</a></td>
+                           <td class='docblock-short'>
+                                <p>Returns true if hash is lower or equal than target represented by compact bits</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="fn" href="fn.median_timestamp.html"
+                                  title='fn verification::median_timestamp'>median_timestamp</a></td>
+                           <td class='docblock-short'>
+                                <p>Returns median timestamp, of given header ancestors.
+The header should be later expected to have higher timestamp
+than this median timestamp</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="fn" href="fn.median_timestamp_inclusive.html"
+                                  title='fn verification::median_timestamp_inclusive'>median_timestamp_inclusive</a></td>
+                           <td class='docblock-short'>
+                                <p>Returns median timestamp, of given header + its ancestors.
+The header should be later expected to have higher timestamp
+than this median timestamp</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="fn" href="fn.transaction_sigops.html"
+                                  title='fn verification::transaction_sigops'>transaction_sigops</a></td>
+                           <td class='docblock-short'>
+                                <p>Counts signature operations in given transaction
+bip16_active flag indicates if we should also count signature operations
+in previous transactions. If one of the previous transaction outputs is
+missing, we simply ignore that fact and just carry on counting</p>
+
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class="fn" href="fn.work_required.html"
+                                  title='fn verification::work_required'>work_required</a></td>
+                           <td class='docblock-short'>
+                                <p>Returns work required for given header</p>
+
+                           </td>
+                       </tr></table></section><section id="search" class="content hidden"></section><section class="footer"></section><aside id="help" class="hidden"><div><h1 class="hidden">Help</h1><div class="shortcuts"><h2>Keyboard Shortcuts</h2><dl><dt><kbd>?</kbd></dt><dd>Show this help dialog</dd><dt><kbd>S</kbd></dt><dd>Focus the search field</dd><dt><kbd>↑</kbd></dt><dd>Move up in search results</dd><dt><kbd>↓</kbd></dt><dd>Move down in search results</dd><dt><kbd>↹</kbd></dt><dd>Switch tab</dd><dt><kbd>&#9166;</kbd></dt><dd>Go to active search result</dd><dt><kbd>+</kbd></dt><dd>Expand all sections</dd><dt><kbd>-</kbd></dt><dd>Collapse all sections</dd></dl></div><div class="infos"><h2>Search Tricks</h2><p>Prefix searches with a type followed by a colon (e.g. <code>fn:</code>) to restrict the search to a given type.</p><p>Accepted types are: <code>fn</code>, <code>mod</code>, <code>struct</code>, <code>enum</code>, <code>trait</code>, <code>type</code>, <code>macro</code>, and <code>const</code>.</p><p>Search functions by type signature (e.g. <code>vec -> usize</code> or <code>* -> vec</code>)</p><p>Search multiple things at once by splitting your query with comma (e.g. <code>str,u8</code> or <code>String,struct:Vec,test</code>)</p></div></div></aside><script>window.rootPath = "../";window.currentCrate = "verification";</script><script src="../aliases.js"></script><script src="../main.js"></script><script defer src="../search-index.js"></script></body></html>
