@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use chain::IndexedBlock;
 use network::ConsensusFork;
 use sigops::transaction_sigops;
-use duplex_store::NoopStore;
+use storage::NoopStore;
 use error::{Error, TransactionError};
 
 pub struct BlockVerifier<'a> {

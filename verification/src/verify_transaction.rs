@@ -3,7 +3,7 @@ use ser::Serializable;
 use chain::IndexedTransaction;
 use network::{ConsensusParams, ConsensusFork};
 use deployments::BlockDeployments;
-use duplex_store::NoopStore;
+use storage::NoopStore;
 use sigops::transaction_sigops;
 use error::TransactionError;
 use constants::{MIN_COINBASE_SIZE, MAX_COINBASE_SIZE};

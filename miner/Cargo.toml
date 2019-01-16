@@ -19,3 +19,6 @@ script = { path = "../script" }
 
 [dev-dependencies]
 test-data = { path = "../test-data" }
+
+[features]
+test-helpers = []

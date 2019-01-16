@@ -29,6 +29,4 @@ network = { path = "../network" }
 
 [dev-dependencies]
 test-data = { path = "../test-data" }
-
-[features]
-dev = []
+miner = { path = "../miner", features = ["test-helpers"] }

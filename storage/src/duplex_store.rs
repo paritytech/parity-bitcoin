@@ -3,7 +3,7 @@
 
 use chain::{OutPoint, TransactionOutput};
 use network::TransactionOrdering;
-use storage::TransactionOutputProvider;
+use TransactionOutputProvider;
 
 #[derive(Clone, Copy)]
 pub struct DuplexTransactionOutputProvider<'a> {

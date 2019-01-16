@@ -486,7 +486,7 @@ pub mod tests {
 	use primitives::hash::H256;
 	use chain::Transaction;
 	use inbound_connection::tests::DummyOutboundSyncConnection;
-	use miner::MemoryPool;
+	use miner::{NonZeroFeeCalculator, MemoryPool};
 	use local_node::tests::{default_filterload, make_filteradd};
 	use synchronization_executor::Task;
 	use synchronization_executor::tests::DummyTaskExecutor;
@@ -648,7 +648,7 @@ pub mod tests {
 		// when memory pool is non-empty
 		let transaction = Transaction::default();
 		let transaction_hash = transaction.hash();
-		memory_pool.write().insert_verified(transaction.into());
+		memory_pool.write().insert_verified(transaction.into(), &NonZeroFeeCalculator);
 		// when asking for memory pool transactions ids
 		server.execute(ServerTask::Mempool(0));
 		// => respond with inventory
@@ -734,7 +734,7 @@ pub mod tests {
 		let tx_verified_hash = tx_verified.hash();
 		// given in-memory transaction
 		{
-			memory_pool.write().insert_verified(tx_verified.clone().into());
+			memory_pool.write().insert_verified(tx_verified.clone().into(), &NonZeroFeeCalculator);
 		}
 		// when asking for known in-memory transaction
 		let inventory = vec![

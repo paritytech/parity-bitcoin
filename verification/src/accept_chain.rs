@@ -1,5 +1,5 @@
 use rayon::prelude::{IntoParallelRefIterator, IndexedParallelIterator, ParallelIterator};
-use storage::Store;
+use storage::{DuplexTransactionOutputProvider, Store};
 use network::ConsensusParams;
 use error::Error;
 use canon::CanonBlock;
@@ -7,7 +7,6 @@ use accept_block::BlockAcceptor;
 use accept_header::HeaderAcceptor;
 use accept_transaction::TransactionAcceptor;
 use deployments::BlockDeployments;
-use duplex_store::DuplexTransactionOutputProvider;
 use VerificationLevel;
 
 pub struct ChainAcceptor<'a> {

@@ -1,9 +1,9 @@
 use std::collections::{VecDeque, HashSet};
 use std::fmt;
 use linked_hash_map::LinkedHashMap;
-use chain::{BlockHeader, Transaction, IndexedBlockHeader, IndexedBlock, IndexedTransaction};
+use chain::{BlockHeader, Transaction, IndexedBlockHeader, IndexedBlock, IndexedTransaction, OutPoint, TransactionOutput};
 use storage;
-use miner::{MemoryPoolOrderingStrategy, MemoryPoolInformation};
+use miner::{MemoryPoolOrderingStrategy, MemoryPoolInformation, FeeCalculator};
 use network::ConsensusParams;
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
@@ -615,7 +615,7 @@ impl Chain {
 			memory_pool.remove_by_prevout(&input.previous_output);
 		}
 		// now insert transaction itself
-		memory_pool.insert_verified(transaction);
+		memory_pool.insert_verified(transaction, &FeeCalculator(self.storage.as_transaction_output_provider()));
 	}
 
 	/// Calculate block locator hashes for hash queue
@@ -673,6 +673,18 @@ impl storage::TransactionProvider for Chain {
 	fn transaction(&self, hash: &H256) -> Option<Transaction> {
 		self.memory_pool.read().transaction(hash)
 			.or_else(|| self.storage.transaction(hash))
+	}
+}
+
+impl storage::TransactionOutputProvider for Chain {
+	fn transaction_output(&self, outpoint: &OutPoint, transaction_index: usize) -> Option<TransactionOutput> {
+		self.memory_pool.read().transaction_output(outpoint, transaction_index)
+			.or_else(|| self.storage.transaction_output(outpoint, transaction_index))
+	}
+
+	fn is_spent(&self, outpoint: &OutPoint) -> bool {
+		self.memory_pool.read().is_spent(outpoint)
+			|| self.storage.is_spent(outpoint)
 	}
 }
 
@@ -896,19 +908,19 @@ mod tests {
 
 	#[test]
 	fn chain_transaction_state() {
-		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into(), test_data::block_h1().into()]));
 		let mut chain = Chain::new(db, ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore), Arc::new(RwLock::new(MemoryPool::new())));
 		let genesis_block = test_data::genesis();
-		let block1 = test_data::block_h1();
+		let block2 = test_data::block_h2();
 		let tx1: Transaction = test_data::TransactionBuilder::with_version(1).into();
-		let tx2: Transaction = test_data::TransactionBuilder::with_version(2).into();
+		let tx2: Transaction = test_data::TransactionBuilder::with_input(&test_data::genesis().transactions[0], 0).into();
 		let tx1_hash = tx1.hash();
 		let tx2_hash = tx2.hash();
 		chain.verify_transaction(tx1.into());
 		chain.insert_verified_transaction(tx2.into());
 
 		assert_eq!(chain.transaction_state(&genesis_block.transactions[0].hash()), TransactionState::Stored);
-		assert_eq!(chain.transaction_state(&block1.transactions[0].hash()), TransactionState::Unknown);
+		assert_eq!(chain.transaction_state(&block2.transactions[0].hash()), TransactionState::Unknown);
 		assert_eq!(chain.transaction_state(&tx1_hash), TransactionState::Verifying);
 		assert_eq!(chain.transaction_state(&tx2_hash), TransactionState::InMemory);
 	}
@@ -973,13 +985,16 @@ mod tests {
 
 	#[test]
 	fn chain_transactions_hashes_with_state() {
+		let input_tx1 = test_data::genesis().transactions[0].clone();
+		let input_tx2 = test_data::block_h1().transactions[0].clone();
 		let test_chain = &mut test_data::ChainBuilder::new();
-		test_data::TransactionBuilder::with_output(100).store(test_chain)	// t1
-			.into_input(0).add_output(200).store(test_chain)				// t1 -> t2
+		test_data::TransactionBuilder::with_input(&input_tx1, 0)
+				.add_output(1_000).store(test_chain)						// t1
+			.into_input(0).add_output(400).store(test_chain)				// t1 -> t2
 			.into_input(0).add_output(300).store(test_chain)				// t1 -> t2 -> t3
-			.set_default_input(0).set_output(400).store(test_chain);		// t4
+			.set_input(&input_tx2, 0).set_output(400).store(test_chain);		// t4
 
-		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into(), test_data::block_h1().into()]));
 		let mut chain = Chain::new(db, ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore), Arc::new(RwLock::new(MemoryPool::new())));
 		chain.insert_verified_transaction(test_chain.at(0).into());
 		chain.insert_verified_transaction(test_chain.at(1).into());
@@ -995,14 +1010,18 @@ mod tests {
 
 	#[test]
 	fn memory_pool_transactions_are_reverified_after_reorganization() {
-		let b0 = test_data::block_builder().header().build().build();
+		let b0 = test_data::block_builder()
+			.header().build()
+			.transaction().coinbase().output().value(100_000).build().build()
+			.build();
 		let b1 = test_data::block_builder().header().nonce(1).parent(b0.hash()).build().build();
 		let b2 = test_data::block_builder().header().nonce(2).parent(b0.hash()).build().build();
 		let b3 = test_data::block_builder().header().parent(b2.hash()).build().build();
 
-		let tx1: Transaction = test_data::TransactionBuilder::with_version(1).into();
+		let input_tx = b0.transactions[0].clone();
+		let tx1: Transaction = test_data::TransactionBuilder::with_version(1).set_input(&input_tx, 0).into();
 		let tx1_hash = tx1.hash();
-		let tx2: Transaction = test_data::TransactionBuilder::with_version(2).into();
+		let tx2: Transaction = test_data::TransactionBuilder::with_input(&input_tx, 0).into();
 		let tx2_hash = tx2.hash();
 
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![b0.into()]));
@@ -1028,6 +1047,7 @@ mod tests {
 	#[test]
 	fn fork_chain_block_transaction_is_removed_from_on_block_insert() {
 		let genesis = test_data::genesis();
+		let input_tx = genesis.transactions[0].clone();
 		let b0 = test_data::block_builder().header().parent(genesis.hash()).build().build(); // genesis -> b0
 		let b1 = test_data::block_builder().header().nonce(1).parent(b0.hash()).build()
 			.transaction().output().value(10).build().build()
@@ -1036,13 +1056,16 @@ mod tests {
 			.transaction().output().value(20).build().build()
 			.build(); // genesis -> b0 -> b1[tx1] -> b2[tx2]
 		let b3 = test_data::block_builder().header().nonce(2).parent(b0.hash()).build()
-			.transaction().output().value(30).build().build()
+			.transaction().input().hash(input_tx.hash()).index(0).build()
+			.output().value(50).build().build()
 			.build(); // genesis -> b0 -> b3[tx3]
 		let b4 = test_data::block_builder().header().parent(b3.hash()).build()
-			.transaction().output().value(40).build().build()
+			.transaction().input().hash(b3.transactions[0].hash()).index(0).build()
+				.output().value(40).build().build()
 			.build(); // genesis -> b0 -> b3[tx3] -> b4[tx4]
 		let b5 = test_data::block_builder().header().parent(b4.hash()).build()
-			.transaction().output().value(50).build().build()
+			.transaction().input().hash(b4.transactions[0].hash()).index(0).build()
+				.output().value(30).build().build()
 			.build(); // genesis -> b0 -> b3[tx3] -> b4[tx4] -> b5[tx5]
 
 		let tx1 = b1.transactions[0].clone();
@@ -1092,35 +1115,35 @@ mod tests {
 				.input().hash(tx0.hash()).index(0).build()
 				.build()
 			.build(); // genesis -> b0[tx1]
-		// tx1 && tx2 are spending same output
+		// tx from b0 && tx2 are spending same output
 		let tx2: Transaction = test_data::TransactionBuilder::with_output(20).add_input(&tx0, 0).into();
-		let tx3: Transaction = test_data::TransactionBuilder::with_output(20).add_input(&tx0, 1).into();
 
 		// insert tx2 to memory pool
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let mut chain = Chain::new(db, ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore), Arc::new(RwLock::new(MemoryPool::new())));
 		chain.insert_verified_transaction(tx2.clone().into());
-		chain.insert_verified_transaction(tx3.clone().into());
 		// insert verified block with tx1
 		chain.insert_best_block(b0.into()).expect("no error");
 		// => tx2 is removed from memory pool, but tx3 remains
-		assert_eq!(chain.information().transactions.transactions_count, 1);
+		assert_eq!(chain.information().transactions.transactions_count, 0);
 	}
 
 	#[test]
 	fn update_memory_pool_transaction() {
 		use self::test_data::{ChainBuilder, TransactionBuilder};
 
+		let input_tx = test_data::genesis().transactions[0].clone();
 		let data_chain = &mut ChainBuilder::new();
-		TransactionBuilder::with_output(10).add_output(10).add_output(10).store(data_chain)		// transaction0
+		TransactionBuilder::with_input(&input_tx, 0).set_output(100).store(data_chain)			// transaction0
 			.reset().set_input(&data_chain.at(0), 0).add_output(20).lock().store(data_chain)	// transaction0 -> transaction1
 			.reset().set_input(&data_chain.at(0), 0).add_output(30).store(data_chain);			// transaction0 -> transaction2
 
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let mut chain = Chain::new(db, ConsensusParams::new(Network::Unitest, ConsensusFork::BitcoinCore), Arc::new(RwLock::new(MemoryPool::new())));
+		chain.insert_verified_transaction(data_chain.at(0).into());
 		chain.insert_verified_transaction(data_chain.at(1).into());
-		assert_eq!(chain.information().transactions.transactions_count, 1);
+		assert_eq!(chain.information().transactions.transactions_count, 2);
 		chain.insert_verified_transaction(data_chain.at(2).into());
-		assert_eq!(chain.information().transactions.transactions_count, 1); // tx was replaces
+		assert_eq!(chain.information().transactions.transactions_count, 2); // tx was replaced
 	}
 }
