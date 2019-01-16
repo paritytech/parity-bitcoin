@@ -311,9 +311,11 @@ mod tests {
 	use db::BlockChainDatabase;
 	use primitives::hash::H256;
 	use storage::SharedStore;
+	use chain::IndexedTransaction;
 	use network::{ConsensusParams, ConsensusFork, Network, BitcoinCashConsensusParams};
 	use memory_pool::MemoryPool;
-	use fee::NonZeroFeeCalculator;
+	use verification::block_reward_satoshi;
+	use fee::{FeeCalculator, NonZeroFeeCalculator};
 	use self::test_data::{ChainBuilder, TransactionBuilder};
 	use super::{BlockAssembler, SizePolicy, NextStep, BlockTemplate};
 
@@ -397,5 +399,25 @@ mod tests {
 		assert!(hash1 < hash0);
 		assert_eq!(block.transactions[0].hash, hash1);
 		assert_eq!(block.transactions[1].hash, hash0);
+	}
+
+	#[test]
+	fn block_assembler_miner_fee() {
+		let input_tx = test_data::genesis().transactions[0].clone();
+		let tx0: IndexedTransaction = TransactionBuilder::with_input(&input_tx, 0).set_output(100_000).into();
+		let expected_tx0_fee = input_tx.total_spends() - tx0.raw.total_spends();
+
+			let storage: SharedStore = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
+		let mut pool = MemoryPool::new();
+		pool.insert_verified(tx0, &FeeCalculator(storage.as_transaction_output_provider()));
+
+		let consensus = ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore);
+		let block = BlockAssembler {
+			max_block_size: 0xffffffff,
+			max_block_sigops: 0xffffffff,
+		}.create_new_block(&storage, &pool, 0, 0, &consensus);
+
+		let expected_coinbase_value = block_reward_satoshi(1) + expected_tx0_fee;
+		assert_eq!(block.coinbase_value, expected_coinbase_value);
 	}
 }
