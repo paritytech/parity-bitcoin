@@ -1215,6 +1215,7 @@ dependencies = [
  "display_derive 0.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "elastic-array 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lru-cache 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "network 0.1.0",
  "parking_lot 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
  "serialization 0.1.0",

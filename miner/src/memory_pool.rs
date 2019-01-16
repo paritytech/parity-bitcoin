@@ -17,6 +17,7 @@ use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 use ser::{Serializable, serialize};
 use heapsize::HeapSizeOf;
+use fee::MemoryPoolFeeCalculator;
 
 /// Transactions ordering strategy
 #[cfg_attr(feature="cargo-clippy", allow(enum_variant_names))]
@@ -60,13 +61,13 @@ pub struct Entry {
 	/// Throughout index of this transaction in memory pool (non persistent)
 	pub storage_index: u64,
 	/// Transaction fee (stored for efficiency)
-	pub miner_fee: i64,
+	pub miner_fee: u64,
 	/// Virtual transaction fee (a way to prioritize/penalize transaction)
 	pub miner_virtual_fee: i64,
 	/// size + Sum(size) for all in-pool descendants
 	pub package_size: usize,
 	/// miner_fee + Sum(miner_fee) for all in-pool descendants
-	pub package_miner_fee: i64,
+	pub package_miner_fee: u64,
 	/// miner_virtual_fee + Sum(miner_virtual_fee) for all in-pool descendants
 	pub package_miner_virtual_fee: i64,
 }
@@ -123,7 +124,7 @@ struct ByTransactionScoreOrderedEntry {
 	/// Transaction size
 	size: usize,
 	/// Transaction fee
-	miner_fee: i64,
+	miner_fee: u64,
 	/// Virtual transaction fee
 	miner_virtual_fee: i64,
 }
@@ -135,7 +136,7 @@ struct ByPackageScoreOrderedEntry {
 	/// size + Sum(size) for all in-pool descendants
 	package_size: usize,
 	/// miner_fee + Sum(miner_fee) for all in-pool descendants
-	package_miner_fee: i64,
+	package_miner_fee: u64,
 	/// miner_virtual_fee + Sum(miner_virtual_fee) for all in-pool descendants
 	package_miner_virtual_fee: i64,
 }
@@ -240,8 +241,8 @@ impl PartialOrd for ByTransactionScoreOrderedEntry {
 impl Ord for ByTransactionScoreOrderedEntry {
 	fn cmp(&self, other: &Self) -> Ordering {
 		// lesser miner score means later removal
-		let left = (self.miner_fee + self.miner_virtual_fee) * (other.size as i64);
-		let right = (other.miner_fee + other.miner_virtual_fee) * (self.size as i64);
+		let left = (self.miner_fee as i64 + self.miner_virtual_fee) * (other.size as i64);
+		let right = (other.miner_fee as i64 + other.miner_virtual_fee) * (self.size as i64);
 		let order = right.cmp(&left);
 		if order != Ordering::Equal {
 			return order
@@ -260,8 +261,8 @@ impl PartialOrd for ByPackageScoreOrderedEntry {
 impl Ord for ByPackageScoreOrderedEntry {
 	fn cmp(&self, other: &Self) -> Ordering {
 		// lesser miner score means later removal
-		let left = (self.package_miner_fee + self.package_miner_virtual_fee) * (other.package_size as i64);
-		let right = (other.package_miner_fee + other.package_miner_virtual_fee) * (self.package_size as i64);
+		let left = (self.package_miner_fee as i64 + self.package_miner_virtual_fee) * (other.package_size as i64);
+		let right = (other.package_miner_fee as i64 + other.package_miner_virtual_fee) * (self.package_size as i64);
 		let order = right.cmp(&left);
 		if order != Ordering::Equal {
 			return order
@@ -649,14 +650,16 @@ impl MemoryPool {
 	}
 
 	/// Insert verified transaction to the `MemoryPool`
-	pub fn insert_verified(&mut self, t: IndexedTransaction) {
-		let entry = self.make_entry(t);
-		let descendants = self.storage.remove_by_parent_hash(&entry.hash);
-		self.storage.insert(entry);
-		if let Some(descendants_iter) = descendants.map(|d| d.into_iter()) {
-			for descendant in descendants_iter {
-				let descendant_entry = self.make_entry(descendant);
-				self.storage.insert(descendant_entry);
+	pub fn insert_verified<FC: MemoryPoolFeeCalculator>(&mut self, t: IndexedTransaction, fc: &FC) {
+		if let Some(entry) = self.make_entry(t, fc) {
+			let descendants = self.storage.remove_by_parent_hash(&entry.hash);
+			self.storage.insert(entry);
+			if let Some(descendants_iter) = descendants.map(|d| d.into_iter()) {
+				for descendant in descendants_iter {
+					if let Some(descendant_entry) = self.make_entry(descendant, fc) {
+						self.storage.insert(descendant_entry);
+					}
+				}
 			}
 		}
 	}
@@ -747,12 +750,18 @@ impl MemoryPool {
 		self.storage.is_output_spent(prevout)
 	}
 
-	fn make_entry(&mut self, t: IndexedTransaction) -> Entry {
+	fn make_entry<FC: MemoryPoolFeeCalculator>(&mut self, t: IndexedTransaction, fc: &FC) -> Option<Entry> {
 		let ancestors = self.get_ancestors(&t.raw);
 		let size = self.get_transaction_size(&t.raw);
 		let storage_index = self.get_storage_index();
-		let miner_fee = self.get_transaction_miner_fee(&t.raw);
-		Entry {
+		let miner_fee = fc.calculate(self, &t.raw);
+
+		// do not accept any transactions that have negative OR zero fee
+		if miner_fee == 0 {
+			return None;
+		}
+		
+		Some(Entry {
 			transaction: t.raw,
 			hash: t.hash,
 			ancestors: ancestors,
@@ -764,7 +773,7 @@ impl MemoryPool {
 			package_size: size,
 			package_miner_fee: miner_fee,
 			package_miner_virtual_fee: 0,
-		}
+		})
 	}
 
 	fn get_ancestors(&self, t: &Transaction) -> HashSet<H256> {
@@ -782,12 +791,6 @@ impl MemoryPool {
 
 	fn get_transaction_size(&self, t: &Transaction) -> usize {
 		t.serialized_size()
-	}
-
-	fn get_transaction_miner_fee(&self, t: &Transaction) -> i64 {
-		let input_value = 0; // TODO: sum all inputs of transaction
-		let output_value = t.outputs.iter().fold(0, |acc, output| acc + output.value);
-		(output_value - input_value) as i64
 	}
 
 	#[cfg(not(test))]
@@ -868,20 +871,25 @@ impl<'a> Iterator for MemoryPoolIterator<'a> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
 	extern crate test_data;
 
 	use chain::{Transaction, OutPoint};
 	use heapsize::HeapSizeOf;
+	use fee::NonZeroFeeCalculator;
 	use super::{MemoryPool, OrderingStrategy, DoubleSpendCheckResult};
 	use self::test_data::{ChainBuilder, TransactionBuilder};
 
 	fn to_memory_pool(chain: &mut ChainBuilder) -> MemoryPool {
 		let mut pool = MemoryPool::new();
 		for transaction in chain.transactions.iter().cloned() {
-			pool.insert_verified(transaction.into());
+			pool.insert_verified(transaction.into(), &NonZeroFeeCalculator);
 		}
 		pool
+	}
+
+	fn default_tx() -> Transaction {
+		TransactionBuilder::with_output(1).into()
 	}
 
 	#[test]
@@ -890,11 +898,11 @@ mod tests {
 
 		let size1 = pool.heap_size_of_children();
 
-		pool.insert_verified(Transaction::default().into());
+		pool.insert_verified(default_tx().into(), &NonZeroFeeCalculator);
 		let size2 = pool.heap_size_of_children();
 		assert!(size2 > size1);
 
-		pool.insert_verified(Transaction::default().into());
+		pool.insert_verified(default_tx().into(), &NonZeroFeeCalculator);
 		let size3 = pool.heap_size_of_children();
 		assert!(size3 > size2);
 	}
@@ -902,11 +910,11 @@ mod tests {
 	#[test]
 	fn test_memory_pool_insert_same_transaction() {
 		let mut pool = MemoryPool::new();
-		pool.insert_verified(Transaction::default().into());
+		pool.insert_verified(default_tx().into(), &NonZeroFeeCalculator);
 		assert_eq!(pool.get_transactions_ids().len(), 1);
 
 		// insert the same transaction again
-		pool.insert_verified(Transaction::default().into());
+		pool.insert_verified(default_tx().into(), &NonZeroFeeCalculator);
 		assert_eq!(pool.get_transactions_ids().len(), 1);
 	}
 
@@ -916,11 +924,11 @@ mod tests {
 		assert_eq!(pool.read_with_strategy(OrderingStrategy::ByTimestamp), None);
 		assert_eq!(pool.read_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![]);
 
-		pool.insert_verified(Transaction::default().into());
-		assert_eq!(pool.read_with_strategy(OrderingStrategy::ByTimestamp), Some(Transaction::default().hash()));
-		assert_eq!(pool.read_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![Transaction::default().hash()]);
-		assert_eq!(pool.read_with_strategy(OrderingStrategy::ByTimestamp), Some(Transaction::default().hash()));
-		assert_eq!(pool.read_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![Transaction::default().hash()]);
+		pool.insert_verified(default_tx().into(), &NonZeroFeeCalculator);
+		assert_eq!(pool.read_with_strategy(OrderingStrategy::ByTimestamp), Some(default_tx().hash()));
+		assert_eq!(pool.read_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![default_tx().hash()]);
+		assert_eq!(pool.read_with_strategy(OrderingStrategy::ByTimestamp), Some(default_tx().hash()));
+		assert_eq!(pool.read_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![default_tx().hash()]);
 	}
 
 	#[test]
@@ -929,15 +937,15 @@ mod tests {
 		assert_eq!(pool.remove_with_strategy(OrderingStrategy::ByTimestamp), None);
 		assert_eq!(pool.remove_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![]);
 
-		pool.insert_verified(Transaction::default().into());
+		pool.insert_verified(default_tx().into(), &NonZeroFeeCalculator);
 		let removed = pool.remove_with_strategy(OrderingStrategy::ByTimestamp);
 		assert!(removed.is_some());
-		assert_eq!(removed.unwrap(), Transaction::default().into());
+		assert_eq!(removed.unwrap(), default_tx().into());
 
-		pool.insert_verified(Transaction::default().into());
+		pool.insert_verified(default_tx().into(), &NonZeroFeeCalculator);
 		let removed = pool.remove_n_with_strategy(100, OrderingStrategy::ByTimestamp);
 		assert_eq!(removed.len(), 1);
-		assert_eq!(removed[0], Transaction::default().into());
+		assert_eq!(removed[0], default_tx().into());
 
 		assert_eq!(pool.remove_with_strategy(OrderingStrategy::ByTimestamp), None);
 		assert_eq!(pool.remove_n_with_strategy(100, OrderingStrategy::ByTimestamp), vec![]);
@@ -947,13 +955,13 @@ mod tests {
 	fn test_memory_pool_remove_by_hash() {
 		let mut pool = MemoryPool::new();
 
-		pool.insert_verified(Transaction::default().into());
+		pool.insert_verified(default_tx().into(), &NonZeroFeeCalculator);
 		assert_eq!(pool.get_transactions_ids().len(), 1);
 
 		// remove and check remaining transactions
-		let removed = pool.remove_by_hash(&Transaction::default().hash());
+		let removed = pool.remove_by_hash(&default_tx().hash());
 		assert!(removed.is_some());
-		assert_eq!(removed.unwrap(), Transaction::default());
+		assert_eq!(removed.unwrap(), default_tx());
 		assert_eq!(pool.get_transactions_ids().len(), 0);
 
 		// remove non-existant transaction
@@ -970,9 +978,9 @@ mod tests {
 
 		// insert child, then parent
 		let mut pool = MemoryPool::new();
-		pool.insert_verified(chain.at(2).into()); // timestamp 0
-		pool.insert_verified(chain.at(1).into()); // timestamp 1
-		pool.insert_verified(chain.at(0).into()); // timestamp 2
+		pool.insert_verified(chain.at(2).into(), &NonZeroFeeCalculator); // timestamp 0
+		pool.insert_verified(chain.at(1).into(), &NonZeroFeeCalculator); // timestamp 1
+		pool.insert_verified(chain.at(0).into(), &NonZeroFeeCalculator); // timestamp 2
 
 		// check that parent transaction was removed before child trnasaction
 		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByTimestamp);
@@ -1015,7 +1023,7 @@ mod tests {
 		assert_eq!(pool.get_transactions_ids().len(), 2);
 
 		// insert child transaction back to the pool & assert transactions are removed in correct order
-		pool.insert_verified(chain.at(1).into());
+		pool.insert_verified(chain.at(1).into(), &NonZeroFeeCalculator);
 		let transactions = pool.remove_n_with_strategy(3, OrderingStrategy::ByTransactionScore);
 		assert_eq!(transactions.len(), 3);
 		assert_eq!(transactions[0], chain.at(0).into());
@@ -1034,7 +1042,7 @@ mod tests {
 
 		let mut transactions_size = 0;
 		for transaction_index in 0..4 {
-			pool.insert_verified(chain.at(transaction_index).into());
+			pool.insert_verified(chain.at(transaction_index).into(), &NonZeroFeeCalculator);
 			transactions_size += chain.size(transaction_index);
 
 			let info = pool.information();
@@ -1113,7 +1121,7 @@ mod tests {
 			.into_input(0).set_output(50).store(chain)							// transaction0 -> transaction1
 			.set_default_input(1).set_output(35).store(chain)					// transaction2
 			.into_input(0).set_output(10).store(chain)							// transaction2 -> transaction3
-			.into_input(0).set_output(100).store(chain);							// transaction2 -> transaction3 -> transaction4
+			.into_input(0).set_output(100).store(chain);						// transaction2 -> transaction3 -> transaction4
 
 		let mut pool = MemoryPool::new();
 
@@ -1122,8 +1130,8 @@ mod tests {
 		// <
 		// score({ transaction2 }) = 35/60
 		let expected = vec![chain.hash(2), chain.hash(0)];
-		pool.insert_verified(chain.at(0).into());
-		pool.insert_verified(chain.at(2).into());
+		pool.insert_verified(chain.at(0).into(), &NonZeroFeeCalculator);
+		pool.insert_verified(chain.at(2).into(), &NonZeroFeeCalculator);
 		assert_eq!(pool.read_n_with_strategy(2, OrderingStrategy::ByPackageScore), expected);
 
 		// { transaction0, transaction1 } now have bigger score than { transaction2 }:
@@ -1132,7 +1140,7 @@ mod tests {
 		// score({ transaction2 }) = 35/60 ~ 0.583
 		// => chain1 is boosted
 		// => so transaction with lesser individual score (but with bigger package score) is mined first
-		pool.insert_verified(chain.at(1).into());
+		pool.insert_verified(chain.at(1).into(), &NonZeroFeeCalculator);
 		let expected = vec![chain.hash(0), chain.hash(1), chain.hash(2)];
 		assert_eq!(pool.read_n_with_strategy(3, OrderingStrategy::ByPackageScore), expected);
 
@@ -1141,7 +1149,7 @@ mod tests {
 		// >
 		// score({ transaction2, transaction3 }) = (35 + 10) / 120 ~ 0.375
 		// => chain2 is not boosted
-		pool.insert_verified(chain.at(3).into());
+		pool.insert_verified(chain.at(3).into(), &NonZeroFeeCalculator);
 		let expected = vec![chain.hash(0), chain.hash(1), chain.hash(2), chain.hash(3)];
 		assert_eq!(pool.read_n_with_strategy(4, OrderingStrategy::ByPackageScore), expected);
 
@@ -1150,7 +1158,7 @@ mod tests {
 		// <
 		// score({ transaction2, transaction3, transaction4 }) = (35 + 10 + 100) / 180 ~ 0.806
 		// => chain2 is boosted
-		pool.insert_verified(chain.at(4).into());
+		pool.insert_verified(chain.at(4).into(), &NonZeroFeeCalculator);
 		let expected = vec![chain.hash(2), chain.hash(3), chain.hash(4), chain.hash(0), chain.hash(1)];
 		assert_eq!(pool.read_n_with_strategy(5, OrderingStrategy::ByPackageScore), expected);
 
@@ -1171,18 +1179,18 @@ mod tests {
 
 		let mut pool = MemoryPool::new();
 
-		// chain1_parent is not linked to the chain1_grandchild
+		// transaction0 is not linked to the transaction2
 		// => they are in separate chains now
-		// => chain2 has greater score than both of these chains
-		pool.insert_verified(chain.at(3).into());
-		pool.insert_verified(chain.at(0).into());
-		pool.insert_verified(chain.at(2).into());
+		// => transaction3 has greater score than both of these chains
+		pool.insert_verified(chain.at(3).into(), &NonZeroFeeCalculator);
+		pool.insert_verified(chain.at(0).into(), &NonZeroFeeCalculator);
+		pool.insert_verified(chain.at(2).into(), &NonZeroFeeCalculator);
 		let expected = vec![chain.hash(3), chain.hash(0), chain.hash(2)];
 		assert_eq!(pool.read_n_with_strategy(3, OrderingStrategy::ByPackageScore), expected);
 
 		// insert the missing transaction to link together chain1
 		// => it now will have better score than chain2
-		pool.insert_verified(chain.at(1).into());
+		pool.insert_verified(chain.at(1).into(), &NonZeroFeeCalculator);
 		let expected = vec![chain.hash(0), chain.hash(1), chain.hash(3), chain.hash(2)];
 		assert_eq!(pool.read_n_with_strategy(4, OrderingStrategy::ByPackageScore), expected);
 	}
@@ -1206,9 +1214,9 @@ mod tests {
 		// insert level1 + level2. There are two chains:
 		// score({ transaction3, transaction5 }) = 40 + 60
 		// score({ transaction4, transaction5 }) = 50 + 60
-		pool.insert_verified(chain.at(5).into());
-		pool.insert_verified(chain.at(3).into());
-		pool.insert_verified(chain.at(4).into());
+		pool.insert_verified(chain.at(5).into(), &NonZeroFeeCalculator);
+		pool.insert_verified(chain.at(3).into(), &NonZeroFeeCalculator);
+		pool.insert_verified(chain.at(4).into(), &NonZeroFeeCalculator);
 		let expected = vec![chain.hash(4), chain.hash(3), chain.hash(5)];
 		assert_eq!(pool.read_n_with_strategy(3, OrderingStrategy::ByTransactionScore), expected);
 		assert_eq!(pool.read_n_with_strategy(3, OrderingStrategy::ByPackageScore), expected);
@@ -1217,7 +1225,7 @@ mod tests {
 		// score({ transaction3, transaction5 }) = 40 + 60
 		// score({ transaction4, transaction5 }) = 50 + 60
 		// score({ transaction2, transaction5 }) = 30 + 60
-		pool.insert_verified(chain.at(2).into());
+		pool.insert_verified(chain.at(2).into(), &NonZeroFeeCalculator);
 		let expected = vec![chain.hash(4), chain.hash(3), chain.hash(2), chain.hash(5)];
 		assert_eq!(pool.read_n_with_strategy(4, OrderingStrategy::ByTransactionScore), expected);
 		assert_eq!(pool.read_n_with_strategy(4, OrderingStrategy::ByPackageScore), expected);
@@ -1227,7 +1235,7 @@ mod tests {
 		// score({ transaction1, transaction4, transaction5 }) = 20 + 50 + 60 / 3 ~ 0.333
 		// score({ transaction2, transaction5 }) = 30 + 60 / 2 = 0.45
 		// but second chain will be removed first anyway because previous #1 ({ transaction4, transaction5}) now depends on level 01
-		pool.insert_verified(chain.at(1).into());
+		pool.insert_verified(chain.at(1).into(), &NonZeroFeeCalculator);
 		let expected = vec![chain.hash(3), chain.hash(2), chain.hash(1), chain.hash(4), chain.hash(5)];
 		assert_eq!(pool.read_n_with_strategy(5, OrderingStrategy::ByTransactionScore), expected);
 		assert_eq!(pool.read_n_with_strategy(5, OrderingStrategy::ByPackageScore), expected);
@@ -1237,7 +1245,7 @@ mod tests {
 		// score({ transaction0, transaction4, transaction5 }) = (10 + 50 + 60) / (60 + 60 + 142) ~ 0.458
 		// score({ transaction1, transaction3, transaction5 }) = (20 + 50 + 60) / (60 + 60 + 142) ~ 0.496
 		// score({ transaction2, transaction5 }) = (30 + 60) / (60 + 142) ~ 0.445
-		pool.insert_verified(chain.at(0).into());
+		pool.insert_verified(chain.at(0).into(), &NonZeroFeeCalculator);
 		let expected = vec![chain.hash(2), chain.hash(1), chain.hash(0), chain.hash(4), chain.hash(3), chain.hash(5)];
 		assert_eq!(pool.read_n_with_strategy(6, OrderingStrategy::ByTransactionScore), expected);
 		assert_eq!(pool.read_n_with_strategy(6, OrderingStrategy::ByPackageScore), expected);
@@ -1258,17 +1266,17 @@ mod tests {
 		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(1), index: 0, }));
 		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(2), index: 0, }));
 
-		pool.insert_verified(chain.at(0).into());
+		pool.insert_verified(chain.at(0).into(), &NonZeroFeeCalculator);
 		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(0), index: 0, }));
 		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(1), index: 0, }));
 		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(2), index: 0, }));
 
-		pool.insert_verified(chain.at(1).into());
+		pool.insert_verified(chain.at(1).into(), &NonZeroFeeCalculator);
 		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(0), index: 0, }));
 		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(1), index: 0, }));
 		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(2), index: 0, }));
 
-		pool.insert_verified(chain.at(2).into());
+		pool.insert_verified(chain.at(2).into(), &NonZeroFeeCalculator);
 		assert!(pool.is_spent(&OutPoint { hash: chain.hash(0), index: 0, }));
 		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(1), index: 0, }));
 		assert!(!pool.is_spent(&OutPoint { hash: chain.hash(2), index: 0, }));
@@ -1291,10 +1299,10 @@ mod tests {
 			.reset().add_output(40).store(chain);			// transaction3
 		let mut pool = MemoryPool::new();
 
-		pool.insert_verified(chain.at(0).into());
-		pool.insert_verified(chain.at(1).into());
-		pool.insert_verified(chain.at(2).into());
-		pool.insert_verified(chain.at(3).into());
+		pool.insert_verified(chain.at(0).into(), &NonZeroFeeCalculator);
+		pool.insert_verified(chain.at(1).into(), &NonZeroFeeCalculator);
+		pool.insert_verified(chain.at(2).into(), &NonZeroFeeCalculator);
+		pool.insert_verified(chain.at(3).into(), &NonZeroFeeCalculator);
 		assert_eq!(pool.information().transactions_count, 4);
 
 		assert_eq!(pool.remove_by_prevout(&OutPoint { hash: chain.hash(0), index: 0 }), Some(vec![chain.at(1).into(), chain.at(2).into()]));
@@ -1314,9 +1322,9 @@ mod tests {
 			.reset().set_input(&chain.at(0), 2).add_output(70).store(chain);			// no double spend: t0[2] -> t6
 
 		let mut pool = MemoryPool::new();
-		pool.insert_verified(chain.at(1).into());
-		pool.insert_verified(chain.at(2).into());
-		pool.insert_verified(chain.at(4).into());
+		pool.insert_verified(chain.at(1).into(), &NonZeroFeeCalculator);
+		pool.insert_verified(chain.at(2).into(), &NonZeroFeeCalculator);
+		pool.insert_verified(chain.at(4).into(), &NonZeroFeeCalculator);
 		// when output is spent by nonfinal transaction
 		match pool.check_double_spend(&chain.at(3)) {
 			DoubleSpendCheckResult::NonFinalDoubleSpend(set) => {
@@ -1359,7 +1367,7 @@ mod tests {
 			.reset().set_input(&chain.at(0), 0).add_output(40).store(chain);										// good replacement: t0[0] -> t2
 
 		let mut pool = MemoryPool::new();
-		pool.insert_verified(chain.at(1).into());
+		pool.insert_verified(chain.at(1).into(), &NonZeroFeeCalculator);
 
 		// when output is spent by nonfinal transaction
 		match pool.check_double_spend(&chain.at(2)) {
@@ -1386,13 +1394,13 @@ mod tests {
 	}
 
 	#[test]
-	fn test_memory_poolis_spent() {
-		let tx1: Transaction = TransactionBuilder::with_default_input(0).into();
-		let tx2: Transaction = TransactionBuilder::with_default_input(1).into();
+	fn test_memory_pool_is_spent() {
+		let tx1: Transaction = TransactionBuilder::with_default_input(0).set_output(1).into();
+		let tx2: Transaction = TransactionBuilder::with_default_input(1).set_output(1).into();
 		let out1 = tx1.inputs[0].previous_output.clone();
 		let out2 = tx2.inputs[0].previous_output.clone();
 		let mut memory_pool = MemoryPool::new();
-		memory_pool.insert_verified(tx1.into());
+		memory_pool.insert_verified(tx1.into(), &NonZeroFeeCalculator);
 		assert!(memory_pool.is_spent(&out1));
 		assert!(!memory_pool.is_spent(&out2));
 	}

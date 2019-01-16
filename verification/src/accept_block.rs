@@ -1,11 +1,11 @@
 use network::{ConsensusParams, ConsensusFork, TransactionOrdering};
 use crypto::dhash256;
-use storage::{TransactionOutputProvider, BlockHeaderProvider};
+use storage::{transaction_index_for_output_check, DuplexTransactionOutputProvider,
+	TransactionOutputProvider, BlockHeaderProvider};
 use script;
 use ser::Stream;
 use sigops::{transaction_sigops, transaction_sigops_cost}	;
 use work::block_reward_satoshi;
-use duplex_store::{transaction_index_for_output_check, DuplexTransactionOutputProvider};
 use deployments::BlockDeployments;
 use canon::CanonBlock;
 use error::{Error, TransactionError};

@@ -1,10 +1,10 @@
 use primitives::hash::H256;
 use primitives::bytes::Bytes;
 use ser::Serializable;
-use storage::{TransactionMetaProvider, TransactionOutputProvider};
+use storage::{TransactionMetaProvider, TransactionOutputProvider, DuplexTransactionOutputProvider,
+	transaction_index_for_output_check};
 use network::{ConsensusParams, ConsensusFork};
 use script::{Script, verify_script, VerificationFlags, TransactionSignatureChecker, TransactionInputSigner, SignatureVersion};
-use duplex_store::{DuplexTransactionOutputProvider, transaction_index_for_output_check};
 use deployments::BlockDeployments;
 use script::Builder;
 use sigops::transaction_sigops;

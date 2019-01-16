@@ -1942,8 +1942,10 @@ pub mod tests {
 	#[test]
 	fn transaction_is_accepted_when_not_synchronizing() {
 		let (_, core, sync) = create_sync(None, None);
+		let input_tx = test_data::genesis().transactions[0].clone();
 
-		sync.on_transaction(1, test_data::TransactionBuilder::with_version(1).into());
+		let tx1: Transaction = test_data::TransactionBuilder::with_input(&input_tx, 0).set_output(100).into();
+		sync.on_transaction(1, tx1.clone().into());
 		assert_eq!(core.lock().information().chain.transactions.transactions_count, 1);
 
 		let b1 = test_data::block_h1();
@@ -1951,7 +1953,7 @@ pub mod tests {
 
 		assert!(core.lock().information().state.is_nearly_saturated());
 
-		sync.on_transaction(1, test_data::TransactionBuilder::with_version(2).into());
+		sync.on_transaction(1, test_data::TransactionBuilder::with_input(&tx1, 0).into());
 		assert_eq!(core.lock().information().chain.transactions.transactions_count, 2);
 	}
 
@@ -1966,9 +1968,10 @@ pub mod tests {
 
 	#[test]
 	fn orphaned_transaction_is_verified_when_input_is_received() {
+		let input_tx = test_data::genesis().transactions[0].clone();
 		let chain = &mut test_data::ChainBuilder::new();
-		test_data::TransactionBuilder::with_output(10).store(chain)		// t0
-			.set_input(&chain.at(0), 0).set_output(20).store(chain);	// t0 -> t1
+		test_data::TransactionBuilder::with_input(&input_tx, 0).set_output(100).store(chain)	// t0
+			.set_input(&chain.at(0), 0).set_output(20).store(chain);							// t0 -> t1
 
 		let (_, core, sync) = create_sync(None, None);
 

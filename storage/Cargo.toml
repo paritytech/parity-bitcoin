@@ -12,3 +12,4 @@ primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
 chain = { path = "../chain" }
 display_derive = "0.0.0"
+network = { path = "../network" }

@@ -72,7 +72,6 @@ extern crate db;
 pub mod constants;
 mod canon;
 mod deployments;
-mod duplex_store;
 mod error;
 mod sigops;
 mod timestamp;

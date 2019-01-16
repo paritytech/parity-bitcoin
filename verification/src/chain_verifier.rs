@@ -2,11 +2,11 @@
 
 use hash::H256;
 use chain::{IndexedBlock, IndexedBlockHeader, BlockHeader, Transaction};
-use storage::{SharedStore, TransactionOutputProvider, BlockHeaderProvider, BlockOrigin};
+use storage::{SharedStore, TransactionOutputProvider, BlockHeaderProvider, BlockOrigin,
+	DuplexTransactionOutputProvider, NoopStore};
 use network::ConsensusParams;
 use error::{Error, TransactionError};
 use canon::{CanonBlock, CanonTransaction};
-use duplex_store::{DuplexTransactionOutputProvider, NoopStore};
 use verify_chain::ChainVerifier;
 use verify_header::HeaderVerifier;
 use verify_transaction::MemoryPoolTransactionVerifier;
