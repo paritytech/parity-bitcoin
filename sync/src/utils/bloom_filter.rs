@@ -90,18 +90,14 @@ impl BloomFilter {
 					let script = Script::new(output.script_pubkey.clone());
 					let is_update_needed = self.filter_flags == types::FilterFlags::All
 						|| (self.filter_flags == types::FilterFlags::PubKeyOnly && (script.is_pay_to_public_key() || script.is_multisig_script()));
-					for instruction in script.iter().filter_map(|i| i.ok()) {
-						if let Some(instruction_data) = instruction.data {
-							if bloom.contains(instruction_data) {
-								is_match = true;
+					if contains_any_instruction_data(&*bloom, script) {
+						is_match = true;
 
-								if is_update_needed {
-									bloom.insert(&serialize(&OutPoint {
-										hash: tx.hash.clone(),
-										index: output_index as u32,
-									}));
-								}
-							}
+						if is_update_needed {
+							bloom.insert(&serialize(&OutPoint {
+								hash: tx.hash.clone(),
+								index: output_index as u32,
+							}));
 						}
 					}
 				}
@@ -127,13 +123,8 @@ impl BloomFilter {
 
 					// check if match any arbitrary script data element in any scriptSig in tx
 					let script = Script::new(input.script_sig.clone());
-					for instruction in script.iter().filter_map(|i| i.ok()) {
-						if let Some(instruction_data) = instruction.data {
-							is_match = bloom.contains(&*instruction_data);
-							if is_match {
-								return true;
-							}
-						}
+					if contains_any_instruction_data(&*bloom, script) {
+						return true;
 					}
 				}
 
@@ -176,6 +167,23 @@ impl BloomFilterData {
 			self.filter.set(index, true);
 		}
 	}
+}
+
+fn contains_any_instruction_data(bloom: &BloomFilterData, script: Script) -> bool {
+	for instruction in script.iter() {
+		match instruction {
+			Err(_) => break,
+			Ok(instruction) => {
+				if let Some(instruction_data) = instruction.data {
+					if bloom.contains(&*instruction_data) {
+						return true;
+					}
+				}
+			},
+		}
+	}
+
+	false
 }
 
 #[cfg(test)]
