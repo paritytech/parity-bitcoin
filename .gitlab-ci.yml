@@ -1,6 +1,7 @@
 stages:
   - test
   - build
+image: parity/rust:gitlab-ci
 variables:
   GIT_DEPTH: "3"
   SIMPLECOV: "true"
@@ -22,8 +23,6 @@ cache:
     
 linux-stable-test:
   stage: test
-  image: parity/rust:gitlab-ci
-  <<:                       *branches_tags
   script:
     - rustup default stable
     - echo 'Running tests' && echo -en 'gitlab_fold:start:tests'
@@ -32,8 +31,6 @@ linux-stable-test:
 
 linux-beta-test:
   stage: test
-  image: parity/rust:gitlab-ci
-  <<:                       *branches_tags
   script:
     - rustup default beta
     - echo 'Running check'
@@ -42,18 +39,14 @@ linux-beta-test:
   allow_failure: true
 linux-nightly-test:
   stage: test
-  image: parity/rust:gitlab-ci
-  <<:                       *branches_tags
   script:
     - rustup default nightly
     - echo 'Running check'
     - cargo check -j $(nproc)
     - echo 'End check'
   allow_failure: true
-linux-stable:
+linux-build:
   stage: build
-  image: parity/rust:gitlab-ci
-  <<:                       *branches_tags
   script:
     - git submodule update --init
     - echo 'Building in release mode' && echo -en 'gitlab_fold:start:build.release'
