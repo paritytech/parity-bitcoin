@@ -10,65 +10,50 @@ variables:
 cache:
   key: "$CI_BUILD_STAGE-$CI_BUILD_REF_NAME"
   untracked: true
-linux-stable-test:
-  stage: test
-  image: parity/rust:gitlab-ci
-  only:
+.branches_tags:              #branches and tags for test  
+  only:                      &branches_tags       
     - beta
     - tags
     - stable
     - triggers
     - master
+  tags:
+    - linux-docker
+    
+linux-stable-test:
+  stage: test
+  image: parity/rust:gitlab-ci
+  <<:                       *branches_tags
   script:
     - rustup default stable
     - echo 'Running tests' && echo -en 'gitlab_fold:start:tests'
     - cargo test --all
     - echo -en 'gitlab_fold:end:tests'
-  tags:
-    - linux-docker
+
 linux-beta-test:
   stage: test
   image: parity/rust:gitlab-ci
-  only:
-    - beta
-    - tags
-    - stable
-    - triggers
-    - master
+  <<:                       *branches_tags
   script:
     - rustup default beta
     - echo 'Running check'
     - cargo check -j $(nproc)
     - echo 'End check'
-  tags:
-    - linux-docker
   allow_failure: true
 linux-nightly-test:
   stage: test
   image: parity/rust:gitlab-ci
-  only:
-    - beta
-    - tags
-    - stable
-    - triggers
-    - master
+  <<:                       *branches_tags
   script:
     - rustup default nightly
     - echo 'Running check'
     - cargo check -j $(nproc)
     - echo 'End check'
-  tags:
-    - linux-docker
   allow_failure: true
 linux-stable:
   stage: build
   image: parity/rust:gitlab-ci
-  only:
-    - beta
-    - tags
-    - stable
-    - triggers
-    - master
+  <<:                       *branches_tags
   script:
     - git submodule update --init
     - echo 'Building in release mode' && echo -en 'gitlab_fold:start:build.release'
@@ -97,8 +82,6 @@ linux-stable:
     - aws s3api put-object --bucket $S3_BUCKET --key $CI_BUILD_REF_NAME/x86_64-unknown-linux-gnu/pbtc.md5 --body pbtc.md5
     - aws s3api put-object --bucket $S3_BUCKET --key $CI_BUILD_REF_NAME/x86_64-unknown-linux-gnu/"pbtc_"$VER"_amd64.deb" --body "pbtc_"$VER"_amd64.deb"
     - aws s3api put-object --bucket $S3_BUCKET --key $CI_BUILD_REF_NAME/x86_64-unknown-linux-gnu/"pbtc_"$VER"_amd64.deb.md5" --body "pbtc_"$VER"_amd64.deb.md5"
-  tags:
-    - linux-docker
   artifacts:
     paths:
     - target/release/pbtc
