@@ -11,15 +11,14 @@ variables:
 cache:
   key: "$CI_BUILD_STAGE-$CI_BUILD_REF_NAME"
   untracked: true
-.branches_tags:              #branches and tags for test  
-  only:                      &branches_tags       
-    - beta
-    - tags
-    - stable
-    - triggers
-    - master
-  tags:
-    - linux-docker
+only:                      
+  - beta
+  - tags
+  - stable
+  - triggers
+  - master
+tags:
+  - linux-docker
     
 linux-stable-test:
   stage: test
