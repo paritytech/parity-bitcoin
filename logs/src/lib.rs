@@ -33,8 +33,8 @@ impl LogFormatter for DateAndColorLogFormatter {
 		let timestamp = strftime();
 		let log_level = match record.level() {
 			Level::Error => Color::Fixed(9).bold().paint(record.level().to_string()),
-			Level::Warn  => Color::Fixed(11).bold().paint(record.level().to_string()),
-			Level::Info  => Color::Fixed(10).paint(record.level().to_string()),
+			Level::Warn => Color::Fixed(11).bold().paint(record.level().to_string()),
+			Level::Info => Color::Fixed(10).paint(record.level().to_string()),
 			Level::Debug => Color::Fixed(14).paint(record.level().to_string()),
 			Level::Trace => Color::Fixed(12).paint(record.level().to_string()),
 		};
