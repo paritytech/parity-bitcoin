@@ -68,7 +68,7 @@ impl Network {
 
 	pub fn port(&self) -> u16 {
 		match *self {
-			Network::Mainnet | Network::Other(_)  => 8333,
+			Network::Mainnet | Network::Other(_) => 8333,
 			Network::Testnet => 18333,
 			Network::Regtest | Network::Unitest => 18444,
 		}
