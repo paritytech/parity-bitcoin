@@ -25,7 +25,7 @@ linux-stable-test:
     - cargo test --all
     - echo -en 'gitlab_fold:end:tests'
   tags:
-    - rust
+    - linux-docker
 linux-beta-test:
   stage: test
   image: parity/rust:gitlab-ci
@@ -41,7 +41,7 @@ linux-beta-test:
     - cargo check -j $(nproc)
     - echo 'End check'
   tags:
-    - rust
+    - linux-docker
   allow_failure: true
 linux-nightly-test:
   stage: test
@@ -58,7 +58,7 @@ linux-nightly-test:
     - cargo check -j $(nproc)
     - echo 'End check'
   tags:
-    - rust
+    - linux-docker
   allow_failure: true
 linux-stable:
   stage: build
@@ -98,7 +98,7 @@ linux-stable:
     - aws s3api put-object --bucket $S3_BUCKET --key $CI_BUILD_REF_NAME/x86_64-unknown-linux-gnu/"pbtc_"$VER"_amd64.deb" --body "pbtc_"$VER"_amd64.deb"
     - aws s3api put-object --bucket $S3_BUCKET --key $CI_BUILD_REF_NAME/x86_64-unknown-linux-gnu/"pbtc_"$VER"_amd64.deb.md5" --body "pbtc_"$VER"_amd64.deb.md5"
   tags:
-    - rust
+    - linux-docker
   artifacts:
     paths:
     - target/release/pbtc
@@ -118,4 +118,4 @@ docker-build:
     - sh tools/docker_build.sh $DOCKER_TAG parity
     - docker logout
   tags:
-    - docker
+    - shell
