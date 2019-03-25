@@ -11,19 +11,13 @@ variables:
 cache:
   key: "$CI_BUILD_STAGE-$CI_BUILD_REF_NAME"
   untracked: true
-.branches:              #branches   
-    only:                      
-      - beta
-      - tags
-      - stable
-      - triggers
-      - master
-.tags:                  #tags
+.test_tags:              &test_tags #branches and tags for test stage   
+    stage: test
     tags:
       - linux-docker
     
 linux-stable-test:
-  stage: test
+  <<:                   *test_tags
   script:
     - rustup default stable
     - echo 'Running tests' && echo -en 'gitlab_fold:start:tests'
@@ -31,7 +25,7 @@ linux-stable-test:
     - echo -en 'gitlab_fold:end:tests'
 
 linux-beta-test:
-  stage: test
+  <<:                   *test_tags
   script:
     - rustup default beta
     - echo 'Running check'
@@ -39,7 +33,7 @@ linux-beta-test:
     - echo 'End check'
   allow_failure: true
 linux-nightly-test:
-  stage: test
+  <<:                   *test_tags
   script:
     - rustup default nightly
     - echo 'Running check'
@@ -48,6 +42,14 @@ linux-nightly-test:
   allow_failure: true
 linux-build:
   stage: build
+  only:                     
+    - beta
+    - tags
+    - stable
+    - triggers
+    - master  
+  tags:
+    - linux-docker
   script:
     - git submodule update --init
     - echo 'Building in release mode' && echo -en 'gitlab_fold:start:build.release'
