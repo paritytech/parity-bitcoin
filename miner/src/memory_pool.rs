@@ -45,6 +45,8 @@ pub struct Information {
 pub struct MemoryPool {
 	/// Transactions storage
 	storage: Storage,
+	/// Do we accept zero fee transactions?
+	accept_zero_fee_transactions: bool,
 }
 
 /// Single entry
@@ -637,16 +639,22 @@ impl HeapSizeOf for OrderedReferenceStorage {
 
 impl Default for MemoryPool {
 	fn default() -> Self {
-		MemoryPool {
-			storage: Storage::new(),
-		}
+		MemoryPool::new()
 	}
 }
 
 impl MemoryPool {
 	/// Creates new memory pool
 	pub fn new() -> Self {
-		MemoryPool::default()
+		MemoryPool {
+			storage: Storage::new(),
+			accept_zero_fee_transactions: false,
+		}
+	}
+
+	/// Accept zero fee transactions.
+	pub fn accept_zero_fee_transactions(&mut self) {
+		self.accept_zero_fee_transactions = true;
 	}
 
 	/// Insert verified transaction to the `MemoryPool`
@@ -757,7 +765,7 @@ impl MemoryPool {
 		let miner_fee = fc.calculate(self, &t.raw);
 
 		// do not accept any transactions that have negative OR zero fee
-		if miner_fee == 0 {
+		if !self.accept_zero_fee_transactions && miner_fee == 0 {
 			return None;
 		}
 		
