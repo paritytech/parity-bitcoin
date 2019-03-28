@@ -54,7 +54,7 @@ linux-beta-test:
   script:
     - rustup default beta
     - echo 'Running check'
-    - time cargo check -j $(nproc)
+    - time cargo check
     - echo 'End check'
   allow_failure: true
 linux-nightly-test:
@@ -62,18 +62,19 @@ linux-nightly-test:
   script:
     - rustup default nightly
     - echo 'Running check'
-    - time cargo check -j $(nproc)
+    - time cargo check
     - echo 'End check'
   allow_failure: true
 build-linux:
+  stage: build
   only:                              *releaseable_branches
   script:
     - git submodule update --init
     - echo 'Building in release mode' && echo -en 'gitlab_fold:start:build.release'
     - rustup default stable
-    - cargo build -j $(nproc) -p pbtc --release
+    - ешьу cargo build --target $CARGO_TARGET -p pbtc --release
     #- export SHA3=$(target/release/pbtc tools hash target/release/pbtc)
-    - md5sum target/release/pbtc > pbtc.md5
+    - md5sum target/$CARGO_TARGET/release/pbtc > pbtc.md5
     - echo -en 'gitlab_fold:end:build.release'
     - echo 'Running regtests from ./tools/regtests.sh' && echo -en 'gitlab_fold:start:regtests'
     - ./tools/regtests.sh
@@ -82,7 +83,7 @@ build-linux:
     - ./tools/bench.sh
     - echo -en 'gitlab_fold:end:bench'
     - sh tools/deb_build.sh amd64
-    - cp target/release/pbtc deb/usr/bin/pbtc
+    - cp target/$CARGO_TARGET/release/pbtc deb/usr/bin/pbtc
     - export VER=$(grep -m 1 version Cargo.toml | awk '{print $3}' | tr -d '"' | tr -d "\n")
     - dpkg-deb -b deb "pbtc_"$VER"_amd64.deb"
     - md5sum "pbtc_"$VER"_amd64.deb" > "pbtc_"$VER"_amd64.deb.md5"
@@ -110,7 +111,7 @@ publish-docker:                    &publish_release
   script:
     - if [ "$CI_BUILD_REF_NAME" == "beta-release" ]; then DOCKER_TAG="latest"; else DOCKER_TAG=$CI_BUILD_REF_NAME; fi
     - docker login -u $Docker_Hub_User_Parity -p $Docker_Hub_Pass_Parity
-    - sh tools/docker_build.sh $DOCKER_TAG parity
+    - sh tools/docker_build.sh $DOCKER_TAG pbtc
     - docker logout
   tags:
     - shell

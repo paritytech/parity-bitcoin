@@ -1,49 +1,30 @@
-# This Dockerfile uses Docker Multi-Stage Builds
-# See https://docs.docker.com/engine/userguide/eng-image/multistage-build/
-
-# Build image
-FROM rust:1.23-jessie AS build
-
-#ENV for build TAG
-ARG BUILD_TAG
-ENV BUILD_TAG=${BUILD_TAG:-master} \
-    PATH=/root/.cargo/bin:$PATH \
-    RUST_BACKTRACE=1
-
-WORKDIR /build
-RUN echo $BUILD_TAG
+FROM ubuntu:xenial
+LABEL MAINTAINER="Parity Technologies <devops-team@parity.io>"
 
 # install tools and dependencies
-RUN apt-get update && \
-        apt-get install -y --force-yes --no-install-recommends \
-        g++ \
-        build-essential \
-        curl \
-        git \
-        file \
-        binutils \
-        ca-certificates \
-        libssl-dev \
-        pkg-config \
-        libudev-dev
+RUN apt update && apt install -y --no-install-recommends openssl
 
-# build pbtc-ubuntu
-RUN git clone https://github.com/paritytech/parity-bitcoin
+# show backtraces
+ENV RUST_BACKTRACE 1
 
-WORKDIR /build/parity-bitcoin
-RUN git pull
-RUN git checkout $BUILD_TAG
-RUN cargo build --verbose --release
-RUN strip /build/parity-bitcoin/target/release/pbtc
-RUN file /build/parity-bitcoin/target/release/pbtc
+# cleanup Docker image
+RUN apt autoremove -y \
+  && apt clean -y \
+  && rm -rf /tmp/* /var/tmp/* /var/lib/apt/lists/*
 
-# Runtime image, copies pbtc artifact from build image
-FROM ubuntu:16.04 AS run
-LABEL maintainer "Parity Technologies <devops@parity.io>"
+RUN groupadd -g 1000 pbtc-ubuntu \
+  && useradd -m -u 1000 -g pbtc-ubuntu -s /bin/sh pbtc-ubuntu
 
-WORKDIR /pbtc-ubuntu
-COPY --from=build /build/parity-bitcoin/target/release/pbtc/ /pbtc-ubuntu/pbtc-ubuntu
+WORKDIR /home/pbtc-ubuntu
+
+# add parity-ethereum to docker image
+COPY artifacts/$CARGO_TARGET/pbtc /bin/pbtc-ubuntu
+
+COPY scripts/docker/hub/check_sync.sh /check_sync.sh
+
+# switch to user parity here
+USER pbtc-ubuntu
 
 # setup ENTRYPOINT
 EXPOSE 8333 18333 8332 18332
-ENTRYPOINT ["/pbtc-ubuntu/pbtc-ubuntu"]
+ENTRYPOINT ["/bin/pbtc-ubuntu"]
