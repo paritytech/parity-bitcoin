@@ -1,5 +1,6 @@
 name: parity-bitcoin
 version: git
+version-script: tools\ver.sh
 summary: The Parity Bitcoin client
 description: |
   Bitcoin client written in Rust.
@@ -18,4 +19,4 @@ parts:
     plugin: rust
     build-attributes: [no-system-libraries]
     build-packages:
-      -g++
+      - g++
