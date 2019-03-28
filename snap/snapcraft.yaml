@@ -10,10 +10,12 @@ confinement: strict
 apps:
   parity-bitcoin:
     command: pbtc
-    plugs: [home, network, network-bind]
+    plugs: [home, network, network-bind, removable-media]
 
 parts:
   parity-bitcoin:
     source: .
     plugin: rust
-    build-packages: [g++]
+    build-attributes: [no-system-libraries]
+    build-packages:
+      -g++
