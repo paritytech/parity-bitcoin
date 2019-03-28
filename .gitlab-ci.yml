@@ -98,7 +98,7 @@ build-linux:
     - linux-docker
   <<: *collect_artifacts
 
-publish-docker:                    &publish_release
+publish-docker:
   stage: publish
   only:                            *releaseable_branches
   <<:                              *no_git
