@@ -72,8 +72,7 @@ build-linux:
     - git submodule update --init
     - echo 'Building in release mode' && echo -en 'gitlab_fold:start:build.release'
     - rustup default stable
-    - ешьу cargo build --target $CARGO_TARGET -p pbtc --release
-    #- export SHA3=$(target/release/pbtc tools hash target/release/pbtc)
+    - time cargo build --target $CARGO_TARGET -p pbtc --release
     - md5sum target/$CARGO_TARGET/release/pbtc > pbtc.md5
     - echo -en 'gitlab_fold:end:build.release'
     - echo 'Running regtests from ./tools/regtests.sh' && echo -en 'gitlab_fold:start:regtests'
@@ -91,10 +90,10 @@ build-linux:
     - rm -rf artifacts/*
     - mkdir -p artifacts/$CARGO_TARGET
     - cd artifacts/$CARGO_TARGET
-    - mv -v ../../target/$CARGO_TARGET/release/pbtc pbtc
-    - mv -v ../../target/$CARGO_TARGET/release/pbtc_"$VER"_amd64.deb pbtc_"$VER"_amd64.deb
-    - mv -v ../../target/$CARGO_TARGET/release/pbtc.md5 pbtc.md5
-    - mv -v ../../target/$CARGO_TARGET/release/pbtc_"$VER"_amd64.deb.md5 pbtc_"$VER"_amd64.deb.md5
+    - cp -v ../../target/$CARGO_TARGET/release/pbtc pbtc
+    - cp -v ../../pbtc_"$VER"_amd64.deb pbtc_"$VER"_amd64.deb
+    - cp -v ../../pbtc.md5 pbtc.md5
+    - cp -v ../../pbtc_"$VER"_amd64.deb.md5 pbtc_"$VER"_amd64.deb.md5
   tags:
     - linux-docker
   <<: *collect_artifacts
@@ -106,30 +105,7 @@ publish-docker:                    &publish_release
   cache:                           {}
   dependencies:
     - build-linux
-  before_script:
-    - docker info
   script:
-    - if [ "$CI_BUILD_REF_NAME" == "beta-release" ]; then DOCKER_TAG="latest"; else DOCKER_TAG=$CI_BUILD_REF_NAME; fi
-    - docker login -u $Docker_Hub_User_Parity -p $Docker_Hub_Pass_Parity
-    - sh tools/docker_build.sh $DOCKER_TAG pbtc
-    - docker logout
+    - tools/docker_build.sh
   tags:
     - shell
-publish-awss3-release:
-  image:                           parity/awscli:latest
-  <<:                           *publish_release
-  script:
-    - echo "__________Push binaries to AWS S3____________"
-    - case "${SCHEDULE_TAG:-${CI_COMMIT_REF_NAME}}" in
-       (beta|stable|nightly)
-         export BUCKET=parity-bitcoin-published;
-         ;;
-       (*)
-         export BUCKET=parity-bitcoin-builds;
-         ;;
-     esac
-    - aws s3 sync ./artifacts s3://${BUCKET}/${SCHEDULE_TAG:-${CI_COMMIT_REF_NAME}}/
-    - echo "__________Read from S3____________"
-    - aws s3 ls s3://${BUCKET}/${SCHEDULE_TAG:-${CI_COMMIT_REF_NAME}} --recursive --human-readable --summarize
-  tags:
-    - linux-docker
