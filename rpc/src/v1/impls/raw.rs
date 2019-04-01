@@ -1,14 +1,15 @@
 use jsonrpc_core::Error;
 use jsonrpc_macros::Trailing;
-use ser::{Reader, serialize, deserialize};
+use ser::{Reader, serialize, deserialize, Serializable};
 use v1::traits::Raw;
 use v1::types::{RawTransaction, TransactionInput, TransactionOutput, TransactionOutputs, Transaction, GetRawTransactionResponse};
 use v1::types::H256;
-use v1::helpers::errors::{execution, invalid_params};
+use v1::helpers::errors::{execution, invalid_params, transaction_not_found, transaction_of_side_branch};
 use chain::Transaction as GlobalTransaction;
 use primitives::bytes::Bytes as GlobalBytes;
 use primitives::hash::H256 as GlobalH256;
 use sync;
+use storage;
 
 pub struct RawClient<T: RawClientCoreApi> {
 	core: T,
@@ -17,16 +18,19 @@ pub struct RawClient<T: RawClientCoreApi> {
 pub trait RawClientCoreApi: Send + Sync + 'static {
 	fn accept_transaction(&self, transaction: GlobalTransaction) -> Result<GlobalH256, String>;
 	fn create_raw_transaction(&self, inputs: Vec<TransactionInput>, outputs: TransactionOutputs, lock_time: Trailing<u32>) -> Result<GlobalTransaction, String>;
+	fn get_raw_transaction(&self, hash: GlobalH256, verbose: bool) -> Result<GetRawTransactionResponse, Error>;
 }
 
 pub struct RawClientCore {
 	local_sync_node: sync::LocalNodeRef,
+	storage: storage::SharedStore,
 }
 
 impl RawClientCore {
-	pub fn new(local_sync_node: sync::LocalNodeRef) -> Self {
+	pub fn new(local_sync_node: sync::LocalNodeRef, storage: storage::SharedStore) -> Self {
 		RawClientCore {
 			local_sync_node: local_sync_node,
+			storage: storage,
 		}
 	}
 
@@ -98,6 +102,55 @@ impl RawClientCoreApi for RawClientCore {
 	fn create_raw_transaction(&self, inputs: Vec<TransactionInput>, outputs: TransactionOutputs, lock_time: Trailing<u32>) -> Result<GlobalTransaction, String> {
 		RawClientCore::do_create_raw_transaction(inputs, outputs, lock_time)
 	}
+
+	fn get_raw_transaction(&self, hash: GlobalH256, verbose: bool) -> Result<GetRawTransactionResponse, Error> {
+        let transaction = match self.storage.transaction(&hash) {
+			Some(transaction) => transaction,
+			None => return Err(transaction_not_found(hash)),
+		};
+
+		let transaction_bytes = serialize(&transaction);
+		let raw_transaction = RawTransaction::new(transaction_bytes.take());
+
+		if verbose {
+			let meta = match self.storage.transaction_meta(&hash) {
+				Some(meta) => meta,
+				None => return Err(transaction_of_side_branch(hash)),
+			};
+
+			let block_header = match self.storage.block_header(meta.height().into()) {
+				Some(block_header) => block_header,
+				None => return Err(transaction_not_found(hash)),
+			};
+
+			let best_block = self.storage.best_block();
+			if best_block.number < meta.height() {
+				return Err(transaction_not_found(hash));
+			}
+
+			let txid: H256 = transaction.witness_hash().into();
+			let hash: H256 = transaction.hash().into();
+			let blockhash: H256 = block_header.hash().into();
+
+			Ok(GetRawTransactionResponse::Verbose(Transaction{
+				hex: raw_transaction,
+				txid: txid.reversed(),
+				hash: hash.reversed(),
+				size: transaction.serialized_size(),
+				vsize: transaction.serialized_size(),
+				version: transaction.version,
+				locktime: transaction.lock_time as i32,
+				vin: vec![],
+				vout: vec![],
+				blockhash: blockhash.reversed(),
+				confirmations: best_block.number - meta.height() + 1,
+				time: block_header.time,
+				blocktime: block_header.time
+			}))
+		} else {
+			Ok(GetRawTransactionResponse::Raw(raw_transaction))
+		}
+    }
 }
 
 impl<T> RawClient<T> where T: RawClientCoreApi {
@@ -134,8 +187,9 @@ impl<T> Raw for RawClient<T> where T: RawClientCoreApi {
 		rpc_unimplemented!()
 	}
 
-	fn get_raw_transaction(&self, _hash: H256, _verbose: Trailing<bool>) -> Result<GetRawTransactionResponse, Error> {
-		rpc_unimplemented!()
+	fn get_raw_transaction(&self, hash: H256, verbose: Trailing<bool>) -> Result<GetRawTransactionResponse, Error> {
+		let global_hash: GlobalH256 = hash.clone().into();
+		self.core.get_raw_transaction(global_hash.reversed(), verbose.unwrap_or_default())
 	}
 }
 
