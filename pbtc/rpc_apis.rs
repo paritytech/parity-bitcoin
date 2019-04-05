@@ -53,7 +53,7 @@ pub fn setup_rpc(mut handler: MetaIoHandler<()>, apis: ApiSet, deps: Dependencie
 
 	for api in apis.list_apis() {
 		match api {
-			Api::Raw => handler.extend_with(RawClient::new(RawClientCore::new(deps.local_sync_node.clone(), deps.storage.clone())).to_delegate()),
+			Api::Raw => handler.extend_with(RawClient::new(RawClientCore::new(deps.network,deps.local_sync_node.clone(), deps.storage.clone())).to_delegate()),
 			Api::Miner => handler.extend_with(MinerClient::new(MinerClientCore::new(deps.local_sync_node.clone())).to_delegate()),
 			Api::BlockChain => handler.extend_with(BlockChainClient::new(BlockChainClientCore::new(deps.network, deps.storage.clone())).to_delegate()),
 			Api::Network => handler.extend_with(NetworkClient::new(NetworkClientCore::new(deps.p2p_context.clone())).to_delegate()),

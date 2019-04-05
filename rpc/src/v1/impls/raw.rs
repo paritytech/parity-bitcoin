@@ -1,15 +1,18 @@
 use jsonrpc_core::Error;
 use jsonrpc_macros::Trailing;
-use ser::{Reader, serialize, deserialize, Serializable};
+use ser::{Reader, serialize, deserialize, Serializable, SERIALIZE_TRANSACTION_WITNESS};
 use v1::traits::Raw;
-use v1::types::{RawTransaction, TransactionInput, TransactionOutput, TransactionOutputs, Transaction, GetRawTransactionResponse};
+use v1::types::{RawTransaction, TransactionInput, TransactionOutput, TransactionOutputs, Transaction, GetRawTransactionResponse, SignedTransactionInput, TransactionInputScript, SignedTransactionOutput, TransactionOutputScript};
 use v1::types::H256;
 use v1::helpers::errors::{execution, invalid_params, transaction_not_found, transaction_of_side_branch};
+use global_script::Script;
 use chain::Transaction as GlobalTransaction;
+use network::Network;
 use primitives::bytes::Bytes as GlobalBytes;
 use primitives::hash::H256 as GlobalH256;
 use sync;
 use storage;
+use keys::Address;
 
 pub struct RawClient<T: RawClientCoreApi> {
 	core: T,
@@ -22,15 +25,17 @@ pub trait RawClientCoreApi: Send + Sync + 'static {
 }
 
 pub struct RawClientCore {
+	network: Network,
 	local_sync_node: sync::LocalNodeRef,
 	storage: storage::SharedStore,
 }
 
 impl RawClientCore {
-	pub fn new(local_sync_node: sync::LocalNodeRef, storage: storage::SharedStore) -> Self {
+	pub fn new(network: Network, local_sync_node: sync::LocalNodeRef, storage: storage::SharedStore) -> Self {
 		RawClientCore {
-			local_sync_node: local_sync_node,
-			storage: storage,
+			network,
+			local_sync_node,
+			storage,
 		}
 	}
 
@@ -104,7 +109,7 @@ impl RawClientCoreApi for RawClientCore {
 	}
 
 	fn get_raw_transaction(&self, hash: GlobalH256, verbose: bool) -> Result<GetRawTransactionResponse, Error> {
-        let transaction = match self.storage.transaction(&hash) {
+		let transaction = match self.storage.transaction(&hash) {
 			Some(transaction) => transaction,
 			None => return Err(transaction_not_found(hash)),
 		};
@@ -132,25 +137,75 @@ impl RawClientCoreApi for RawClientCore {
 			let hash: H256 = transaction.hash().into();
 			let blockhash: H256 = block_header.hash().into();
 
-			Ok(GetRawTransactionResponse::Verbose(Transaction{
+			let inputs = transaction.clone().inputs
+				.into_iter()
+				.map(|input| {
+					let txid: H256 = input.previous_output.hash.into();
+					let script_sig_bytes = input.script_sig;
+					let script_sig: Script = script_sig_bytes.clone().into();
+					let script_sig_asm = format!("{}", script_sig);
+					SignedTransactionInput {
+						txid: txid.reversed(),
+						vout: input.previous_output.index,
+						script_sig: TransactionInputScript {
+							asm: script_sig_asm,
+							hex: script_sig_bytes.clone().into(),
+						},
+						sequence: input.sequence,
+						txinwitness: input.script_witness
+							.into_iter()
+							.map(|s| s.clone().into())
+							.collect(),
+					}
+				}).collect();
+
+			let outputs = transaction.clone().outputs
+				.into_iter()
+				.enumerate()
+				.map(|(index, output)| {
+					let script_pubkey_bytes = output.script_pubkey;
+					let script_pubkey: Script = script_pubkey_bytes.clone().into();
+					let script_pubkey_asm = format!("{}", script_pubkey);
+					let script_addresses = script_pubkey.extract_destinations().unwrap_or(vec![]);
+					SignedTransactionOutput {
+						value: 0.00000001f64 * output.value as f64,
+						n: index as u32,
+						script: TransactionOutputScript {
+							asm: script_pubkey_asm,
+							hex: script_pubkey_bytes.clone().into(),
+							req_sigs: script_pubkey.num_signatures_required() as u32,
+							script_type: script_pubkey.script_type().into(),
+							addresses: script_addresses.into_iter().map(|address| Address {
+								hash: address.hash,
+								kind: address.kind,
+								network: match self.network {
+									Network::Mainnet => keys::Network::Mainnet,
+									_ => keys::Network::Testnet,
+								},
+							}).collect(),
+						}
+					}
+				}).collect();
+
+			Ok(GetRawTransactionResponse::Verbose(Transaction {
 				hex: raw_transaction,
 				txid: txid.reversed(),
 				hash: hash.reversed(),
 				size: transaction.serialized_size(),
-				vsize: transaction.serialized_size(),
+				vsize: transaction.serialized_size_with_flags(SERIALIZE_TRANSACTION_WITNESS),
 				version: transaction.version,
 				locktime: transaction.lock_time as i32,
-				vin: vec![],
-				vout: vec![],
+				vin: inputs,
+				vout: outputs,
 				blockhash: blockhash.reversed(),
 				confirmations: best_block.number - meta.height() + 1,
 				time: block_header.time,
-				blocktime: block_header.time
+				blocktime: block_header.time,
 			}))
 		} else {
 			Ok(GetRawTransactionResponse::Raw(raw_transaction))
 		}
-    }
+	}
 }
 
 impl<T> RawClient<T> where T: RawClientCoreApi {
@@ -205,6 +260,7 @@ pub mod tests {
 
 	#[derive(Default)]
 	struct SuccessRawClientCore;
+
 	#[derive(Default)]
 	struct ErrorRawClientCore;
 
