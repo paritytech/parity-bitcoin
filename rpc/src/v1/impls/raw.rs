@@ -255,7 +255,7 @@ pub mod tests {
 	use chain::Transaction;
 	use primitives::hash::H256 as GlobalH256;
 	use v1::traits::Raw;
-	use v1::types::{TransactionInput, TransactionOutputs};
+	use v1::types::{Bytes, TransactionInput, TransactionOutputs};
 	use super::*;
 
 	#[derive(Default)]
@@ -272,6 +272,10 @@ pub mod tests {
 		fn create_raw_transaction(&self, _inputs: Vec<TransactionInput>, _outputs: TransactionOutputs, _lock_time: Trailing<u32>) -> Result<Transaction, String> {
 			Ok("0100000001ad9d38823d95f31dc6c0cb0724c11a3cf5a466ca4147254a10cd94aade6eb5b3230000006b483045022100b7683165c3ecd57b0c44bf6a0fb258dc08c328458321c8fadc2b9348d4e66bd502204fd164c58d1a949a4d39bb380f8f05c9f6b3e9417f06bf72e5c068428ca3578601210391c35ac5ee7cf82c5015229dcff89507f83f9b8c952b8fecfa469066c1cb44ccffffffff0170f30500000000001976a914801da3cb2ed9e44540f4b982bde07cd3fbae264288ac00000000".into())
 		}
+
+		fn get_raw_transaction(&self, _hash: GlobalH256, _verbose: bool) -> Result<GetRawTransactionResponse, Error> {
+			Ok(GetRawTransactionResponse::Raw(Bytes::from("0100000001273d7b971b6788f911038f917dfa9ba85980b018a80b2e8caa4fca85475afdaf010000008b48304502205eb82fbb78f3467269c64ebb48c66567b11b1ebfa9cf4dd793d1482e46d3851c022100d18e2091becaea279f6f896825e7ca669ee0607b30007ca88b43d1de91359ba9014104a208236447f5c93972a739105abb8292613eef741cab36a1b98fa4fcc2989add0e5dc6cda9127a2bf0b18357210ba0119ad700e1fa495143262720067f4fbf83ffffffff02003b5808000000001976a9147793078b2ebc6ab7b7fd213789912f1deb03a97088ac404b4c00000000001976a914ffc2838f7aeed00857dbbfc70d9830c6968aca5688ac00000000")))
+		}
 	}
 
 	impl RawClientCoreApi for ErrorRawClientCore {
@@ -281,6 +285,10 @@ pub mod tests {
 
 		fn create_raw_transaction(&self, _inputs: Vec<TransactionInput>, _outputs: TransactionOutputs, _lock_time: Trailing<u32>) -> Result<Transaction, String> {
 			Err("error".to_owned())
+		}
+
+		fn get_raw_transaction(&self, hash: GlobalH256, _verbose: bool) -> Result<GetRawTransactionResponse, Error> {
+			Err(transaction_not_found(hash))
 		}
 	}
 
@@ -356,5 +364,41 @@ pub mod tests {
 		).unwrap();
 
 		assert_eq!(r#"{"jsonrpc":"2.0","error":{"code":-32015,"message":"Execution error.","data":"\"error\""},"id":1}"#, &sample);
+	}
+
+	#[test]
+	fn getrawtransaction_success() {
+		let client = RawClient::new(SuccessRawClientCore::default());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
+
+		let sample = handler.handle_request_sync(&(r#"
+			{
+				"jsonrpc": "2.0",
+				"method": "getrawtransaction",
+				"params": ["635f07dc4acdfb9bc305261169f82836949df462876fab9017bb9faf4d5fdadb"],
+				"id": 1
+			}"#)
+		).unwrap();
+
+		assert_eq!(r#"{"jsonrpc":"2.0","result":"0100000001273d7b971b6788f911038f917dfa9ba85980b018a80b2e8caa4fca85475afdaf010000008b48304502205eb82fbb78f3467269c64ebb48c66567b11b1ebfa9cf4dd793d1482e46d3851c022100d18e2091becaea279f6f896825e7ca669ee0607b30007ca88b43d1de91359ba9014104a208236447f5c93972a739105abb8292613eef741cab36a1b98fa4fcc2989add0e5dc6cda9127a2bf0b18357210ba0119ad700e1fa495143262720067f4fbf83ffffffff02003b5808000000001976a9147793078b2ebc6ab7b7fd213789912f1deb03a97088ac404b4c00000000001976a914ffc2838f7aeed00857dbbfc70d9830c6968aca5688ac00000000","id":1}"#, &sample);
+	}
+
+	#[test]
+	fn getrawtransaction_error() {
+		let client = RawClient::new(ErrorRawClientCore::default());
+		let mut handler = IoHandler::new();
+		handler.extend_with(client.to_delegate());
+
+		let sample = handler.handle_request_sync(&(r#"
+			{
+				"jsonrpc": "2.0",
+				"method": "getrawtransaction",
+				"params": ["4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"],
+				"id": 1
+			}"#)
+		).unwrap();
+
+		assert_eq!(r#"{"jsonrpc":"2.0","error":{"code":-32096,"message":"Transaction with given hash is not found","data":"3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"},"id":1}"#, &sample);
 	}
 }
