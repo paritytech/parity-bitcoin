@@ -1,19 +1,31 @@
 name: parity-bitcoin
-version: git
+# Get the version from the parity-bitcoin part.
+adopt-info: parity-bitcoin
 summary: The Parity Bitcoin client
 description: |
   Bitcoin client written in Rust.
 
-grade: devel # must be 'stable' to release into candidate/stable channels
+grade: stable # must be 'stable' to release into candidate/stable channels
 confinement: strict
 
 apps:
   parity-bitcoin:
     command: pbtc
-    plugs: [home, network, network-bind]
+    plugs: [home, network, network-bind, removable-media]
 
 parts:
   parity-bitcoin:
-    source: .
-    plugin: rust
-    build-packages: [g++]
+        source: https://github.com/paritytech/parity-bitcoin.git
+    source-tag: master
+    plugin: nil
+    build-packages:
+      - g++
+  override-pull: |
+       snapcraftctl pull
+       version="$(git describe --dirty --always)"
+       snapcraftctl set-version $version
+    override-build: |
+       curl https://sh.rustup.rs -sSf | sh -s -- -y
+       $HOME/.cargo/bin/cargo build -p pbtc --release
+       mkdir $SNAPCRAFT_PART_INSTALL/bin
+       mv target/release/pbtc $SNAPCRAFT_PART_INSTALL/bin/
