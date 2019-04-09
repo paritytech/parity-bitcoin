@@ -255,8 +255,10 @@ impl<T> Raw for RawClient<T> where T: RawClientCoreApi {
 		Ok(transaction.into())
 	}
 
-	fn decode_raw_transaction(&self, _transaction: RawTransaction) -> Result<Transaction, Error> {
-		rpc_unimplemented!()
+	fn decode_raw_transaction(&self, raw_transaction: RawTransaction) -> Result<Transaction, Error> {
+		let raw_transaction_data: Vec<u8> = raw_transaction.into();
+		let transaction = try!(deserialize(Reader::new(&raw_transaction_data)).map_err(|e| invalid_params("tx", e)));
+		Ok(self.core.transaction_to_verbose_transaction(transaction))
 	}
 
 	fn get_raw_transaction(&self, hash: H256, verbose: Trailing<bool>) -> Result<GetRawTransactionResponse, Error> {
