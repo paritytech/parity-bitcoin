@@ -92,7 +92,8 @@ pub struct SignedTransactionInput {
 	/// Sequence number
 	pub sequence: u32,
 	/// Hex-encoded witness data (if any)
-	pub txinwitness: Vec<Bytes>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub txinwitness: Option<Vec<Bytes>>,
 }
 
 /// Signed transaction output
@@ -111,7 +112,8 @@ pub struct SignedTransactionOutput {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Transaction {
 	/// Raw transaction
-	pub hex: RawTransaction,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub hex: Option<RawTransaction>,
 	/// The transaction id (same as provided)
 	pub txid: H256,
 	/// The transaction hash (differs from txid for witness transactions)
@@ -129,13 +131,17 @@ pub struct Transaction {
 	/// Transaction outputs
 	pub vout: Vec<SignedTransactionOutput>,
 	/// Hash of the block this transaction is included in
-	pub blockhash: H256,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub blockhash: Option<H256>,
 	/// Number of confirmations of this transaction
-	pub confirmations: u32,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub confirmations: Option<u32>,
 	/// The transaction time in seconds since epoch (Jan 1 1970 GMT)
-	pub time: u32,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub time: Option<u32>,
 	/// The block time in seconds since epoch (Jan 1 1970 GMT)
-	pub blocktime: u32,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub blocktime: Option<u32>,
 }
 
 /// Return value of `getrawtransaction` method

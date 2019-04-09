@@ -152,10 +152,14 @@ impl RawClientCoreApi for RawClientCore {
 							hex: script_sig_bytes.clone().into(),
 						},
 						sequence: input.sequence,
-						txinwitness: input.script_witness
-							.into_iter()
-							.map(|s| s.clone().into())
-							.collect(),
+						txinwitness: if input.script_witness.is_empty() {
+							None
+						} else {
+							Some(input.script_witness
+								.into_iter()
+								.map(|s| s.clone().into())
+								.collect())
+						},
 					}
 				}).collect();
 
@@ -183,12 +187,12 @@ impl RawClientCoreApi for RawClientCore {
 									_ => keys::Network::Testnet,
 								},
 							}).collect(),
-						}
+						},
 					}
 				}).collect();
 
 			Ok(GetRawTransactionResponse::Verbose(Transaction {
-				hex: raw_transaction,
+				hex: Some(raw_transaction),
 				txid: txid.reversed(),
 				hash: hash.reversed(),
 				size: transaction.serialized_size(),
@@ -197,10 +201,10 @@ impl RawClientCoreApi for RawClientCore {
 				locktime: transaction.lock_time as i32,
 				vin: inputs,
 				vout: outputs,
-				blockhash: blockhash.reversed(),
-				confirmations: best_block.number - meta.height() + 1,
-				time: block_header.time,
-				blocktime: block_header.time,
+				blockhash: Some(blockhash.reversed()),
+				confirmations: Some(best_block.number - meta.height() + 1),
+				time: Some(block_header.time),
+				blocktime: Some(block_header.time),
 			}))
 		} else {
 			Ok(GetRawTransactionResponse::Raw(raw_transaction))
