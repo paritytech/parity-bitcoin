@@ -22,6 +22,7 @@ pub trait RawClientCoreApi: Send + Sync + 'static {
 	fn accept_transaction(&self, transaction: GlobalTransaction) -> Result<GlobalH256, String>;
 	fn create_raw_transaction(&self, inputs: Vec<TransactionInput>, outputs: TransactionOutputs, lock_time: Trailing<u32>) -> Result<GlobalTransaction, String>;
 	fn get_raw_transaction(&self, hash: GlobalH256, verbose: bool) -> Result<GetRawTransactionResponse, Error>;
+	fn transaction_to_verbose_transaction(&self, transaction: GlobalTransaction) -> Transaction;
 }
 
 pub struct RawClientCore {
@@ -133,81 +134,93 @@ impl RawClientCoreApi for RawClientCore {
 				return Err(transaction_not_found(hash));
 			}
 
-			let txid: H256 = transaction.witness_hash().into();
-			let hash: H256 = transaction.hash().into();
 			let blockhash: H256 = block_header.hash().into();
 
-			let inputs = transaction.clone().inputs
-				.into_iter()
-				.map(|input| {
-					let txid: H256 = input.previous_output.hash.into();
-					let script_sig_bytes = input.script_sig;
-					let script_sig: Script = script_sig_bytes.clone().into();
-					let script_sig_asm = format!("{}", script_sig);
-					SignedTransactionInput {
-						txid: txid.reversed(),
-						vout: input.previous_output.index,
-						script_sig: TransactionInputScript {
-							asm: script_sig_asm,
-							hex: script_sig_bytes.clone().into(),
-						},
-						sequence: input.sequence,
-						txinwitness: if input.script_witness.is_empty() {
-							None
-						} else {
-							Some(input.script_witness
-								.into_iter()
-								.map(|s| s.clone().into())
-								.collect())
-						},
-					}
-				}).collect();
+			let mut verbose_transaction = self.transaction_to_verbose_transaction(transaction);
+			verbose_transaction.hex = Some(raw_transaction);
+			verbose_transaction.blockhash = Some(blockhash.reversed());
+			verbose_transaction.confirmations = Some(best_block.number - meta.height() + 1);
+			verbose_transaction.time = Some(block_header.time);
+			verbose_transaction.blocktime = Some(block_header.time);
 
-			let outputs = transaction.clone().outputs
-				.into_iter()
-				.enumerate()
-				.map(|(index, output)| {
-					let script_pubkey_bytes = output.script_pubkey;
-					let script_pubkey: Script = script_pubkey_bytes.clone().into();
-					let script_pubkey_asm = format!("{}", script_pubkey);
-					let script_addresses = script_pubkey.extract_destinations().unwrap_or(vec![]);
-					SignedTransactionOutput {
-						value: 0.00000001f64 * output.value as f64,
-						n: index as u32,
-						script: TransactionOutputScript {
-							asm: script_pubkey_asm,
-							hex: script_pubkey_bytes.clone().into(),
-							req_sigs: script_pubkey.num_signatures_required() as u32,
-							script_type: script_pubkey.script_type().into(),
-							addresses: script_addresses.into_iter().map(|address| Address {
-								hash: address.hash,
-								kind: address.kind,
-								network: match self.network {
-									Network::Mainnet => keys::Network::Mainnet,
-									_ => keys::Network::Testnet,
-								},
-							}).collect(),
-						},
-					}
-				}).collect();
-
-			Ok(GetRawTransactionResponse::Verbose(Transaction {
-				hex: Some(raw_transaction),
-				txid: txid.reversed(),
-				hash: hash.reversed(),
-				size: transaction.serialized_size(),
-				vsize: transaction.serialized_size_with_flags(SERIALIZE_TRANSACTION_WITNESS),
-				version: transaction.version,
-				locktime: transaction.lock_time as i32,
-				vin: inputs,
-				vout: outputs,
-				blockhash: Some(blockhash.reversed()),
-				confirmations: Some(best_block.number - meta.height() + 1),
-				time: Some(block_header.time),
-				blocktime: Some(block_header.time),
-			}))
+			Ok(GetRawTransactionResponse::Verbose(verbose_transaction))
 		} else {
 			Ok(GetRawTransactionResponse::Raw(raw_transaction))
+		}
+	}
+
+	fn transaction_to_verbose_transaction(&self, transaction: GlobalTransaction) -> Transaction {
+		let txid: H256 = transaction.witness_hash().into();
+		let hash: H256 = transaction.hash().into();
+
+		let inputs = transaction.clone().inputs
+			.into_iter()
+			.map(|input| {
+				let txid: H256 = input.previous_output.hash.into();
+				let script_sig_bytes = input.script_sig;
+				let script_sig: Script = script_sig_bytes.clone().into();
+				let script_sig_asm = format!("{}", script_sig);
+				SignedTransactionInput {
+					txid: txid.reversed(),
+					vout: input.previous_output.index,
+					script_sig: TransactionInputScript {
+						asm: script_sig_asm,
+						hex: script_sig_bytes.clone().into(),
+					},
+					sequence: input.sequence,
+					txinwitness: if input.script_witness.is_empty() {
+						None
+					} else {
+						Some(input.script_witness
+							.into_iter()
+							.map(|s| s.clone().into())
+							.collect())
+					},
+				}
+			}).collect();
+
+		let outputs = transaction.clone().outputs
+			.into_iter()
+			.enumerate()
+			.map(|(index, output)| {
+				let script_pubkey_bytes = output.script_pubkey;
+				let script_pubkey: Script = script_pubkey_bytes.clone().into();
+				let script_pubkey_asm = format!("{}", script_pubkey);
+				let script_addresses = script_pubkey.extract_destinations().unwrap_or(vec![]);
+				SignedTransactionOutput {
+					value: 0.00000001f64 * output.value as f64,
+					n: index as u32,
+					script: TransactionOutputScript {
+						asm: script_pubkey_asm,
+						hex: script_pubkey_bytes.clone().into(),
+						req_sigs: script_pubkey.num_signatures_required() as u32,
+						script_type: script_pubkey.script_type().into(),
+						addresses: script_addresses.into_iter().map(|address| Address {
+							hash: address.hash,
+							kind: address.kind,
+							network: match self.network {
+								Network::Mainnet => keys::Network::Mainnet,
+								_ => keys::Network::Testnet,
+							},
+						}).collect(),
+					},
+				}
+			}).collect();
+
+		Transaction {
+			hex: None,
+			txid: txid.reversed(),
+			hash: hash.reversed(),
+			size: transaction.serialized_size(),
+			vsize: transaction.serialized_size_with_flags(SERIALIZE_TRANSACTION_WITNESS),
+			version: transaction.version,
+			locktime: transaction.lock_time as i32,
+			vin: inputs,
+			vout: outputs,
+			blockhash: None,
+			confirmations: None,
+			time: None,
+			blocktime: None,
 		}
 	}
 }
