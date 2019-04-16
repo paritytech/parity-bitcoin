@@ -7,7 +7,7 @@ use v1::types::H256;
 use v1::helpers::errors::{execution, invalid_params, transaction_not_found, transaction_of_side_branch};
 use global_script::Script;
 use chain::Transaction as GlobalTransaction;
-use network::Network;
+use network::{ConsensusFork, Network};
 use primitives::bytes::Bytes as GlobalBytes;
 use primitives::hash::H256 as GlobalH256;
 use sync;
@@ -150,8 +150,8 @@ impl RawClientCoreApi for RawClientCore {
 	}
 
 	fn transaction_to_verbose_transaction(&self, transaction: GlobalTransaction) -> Transaction {
-		let txid: H256 = transaction.witness_hash().into();
-		let hash: H256 = transaction.hash().into();
+		let txid: H256 = transaction.hash().into();
+		let hash: H256 = transaction.witness_hash().into();
 
 		let inputs = transaction.clone().inputs
 			.into_iter()
@@ -207,12 +207,16 @@ impl RawClientCoreApi for RawClientCore {
 				}
 			}).collect();
 
+		let tx_size = transaction.serialized_size_with_flags(SERIALIZE_TRANSACTION_WITNESS);
+		let weight = transaction.serialized_size() * (ConsensusFork::witness_scale_factor() - 1) + tx_size;
+		let tx_vsize = (weight + ConsensusFork::witness_scale_factor() - 1) / ConsensusFork::witness_scale_factor();
+
 		Transaction {
 			hex: None,
 			txid: txid.reversed(),
 			hash: hash.reversed(),
-			size: transaction.serialized_size(),
-			vsize: transaction.serialized_size_with_flags(SERIALIZE_TRANSACTION_WITNESS),
+			size: tx_size,
+			vsize: tx_vsize,
 			version: transaction.version,
 			locktime: transaction.lock_time as i32,
 			vin: inputs,
