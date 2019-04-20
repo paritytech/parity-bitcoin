@@ -1,5 +1,6 @@
 use crypto::dhash256;
 use hash::{H256, H512};
+use rayon::prelude::*;
 
 #[inline]
 fn concat<T>(a: T, b: T) -> H512 where T: AsRef<H256> {
@@ -15,21 +16,23 @@ pub fn merkle_root<T>(hashes: &[T]) -> H256 where T: AsRef<H256> {
 	if hashes.len() == 1 {
 		return hashes[0].as_ref().clone();
 	}
-
 	let mut row = Vec::with_capacity(hashes.len() / 2);
 	let mut i = 0;
 	while i + 1 < hashes.len() {
-		row.push(merkle_node_hash(&hashes[i], &hashes[i + 1]));
+		row.push((hashes[i].as_ref().clone(), hashes[i + 1].as_ref().clone()));
 		i += 2
 	}
 
 	// duplicate the last element if len is not even
 	if hashes.len() % 2 == 1 {
-		let last = &hashes[hashes.len() - 1];
-		row.push(merkle_node_hash(last, last));
+		let last = hashes[hashes.len() - 1].as_ref().clone();
+		row.push((last.clone(), last.clone()));
 	}
-
-	merkle_root(&row)
+	let res: Vec<_> = row
+		.par_iter()
+		.map(|x| merkle_node_hash(&x.0, &x.1))
+		.collect();
+	merkle_root(&res)
 }
 
 /// Calculate merkle tree node hash
@@ -54,5 +57,20 @@ mod tests {
 		let result2 = merkle_root(&[tx1, tx2]);
 		assert_eq!(result, expected);
 		assert_eq!(result2, expected);
+	}
+
+	// Test with 5 hashes
+	#[test]
+	fn test_merkle_root_two_with_5_hashes() {
+		let mut vec = Vec::new();
+		vec.push(H256::from_reversed_str("1da63abbc8cc611334a753c4c31de14d19839c65b2b284202eaf3165861fb58d"));
+		vec.push(H256::from_reversed_str("26c6a6f18d13d2f0787c1c0f3c5e23cf5bc8b3de685dd1923ae99f44c5341c0c"));
+		vec.push(H256::from_reversed_str("513507fa209db823541caf7b9742bb9999b4a399cf604ba8da7037f3acced649"));
+		vec.push(H256::from_reversed_str("6bf5d2e02b8432d825c5dff692d435b6c5f685d94efa6b3d8fb818f2ecdcfb66"));
+		vec.push(H256::from_reversed_str("8a5ad423bc54fb7c76718371fd5a73b8c42bf27beaf2ad448761b13bcafb8895"));
+		let result = merkle_root(&vec);
+
+		let expected = H256::from_reversed_str("3a432cd416ea05b1be4ec1e72d7952d08670eaa5505b6794a186ddb253aa62e6");
+		assert_eq!(result, expected);
 	}
 }

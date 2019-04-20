@@ -1,6 +1,7 @@
 extern crate rustc_hex as hex;
 extern crate heapsize;
 extern crate primitives;
+extern crate rayon;
 extern crate bitcrypto as crypto;
 extern crate serialization as ser;
 #[macro_use]
