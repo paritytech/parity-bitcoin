@@ -1,3 +1,4 @@
+use rayon::prelude::{IntoParallelRefIterator,  ParallelIterator};
 use std::cmp;
 use hash::H256;
 use hex::FromHex;
@@ -62,7 +63,7 @@ impl IndexedBlock {
 	}
 
 	pub fn merkle_root(&self) -> H256 {
-		merkle_root(&self.transactions.iter().map(|tx| &tx.hash).collect::<Vec<&H256>>())
+		merkle_root(&self.transactions.par_iter().map(|tx| &tx.hash).collect::<Vec<&H256>>())
 	}
 
 	pub fn witness_merkle_root(&self) -> H256 {
