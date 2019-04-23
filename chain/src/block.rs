@@ -4,6 +4,7 @@ use ser::{deserialize};
 use merkle_root::merkle_root;
 use {BlockHeader, Transaction};
 use super::RepresentH256;
+use rayon::prelude::{IntoParallelRefIterator,  ParallelIterator};
 
 #[derive(Debug, PartialEq, Clone, Serializable, Deserializable)]
 pub struct Block {
@@ -28,7 +29,7 @@ impl Block {
 
 	/// Returns block's merkle root.
 	pub fn merkle_root(&self) -> H256 {
-		let hashes = self.transactions.iter().map(Transaction::hash).collect::<Vec<H256>>();
+		let hashes = self.transactions.par_iter().map(Transaction::hash).collect::<Vec<H256>>();
 		merkle_root(&hashes)
 	}
 

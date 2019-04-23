@@ -12,21 +12,21 @@ fn concat<T>(a: T, b: T) -> H512 where T: AsRef<H256> {
 
 /// Calculates the root of the merkle tree
 /// https://en.bitcoin.it/wiki/Protocol_documentation#Merkle_Trees
-pub fn merkle_root<T>(hashes: &[T]) -> H256 where T: AsRef<H256> {
+pub fn merkle_root<T: AsRef<H256> + Sync>(hashes: &[T]) -> H256{
 	if hashes.len() == 1 {
 		return hashes[0].as_ref().clone();
 	}
 	let mut row = Vec::with_capacity(hashes.len() / 2);
 	let mut i = 0;
 	while i + 1 < hashes.len() {
-		row.push((hashes[i].as_ref().clone(), hashes[i + 1].as_ref().clone()));
+		row.push((&hashes[i], &hashes[i + 1]));
 		i += 2
 	}
 
 	// duplicate the last element if len is not even
 	if hashes.len() % 2 == 1 {
-		let last = hashes[hashes.len() - 1].as_ref().clone();
-		row.push((last.clone(), last.clone()));
+		let last = &hashes[hashes.len() - 1];
+		row.push((last, last));
 	}
 	let res: Vec<_> = row
 		.par_iter()

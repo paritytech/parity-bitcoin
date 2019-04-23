@@ -1,4 +1,3 @@
-use rayon::prelude::{IntoParallelRefIterator,  ParallelIterator};
 use std::cmp;
 use hash::H256;
 use hex::FromHex;
@@ -8,6 +7,7 @@ use transaction::Transaction;
 use merkle_root::merkle_root;
 use indexed_header::IndexedBlockHeader;
 use indexed_transaction::IndexedTransaction;
+use rayon::prelude::{IntoParallelRefIterator,  ParallelIterator};
 
 #[derive(Debug, Clone, Deserializable)]
 pub struct IndexedBlock {
