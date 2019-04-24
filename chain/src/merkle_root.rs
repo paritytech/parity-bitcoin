@@ -28,10 +28,12 @@ pub fn merkle_root<T: AsRef<H256> + Sync>(hashes: &[T]) -> H256{
 		let last = &hashes[hashes.len() - 1];
 		row.push((last, last));
 	}
-	let res: Vec<_> = row
-		.par_iter()
-		.map(|x| merkle_node_hash(&x.0, &x.1))
-		.collect();
+	let res: Vec<_>;
+	if row.len() > 250 {
+		res = row.par_iter().map(|x| merkle_node_hash(&x.0, &x.1)).collect();
+	} else {
+		res = row.iter().map(|x| merkle_node_hash(&x.0, &x.1)).collect();
+	}
 	merkle_root(&res)
 }
 

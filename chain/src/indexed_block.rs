@@ -7,7 +7,6 @@ use transaction::Transaction;
 use merkle_root::merkle_root;
 use indexed_header::IndexedBlockHeader;
 use indexed_transaction::IndexedTransaction;
-use rayon::prelude::{IntoParallelRefIterator,  ParallelIterator};
 
 #[derive(Debug, Clone, Deserializable)]
 pub struct IndexedBlock {
@@ -63,7 +62,7 @@ impl IndexedBlock {
 	}
 
 	pub fn merkle_root(&self) -> H256 {
-		merkle_root(&self.transactions.par_iter().map(|tx| &tx.hash).collect::<Vec<&H256>>())
+		merkle_root(&self.transactions.iter().map(|tx| &tx.hash).collect::<Vec<&H256>>())
 	}
 
 	pub fn witness_merkle_root(&self) -> H256 {
