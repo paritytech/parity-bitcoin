@@ -1,6 +1,6 @@
 use crypto::dhash256;
 use hash::{H256, H512};
-use rayon::prelude::*;
+use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 #[inline]
 fn concat<T>(a: T, b: T) -> H512 where T: AsRef<H256> {
@@ -29,6 +29,7 @@ pub fn merkle_root<T: AsRef<H256> + Sync>(hashes: &[T]) -> H256{
 		row.push((last, last));
 	}
 	let res: Vec<_>;
+	// Only compute in parallel if there is enough work to benefit it
 	if row.len() > 250 {
 		res = row.par_iter().map(|x| merkle_node_hash(&x.0, &x.1)).collect();
 	} else {
@@ -63,7 +64,7 @@ mod tests {
 
 	// Test with 5 hashes
 	#[test]
-	fn test_merkle_root_two_with_5_hashes() {
+	fn test_merkle_root_with_5_hashes() {
 		let mut vec = Vec::new();
 		vec.push(H256::from_reversed_str("1da63abbc8cc611334a753c4c31de14d19839c65b2b284202eaf3165861fb58d"));
 		vec.push(H256::from_reversed_str("26c6a6f18d13d2f0787c1c0f3c5e23cf5bc8b3de685dd1923ae99f44c5341c0c"));
