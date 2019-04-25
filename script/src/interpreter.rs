@@ -878,7 +878,7 @@ pub fn eval_script(
 				if v1 == v2 {
 					stack.push(vec![1].into());
 				} else {
-					stack.push(vec![0].into());
+					stack.push(Bytes::new());
 				}
 			},
 			Opcode::OP_EQUALVERIFY => {
@@ -995,7 +995,7 @@ pub fn eval_script(
 				if v2 <= v3 && v3 < v1 {
 					stack.push(vec![1].into());
 				} else {
-					stack.push(vec![0].into());
+					stack.push(Bytes::new());
 				}
 			},
 			Opcode::OP_RIPEMD160 => {
@@ -1044,7 +1044,7 @@ pub fn eval_script(
 						if success {
 							stack.push(vec![1].into());
 						} else {
-							stack.push(vec![0].into());
+							stack.push(Bytes::new());
 						}
 					},
 					Opcode::OP_CHECKSIGVERIFY if !success => {
@@ -1113,7 +1113,7 @@ pub fn eval_script(
 						if success {
 							stack.push(vec![1].into());
 						} else {
-							stack.push(vec![0].into());
+							stack.push(Bytes::new());
 						}
 					},
 					Opcode::OP_CHECKMULTISIGVERIFY if !success => {
@@ -1150,7 +1150,7 @@ pub fn eval_script(
 						if success {
 							stack.push(vec![1].into());
 						} else {
-							stack.push(vec![0].into());
+							stack.push(Bytes::new());
 						}
 					},
 					Opcode::OP_CHECKDATASIGVERIFY if !success => {
@@ -1269,7 +1269,7 @@ mod tests {
 			.push_opcode(Opcode::OP_EQUAL)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![vec![0].into()].into();
+		let stack = vec![Bytes::new()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -2101,7 +2101,7 @@ mod tests {
 			.push_opcode(Opcode::OP_WITHIN)
 			.into_script();
 		let result = Ok(false);
-		let stack = vec![vec![0].into()].into();
+		let stack = vec![Bytes::new()].into();
 		basic_test(&script, result, stack);
 	}
 
@@ -3958,7 +3958,7 @@ mod tests {
 			.push_data(&*pubkey)
 			.push_opcode(Opcode::OP_CHECKDATASIG)
 			.into_script();
-		basic_test_with_flags(&incorrect_signature_script, &correct_flags, Ok(false), vec![vec![0].into()].into());
+		basic_test_with_flags(&incorrect_signature_script, &correct_flags, Ok(false), vec![Bytes::new()].into());
 
 		// <sig> <msg> <pubKey> OP_CHECKDATASIG pops three elements and pushes false onto the stack if <sig> is an empty byte array.
 		let empty_signature_script = Builder::default()
@@ -3967,7 +3967,7 @@ mod tests {
 			.push_data(&*pubkey)
 			.push_opcode(Opcode::OP_CHECKDATASIG)
 			.into_script();
-		basic_test_with_flags(&empty_signature_script, &correct_flags, Ok(false), vec![vec![0].into()].into());
+		basic_test_with_flags(&empty_signature_script, &correct_flags, Ok(false), vec![Bytes::new()].into());
 
 		// <sig> <msg> <pubKey> OP_CHECKDATASIG pops three elements and pushes true onto the stack if <sig> is a valid signature of <msg> with respect to <pubKey>.
 		basic_test_with_flags(&correct_signature_script, &correct_flags, Ok(true), vec![vec![1].into()].into());
@@ -4045,5 +4045,30 @@ mod tests {
 		// <sig> <msg> <pubKey> OP_CHECKDATASIGVERIFY pops the top three stack elements if <sig> is a valid signature of <msg> with respect to <pubKey>.
 		// Ok(false) means success here, because OP_CHECKDATASIGVERIFY leaves empty stack
 		basic_test_with_flags(&correct_signature_script, &correct_flags, Ok(false), vec![].into());
+	}
+
+	#[test]
+	fn op_equal_push_empty_bytes_to_stack() {
+		// tx #95 from testnet block:
+		// https://testnet.blockexplorer.com/block/00000000c7169675fc165bfeceb11b572129977ca9f9e6ca5953e3184cb403dd
+		// https://tbtc.bitaps.com/raw/transaction/27c94c0ca2f66fcc09d11b510e04d21adfe19f459673029e709024d7d9a7f4b4
+		// and its donor tx:
+		// https://tbtc.bitaps.com/raw/transaction/25e140942ecf79d24619908185a881f95d9ecb23a7be050f7c44cd378aae26eb
+		//
+		// the issue was that our comparison ops implementation (OP_EQUAL, OP_WITHIN, OP_CHECKSIG, ***)
+		// were pushing non-empty value (vec![0]) when comparison has failed
+		// => in combination with verify_nnulldummy this caused consensus issue
+
+		let tx: Transaction = "0100000001eb26ae8a37cd447c0f05bea723cb9e5df981a88581901946d279cf2e9440e1250000000091473044022057e887c4cb773a6ec513b285dde1209ee4213209c21bb9da9e284ffe7477979302201aba367cf84bf2c6ccfd1b18d2bec0d705e2acacfeb42324cdc0fe63fbe2524a01483045022100e3f2e5e2a0b6bb75f2a506d7b190d8ba48b1e9108dd4fc4a740fbc921d0067a3022070fccd6eec2415d6d75f7aa3d0604988ee84d856db2acde4cc01d9c43f0237a301ffffffff0100350c00000000001976a9149e2be3b4d5e7274e8fd739b09fc6fd223054616088ac00000000".into();
+		let signer: TransactionInputSigner = tx.into();
+		let checker = TransactionSignatureChecker {
+			signer: signer,
+			input_index: 0,
+			input_amount: 1000000,
+		};
+		let input: Script = "473044022057e887c4cb773a6ec513b285dde1209ee4213209c21bb9da9e284ffe7477979302201aba367cf84bf2c6ccfd1b18d2bec0d705e2acacfeb42324cdc0fe63fbe2524a01483045022100e3f2e5e2a0b6bb75f2a506d7b190d8ba48b1e9108dd4fc4a740fbc921d0067a3022070fccd6eec2415d6d75f7aa3d0604988ee84d856db2acde4cc01d9c43f0237a301".into();
+		let output: Script = "5253877c5121027fe085933328a89d0ad069071dee3bd4c908fddc852032356a318324c9ab0f6c210321e7c9eea060c099747ddcf741e9498a2b90fe8f362e2c85370722df0f88d1782102a5bc779306b40927648e73e144d430dc1b7c0730f6a3ab5bbd130374d8fe4a5a53af2102a70faff961b367875336396076a72293bf3adaa084404f8a5cbec23f41645b87ac".into();
+		let flags = VerificationFlags::default().verify_nulldummy(true);
+		assert_eq!(verify_script(&input, &output, &ScriptWitness::default(), &flags, &checker, SignatureVersion::Base), Ok(()));
 	}
 }
