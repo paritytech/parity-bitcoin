@@ -152,6 +152,7 @@ dependencies = [
  "bitcrypto 0.1.0",
  "heapsize 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitives 0.1.0",
+ "rayon 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-hex 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serialization 0.1.0",
  "serialization_derive 0.1.0",
