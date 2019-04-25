@@ -15,12 +15,12 @@ apps:
 
 parts:
   parity-bitcoin:
-        source: https://github.com/paritytech/parity-bitcoin.git
+    source: https://github.com/paritytech/parity-bitcoin.git
     source-tag: master
     plugin: nil
     build-packages:
       - g++
-  override-pull: |
+    override-pull: |
        snapcraftctl pull
        version="$(git describe --dirty --always)"
        snapcraftctl set-version $version
