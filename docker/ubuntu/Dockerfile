@@ -3,24 +3,20 @@
 
 ### Base Image
 # Setup up a base image to use in Build and Runtime images
-FROM rust:1.23-jessie AS build
+FROM rust:1.34-stretch AS build
 
 # rustup directory
 ENV PATH=/root/.cargo/bin:$PATH \
     RUST_BACKTRACE=1
 
-WORKDIR /build/parity-bitcoin
-COPY . /build/parity-bitcoin
+WORKDIR /build/
 
 # install tools and dependencies
 RUN apt-get update && \
         apt-get install -y --force-yes --no-install-recommends \
         g++ \
         build-essential \
-        curl \
         git \
-        file \
-        binutils \
         ca-certificates \
         libssl-dev \
         pkg-config \
@@ -33,12 +29,12 @@ RUN gcc -v
 RUN g++ -v
 
 # build pbtc
-RUN cargo build --release --verbose
-RUN strip /build/parity-bitcoin/target/release/pbtc
-RUN file /build/parity-bitcoin/target/release/pbtc
+RUN git clone https://github.com/paritytech/parity-bitcoin.git; \
+    cd parity-bitcoin; export RUSTFLAGS=" -C link-arg=-s"; \
+    cargo build --release --verbose 
 
 # Runtime image, copies pbtc artifact from build image
-FROM ubuntu:16.04 AS run
+FROM ubuntu:bionic AS run
 LABEL maintainer "Parity Technologies <devops@parity.io>"
 
 WORKDIR /pbtc-ubuntu
