@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use p2p::InboundSyncConnectionState;
 use super::super::types::{StorageRef, BlockHeight};
 
 // AtomicU32 is unstable => using AtomicUsize here
@@ -36,5 +37,11 @@ impl SynchronizationState {
 
 	pub fn update_best_storage_block_height(&self, height: BlockHeight) {
 		self.best_storage_block_height.store(height as usize, Ordering::SeqCst);
+	}
+}
+
+impl InboundSyncConnectionState for SynchronizationState {
+	fn synchronizing(&self) -> bool {
+		SynchronizationState::synchronizing(self)
 	}
 }

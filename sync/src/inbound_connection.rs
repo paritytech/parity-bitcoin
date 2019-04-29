@@ -1,6 +1,6 @@
 use chain::{IndexedTransaction, IndexedBlock};
 use message::types;
-use p2p::{InboundSyncConnection, InboundSyncConnectionRef};
+use p2p::{InboundSyncConnection, InboundSyncConnectionRef, InboundSyncConnectionStateRef};
 use types::{PeersRef, LocalNodeRef, PeerIndex, RequestId};
 use utils::KnownHashType;
 
@@ -31,6 +31,10 @@ impl InboundConnection {
 }
 
 impl InboundSyncConnection for InboundConnection {
+	fn sync_state(&self) -> InboundSyncConnectionStateRef {
+		self.node.sync_state()
+	}
+
 	fn start_sync_session(&self, peer_name: String, version: types::Version) {
 		self.node.on_connect(self.peer_index, peer_name, version);
 	}

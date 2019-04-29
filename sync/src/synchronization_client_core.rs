@@ -218,13 +218,6 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	fn on_inventory(&self, peer_index: PeerIndex, message: types::Inv) {
-		// we are synchronizing => we ask only for blocks with known headers => there are no useful blocks hashes for us
-		// we are synchronizing => we ignore all transactions until it is completed => there are no useful transactions hashes for us
-		if self.state.is_synchronizing() {
-			trace!(target: "sync", "Ignoring {} inventory items from peer#{} as synchronization is in progress", message.inventory.len(), peer_index);
-			return;
-		}
-
 		// else ask for all unknown transactions and blocks
 		let is_segwit_possible = self.chain.is_segwit_possible();
 		let unknown_inventory: Vec<_> = message.inventory.into_iter()
@@ -1850,23 +1843,6 @@ pub mod tests {
 		assert_eq!(core.lock().information().peers_tasks.idle, 0);
 		assert_eq!(core.lock().information().peers_tasks.unuseful, 0);
 		assert_eq!(core.lock().information().peers_tasks.active, 1);
-	}
-
-	#[test]
-	fn transaction_is_not_requested_when_synchronizing() {
-		let (executor, core, sync) = create_sync(None, None);
-
-		let b1 = test_data::block_h1();
-		let b2 = test_data::block_h2();
-		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
-
-		assert!(core.lock().information().state.is_synchronizing());
-		{ executor.take_tasks(); } // forget tasks
-
-		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
-
-		let tasks = executor.take_tasks();
-		assert_eq!(tasks, vec![]);
 	}
 
 	#[test]
