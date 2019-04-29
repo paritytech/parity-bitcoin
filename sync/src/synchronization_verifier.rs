@@ -170,7 +170,7 @@ impl AsyncVerifier {
 						},
 						Ok(tx_output_provider) => {
 							let time: u32 = get_time().sec as u32;
-							match verifier.verifier.verify_mempool_transaction(storage.as_block_header_provider(), &tx_output_provider, height, time, &transaction.raw) {
+							match verifier.verifier.verify_mempool_transaction(storage.as_block_header_provider(), &tx_output_provider, height, time, &transaction) {
 								Ok(_) => sink.on_transaction_verification_success(transaction.into()),
 								Err(e) => sink.on_transaction_verification_error(&format!("{:?}", e), &transaction.hash),
 							}

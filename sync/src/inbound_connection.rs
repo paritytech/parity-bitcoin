@@ -77,13 +77,13 @@ impl InboundSyncConnection for InboundConnection {
 	}
 
 	fn on_transaction(&self, message: types::Tx) {
-		let tx: IndexedTransaction = message.transaction.into();
+		let tx = IndexedTransaction::from_raw(message.transaction);
 		self.peers.hash_known_as(self.peer_index, tx.hash.clone(), KnownHashType::Transaction);
 		self.node.on_transaction(self.peer_index, tx);
 	}
 
 	fn on_block(&self, message: types::Block) {
-		let block: IndexedBlock = message.block.into();
+		let block = IndexedBlock::from_raw(message.block);
 		self.peers.hash_known_as(self.peer_index, block.hash().clone(), KnownHashType::Block);
 		self.node.on_block(self.peer_index, block);
 	}

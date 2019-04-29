@@ -14,17 +14,12 @@ pub struct IndexedBlock {
 	pub transactions: Vec<IndexedTransaction>,
 }
 
+#[cfg(feature = "test-helpers")]
 impl From<Block> for IndexedBlock {
 	fn from(block: Block) -> Self {
-		let Block { block_header, transactions } = block;
-
-		IndexedBlock {
-			header: block_header.into(),
-			transactions: transactions.into_iter().map(Into::into).collect(),
-		}
+		Self::from_raw(block)
 	}
 }
-
 impl cmp::PartialEq for IndexedBlock {
 	fn eq(&self, other: &Self) -> bool {
 		self.header.hash == other.header.hash
@@ -37,6 +32,17 @@ impl IndexedBlock {
 			header: header,
 			transactions: transactions,
 		}
+	}
+
+	/// Explicit conversion of the raw Block into IndexedBlock.
+	///
+	/// Hashes block header + transactions.
+	pub fn from_raw(block: Block) -> Self {
+		let Block { block_header, transactions } = block;
+		Self::new(
+			IndexedBlockHeader::from_raw(block_header),
+			transactions.into_iter().map(IndexedTransaction::from_raw).collect(),
+		)
 	}
 
 	pub fn hash(&self) -> &H256 {

@@ -1,7 +1,7 @@
 //! Bitcoin chain verifier
 
 use hash::H256;
-use chain::{IndexedBlock, IndexedBlockHeader, BlockHeader, Transaction};
+use chain::{IndexedBlock, IndexedBlockHeader, BlockHeader, IndexedTransaction};
 use storage::{SharedStore, TransactionOutputProvider, BlockHeaderProvider, BlockOrigin,
 	DuplexTransactionOutputProvider, NoopStore};
 use network::ConsensusParams;
@@ -105,15 +105,14 @@ impl BackwardsCompatibleChainVerifier {
 		prevout_provider: &T,
 		height: u32,
 		time: u32,
-		transaction: &Transaction,
+		transaction: &IndexedTransaction,
 	) -> Result<(), TransactionError> where T: TransactionOutputProvider {
-		let indexed_tx = transaction.clone().into();
 		// let's do preverification first
 		let deployments = BlockDeployments::new(&self.deployments, height, block_header_provider, &self.consensus);
 		let tx_verifier = MemoryPoolTransactionVerifier::new(&indexed_tx, &self.consensus, &deployments);
 		try!(tx_verifier.check());
 
-		let canon_tx = CanonTransaction::new(&indexed_tx);
+		let canon_tx = CanonTransaction::new(&transaction);
 		// now let's do full verification
 		let noop = NoopStore;
 		let output_store = DuplexTransactionOutputProvider::new(prevout_provider, &noop);

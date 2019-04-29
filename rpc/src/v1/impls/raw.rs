@@ -6,7 +6,7 @@ use v1::types::{RawTransaction, TransactionInput, TransactionOutput, Transaction
 use v1::types::H256;
 use v1::helpers::errors::{execution, invalid_params, transaction_not_found, transaction_of_side_branch};
 use global_script::Script;
-use chain::Transaction as GlobalTransaction;
+use chain::{Transaction as GlobalTransaction, IndexedTransaction as GlobalIndexedTransaction};
 use network::Network;
 use primitives::bytes::Bytes as GlobalBytes;
 use primitives::hash::H256 as GlobalH256;
@@ -101,7 +101,7 @@ impl RawClientCore {
 
 impl RawClientCoreApi for RawClientCore {
 	fn accept_transaction(&self, transaction: GlobalTransaction) -> Result<GlobalH256, String> {
-		self.local_sync_node.accept_transaction(transaction)
+		self.local_sync_node.accept_transaction(GlobalIndexedTransaction::from_raw(transaction))
 	}
 
 	fn create_raw_transaction(&self, inputs: Vec<TransactionInput>, outputs: TransactionOutputs, lock_time: Trailing<u32>) -> Result<GlobalTransaction, String> {

@@ -20,3 +20,5 @@ bitcrypto = { path = "../crypto" }
 [dev-dependencies]
 test-data = { path = "../test-data" }
 db = { path = "../db" }
+assert_matches = "1.3.0"
+chain = { path = "../chain", features = ["test-helpers"] }

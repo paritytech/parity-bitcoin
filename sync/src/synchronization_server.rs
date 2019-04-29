@@ -284,16 +284,16 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 				}
 			},
 			common::InventoryType::MessageBlock => {
-				if let Some(block) = self.storage.block(next_item.hash.clone().into()) {
+				if let Some(block) = self.storage.indexed_block(next_item.hash.clone().into()) {
 					trace!(target: "sync", "'getblocks' response to peer#{} is ready with block {}", peer_index, next_item.hash.to_reversed_str());
-					self.executor.execute(Task::Block(peer_index, block.into()));
+					self.executor.execute(Task::Block(peer_index, block));
 				} else {
 					notfound.inventory.push(next_item);
 				}
 			},
 			common::InventoryType::MessageFilteredBlock => {
-				if let Some(block) = self.storage.block(next_item.hash.clone().into()) {
-					let message_artefacts = self.peers.build_merkle_block(peer_index, &block.into());
+				if let Some(block) = self.storage.indexed_block(next_item.hash.clone().into()) {
+					let message_artefacts = self.peers.build_merkle_block(peer_index, &block);
 					if let Some(message_artefacts) = message_artefacts {
 						// send merkleblock first
 						trace!(target: "sync", "'getblocks' response to peer#{} is ready with merkleblock {}", peer_index, next_item.hash.to_reversed_str());

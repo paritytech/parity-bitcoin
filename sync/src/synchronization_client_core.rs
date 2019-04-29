@@ -5,7 +5,7 @@ use std::sync::Arc;
 use futures::Future;
 use parking_lot::Mutex;
 use time::precise_time_s;
-use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
+use chain::{IndexedBlockHeader, IndexedTransaction, IndexedBlock};
 use message::types;
 use message::common::{InventoryType, InventoryVector};
 use miner::transaction_fee_rate;
@@ -72,7 +72,7 @@ pub trait ClientCore {
 	fn on_transaction(&mut self, peer_index: PeerIndex, transaction: IndexedTransaction) -> Option<VecDeque<IndexedTransaction>>;
 	fn on_notfound(&mut self, peer_index: PeerIndex, message: types::NotFound);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: PeerIndex, future: EmptyBoxFuture);
-	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String>;
+	fn accept_transaction(&mut self, transaction: IndexedTransaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String>;
 	fn install_sync_listener(&mut self, listener: SyncListenerRef);
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>, final_blocks_requests: Option<Vec<H256>>);
 	fn try_switch_to_saturated_state(&mut self) -> bool;
@@ -291,7 +291,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		assert!(!message.headers.is_empty(), "This must be checked in incoming connection");
 
 		// transform to indexed headers
-		let mut headers: Vec<_> = message.headers.into_iter().map(IndexedBlockHeader::from).collect();
+		let mut headers: Vec<_> = message.headers.into_iter().map(IndexedBlockHeader::from_raw).collect();
 
 		// update peers to select next tasks
 		self.peers_tasks.on_headers_received(peer_index);
@@ -535,9 +535,9 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 	}
 
-	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String> {
-		let hash = transaction.hash();
-		match self.try_append_transaction(transaction.into(), true) {
+	fn accept_transaction(&mut self, transaction: IndexedTransaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String> {
+		let hash = transaction.hash;
+		match self.try_append_transaction(transaction, true) {
 			Err(AppendTransactionError::Orphan(_)) => Err("Cannot append transaction as its inputs are unknown".to_owned()),
 			Err(AppendTransactionError::Synchronizing) => Err("Cannot append transaction as node is not yet fully synchronized".to_owned()),
 			Ok(transactions) => {
@@ -1109,8 +1109,8 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				// relay block to our peers
 				if needs_relay && (self.state.is_saturated() || self.state.is_nearly_saturated()) {
 					for block_hash in insert_result.canonized_blocks_hashes {
-						if let Some(block) = self.chain.storage().block(block_hash.into()) {
-							self.executor.execute(Task::RelayNewBlock(block.into()));
+						if let Some(block) = self.chain.storage().indexed_block(block_hash.into()) {
+							self.executor.execute(Task::RelayNewBlock(block));
 						}
 					}
 				}

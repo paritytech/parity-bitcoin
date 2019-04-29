@@ -19,21 +19,25 @@ impl fmt::Debug for IndexedBlockHeader {
 	}
 }
 
+#[cfg(feature = "test-helpers")]
 impl From<BlockHeader> for IndexedBlockHeader {
 	fn from(header: BlockHeader) -> Self {
-		IndexedBlockHeader {
-			hash: header.hash(),
-			raw: header,
-		}
+		Self::from_raw(header)
 	}
 }
-
 impl IndexedBlockHeader {
 	pub fn new(hash: H256, header: BlockHeader) -> Self {
 		IndexedBlockHeader {
 			hash: hash,
 			raw: header,
 		}
+	}
+
+	/// Explicit conversion of the raw BlockHeader into IndexedBlockHeader.
+	///
+	/// Hashes the contents of block header.
+	pub fn from_raw(header: BlockHeader) -> Self {
+		IndexedBlockHeader::new(header.hash(), header)
 	}
 }
 

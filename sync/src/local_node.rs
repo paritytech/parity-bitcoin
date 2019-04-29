@@ -2,7 +2,7 @@ use std::sync::Arc;
 use parking_lot::{Mutex, Condvar};
 use time;
 use futures::{lazy, finished};
-use chain::{Transaction, IndexedTransaction, IndexedBlock};
+use chain::{IndexedTransaction, IndexedBlock};
 use message::types;
 use miner::BlockAssembler;
 use network::ConsensusParams;
@@ -263,7 +263,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 	}
 
 	/// Verify and then schedule new transaction
-	pub fn accept_transaction(&self, transaction: Transaction) -> Result<H256, String> {
+	pub fn accept_transaction(&self, transaction: IndexedTransaction) -> Result<H256, String> {
 		let sink_data = Arc::new(TransactionAcceptSinkData::default());
 		let sink = TransactionAcceptSink::new(sink_data.clone()).boxed();
 		{
@@ -427,7 +427,7 @@ pub mod tests {
 		let transaction: Transaction = test_data::TransactionBuilder::with_output(1).add_input(&genesis.transactions[0], 0).into();
 		let transaction_hash = transaction.hash();
 
-		let result = local_node.accept_transaction(transaction.clone());
+		let result = local_node.accept_transaction(transaction.clone().into());
 		assert_eq!(result, Ok(transaction_hash.clone()));
 
 		assert_eq!(executor.take_tasks(), vec![Task::RelayNewTransaction(transaction.into(), 83333333)]);
@@ -448,7 +448,7 @@ pub mod tests {
 		let peer_index1 = 0; local_node.on_connect(peer_index1, "test".into(), types::Version::default());
 		executor.take_tasks();
 
-		let result = local_node.accept_transaction(transaction);
+		let result = local_node.accept_transaction(transaction.into());
 		assert_eq!(result, Err("simulated".to_owned()));
 
 		assert_eq!(executor.take_tasks(), vec![]);

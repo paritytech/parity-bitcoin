@@ -9,7 +9,7 @@ use v1::helpers::errors::{block_not_found, block_at_height_not_found, transactio
 	transaction_output_not_found, transaction_of_side_branch};
 use jsonrpc_macros::Trailing;
 use jsonrpc_core::Error;
-use {storage, chain};
+use storage;
 use global_script::Script;
 use chain::OutPoint;
 use verification;
@@ -71,9 +71,8 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 	}
 
 	fn verbose_block(&self, hash: GlobalH256) -> Option<VerboseBlock> {
-		self.storage.block(hash.into())
+		self.storage.indexed_block(hash.into())
 			.map(|block| {
-				let block: chain::IndexedBlock = block.into();
 				let height = self.storage.block_number(block.hash());
 				let confirmations = match height {
 					Some(block_number) => (self.storage.best_block().number - block_number + 1) as i64,
