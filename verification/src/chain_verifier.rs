@@ -109,7 +109,7 @@ impl BackwardsCompatibleChainVerifier {
 	) -> Result<(), TransactionError> where T: TransactionOutputProvider {
 		// let's do preverification first
 		let deployments = BlockDeployments::new(&self.deployments, height, block_header_provider, &self.consensus);
-		let tx_verifier = MemoryPoolTransactionVerifier::new(&indexed_tx, &self.consensus, &deployments);
+		let tx_verifier = MemoryPoolTransactionVerifier::new(&transaction, &self.consensus, &deployments);
 		try!(tx_verifier.check());
 
 		let canon_tx = CanonTransaction::new(&transaction);

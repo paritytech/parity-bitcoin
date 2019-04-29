@@ -13,8 +13,8 @@ use primitives::hash::H256;
 use miner::BlockTemplate;
 use verification::median_timestamp_inclusive;
 use synchronization_peers::{TransactionAnnouncementType, BlockAnnouncementType};
-use types::{PeerIndex, RequestId, StorageRef, MemoryPoolRef, PeersRef, ExecutorRef,
-	ClientRef, ServerRef, SynchronizationStateRef, SyncListenerRef, BlockHeight};
+use types::{PeerIndex, RequestId, StorageRef, MemoryPoolRef, PeersRef,
+	ClientRef, ServerRef, SynchronizationStateRef, SyncListenerRef};
 
 /// Local synchronization node
 pub struct LocalNode<U: Server, V: Client> {
@@ -363,7 +363,7 @@ pub mod tests {
 		};
 		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
 		let client = SynchronizationClient::new(sync_state.clone(), client_core, verifier);
-		let local_node = LocalNode::new(ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore), storage, memory_pool, sync_peers, sync_state, executor.clone(), client, server.clone());
+		let local_node = LocalNode::new(ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore), storage, memory_pool, sync_peers, sync_state, client, server.clone());
 		(executor, server, local_node)
 	}
 
