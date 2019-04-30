@@ -32,6 +32,7 @@ impl Block {
 	}
 
 	/// Returns block's witness merkle root.
+	#[cfg(any(test, feature = "test-helpers"))]
 	pub fn witness_merkle_root(&self) -> H256 {
 		let hashes = match self.transactions.split_first() {
 			None => vec![],

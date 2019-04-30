@@ -28,7 +28,7 @@ pub enum Task {
 	/// Send merkleblock
 	MerkleBlock(PeerIndex, H256, types::MerkleBlock),
 	/// Send cmpcmblock
-	CompactBlock(PeerIndex, types::CompactBlock),
+	CompactBlock(PeerIndex, H256, types::CompactBlock),
 	/// Send block with witness data
 	WitnessBlock(PeerIndex, IndexedBlock),
 	/// Send transaction
@@ -112,9 +112,8 @@ impl LocalSynchronizationTaskExecutor {
 		}
 	}
 
-	fn execute_compact_block(&self, peer_index: PeerIndex, block: types::CompactBlock) {
+	fn execute_compact_block(&self, peer_index: PeerIndex, hash: H256, block: types::CompactBlock) {
 		if let Some(connection) = self.peers.connection(peer_index) {
-			let hash = block.header.header.hash();
 			trace!(target: "sync", "Sending compact block {} to peer#{}", hash.to_reversed_str(), peer_index);
 			self.peers.hash_known_as(peer_index, hash, KnownHashType::CompactBlock);
 			connection.send_compact_block(&block);
@@ -199,7 +198,7 @@ impl LocalSynchronizationTaskExecutor {
 					]), None);
 				},
 				BlockAnnouncementType::SendCompactBlock => if let Some(compact_block) = self.peers.build_compact_block(peer_index, &block) {
-					self.execute_compact_block(peer_index, compact_block);
+					self.execute_compact_block(peer_index, *block.hash(), compact_block);
 				},
 				BlockAnnouncementType::DoNotAnnounce => (),
 			}
@@ -227,7 +226,7 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 			Task::MemoryPool(peer_index) => self.execute_memorypool(peer_index),
 			Task::Block(peer_index, block) => self.execute_block(peer_index, block),
 			Task::MerkleBlock(peer_index, hash, block) => self.execute_merkleblock(peer_index, hash, block),
-			Task::CompactBlock(peer_index, block) => self.execute_compact_block(peer_index, block),
+			Task::CompactBlock(peer_index, hash, block) => self.execute_compact_block(peer_index, hash, block),
 			Task::WitnessBlock(peer_index, block) => self.execute_witness_block(peer_index, block),
 			Task::Transaction(peer_index, transaction) => self.execute_transaction(peer_index, transaction),
 			Task::WitnessTransaction(peer_index, transaction) => self.execute_witness_transaction(peer_index, transaction),

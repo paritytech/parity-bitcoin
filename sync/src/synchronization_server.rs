@@ -313,10 +313,10 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 			},
 			common::InventoryType::MessageCompactBlock => {
 				if let Some(block) = self.storage.block(next_item.hash.clone().into()) {
-					let message = self.peers.build_compact_block(peer_index, &block.into());
+					let message = self.peers.build_compact_block(peer_index, &block);
 					if let Some(message) = message {
 						trace!(target: "sync", "'getblocks' response to peer#{} is ready with compactblock {}", peer_index, next_item.hash.to_reversed_str());
-						self.executor.execute(Task::CompactBlock(peer_index, message));
+						self.executor.execute(Task::CompactBlock(peer_index, *block.hash(), message));
 					}
 				} else {
 					notfound.inventory.push(next_item);
@@ -936,7 +936,7 @@ pub mod tests {
 		let tasks = sync_executor.take_tasks();
 		assert_eq!(tasks.len(), 1);
 		match tasks[0] {
-			Task::CompactBlock(_, _) => (),
+			Task::CompactBlock(_, _, _) => (),
 			_ => panic!("unexpected"),
 		}
 	}

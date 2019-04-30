@@ -335,7 +335,7 @@ impl<'a> BlockWitness<'a> {
 			let commitment = coinbase.raw.outputs.iter().rev()
 				.find(|output| script::is_witness_commitment_script(&output.script_pubkey));
 			if let Some(commitment) = commitment {
-				let witness_merkle_root = self.block.raw().witness_merkle_root();
+				let witness_merkle_root = self.block.witness_merkle_root();
 				if coinbase.raw.inputs.get(0).map(|i| i.script_witness.len()).unwrap_or_default() != 1 ||
 					coinbase.raw.inputs[0].script_witness[0].len() != 32 {
 					return Err(Error::WitnessInvalidNonceSize);
