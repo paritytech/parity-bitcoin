@@ -280,7 +280,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Try to queue synchronization of unknown blocks when blocks headers are received.
-	fn on_headers(&mut self, peer_index: PeerIndex, headers: Vec<IndexedBlockHeader>) -> Option<Vec<IndexedBlockHeader>> {
+	fn on_headers(&mut self, peer_index: PeerIndex, mut headers: Vec<IndexedBlockHeader>) {
 		assert!(!headers.is_empty(), "This must be checked in incoming connection");
 
 		// update peers to select next tasks
@@ -1938,7 +1938,7 @@ pub mod tests {
 		assert_eq!(core.lock().information().chain.transactions.transactions_count, 1);
 
 		let b1 = test_data::block_h1();
-		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.into()]));
+		sync.on_headers(1, vec![b1.block_header.into()]);
 
 		assert!(core.lock().information().state.is_nearly_saturated());
 
