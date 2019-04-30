@@ -307,6 +307,10 @@ impl Protocol for SyncProtocol {
 			self.inbound_connection.on_compact_block(message);
 		}
 		else if command == &types::GetBlockTxn::command() {
+			if self.state.synchronizing() {
+				return Ok(());
+			}
+
 			let message: types::GetBlockTxn = try!(deserialize_payload(payload, version));
 			self.inbound_connection.on_get_block_txn(message);
 		}
