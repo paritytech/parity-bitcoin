@@ -5,7 +5,6 @@ use app_dirs::{app_dir, AppDataType};
 use {storage, APP_INFO};
 use db;
 use config::Config;
-use chain::IndexedBlock;
 
 pub fn open_db(data_dir: &Option<String>, db_cache: usize) -> storage::SharedStore {
 	let db_path = match *data_dir {
@@ -26,7 +25,7 @@ pub fn node_table_path(cfg: &Config) -> PathBuf {
 
 pub fn init_db(cfg: &Config) -> Result<(), String> {
 	// insert genesis block if db is empty
-	let genesis_block = IndexedBlock::from_raw(cfg.network.genesis_block());
+	let genesis_block = cfg.network.genesis_block();
 	match cfg.db.block_hash(0) {
 		Some(ref db_genesis_block_hash) if db_genesis_block_hash != genesis_block.hash() => Err("Trying to open database with incompatible genesis block".into()),
 		Some(_) => Ok(()),

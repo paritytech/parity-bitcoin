@@ -1,7 +1,7 @@
 use std::{io, cmp, fmt};
 use hash::H256;
 use ser::{Deserializable, Reader, Error as ReaderError};
-use block_header::BlockHeader;
+use block_header::{BlockHeader, block_header_hash};
 use read_and_hash::ReadAndHash;
 
 #[derive(Clone)]
@@ -37,7 +37,7 @@ impl IndexedBlockHeader {
 	///
 	/// Hashes the contents of block header.
 	pub fn from_raw(header: BlockHeader) -> Self {
-		IndexedBlockHeader::new(header.hash(), header)
+		IndexedBlockHeader::new(block_header_hash(&header), header)
 	}
 }
 

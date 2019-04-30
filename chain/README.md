@@ -153,7 +153,6 @@ Whenever a miner mines a block, it includes a special transaction called a coinb
 ### Block (block.rs)
 A relatively straight forward implementation of the data structure described above. A `block` is a rust `struct`. It implements the following traits:
 * ```From<&'static  str>```: this trait takes in a string and outputs a `block`. It is implemented via the `from` function which deserializes the received string into a `block` data structure. Read more about serialization [here](https://github.com/bitcoinbook/bitcoinbook/blob/develop/ch06.asciidoc#transaction-serializationoutputs) (in the context of transactions).
-* ```RepresentH256```: this trait takes a `block` data structure and hashes it, returning the hash.
 
 The `block` has a few methods of its own. The entirety of these are simple getter methods.
 

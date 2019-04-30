@@ -250,7 +250,7 @@ impl<U, V> LocalNode<U, V> where U: Server, V: Client {
 	pub fn get_block_template(&self) -> BlockTemplate {
 		let previous_block_height = self.storage.best_block().number;
 		let previous_block_header = self.storage.block_header(previous_block_height.into()).expect("best block is in db; qed");
-		let median_timestamp = median_timestamp_inclusive(previous_block_header.hash(), self.storage.as_block_header_provider());
+		let median_timestamp = median_timestamp_inclusive(previous_block_header.hash, self.storage.as_block_header_provider());
 		let new_block_height = previous_block_height + 1;
 		let max_block_size = self.consensus.fork.max_block_size(new_block_height, median_timestamp);
 		let block_assembler = BlockAssembler {

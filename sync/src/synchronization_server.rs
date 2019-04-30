@@ -284,7 +284,7 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 				}
 			},
 			common::InventoryType::MessageBlock => {
-				if let Some(block) = self.storage.indexed_block(next_item.hash.clone().into()) {
+				if let Some(block) = self.storage.block(next_item.hash.clone().into()) {
 					trace!(target: "sync", "'getblocks' response to peer#{} is ready with block {}", peer_index, next_item.hash.to_reversed_str());
 					self.executor.execute(Task::Block(peer_index, block));
 				} else {
@@ -292,12 +292,12 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 				}
 			},
 			common::InventoryType::MessageFilteredBlock => {
-				if let Some(block) = self.storage.indexed_block(next_item.hash.clone().into()) {
+				if let Some(block) = self.storage.block(next_item.hash.clone().into()) {
 					let message_artefacts = self.peers.build_merkle_block(peer_index, &block);
 					if let Some(message_artefacts) = message_artefacts {
 						// send merkleblock first
 						trace!(target: "sync", "'getblocks' response to peer#{} is ready with merkleblock {}", peer_index, next_item.hash.to_reversed_str());
-						self.executor.execute(Task::MerkleBlock(peer_index, message_artefacts.merkleblock));
+						self.executor.execute(Task::MerkleBlock(peer_index, *block.hash(), message_artefacts.merkleblock));
 
 						// also send all matched transactions
 						for matched_transaction in message_artefacts.matching_transactions {
@@ -368,6 +368,7 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 				.map(|block_hash| self.storage.block_header(block_hash.into()))
 				.take_while(Option::is_some)
 				.map(Option::unwrap)
+				.map(|h| h.raw)
 				.collect();
 			// empty inventory messages are invalid according to regtests, while empty headers messages are valid
 			trace!(target: "sync", "'getheaders' response to peer#{} is ready with {} headers", peer_index, headers.len());
@@ -440,7 +441,7 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 		self.executor.execute(Task::BlockTxn(peer_index, types::BlockTxn {
 			request: common::BlockTransactions {
 				blockhash: message.request.blockhash,
-				transactions: transactions,
+				transactions: transactions.into_iter().map(|tx| tx.raw).collect(),
 			}
 		}));
 	}
@@ -461,11 +462,11 @@ impl<TExecutor> ServerTaskExecutor<TExecutor> where TExecutor: TaskExecutor {
 					Some(block_header) => block_header,
 				};
 
-				if let Some(block_number) = self.storage.block_number(&block_header.previous_header_hash) {
+				if let Some(block_number) = self.storage.block_number(&block_header.raw.previous_header_hash) {
 					return Some(block_number);
 				}
 
-				block_hash = block_header.previous_header_hash;
+				block_hash = block_header.raw.previous_header_hash;
 			}
 		}
 
@@ -875,7 +876,7 @@ pub mod tests {
 			let mut index = 0;
 			let tasks = sync_executor.take_tasks();
 			match tasks[index] {
-				Task::MerkleBlock(_, _) => {
+				Task::MerkleBlock(_, _, _) => {
 					if get_tx1 {
 						index += 1;
 						match tasks[index] {
@@ -889,7 +890,7 @@ pub mod tests {
 			index += 1;
 
 			match tasks[index] {
-				Task::MerkleBlock(_, _) => {
+				Task::MerkleBlock(_, _, _) => {
 					if get_tx2 {
 						index += 1;
 						match tasks[index] {

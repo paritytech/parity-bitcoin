@@ -114,7 +114,7 @@ impl RawClientCoreApi for RawClientCore {
 			None => return Err(transaction_not_found(hash)),
 		};
 
-		let transaction_bytes = serialize(&transaction);
+		let transaction_bytes = serialize(&transaction.raw);
 		let raw_transaction = RawTransaction::new(transaction_bytes.take());
 
 		if verbose {
@@ -133,11 +133,11 @@ impl RawClientCoreApi for RawClientCore {
 				return Err(transaction_not_found(hash));
 			}
 
-			let txid: H256 = transaction.witness_hash().into();
-			let hash: H256 = transaction.hash().into();
-			let blockhash: H256 = block_header.hash().into();
+			let txid: H256 = transaction.raw.witness_hash().into();
+			let hash: H256 = transaction.hash.into();
+			let blockhash: H256 = block_header.hash.into();
 
-			let inputs = transaction.clone().inputs
+			let inputs = transaction.raw.inputs.clone()
 				.into_iter()
 				.map(|input| {
 					let txid: H256 = input.previous_output.hash.into();
@@ -159,7 +159,7 @@ impl RawClientCoreApi for RawClientCore {
 					}
 				}).collect();
 
-			let outputs = transaction.clone().outputs
+			let outputs = transaction.raw.outputs.clone()
 				.into_iter()
 				.enumerate()
 				.map(|(index, output)| {
@@ -191,16 +191,16 @@ impl RawClientCoreApi for RawClientCore {
 				hex: raw_transaction,
 				txid: txid.reversed(),
 				hash: hash.reversed(),
-				size: transaction.serialized_size(),
-				vsize: transaction.serialized_size_with_flags(SERIALIZE_TRANSACTION_WITNESS),
-				version: transaction.version,
-				locktime: transaction.lock_time as i32,
+				size: transaction.raw.serialized_size(),
+				vsize: transaction.raw.serialized_size_with_flags(SERIALIZE_TRANSACTION_WITNESS),
+				version: transaction.raw.version,
+				locktime: transaction.raw.lock_time as i32,
 				vin: inputs,
 				vout: outputs,
 				blockhash: blockhash.reversed(),
 				confirmations: best_block.number - meta.height() + 1,
-				time: block_header.time,
-				blocktime: block_header.time,
+				time: block_header.raw.time,
+				blocktime: block_header.raw.time,
 			}))
 		} else {
 			Ok(GetRawTransactionResponse::Raw(raw_transaction))

@@ -1,4 +1,4 @@
-use chain::BlockHeader;
+use chain::IndexedBlockHeader;
 use {BlockRef, BlockHeaderProvider};
 
 pub struct BlockIterator<'a> {
@@ -18,7 +18,7 @@ impl<'a> BlockIterator<'a> {
 }
 
 impl<'a> Iterator for BlockIterator<'a> {
-	type Item = (u32, BlockHeader);
+	type Item = (u32, IndexedBlockHeader);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let result = self.headers.block_header(BlockRef::Number(self.block));

@@ -909,7 +909,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			}
 
 			last_known_hash = &header.hash;
-			headers_provider.append_header(header.hash.clone(), header.raw.clone());
+			headers_provider.append_header(header.hash.clone(), header.clone());
 		}
 
 		BlocksHeadersVerificationResult::Success
@@ -1102,7 +1102,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				// relay block to our peers
 				if needs_relay && (self.state.is_saturated() || self.state.is_nearly_saturated()) {
 					for block_hash in insert_result.canonized_blocks_hashes {
-						if let Some(block) = self.chain.storage().indexed_block(block_hash.into()) {
+						if let Some(block) = self.chain.storage().block(block_hash.into()) {
 							self.executor.execute(Task::RelayNewBlock(block));
 						}
 					}

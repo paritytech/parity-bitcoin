@@ -20,10 +20,6 @@ mod indexed_block;
 mod indexed_header;
 mod indexed_transaction;
 
-pub trait RepresentH256 {
-	fn h256(&self) -> hash::H256;
-}
-
 pub use primitives::{hash, bytes, bigint, compact};
 
 pub use block::Block;

@@ -120,7 +120,7 @@ impl BackwardsCompatibleChainVerifier {
 			.expect("height is the height of future block of new tx; genesis block can't be in the future; qed");
 		let previous_block_header = block_header_provider.block_header(previous_block_number.into())
 			.expect("blocks up to height should be in db; qed");
-		let median_time_past = median_timestamp_inclusive(previous_block_header.hash(), block_header_provider);
+		let median_time_past = median_timestamp_inclusive(previous_block_header.hash, block_header_provider);
 		let tx_acceptor = MemoryPoolTransactionAcceptor::new(
 			self.store.as_transaction_meta_provider(),
 			output_store,

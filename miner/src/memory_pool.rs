@@ -819,8 +819,8 @@ impl TransactionProvider for MemoryPool {
 		self.get(hash).map(|t| serialize(t))
 	}
 
-	fn transaction(&self, hash: &H256) -> Option<Transaction> {
-		self.get(hash).cloned()
+	fn transaction(&self, hash: &H256) -> Option<IndexedTransaction> {
+		self.get(hash).cloned().map(|tx| IndexedTransaction::new(*hash, tx))
 	}
 }
 

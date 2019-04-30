@@ -142,7 +142,7 @@ fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, num
 	let number = first_of_the_period(number, miner_confirmation_window);
 
 	let hash = match headers.block_header(BlockRef::Number(number)) {
-		Some(header) => header.hash(),
+		Some(header) => header.hash,
 		None => return ThresholdState::Defined,
 	};
 
@@ -189,7 +189,7 @@ fn first_of_the_period(block: u32, miner_confirmation_window: u32) -> u32 {
 fn count_deployment_matches(block_number: u32, blocks: &BlockHeaderProvider, deployment: Deployment, window: u32) -> usize {
 	BlockAncestors::new(BlockRef::Number(block_number), blocks)
 		.take(window as usize)
-		.filter(|header| deployment.matches(header.version))
+		.filter(|header| deployment.matches(header.raw.version))
 		.count()
 }
 
@@ -224,7 +224,7 @@ impl<'a> Iterator for ThresholdIterator<'a> {
 			None => return None,
 		};
 
-		let median = median_timestamp(&header, self.headers);
+		let median = median_timestamp(&header.raw, self.headers);
 
 		match self.last_state {
 			ThresholdState::Defined => {
@@ -254,7 +254,7 @@ impl<'a> Iterator for ThresholdIterator<'a> {
 
 		let result = DeploymentState {
 			block_number: block_number,
-			block_hash: header.hash(),
+			block_hash: header.hash,
 			state: self.last_state,
 		};
 
@@ -266,7 +266,7 @@ impl<'a> Iterator for ThresholdIterator<'a> {
 mod tests {
 	use std::sync::atomic::{AtomicUsize, Ordering};
 	use std::collections::HashMap;
-	use chain::BlockHeader;
+	use chain::{BlockHeader, IndexedBlockHeader};
 	use storage::{BlockHeaderProvider, BlockRef};
 	use network::Deployment;
 	use hash::H256;
@@ -308,12 +308,12 @@ mod tests {
 			unimplemented!()
 		}
 
-		fn block_header(&self, block_ref: BlockRef) -> Option<BlockHeader> {
+		fn block_header(&self, block_ref: BlockRef) -> Option<IndexedBlockHeader> {
 			self.request_count.fetch_add(1, Ordering::Relaxed);
 			match block_ref {
 				BlockRef::Number(height) => self.by_height.get(height as usize).cloned(),
 				BlockRef::Hash(hash) => self.by_hash.get(&hash).and_then(|height| self.by_height.get(*height)).cloned(),
-			}
+			}.map(Into::into)
 		}
 	}
 

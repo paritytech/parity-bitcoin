@@ -2,7 +2,7 @@ use std::{cmp, io, fmt};
 use hash::H256;
 use heapsize::HeapSizeOf;
 use ser::{Deserializable, Reader, Error as ReaderError};
-use transaction::Transaction;
+use transaction::{Transaction, transaction_hash};
 use read_and_hash::ReadAndHash;
 
 #[derive(Default, Clone)]
@@ -46,7 +46,7 @@ impl IndexedTransaction {
 	/// Hashes transaction contents.
 	pub fn from_raw<T>(transaction: T) -> Self where Transaction: From<T> {
 		let transaction = Transaction::from(transaction);
-		Self::new(transaction.hash(), transaction)
+		Self::new(transaction_hash(&transaction), transaction)
 	}
 }
 

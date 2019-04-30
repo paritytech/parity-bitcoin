@@ -44,7 +44,7 @@ pub fn fetch(benchmark: &mut Benchmark) {
 	benchmark.start();
 	for _ in 0..BLOCKS {
 		let block = store.block(BlockRef::Hash(hashes[0].clone())).unwrap();
-		assert_eq!(&block.hash(), &hashes[0]);
+		assert_eq!(block.hash(), &hashes[0]);
 	}
 	benchmark.stop();
 }

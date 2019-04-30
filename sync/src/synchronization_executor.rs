@@ -2,6 +2,7 @@ use std::sync::Arc;
 use chain::{IndexedBlock, IndexedTransaction};
 use message::common::InventoryVector;
 use message::types;
+use primitives::hash::H256;
 use synchronization_peers::{BlockAnnouncementType, TransactionAnnouncementType};
 use types::{PeerIndex, PeersRef, RequestId};
 use utils::KnownHashType;
@@ -25,7 +26,7 @@ pub enum Task {
 	/// Send block
 	Block(PeerIndex, IndexedBlock),
 	/// Send merkleblock
-	MerkleBlock(PeerIndex, types::MerkleBlock),
+	MerkleBlock(PeerIndex, H256, types::MerkleBlock),
 	/// Send cmpcmblock
 	CompactBlock(PeerIndex, types::CompactBlock),
 	/// Send block with witness data
@@ -103,9 +104,8 @@ impl LocalSynchronizationTaskExecutor {
 		}
 	}
 
-	fn execute_merkleblock(&self, peer_index: PeerIndex, block: types::MerkleBlock) {
+	fn execute_merkleblock(&self, peer_index: PeerIndex, hash: H256, block: types::MerkleBlock) {
 		if let Some(connection) = self.peers.connection(peer_index) {
-			let hash = block.block_header.hash();
 			trace!(target: "sync", "Sending merkle block {} to peer#{}", hash.to_reversed_str(), peer_index);
 			self.peers.hash_known_as(peer_index, hash, KnownHashType::Block);
 			connection.send_merkleblock(&block);
@@ -226,7 +226,7 @@ impl TaskExecutor for LocalSynchronizationTaskExecutor {
 			Task::GetHeaders(peer_index, getheaders) => self.execute_getheaders(peer_index, getheaders),
 			Task::MemoryPool(peer_index) => self.execute_memorypool(peer_index),
 			Task::Block(peer_index, block) => self.execute_block(peer_index, block),
-			Task::MerkleBlock(peer_index, block) => self.execute_merkleblock(peer_index, block),
+			Task::MerkleBlock(peer_index, hash, block) => self.execute_merkleblock(peer_index, hash, block),
 			Task::CompactBlock(peer_index, block) => self.execute_compact_block(peer_index, block),
 			Task::WitnessBlock(peer_index, block) => self.execute_witness_block(peer_index, block),
 			Task::Transaction(peer_index, transaction) => self.execute_transaction(peer_index, transaction),

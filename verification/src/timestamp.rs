@@ -15,7 +15,7 @@ pub fn median_timestamp(header: &BlockHeader, store: &BlockHeaderProvider) -> u3
 pub fn median_timestamp_inclusive(previous_header_hash: H256, store: &BlockHeaderProvider) -> u32 {
 	let mut timestamps: Vec<_> = BlockAncestors::new(previous_header_hash.clone().into(), store)
 		.take(11)
-		.map(|header| header.time)
+		.map(|header| header.raw.time)
 		.collect();
 
 	if timestamps.is_empty() {
