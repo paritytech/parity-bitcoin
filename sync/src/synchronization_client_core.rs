@@ -67,7 +67,7 @@ pub trait ClientCore {
 	fn on_connect(&mut self, peer_index: PeerIndex);
 	fn on_disconnect(&mut self, peer_index: PeerIndex);
 	fn on_inventory(&self, peer_index: PeerIndex, message: types::Inv);
-	fn on_headers(&mut self, peer_index: PeerIndex, message: types::Headers);
+	fn on_headers(&mut self, peer_index: PeerIndex, message: Vec<IndexedBlockHeader>);
 	fn on_block(&mut self, peer_index: PeerIndex, block: IndexedBlock) -> Option<VecDeque<IndexedBlock>>;
 	fn on_transaction(&mut self, peer_index: PeerIndex, transaction: IndexedTransaction) -> Option<VecDeque<IndexedTransaction>>;
 	fn on_notfound(&mut self, peer_index: PeerIndex, message: types::NotFound);
@@ -280,11 +280,8 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Try to queue synchronization of unknown blocks when blocks headers are received.
-	fn on_headers(&mut self, peer_index: PeerIndex, message: types::Headers) {
-		assert!(!message.headers.is_empty(), "This must be checked in incoming connection");
-
-		// transform to indexed headers
-		let mut headers: Vec<_> = message.headers.into_iter().map(IndexedBlockHeader::from_raw).collect();
+	fn on_headers(&mut self, peer_index: PeerIndex, headers: Vec<IndexedBlockHeader>) -> Option<Vec<IndexedBlockHeader>> {
+		assert!(!headers.is_empty(), "This must be checked in incoming connection");
 
 		// update peers to select next tasks
 		self.peers_tasks.on_headers_received(peer_index);

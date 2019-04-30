@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use parking_lot::Mutex;
-use chain::{IndexedTransaction, IndexedBlock};
+use chain::{IndexedTransaction, IndexedBlock, IndexedBlockHeader};
 use message::types;
 use synchronization_executor::TaskExecutor;
 use synchronization_verifier::{Verifier, TransactionVerificationSink};
@@ -124,7 +124,7 @@ pub trait Client : Send + Sync + 'static {
 	fn on_connect(&self, peer_index: PeerIndex);
 	fn on_disconnect(&self, peer_index: PeerIndex);
 	fn on_inventory(&self, peer_index: PeerIndex, message: types::Inv);
-	fn on_headers(&self, peer_index: PeerIndex, message: types::Headers);
+	fn on_headers(&self, peer_index: PeerIndex, headers: Vec<IndexedBlockHeader>);
 	fn on_block(&self, peer_index: PeerIndex, block: IndexedBlock);
 	fn on_transaction(&self, peer_index: PeerIndex, transaction: IndexedTransaction);
 	fn on_notfound(&self, peer_index: PeerIndex, message: types::NotFound);
@@ -158,8 +158,8 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().on_inventory(peer_index, message);
 	}
 
-	fn on_headers(&self, peer_index: PeerIndex, message: types::Headers) {
-		self.core.lock().on_headers(peer_index, message);
+	fn on_headers(&self, peer_index: PeerIndex, headers: Vec<IndexedBlockHeader>) {
+		self.core.lock().on_headers(peer_index, headers);
 	}
 
 	fn on_block(&self, peer_index: PeerIndex, block: IndexedBlock) {

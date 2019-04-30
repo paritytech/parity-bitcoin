@@ -1,4 +1,4 @@
-use chain::{IndexedTransaction, IndexedBlock};
+use chain::{IndexedTransaction, IndexedBlock, IndexedBlockHeader};
 use message::types;
 use p2p::{InboundSyncConnection, InboundSyncConnectionRef, InboundSyncConnectionStateRef};
 use types::{PeersRef, LocalNodeRef, PeerIndex, RequestId};
@@ -103,7 +103,8 @@ impl InboundSyncConnection for InboundConnection {
 			return;
 		}
 
-		self.node.on_headers(self.peer_index, message);
+		let headers = message.headers.into_iter().map(IndexedBlockHeader::from_raw).collect();
+		self.node.on_headers(self.peer_index, headers);
 	}
 
 	fn on_mempool(&self, message: types::MemPool) {

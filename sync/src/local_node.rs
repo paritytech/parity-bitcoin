@@ -2,7 +2,7 @@ use std::sync::Arc;
 use parking_lot::{Mutex, Condvar};
 use time;
 use futures::{lazy, finished};
-use chain::{IndexedTransaction, IndexedBlock};
+use chain::{IndexedTransaction, IndexedBlock, IndexedBlockHeader};
 use message::types;
 use miner::BlockAssembler;
 use network::ConsensusParams;
@@ -94,9 +94,9 @@ impl<U, V> LocalNode<U, V> where U: Server, V: Client {
 	}
 
 	/// When headers message is received
-	pub fn on_headers(&self, peer_index: PeerIndex, message: types::Headers) {
-		trace!(target: "sync", "Got `headers` message from peer#{}. Headers len: {}", peer_index, message.headers.len());
-		self.client.on_headers(peer_index, message);
+	pub fn on_headers(&self, peer_index: PeerIndex, headers: Vec<IndexedBlockHeader>) {
+		trace!(target: "sync", "Got `headers` message from peer#{}. Headers len: {}", peer_index, headers.len());
+		self.client.on_headers(peer_index, headers);
 	}
 
 	/// When transaction is received
