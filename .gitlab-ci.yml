@@ -45,6 +45,15 @@ linux-stable-test:
   <<:                              *test_tags
   script:
     - rustup default stable
+    - echo 'Building in release mode' && echo -en 'gitlab_fold:start:build.release'
+    - time cargo build --release && strip target/release/pbtc
+    - echo 'gitlab_fold:end:build.release'
+    - echo 'Running regtests from ./tools/regtests.sh' && echo -en 'gitlab_fold:start:regtests'
+    - time ./tools/regtests.sh
+    - echo -en 'gitlab_fold:end:regtests'
+    - echo 'Running bench from ./tools/bench.sh' && echo -en 'gitlab_fold:start:bench'
+    - time ./tools/bench.sh
+    - echo -en 'gitlab_fold:end:bench'
     - echo 'Running tests' && echo -en 'gitlab_fold:start:tests'
     - time cargo test --all
     - echo -en 'gitlab_fold:end:tests'
