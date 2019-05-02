@@ -3,9 +3,12 @@ pub enum Error {
 	/// Low level database error
 	#[display(fmt = "Database error: {}", _0)]
 	DatabaseError(String),
-	/// Invalid block
+	/// Cannot canonize block
 	#[display(fmt = "Cannot canonize block")]
 	CannotCanonize,
+	/// Cannot decanonize block
+	#[display(fmt = "Cannot decanonize block")]
+	CannotDecanonize,
 	/// Uknown parent
 	#[display(fmt = "Block parent is unknown")]
 	UnknownParent,

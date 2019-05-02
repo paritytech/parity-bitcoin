@@ -9,7 +9,7 @@ use super::Error;
 use synchronization_chain::Chain;
 use synchronization_verifier::{Verifier, SyncVerifier, VerificationTask,
 	VerificationSink, BlockVerificationSink, TransactionVerificationSink};
-use types::{PeerIndex, StorageRef};
+use types::StorageRef;
 use utils::OrphanBlocksPool;
 use VerificationParameters;
 
@@ -45,7 +45,7 @@ struct BlocksWriterSinkData {
 impl BlocksWriter {
 	/// Create new synchronous blocks writer
 	pub fn new(storage: StorageRef, consensus: ConsensusParams, verification_params: VerificationParameters) -> BlocksWriter {
-		let sink_data = Arc::new(Mutex::new(BlocksWriterSinkData::new(storage.clone())));
+		let sink_data = Arc::new(Mutex::new(BlocksWriterSinkData::new(storage.clone(), consensus.clone())));
 		let sink = Arc::new(BlocksWriterSink::new(sink_data.clone()));
 		let verifier = SyncVerifier::new(consensus, storage.clone(), sink, verification_params);
 		BlocksWriter {
@@ -78,7 +78,7 @@ impl BlocksWriter {
 		verification_queue.push_front(block);
 		while let Some(block) = verification_queue.pop_front() {
 			self.verifier.verify_block(block);
-			if let Some(err) = self.sink.error() {
+			if let Some(err) = self.sink.lock().error() {
 				return Err(err);
 			}
 		}
@@ -98,9 +98,9 @@ impl BlocksWriterSink {
 
 impl BlocksWriterSinkData {
 	/// Create new blocks writer data
-	pub fn new(storage: StorageRef) -> Self {
+	pub fn new(storage: StorageRef, consensus: ConsensusParams) -> Self {
 		BlocksWriterSinkData {
-			chain: Chain::new(storage, Default::default()),
+			chain: Chain::new(storage, consensus, Default::default()),
 			err: None,
 		}
 	}
@@ -213,13 +213,13 @@ mod tests {
 		// (1) b0 ---> (2) b1
 		//        \--> (3) b2 ---> (4 - reorg) b3
 		let b0 = test_data::block_builder().header().build().build();
-		let b1 = test_data::block_builder().header().nonce(1.into()).parent(b0.hash()).build().build();
-		let b2 = test_data::block_builder().header().nonce(2.into()).parent(b0.hash()).build().build();
+		let b1 = test_data::block_builder().header().nonce(1).parent(b0.hash()).build().build();
+		let b2 = test_data::block_builder().header().nonce(2).parent(b0.hash()).build().build();
 		let b3 = test_data::block_builder().header().parent(b2.hash()).build().build();
 
 		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![b0.into()]));
-		let mut blocks_target = BlocksWriter::new(db.clone(), ConsensusParams::new(Network::Testnet), VerificationParameters {
-			verification_level: VerificationLevel::NO_VERIFICATION,
+		let mut blocks_target = BlocksWriter::new(db.clone(), ConsensusParams::new(Network::Testnet, ConsensusFork::BitcoinCore), VerificationParameters {
+			verification_level: VerificationLevel::NoVerification,
 			verification_edge: 0u8.into(),
 		});
 		assert_eq!(blocks_target.append_block(b1.into()), Ok(()));
