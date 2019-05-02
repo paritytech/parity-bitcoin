@@ -92,7 +92,8 @@ pub struct SignedTransactionInput {
 	/// Sequence number
 	pub sequence: u32,
 	/// Hex-encoded witness data (if any)
-	pub txinwitness: Vec<Bytes>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub txinwitness: Option<Vec<Bytes>>,
 }
 
 /// Signed transaction output
@@ -111,7 +112,8 @@ pub struct SignedTransactionOutput {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Transaction {
 	/// Raw transaction
-	pub hex: RawTransaction,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub hex: Option<RawTransaction>,
 	/// The transaction id (same as provided)
 	pub txid: H256,
 	/// The transaction hash (differs from txid for witness transactions)
@@ -129,13 +131,17 @@ pub struct Transaction {
 	/// Transaction outputs
 	pub vout: Vec<SignedTransactionOutput>,
 	/// Hash of the block this transaction is included in
-	pub blockhash: H256,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub blockhash: Option<H256>,
 	/// Number of confirmations of this transaction
-	pub confirmations: u32,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub confirmations: Option<u32>,
 	/// The transaction time in seconds since epoch (Jan 1 1970 GMT)
-	pub time: u32,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub time: Option<u32>,
 	/// The block time in seconds since epoch (Jan 1 1970 GMT)
-	pub blocktime: u32,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub blocktime: Option<u32>,
 }
 
 /// Return value of `getrawtransaction` method
@@ -357,9 +363,9 @@ mod tests {
 				hex: Bytes::new(vec![1, 2, 3, 4]),
 			},
 			sequence: 123,
-			txinwitness: vec![],
+			txinwitness: None,
 		};
-		assert_eq!(serde_json::to_string(&txin).unwrap(), r#"{"txid":"4d00000000000000000000000000000000000000000000000000000000000000","vout":13,"script_sig":{"asm":"Hello, world!!!","hex":"01020304"},"sequence":123,"txinwitness":[]}"#);
+		assert_eq!(serde_json::to_string(&txin).unwrap(), r#"{"txid":"4d00000000000000000000000000000000000000000000000000000000000000","vout":13,"script_sig":{"asm":"Hello, world!!!","hex":"01020304"},"sequence":123}"#);
 	}
 
 	#[test]
@@ -372,10 +378,10 @@ mod tests {
 				hex: Bytes::new(vec![1, 2, 3, 4]),
 			},
 			sequence: 123,
-			txinwitness: vec![],
+			txinwitness: None,
 		};
 		assert_eq!(
-			serde_json::from_str::<SignedTransactionInput>(r#"{"txid":"4d00000000000000000000000000000000000000000000000000000000000000","vout":13,"script_sig":{"asm":"Hello, world!!!","hex":"01020304"},"sequence":123,"txinwitness":[]}"#).unwrap(),
+			serde_json::from_str::<SignedTransactionInput>(r#"{"txid":"4d00000000000000000000000000000000000000000000000000000000000000","vout":13,"script_sig":{"asm":"Hello, world!!!","hex":"01020304"},"sequence":123}"#).unwrap(),
 			txin);
 	}
 
@@ -416,7 +422,7 @@ mod tests {
 	#[test]
 	fn transaction_serialize() {
 		let tx = Transaction {
-			hex: "DEADBEEF".into(),
+			hex: Some("DEADBEEF".into()),
 			txid: H256::from(4),
 			hash: H256::from(5),
 			size: 33,
@@ -425,10 +431,10 @@ mod tests {
 			locktime: 66,
 			vin: vec![],
 			vout: vec![],
-			blockhash: H256::from(6),
-			confirmations: 77,
-			time: 88,
-			blocktime: 99,
+			blockhash: Some(H256::from(6)),
+			confirmations: Some(77),
+			time: Some(88),
+			blocktime: Some(99),
 		};
 		assert_eq!(serde_json::to_string(&tx).unwrap(), r#"{"hex":"deadbeef","txid":"0400000000000000000000000000000000000000000000000000000000000000","hash":"0500000000000000000000000000000000000000000000000000000000000000","size":33,"vsize":44,"version":55,"locktime":66,"vin":[],"vout":[],"blockhash":"0600000000000000000000000000000000000000000000000000000000000000","confirmations":77,"time":88,"blocktime":99}"#);
 	}
@@ -436,7 +442,7 @@ mod tests {
 	#[test]
 	fn transaction_deserialize() {
 		let tx = Transaction {
-			hex: "DEADBEEF".into(),
+			hex: Some("DEADBEEF".into()),
 			txid: H256::from(4),
 			hash: H256::from(5),
 			size: 33,
@@ -445,10 +451,10 @@ mod tests {
 			locktime: 66,
 			vin: vec![],
 			vout: vec![],
-			blockhash: H256::from(6),
-			confirmations: 77,
-			time: 88,
-			blocktime: 99,
+			blockhash: Some(H256::from(6)),
+			confirmations: Some(77),
+			time: Some(88),
+			blocktime: Some(99),
 		};
 		assert_eq!(
 			serde_json::from_str::<Transaction>(r#"{"hex":"deadbeef","txid":"0400000000000000000000000000000000000000000000000000000000000000","hash":"0500000000000000000000000000000000000000000000000000000000000000","size":33,"vsize":44,"version":55,"locktime":66,"vin":[],"vout":[],"blockhash":"0600000000000000000000000000000000000000000000000000000000000000","confirmations":77,"time":88,"blocktime":99}"#).unwrap(),
