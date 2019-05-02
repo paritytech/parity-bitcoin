@@ -209,4 +209,23 @@ mod tests {
 		assert!(blocks_target.append_block(test_data::block_h1().into()).is_ok());
 		assert_eq!(db.best_block().number, 1);
 	}
+
+	#[test]
+	fn blocks_write_able_to_reorganize() {
+		// (1) b0 ---> (2) b1
+		//        \--> (3) b2 ---> (4 - reorg) b3
+		let b0 = test_data::block_builder().header().build().build();
+		let b1 = test_data::block_builder().header().nonce(1.into()).parent(b0.hash()).build().build();
+		let b2 = test_data::block_builder().header().nonce(2.into()).parent(b0.hash()).build().build();
+		let b3 = test_data::block_builder().header().parent(b2.hash()).build().build();
+
+		let db = Arc::new(BlockChainDatabase::init_test_chain(vec![b0.into()]));
+		let mut blocks_target = BlocksWriter::new(db.clone(), ConsensusParams::new(Network::Testnet), VerificationParameters {
+			verification_level: VerificationLevel::NO_VERIFICATION,
+			verification_edge: 0u8.into(),
+		});
+		assert_eq!(blocks_target.append_block(b1.into()), Ok(()));
+		assert_eq!(blocks_target.append_block(b2.into()), Ok(()));
+		assert_eq!(blocks_target.append_block(b3.into()), Ok(()));
+	}
 }
