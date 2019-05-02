@@ -375,7 +375,7 @@ impl<T> BlockChainDatabase<T> where T: KeyValueDatabase {
 							.ok_or_else(|| {
 								error!(
 									target: "db",
-									"Cannot find tx meta during canonization of tx {}: {}/{}",
+									"Cannot find tx meta during decanonization of tx {}: {}/{}",
 									tx.hash.reversed(),
 									input.previous_output.hash.reversed(),
 									input.previous_output.index,
