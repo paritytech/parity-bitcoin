@@ -1,5 +1,8 @@
 use rayon::prelude::{IntoParallelRefIterator, IndexedParallelIterator, ParallelIterator};
-use storage::{DuplexTransactionOutputProvider, Store};
+use storage::{
+	DuplexTransactionOutputProvider, TransactionOutputProvider, TransactionMetaProvider,
+	BlockHeaderProvider,
+};
 use network::ConsensusParams;
 use error::Error;
 use canon::CanonBlock;
@@ -16,19 +19,36 @@ pub struct ChainAcceptor<'a> {
 }
 
 impl<'a> ChainAcceptor<'a> {
-	pub fn new(store: &'a Store, consensus: &'a ConsensusParams, verification_level: VerificationLevel, block: CanonBlock<'a>, height: u32, median_time_past: u32, deployments: &'a BlockDeployments) -> Self {
+	pub fn new(
+		tx_out_provider: &'a TransactionOutputProvider,
+		tx_meta_provider: &'a TransactionMetaProvider,
+		header_provider: &'a BlockHeaderProvider,
+		consensus: &'a ConsensusParams,
+		verification_level: VerificationLevel,
+		block: CanonBlock<'a>,
+		height: u32,
+		median_time_past: u32,
+		deployments: &'a BlockDeployments,
+	) -> Self {
 		trace!(target: "verification", "Block verification {}", block.hash().to_reversed_str());
-		let output_store = DuplexTransactionOutputProvider::new(store.as_transaction_output_provider(), block.raw());
-		let headers = store.as_block_header_provider();
+		let output_store = DuplexTransactionOutputProvider::new(tx_out_provider, block.raw());
 
 		ChainAcceptor {
-			block: BlockAcceptor::new(store.as_transaction_output_provider(), consensus, block, height, median_time_past, deployments, headers),
-			header: HeaderAcceptor::new(headers, consensus, block.header(), height, deployments),
+			block: BlockAcceptor::new(
+				tx_out_provider,
+				consensus,
+				block,
+				height,
+				median_time_past,
+				deployments,
+				header_provider,
+			),
+			header: HeaderAcceptor::new(header_provider, consensus, block.header(), height, deployments),
 			transactions: block.transactions()
 				.into_iter()
 				.enumerate()
 				.map(|(tx_index, tx)| TransactionAcceptor::new(
-						store.as_transaction_meta_provider(),
+						tx_meta_provider,
 						output_store,
 						consensus,
 						tx,

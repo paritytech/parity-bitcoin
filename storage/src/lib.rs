@@ -37,5 +37,6 @@ pub use duplex_store::{DuplexTransactionOutputProvider, NoopStore, transaction_i
 pub use error::Error;
 pub use store::{AsSubstore, Store, SharedStore, CanonStore, ConfigStore};
 pub use transaction_meta::TransactionMeta;
-pub use transaction_provider::{TransactionProvider, TransactionOutputProvider, TransactionMetaProvider};
-
+pub use transaction_provider::{
+	TransactionProvider, TransactionOutputProvider, TransactionMetaProvider, CachedTransactionOutputProvider,
+};
