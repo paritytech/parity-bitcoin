@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use parking_lot::RwLock;
 use futures::{Future, finished, failed};
 use futures::stream::Stream;
-use futures_cpupool::CpuPool;
+use futures_cpupool::{CpuPool, Builder as CpuPoolBuilder};
 use tokio_io::IoFuture;
 use tokio_core::net::{TcpListener, TcpStream};
 use tokio_core::reactor::{Handle, Remote, Timeout, Interval};
@@ -430,7 +430,10 @@ impl Drop for P2P {
 
 impl P2P {
 	pub fn new(config: Config, local_sync_node: LocalSyncNodeRef, handle: Handle) -> Result<Self, Box<error::Error>> {
-		let pool = CpuPool::new(config.threads);
+		let pool = CpuPoolBuilder::new()
+			.name_prefix("I/O thread")
+			.pool_size(config.threads)
+			.create();
 
 		let context = try!(Context::new(local_sync_node, pool.clone(), handle.remote().clone(), config.clone()));
 
