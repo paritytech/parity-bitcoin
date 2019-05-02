@@ -7,14 +7,16 @@ pub fn import(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 	try!(init_db(&cfg));
 
 	let blk_path = matches.value_of("PATH").expect("PATH is required in cli.yml; qed");
+	let blk_dir = ::import::open_blk_dir(blk_path)
+		.map_err(|err| format!("Failed to open import directory: {}", err))?;
 
 	let mut writer = create_sync_blocks_writer(cfg.db, cfg.consensus, cfg.verification_params);
-
-	let blk_dir = try!(::import::open_blk_dir(blk_path).map_err(|_| "Import directory does not exist".to_owned()));
 	let mut counter = 0;
+	let mut previous_hash = None;
 	for blk in blk_dir {
 		// TODO: verify magic!
-		let blk = try!(blk.map_err(|_| "Cannot read block".to_owned()));
+		let blk = blk.map_err(|err| format!("Cannot read block: {:?}. Previous block: {:?}", err, previous_hash))?;
+		let blk_hash = blk.block.hash().reversed();
 		match writer.append_block(blk.block) {
 			Ok(_) => {
 				counter += 1;
@@ -23,8 +25,10 @@ pub fn import(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
 				}
 			}
 			Err(Error::TooManyOrphanBlocks) => return Err("Too many orphan (unordered) blocks".into()),
-			Err(error) => return Err(format!("Cannot append block: {:?}", error)),
+			Err(err) => return Err(format!("Cannot append block: {:?}. Block: {}", err, blk_hash)),
 		}
+
+		previous_hash = Some(blk_hash);
 	}
 
 	info!("Finished import of {} blocks", counter);
