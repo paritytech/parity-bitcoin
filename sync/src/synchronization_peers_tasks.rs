@@ -154,6 +154,12 @@ impl PeersTasks {
 		self.stats.get(&peer_index)
 	}
 
+	/// Get mutable reference to peer statistics
+	#[cfg(test)]
+	pub fn get_peer_stats_mut(&mut self, peer_index: PeerIndex) -> Option<&mut PeerStats> {
+		self.stats.get_mut(&peer_index)
+	}
+
 	/// Mark peer as useful.
 	pub fn useful_peer(&mut self, peer_index: PeerIndex) {
 		// if peer is unknown => insert to idle queue
@@ -304,12 +310,7 @@ impl PeersTasks {
 
 	/// We have failed to get block from peer during given period
 	pub fn on_peer_block_failure(&mut self, peer_index: PeerIndex) -> bool {
-		self.stats.get_mut(&peer_index)
-			.map(|s| {
-				s.failures += 1;
-				s.failures > MAX_PEER_FAILURES
-			})
-			.unwrap_or_default()
+		self.penalize(peer_index)
 	}
 
 	/// We have failed to get headers from peer during given period
@@ -318,10 +319,20 @@ impl PeersTasks {
 		self.headers_requests.remove(&peer_index);
 		self.idle_for_headers.insert(peer_index);
 
+		self.penalize(peer_index)
+	}
+
+	/// Penalize peer. Returns true if the peer score is too low to keep connection.
+	pub fn penalize(&mut self, peer_index: PeerIndex) -> bool {
 		self.stats.get_mut(&peer_index)
 			.map(|s| {
-				s.failures += 1;
-				s.failures > MAX_PEER_FAILURES
+				if s.trust == TrustLevel::Trusted {
+					s.failures += 1;
+					s.failures > MAX_PEER_FAILURES
+				} else {
+					s.failures = MAX_PEER_FAILURES;
+					true
+				}
 			})
 			.unwrap_or_default()
 	}
@@ -373,6 +384,11 @@ impl PeerStats {
 
 	pub fn trust(&self) -> TrustLevel {
 		self.trust
+	}
+
+	#[cfg(test)]
+	pub fn set_trust(&mut self, trust: TrustLevel) {
+		self.trust = trust;
 	}
 }
 

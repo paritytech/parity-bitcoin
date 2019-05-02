@@ -301,7 +301,20 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		// => all headers are also unknown to us
 		let header0 = headers[0].clone();
 		if self.chain.block_state(&header0.raw.previous_header_hash) == BlockState::Unknown {
-			warn!(target: "sync", "Previous header of the first header from peer#{} `headers` message is unknown. First: {}. Previous: {}", peer_index, header0.hash.to_reversed_str(), header0.raw.previous_header_hash.to_reversed_str());
+			warn!(
+				target: "sync",
+				"Previous header of the first header from peer#{} `headers` message is unknown. First: {}. Previous: {}",
+				peer_index,
+				header0.hash.to_reversed_str(),
+				header0.raw.previous_header_hash.to_reversed_str(),
+			);
+
+			// there could be competing chains that are running the network with the same magic (like Zcash vs ZelCash)
+			// => providing unknown headers. Penalize node so that it'll disconnect
+			if self.peers_tasks.penalize(peer_index) {
+				self.peers.misbehaving(peer_index, "Too many failures.");
+			}
+
 			return;
 		}
 
