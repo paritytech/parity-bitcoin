@@ -1,9 +1,8 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use chain;
 use storage;
-use miner::MemoryPool;
 use network::ConsensusParams;
 use primitives::hash::H256;
 use super::Error;
@@ -101,7 +100,7 @@ impl BlocksWriterSinkData {
 	/// Create new blocks writer data
 	pub fn new(storage: StorageRef) -> Self {
 		BlocksWriterSinkData {
-			chain: Chain::new(storage, Arc::new(RwLock::new(MemoryPool::new()))),
+			chain: Chain::new(storage, Default::default()),
 			err: None,
 		}
 	}
