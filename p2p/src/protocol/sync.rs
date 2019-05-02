@@ -212,8 +212,10 @@ impl Protocol for SyncProtocol {
 	fn on_message(&mut self, command: &Command, payload: &Bytes) -> Result<(), Error> {
 		let version = self.context.info().version;
 		if command == &types::Inv::command() {
-			// we are synchronizing => we ask only for blocks with known headers => there are no useful blocks hashes for us
-			// we are synchronizing => we ignore all transactions until it is completed => there are no useful transactions hashes for us
+			// we are synchronizing => we ask only for blocks with known headers
+			// => there are no useful blocks hashes for us
+			// we are synchronizing
+			// => we ignore all transactions until it is completed => there are no useful transactions hashes for us
 			if self.state.synchronizing() {
 				return Ok(());
 			}
