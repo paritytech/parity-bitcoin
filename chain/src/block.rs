@@ -1,9 +1,11 @@
 use hex::FromHex;
-use hash::H256;
 use ser::{deserialize};
-use merkle_root::merkle_root;
 use {BlockHeader, Transaction};
-use super::RepresentH256;
+
+#[cfg(any(test, feature = "test-helpers"))]
+use hash::H256;
+#[cfg(any(test, feature = "test-helpers"))]
+use merkle_root::merkle_root;
 
 #[derive(Debug, PartialEq, Clone, Serializable, Deserializable)]
 pub struct Block {
@@ -17,22 +19,20 @@ impl From<&'static str> for Block {
 	}
 }
 
-impl RepresentH256 for Block {
-	fn h256(&self) -> H256 { self.hash() }
-}
-
 impl Block {
 	pub fn new(header: BlockHeader, transactions: Vec<Transaction>) -> Self {
 		Block { block_header: header, transactions: transactions }
 	}
 
 	/// Returns block's merkle root.
+	#[cfg(any(test, feature = "test-helpers"))]
 	pub fn merkle_root(&self) -> H256 {
 		let hashes = self.transactions.iter().map(Transaction::hash).collect::<Vec<H256>>();
 		merkle_root(&hashes)
 	}
 
 	/// Returns block's witness merkle root.
+	#[cfg(any(test, feature = "test-helpers"))]
 	pub fn witness_merkle_root(&self) -> H256 {
 		let hashes = match self.transactions.split_first() {
 			None => vec![],
@@ -53,6 +53,7 @@ impl Block {
 		&self.block_header
 	}
 
+	#[cfg(any(test, feature = "test-helpers"))]
 	pub fn hash(&self) -> H256 {
 		self.block_header.hash()
 	}

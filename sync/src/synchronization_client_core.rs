@@ -5,7 +5,7 @@ use std::sync::Arc;
 use futures::Future;
 use parking_lot::Mutex;
 use time::precise_time_s;
-use chain::{IndexedBlockHeader, IndexedTransaction, Transaction, IndexedBlock};
+use chain::{IndexedBlockHeader, IndexedTransaction, IndexedBlock};
 use message::types;
 use message::common::{InventoryType, InventoryVector};
 use miner::transaction_fee_rate;
@@ -67,12 +67,12 @@ pub trait ClientCore {
 	fn on_connect(&mut self, peer_index: PeerIndex);
 	fn on_disconnect(&mut self, peer_index: PeerIndex);
 	fn on_inventory(&self, peer_index: PeerIndex, message: types::Inv);
-	fn on_headers(&mut self, peer_index: PeerIndex, message: types::Headers);
+	fn on_headers(&mut self, peer_index: PeerIndex, message: Vec<IndexedBlockHeader>);
 	fn on_block(&mut self, peer_index: PeerIndex, block: IndexedBlock) -> Option<VecDeque<IndexedBlock>>;
 	fn on_transaction(&mut self, peer_index: PeerIndex, transaction: IndexedTransaction) -> Option<VecDeque<IndexedTransaction>>;
 	fn on_notfound(&mut self, peer_index: PeerIndex, message: types::NotFound);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: PeerIndex, future: EmptyBoxFuture);
-	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String>;
+	fn accept_transaction(&mut self, transaction: IndexedTransaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String>;
 	fn install_sync_listener(&mut self, listener: SyncListenerRef);
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>, final_blocks_requests: Option<Vec<H256>>);
 	fn try_switch_to_saturated_state(&mut self) -> bool;
@@ -218,13 +218,6 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	fn on_inventory(&self, peer_index: PeerIndex, message: types::Inv) {
-		// we are synchronizing => we ask only for blocks with known headers => there are no useful blocks hashes for us
-		// we are synchronizing => we ignore all transactions until it is completed => there are no useful transactions hashes for us
-		if self.state.is_synchronizing() {
-			trace!(target: "sync", "Ignoring {} inventory items from peer#{} as synchronization is in progress", message.inventory.len(), peer_index);
-			return;
-		}
-
 		// else ask for all unknown transactions and blocks
 		let is_segwit_possible = self.chain.is_segwit_possible();
 		let unknown_inventory: Vec<_> = message.inventory.into_iter()
@@ -287,11 +280,8 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 	}
 
 	/// Try to queue synchronization of unknown blocks when blocks headers are received.
-	fn on_headers(&mut self, peer_index: PeerIndex, message: types::Headers) {
-		assert!(!message.headers.is_empty(), "This must be checked in incoming connection");
-
-		// transform to indexed headers
-		let mut headers: Vec<_> = message.headers.into_iter().map(IndexedBlockHeader::from).collect();
+	fn on_headers(&mut self, peer_index: PeerIndex, mut headers: Vec<IndexedBlockHeader>) {
+		assert!(!headers.is_empty(), "This must be checked in incoming connection");
 
 		// update peers to select next tasks
 		self.peers_tasks.on_headers_received(peer_index);
@@ -535,9 +525,9 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 	}
 
-	fn accept_transaction(&mut self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String> {
-		let hash = transaction.hash();
-		match self.try_append_transaction(transaction.into(), true) {
+	fn accept_transaction(&mut self, transaction: IndexedTransaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String> {
+		let hash = transaction.hash;
+		match self.try_append_transaction(transaction, true) {
 			Err(AppendTransactionError::Orphan(_)) => Err("Cannot append transaction as its inputs are unknown".to_owned()),
 			Err(AppendTransactionError::Synchronizing) => Err("Cannot append transaction as node is not yet fully synchronized".to_owned()),
 			Ok(transactions) => {
@@ -916,7 +906,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 			}
 
 			last_known_hash = &header.hash;
-			headers_provider.append_header(header.hash.clone(), header.raw.clone());
+			headers_provider.append_header(header.hash.clone(), header.clone());
 		}
 
 		BlocksHeadersVerificationResult::Success
@@ -1110,7 +1100,7 @@ impl<T> SynchronizationClientCore<T> where T: TaskExecutor {
 				if needs_relay && (self.state.is_saturated() || self.state.is_nearly_saturated()) {
 					for block_hash in insert_result.canonized_blocks_hashes {
 						if let Some(block) = self.chain.storage().block(block_hash.into()) {
-							self.executor.execute(Task::RelayNewBlock(block.into()));
+							self.executor.execute(Task::RelayNewBlock(block));
 						}
 					}
 				}
@@ -1369,7 +1359,7 @@ pub mod tests {
 		let block1: Block = test_data::block_h1();
 		let block2: Block = test_data::block_h2();
 
-		sync.on_headers(5, types::Headers::with_headers(vec![block1.block_header.clone()]));
+		sync.on_headers(5, vec![block1.block_header.clone().into()]);
 		let tasks = executor.take_tasks();
 		assert_eq!(tasks, vec![request_block_headers_genesis_and(5, vec![block1.hash()]), request_blocks(5, vec![block1.hash()])]);
 		assert!(core.lock().information().state.is_nearly_saturated());
@@ -1406,7 +1396,10 @@ pub mod tests {
 	fn synchronization_out_of_order_block_path() {
 		let (_, core, sync) = create_sync(None, None);
 
-		sync.on_headers(5, types::Headers::with_headers(vec![test_data::block_h1().block_header.clone(), test_data::block_h2().block_header.clone()]));
+		sync.on_headers(5, vec![
+			test_data::block_h1().block_header.into(),
+			test_data::block_h2().block_header.into(),
+		]);
 		sync.on_block(5, test_data::block_h169().into());
 
 		// out-of-order block was presented by the peer
@@ -1432,7 +1425,7 @@ pub mod tests {
 			// not synchronizing after start
 			assert!(core.lock().information().state.is_saturated());
 			// receive inventory from new peer#1
-			sync.on_headers(1, types::Headers::with_headers(vec![block1.block_header.clone()]));
+			sync.on_headers(1, vec![block1.block_header.clone().into()]);
 			assert_eq!(core.lock().information().chain.requested, 1);
 			// synchronization has started && new blocks have been requested
 			let tasks = executor.take_tasks();
@@ -1442,7 +1435,7 @@ pub mod tests {
 
 		{
 			// receive inventory from new peer#2
-			sync.on_headers(2, types::Headers::with_headers(vec![block1.block_header.clone(), block2.block_header.clone()]));
+			sync.on_headers(2, vec![block1.block_header.clone().into(), block2.block_header.clone().into()]);
 			assert_eq!(core.lock().information().chain.requested, 2);
 			// synchronization has started && new blocks have been requested
 			let tasks = executor.take_tasks();
@@ -1471,7 +1464,7 @@ pub mod tests {
 
 		// request new blocks
 		{
-			sync.on_headers(1, types::Headers::with_headers(vec![test_data::block_h1().block_header]));
+			sync.on_headers(1, vec![test_data::block_h1().block_header.into()]);
 			assert!(core.lock().information().state.is_nearly_saturated());
 		}
 
@@ -1486,7 +1479,7 @@ pub mod tests {
 	fn synchronization_not_starting_when_receiving_known_blocks() {
 		let (executor, core, sync) = create_sync(None, None);
 		// saturated => receive inventory with known blocks only
-		sync.on_headers(1, types::Headers::with_headers(vec![test_data::genesis().block_header]));
+		sync.on_headers(1, vec![test_data::genesis().block_header.into()]);
 		// => no need to start synchronization
 		assert!(!core.lock().information().state.is_nearly_saturated());
 		// => no synchronization tasks are scheduled
@@ -1498,8 +1491,8 @@ pub mod tests {
 	fn synchronization_asks_for_inventory_after_saturating() {
 		let (executor, _, sync) = create_sync(None, None);
 		let block = test_data::block_h1();
-		sync.on_headers(1, types::Headers::with_headers(vec![block.block_header.clone()]));
-		sync.on_headers(2, types::Headers::with_headers(vec![block.block_header.clone()]));
+		sync.on_headers(1, vec![block.block_header.clone().into()]);
+		sync.on_headers(2, vec![block.block_header.clone().into()]);
 		executor.take_tasks();
 		sync.on_block(2, block.clone().into());
 
@@ -1521,7 +1514,7 @@ pub mod tests {
 
 		let b1 = test_data::block_h1();
 		let b2 = test_data::block_h2();
-		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+		sync.on_headers(1, vec![b1.block_header.clone().into(), b2.block_header.clone().into()]);
 
 		let tasks = executor.take_tasks();
 		assert_eq!(tasks.len(), 2);
@@ -1563,7 +1556,7 @@ pub mod tests {
 
 		let b1 = test_data::block_h1();
 		let b2 = test_data::block_h2();
-		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+		sync.on_headers(1, vec![b1.block_header.clone().into(), b2.block_header.clone().into()]);
 
 		let tasks = executor.take_tasks();
 		assert_eq!(tasks.len(), 2);
@@ -1604,7 +1597,7 @@ pub mod tests {
 		let (executor, core, sync) = create_sync(None, None);
 
 		let b169 = test_data::block_h169();
-		sync.on_headers(1, types::Headers::with_headers(vec![b169.block_header]));
+		sync.on_headers(1, vec![b169.block_header.into()]);
 
 		let tasks = executor.take_tasks();
 		assert_eq!(tasks, vec![]);
@@ -1624,8 +1617,12 @@ pub mod tests {
 		let fork1 = test_data::build_n_empty_blocks_from(2, 100, &genesis_header);
 		let fork2 = test_data::build_n_empty_blocks_from(3, 200, &genesis_header);
 
-		sync.on_headers(1, types::Headers::with_headers(vec![fork1[0].block_header.clone(), fork1[1].block_header.clone()]));
-		sync.on_headers(2, types::Headers::with_headers(vec![fork2[0].block_header.clone(), fork2[1].block_header.clone(), fork2[2].block_header.clone()]));
+		sync.on_headers(1, vec![fork1[0].block_header.clone().into(), fork1[1].block_header.clone().into()]);
+		sync.on_headers(2, vec![
+			fork2[0].block_header.clone().into(),
+			fork2[1].block_header.clone().into(),
+			fork2[2].block_header.clone().into(),
+		]);
 		let tasks = { executor.take_tasks() };
 		assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![fork1[1].hash(), fork1[0].hash()]),
 			request_blocks(1, vec![fork1[0].hash(), fork1[1].hash()]),
@@ -1680,8 +1677,17 @@ pub mod tests {
 		let fork1 = test_data::build_n_empty_blocks_from(2, 100, &common_block.block_header);
 		let fork2 = test_data::build_n_empty_blocks_from(3, 200, &common_block.block_header);
 
-		sync.on_headers(1, types::Headers::with_headers(vec![common_block.block_header.clone(), fork1[0].block_header.clone(), fork1[1].block_header.clone()]));
-		sync.on_headers(2, types::Headers::with_headers(vec![common_block.block_header.clone(), fork2[0].block_header.clone(), fork2[1].block_header.clone(), fork2[2].block_header.clone()]));
+		sync.on_headers(1, vec![
+			common_block.block_header.clone().into(),
+			fork1[0].block_header.clone().into(),
+			fork1[1].block_header.clone().into(),
+		]);
+		sync.on_headers(2, vec![
+			common_block.block_header.clone().into(),
+			fork2[0].block_header.clone().into(),
+			fork2[1].block_header.clone().into(),
+			fork2[2].block_header.clone().into(),
+		]);
 
 		let tasks = { executor.take_tasks() };
 		assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![fork1[1].hash(), fork1[0].hash(), common_block.hash()]),
@@ -1758,7 +1764,7 @@ pub mod tests {
 
 		{
 			// receive inventory from new peer#1
-			sync.on_headers(1, types::Headers::with_headers(vec![block1.block_header.clone()]));
+			sync.on_headers(1, vec![block1.block_header.clone().into()]);
 			// synchronization has started && new blocks have been requested
 			let tasks = executor.take_tasks();
 			assert_eq!(tasks, vec![
@@ -1769,7 +1775,7 @@ pub mod tests {
 
 		{
 			// receive inventory from new peer#2
-			sync.on_headers(2, types::Headers::with_headers(vec![block1.block_header.clone(), block2.block_header.clone()]));
+			sync.on_headers(2, vec![block1.block_header.clone().into(), block2.block_header.clone().into()]);
 			// synchronization has started && new blocks have been requested
 			let tasks = executor.take_tasks();
 			assert_eq!(tasks, vec![
@@ -1808,7 +1814,7 @@ pub mod tests {
 
 		let b1 = test_data::block_h1();
 		let b2 = test_data::block_h2();
-		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+		sync.on_headers(1, vec![b1.block_header.clone().into(), b2.block_header.clone().into()]);
 
 		let tasks = executor.take_tasks();
 		assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![b2.hash().clone(), b1.hash().clone()]), request_blocks(1, vec![b1.hash(), b2.hash()])]);
@@ -1833,7 +1839,7 @@ pub mod tests {
 
 		let b1 = test_data::block_h1();
 		let b2 = test_data::block_h2();
-		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+		sync.on_headers(1, vec![b1.block_header.clone().into(), b2.block_header.clone().into()]);
 
 		let tasks = executor.take_tasks();
 		assert_eq!(tasks, vec![request_block_headers_genesis_and(1, vec![b2.hash().clone(), b1.hash().clone()]), request_blocks(1, vec![b1.hash(), b2.hash()])]);
@@ -1853,23 +1859,6 @@ pub mod tests {
 	}
 
 	#[test]
-	fn transaction_is_not_requested_when_synchronizing() {
-		let (executor, core, sync) = create_sync(None, None);
-
-		let b1 = test_data::block_h1();
-		let b2 = test_data::block_h2();
-		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
-
-		assert!(core.lock().information().state.is_synchronizing());
-		{ executor.take_tasks(); } // forget tasks
-
-		sync.on_inventory(0, types::Inv::with_inventory(vec![InventoryVector::tx(H256::from(0))]));
-
-		let tasks = executor.take_tasks();
-		assert_eq!(tasks, vec![]);
-	}
-
-	#[test]
 	fn transaction_is_requested_when_not_synchronizing() {
 		let (executor, core, sync) = create_sync(None, None);
 
@@ -1881,7 +1870,7 @@ pub mod tests {
 		}
 
 		let b1 = test_data::block_h1();
-		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone()]));
+		sync.on_headers(1, vec![b1.block_header.clone().into()]);
 
 		assert!(core.lock().information().state.is_nearly_saturated());
 		{ executor.take_tasks(); } // forget tasks
@@ -1930,7 +1919,7 @@ pub mod tests {
 
 		let b1 = test_data::block_h1();
 		let b2 = test_data::block_h2();
-		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+		sync.on_headers(1, vec![b1.block_header.into(), b2.block_header.into()]);
 
 		assert!(core.lock().information().state.is_synchronizing());
 
@@ -1949,7 +1938,7 @@ pub mod tests {
 		assert_eq!(core.lock().information().chain.transactions.transactions_count, 1);
 
 		let b1 = test_data::block_h1();
-		sync.on_headers(1, types::Headers::with_headers(vec![b1.block_header.clone()]));
+		sync.on_headers(1, vec![b1.block_header.into()]);
 
 		assert!(core.lock().information().state.is_nearly_saturated());
 
@@ -2018,8 +2007,16 @@ pub mod tests {
 
 		let (_, _, sync) = create_sync(None, Some(dummy_verifier));
 
-		sync.on_headers(1, types::Headers::with_headers(vec![b10.block_header.clone(), b11.block_header.clone(), b12.block_header.clone()]));
-		sync.on_headers(2, types::Headers::with_headers(vec![b10.block_header.clone(), b21.block_header.clone(), b22.block_header.clone()]));
+		sync.on_headers(1, vec![
+			b10.block_header.clone().into(),
+			b11.block_header.clone().into(),
+			b12.block_header.clone().into(),
+		]);
+		sync.on_headers(2, vec![
+			b10.block_header.clone().into(),
+			b21.block_header.clone().into(),
+			b22.block_header.clone().into(),
+		]);
 
 		sync.on_block(1, b10.clone().into());
 		sync.on_block(1, b11.into());
@@ -2028,8 +2025,12 @@ pub mod tests {
 		sync.on_block(2, b21.clone().into());
 
 		// should not panic here
-		sync.on_headers(2, types::Headers::with_headers(vec![b10.block_header.clone(), b21.block_header.clone(),
-			b22.block_header.clone(), b23.block_header.clone()]));
+		sync.on_headers(2, vec![
+			b10.block_header.into(),
+			b21.block_header.into(),
+			b22.block_header.into(),
+			b23.block_header.into(),
+		]);
 	}
 
 	#[test]
@@ -2041,7 +2042,7 @@ pub mod tests {
 		let b2 = test_data::block_builder().header().parent(b1.hash()).build().build();
 		let b3 = test_data::block_builder().header().parent(b2.hash()).build().build();
 
-		sync.on_headers(1, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone()]));
+		sync.on_headers(1, vec![b0.block_header.clone().into(), b1.block_header.clone().into()]);
 		sync.on_block(1, b0.clone().into());
 		sync.on_block(1, b1.clone().into());
 
@@ -2068,7 +2069,7 @@ pub mod tests {
 			]);
 		}
 
-		sync.on_headers(1, types::Headers::with_headers(vec![b3.block_header.clone()]));
+		sync.on_headers(1, vec![b3.block_header.clone().into()]);
 		sync.on_block(1, b3.clone().into());
 
 		// we were in nearly saturated state => block is relayed
@@ -2137,7 +2138,7 @@ pub mod tests {
 		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
-		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
+		sync.on_headers(0, vec![b0.block_header.into(), b1.block_header.into(), b2.block_header.into()]);
 
 		assert!(!core.lock().peers.enumerate().contains(&0));
 	}
@@ -2159,7 +2160,7 @@ pub mod tests {
 		core.lock().peers.insert(0, Services::default(), DummyOutboundSyncConnection::new());
 		assert!(core.lock().peers.enumerate().contains(&0));
 
-		sync.on_headers(0, types::Headers::with_headers(vec![b0.block_header.clone(), b1.block_header.clone(), b2.block_header.clone()]));
+		sync.on_headers(0, vec![b0.block_header.into(), b1.block_header.into(), b2.block_header.into()]);
 
 		assert!(!core.lock().peers.enumerate().contains(&0));
 	}
@@ -2213,9 +2214,9 @@ pub mod tests {
 		let (executor, core, sync) = create_sync(None, None);
 
 		// when peer1 announces 'false' b0
-		sync.on_headers(1, types::Headers::with_headers(vec![b0.block_header.clone()]));
+		sync.on_headers(1, vec![b0.block_header.clone().into()]);
 		// and peer2 announces 'true' b1
-		sync.on_headers(2, types::Headers::with_headers(vec![b1.block_header.clone(), b2.block_header.clone()]));
+		sync.on_headers(2, vec![b1.block_header.clone().into(), b2.block_header.clone().into()]);
 
 		// check that all blocks are requested
 		assert_eq!(core.lock().information().chain.requested, 3);
@@ -2369,12 +2370,12 @@ pub mod tests {
 		assert_eq!(data.lock().best_blocks.len(), 0);
 
 		// supply with new block header => is_synchronizing is still false
-		sync.on_headers(0, types::Headers::with_headers(vec![test_data::block_h1().block_header]));
+		sync.on_headers(0, vec![test_data::block_h1().block_header.into()]);
 		assert_eq!(data.lock().is_synchronizing, false);
 		assert_eq!(data.lock().best_blocks.len(), 0);
 
 		// supply with 2 new blocks headers => is_synchronizing is true
-		sync.on_headers(0, types::Headers::with_headers(vec![test_data::block_h2().block_header, test_data::block_h3().block_header]));
+		sync.on_headers(0, vec![test_data::block_h2().block_header.into(), test_data::block_h3().block_header.into()]);
 		assert_eq!(data.lock().is_synchronizing, true);
 		assert_eq!(data.lock().best_blocks.len(), 0);
 

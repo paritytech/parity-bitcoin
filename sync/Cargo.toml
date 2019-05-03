@@ -30,3 +30,4 @@ network = { path = "../network" }
 [dev-dependencies]
 test-data = { path = "../test-data" }
 miner = { path = "../miner", features = ["test-helpers"] }
+chain = { path = "../chain", features = ["test-helpers"] }

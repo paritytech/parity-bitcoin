@@ -2,23 +2,22 @@ use std::sync::Arc;
 use parking_lot::{Mutex, Condvar};
 use time;
 use futures::{lazy, finished};
-use chain::{Transaction, IndexedTransaction, IndexedBlock};
+use chain::{IndexedTransaction, IndexedBlock, IndexedBlockHeader};
 use message::types;
 use miner::BlockAssembler;
 use network::ConsensusParams;
 use synchronization_client::{Client};
-use synchronization_executor::{Task as SynchronizationTask, TaskExecutor};
 use synchronization_server::{Server, ServerTask};
 use synchronization_verifier::{TransactionVerificationSink};
 use primitives::hash::H256;
 use miner::BlockTemplate;
 use verification::median_timestamp_inclusive;
 use synchronization_peers::{TransactionAnnouncementType, BlockAnnouncementType};
-use types::{PeerIndex, RequestId, StorageRef, MemoryPoolRef, PeersRef, ExecutorRef,
+use types::{PeerIndex, RequestId, StorageRef, MemoryPoolRef, PeersRef,
 	ClientRef, ServerRef, SynchronizationStateRef, SyncListenerRef};
 
 /// Local synchronization node
-pub struct LocalNode<T: TaskExecutor, U: Server, V: Client> {
+pub struct LocalNode<U: Server, V: Client> {
 	/// Network we are working on
 	consensus: ConsensusParams,
 	/// Storage reference
@@ -29,8 +28,6 @@ pub struct LocalNode<T: TaskExecutor, U: Server, V: Client> {
 	peers: PeersRef,
 	/// Shared synchronization state
 	state: SynchronizationStateRef,
-	/// Synchronization executor
-	executor: ExecutorRef<T>,
 	/// Synchronization process
 	client: ClientRef<V>,
 	/// Synchronization server
@@ -48,21 +45,25 @@ struct TransactionAcceptSinkData {
 	waiter: Condvar,
 }
 
-impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
+impl<U, V> LocalNode<U, V> where U: Server, V: Client {
 	/// Create new synchronization node
 	#[cfg_attr(feature="cargo-clippy", allow(too_many_arguments))]
 	pub fn new(consensus: ConsensusParams, storage: StorageRef, memory_pool: MemoryPoolRef, peers: PeersRef,
-		state: SynchronizationStateRef, executor: ExecutorRef<T>, client: ClientRef<V>, server: ServerRef<U>) -> Self {
+		state: SynchronizationStateRef, client: ClientRef<V>, server: ServerRef<U>) -> Self {
 		LocalNode {
 			consensus: consensus,
 			storage: storage,
 			memory_pool: memory_pool,
 			peers: peers,
 			state: state,
-			executor: executor,
 			client: client,
 			server: server,
 		}
+	}
+
+	/// Return shared reference to synchronization state.
+	pub fn sync_state(&self) -> SynchronizationStateRef {
+		self.state.clone()
 	}
 
 	/// When new peer connects to the node
@@ -93,21 +94,13 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 	}
 
 	/// When headers message is received
-	pub fn on_headers(&self, peer_index: PeerIndex, message: types::Headers) {
-		trace!(target: "sync", "Got `headers` message from peer#{}. Headers len: {}", peer_index, message.headers.len());
-		self.client.on_headers(peer_index, message);
+	pub fn on_headers(&self, peer_index: PeerIndex, headers: Vec<IndexedBlockHeader>) {
+		trace!(target: "sync", "Got `headers` message from peer#{}. Headers len: {}", peer_index, headers.len());
+		self.client.on_headers(peer_index, headers);
 	}
 
 	/// When transaction is received
 	pub fn on_transaction(&self, peer_index: PeerIndex, tx: IndexedTransaction) {
-		// we ignore all transactions while synchronizing, as memory pool contains
-		// only verified transactions && we can not verify on-top transactions while
-		// we are not on the top
-		if self.state.synchronizing() {
-			trace!(target: "sync", "Ignored `transaction` message from peer#{}. Tx hash: {}", peer_index, tx.hash.to_reversed_str());
-			return;
-		}
-
 		trace!(target: "sync", "Got `transaction` message from peer#{}. Tx hash: {}", peer_index, tx.hash.to_reversed_str());
 		self.client.on_transaction(peer_index, tx);
 	}
@@ -126,34 +119,18 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 
 	/// When peer is requesting for items
 	pub fn on_getdata(&self, peer_index: PeerIndex, message: types::GetData) {
-		if self.state.synchronizing() {
-			trace!(target: "sync", "Ignored `getdata` message from peer#{}. Inventory len: {}", peer_index, message.inventory.len());
-			return;
-		}
-
 		trace!(target: "sync", "Got `getdata` message from peer#{}. Inventory len: {}", peer_index, message.inventory.len());
 		self.server.execute(ServerTask::GetData(peer_index, message));
 	}
 
 	/// When peer is requesting for known blocks hashes
 	pub fn on_getblocks(&self, peer_index: PeerIndex, message: types::GetBlocks) {
-		if self.state.synchronizing() {
-			trace!(target: "sync", "Ignored `getblocks` message from peer#{}", peer_index);
-			return;
-		}
-
 		trace!(target: "sync", "Got `getblocks` message from peer#{}", peer_index);
 		self.server.execute(ServerTask::GetBlocks(peer_index, message));
 	}
 
 	/// When peer is requesting for known blocks headers
 	pub fn on_getheaders(&self, peer_index: PeerIndex, message: types::GetHeaders, id: RequestId) {
-		if self.state.synchronizing() {
-			trace!(target: "sync", "Ignored `getheaders` message from peer#{}", peer_index);
-			self.executor.execute(SynchronizationTask::Ignore(peer_index, id));
-			return;
-		}
-
 		trace!(target: "sync", "Got `getheaders` message from peer#{}", peer_index);
 
 		// simulating bitcoind for passing tests: if we are in nearly-saturated state
@@ -170,11 +147,6 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 
 	/// When peer is requesting for memory pool contents
 	pub fn on_mempool(&self, peer_index: PeerIndex, _message: types::MemPool) {
-		if self.state.synchronizing() {
-			trace!(target: "sync", "Ignored `mempool` message from peer#{}", peer_index);
-			return;
-		}
-
 		trace!(target: "sync", "Got `mempool` message from peer#{}", peer_index);
 		self.server.execute(ServerTask::Mempool(peer_index));
 	}
@@ -263,7 +235,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 	}
 
 	/// Verify and then schedule new transaction
-	pub fn accept_transaction(&self, transaction: Transaction) -> Result<H256, String> {
+	pub fn accept_transaction(&self, transaction: IndexedTransaction) -> Result<H256, String> {
 		let sink_data = Arc::new(TransactionAcceptSinkData::default());
 		let sink = TransactionAcceptSink::new(sink_data.clone()).boxed();
 		{
@@ -278,7 +250,7 @@ impl<T, U, V> LocalNode<T, U, V> where T: TaskExecutor, U: Server, V: Client {
 	pub fn get_block_template(&self) -> BlockTemplate {
 		let previous_block_height = self.storage.best_block().number;
 		let previous_block_header = self.storage.block_header(previous_block_height.into()).expect("best block is in db; qed");
-		let median_timestamp = median_timestamp_inclusive(previous_block_header.hash(), self.storage.as_block_header_provider());
+		let median_timestamp = median_timestamp_inclusive(previous_block_header.hash, self.storage.as_block_header_provider());
 		let new_block_height = previous_block_height + 1;
 		let max_block_size = self.consensus.fork.max_block_size(new_block_height, median_timestamp);
 		let block_assembler = BlockAssembler {
@@ -374,7 +346,7 @@ pub mod tests {
 		}
 	}
 
-	fn create_local_node(verifier: Option<DummyVerifier>) -> (Arc<DummyTaskExecutor>, Arc<DummyServer>, LocalNode<DummyTaskExecutor, DummyServer, SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
+	fn create_local_node(verifier: Option<DummyVerifier>) -> (Arc<DummyTaskExecutor>, Arc<DummyServer>, LocalNode<DummyServer, SynchronizationClient<DummyTaskExecutor, DummyVerifier>>) {
 		let memory_pool = Arc::new(RwLock::new(MemoryPool::new()));
 		let storage = Arc::new(BlockChainDatabase::init_test_chain(vec![test_data::genesis().into()]));
 		let sync_state = SynchronizationStateRef::new(SynchronizationState::with_storage(storage.clone()));
@@ -391,7 +363,7 @@ pub mod tests {
 		};
 		verifier.set_sink(Arc::new(CoreVerificationSink::new(client_core.clone())));
 		let client = SynchronizationClient::new(sync_state.clone(), client_core, verifier);
-		let local_node = LocalNode::new(ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore), storage, memory_pool, sync_peers, sync_state, executor.clone(), client, server.clone());
+		let local_node = LocalNode::new(ConsensusParams::new(Network::Mainnet, ConsensusFork::BitcoinCore), storage, memory_pool, sync_peers, sync_state, client, server.clone());
 		(executor, server, local_node)
 	}
 
@@ -427,7 +399,7 @@ pub mod tests {
 		let transaction: Transaction = test_data::TransactionBuilder::with_output(1).add_input(&genesis.transactions[0], 0).into();
 		let transaction_hash = transaction.hash();
 
-		let result = local_node.accept_transaction(transaction.clone());
+		let result = local_node.accept_transaction(transaction.clone().into());
 		assert_eq!(result, Ok(transaction_hash.clone()));
 
 		assert_eq!(executor.take_tasks(), vec![Task::RelayNewTransaction(transaction.into(), 83333333)]);
@@ -448,7 +420,7 @@ pub mod tests {
 		let peer_index1 = 0; local_node.on_connect(peer_index1, "test".into(), types::Version::default());
 		executor.take_tasks();
 
-		let result = local_node.accept_transaction(transaction);
+		let result = local_node.accept_transaction(transaction.into());
 		assert_eq!(result, Err("simulated".to_owned()));
 
 		assert_eq!(executor.take_tasks(), vec![]);

@@ -10,7 +10,7 @@ storage = { path = "../storage" }
 db = { path = "../db" }
 verification = { path = "../verification" }
 network = { path = "../network" }
-chain = { path = "../chain" }
+chain = { path = "../chain", features = ["test-helpers"] }
 primitives = { path = "../primitives" }
 test-data = { path = "../test-data" }
 time = "*"

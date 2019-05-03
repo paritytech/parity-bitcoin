@@ -126,7 +126,7 @@ pub fn create_local_sync_node(consensus: ConsensusParams, db: storage::SharedSto
 	let verifier_sink = Arc::new(CoreVerificationSink::new(sync_client_core.clone()));
 	let verifier = AsyncVerifier::new(chain_verifier, db.clone(), memory_pool.clone(), verifier_sink, verification_params);
 	let sync_client = SynchronizationClient::new(sync_state.clone(), sync_client_core, verifier);
-	Arc::new(SyncNode::new(consensus, db, memory_pool, peers, sync_state, sync_executor, sync_client, sync_server))
+	Arc::new(SyncNode::new(consensus, db, memory_pool, peers, sync_state, sync_client, sync_server))
 }
 
 /// Create inbound synchronization connections factory for given local sync node.

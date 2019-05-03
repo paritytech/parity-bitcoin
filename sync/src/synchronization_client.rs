@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use parking_lot::Mutex;
-use chain::{IndexedTransaction, Transaction, IndexedBlock};
+use chain::{IndexedTransaction, IndexedBlock, IndexedBlockHeader};
 use message::types;
 use synchronization_executor::TaskExecutor;
 use synchronization_verifier::{Verifier, TransactionVerificationSink};
@@ -124,12 +124,12 @@ pub trait Client : Send + Sync + 'static {
 	fn on_connect(&self, peer_index: PeerIndex);
 	fn on_disconnect(&self, peer_index: PeerIndex);
 	fn on_inventory(&self, peer_index: PeerIndex, message: types::Inv);
-	fn on_headers(&self, peer_index: PeerIndex, message: types::Headers);
+	fn on_headers(&self, peer_index: PeerIndex, headers: Vec<IndexedBlockHeader>);
 	fn on_block(&self, peer_index: PeerIndex, block: IndexedBlock);
 	fn on_transaction(&self, peer_index: PeerIndex, transaction: IndexedTransaction);
 	fn on_notfound(&self, peer_index: PeerIndex, message: types::NotFound);
 	fn after_peer_nearly_blocks_verified(&self, peer_index: PeerIndex, future: EmptyBoxFuture);
-	fn accept_transaction(&self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<(), String>;
+	fn accept_transaction(&self, transaction: IndexedTransaction, sink: Box<TransactionVerificationSink>) -> Result<(), String>;
 	fn install_sync_listener(&self, listener: SyncListenerRef);
 }
 
@@ -158,8 +158,8 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().on_inventory(peer_index, message);
 	}
 
-	fn on_headers(&self, peer_index: PeerIndex, message: types::Headers) {
-		self.core.lock().on_headers(peer_index, message);
+	fn on_headers(&self, peer_index: PeerIndex, headers: Vec<IndexedBlockHeader>) {
+		self.core.lock().on_headers(peer_index, headers);
 	}
 
 	fn on_block(&self, peer_index: PeerIndex, block: IndexedBlock) {
@@ -214,7 +214,7 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 		self.core.lock().after_peer_nearly_blocks_verified(peer_index, future);
 	}
 
-	fn accept_transaction(&self, transaction: Transaction, sink: Box<TransactionVerificationSink>) -> Result<(), String> {
+	fn accept_transaction(&self, transaction: IndexedTransaction, sink: Box<TransactionVerificationSink>) -> Result<(), String> {
 		let mut transactions_to_verify = try!(self.core.lock().accept_transaction(transaction, sink));
 
 		let next_block_height = self.shared_state.best_storage_block_height() + 1;

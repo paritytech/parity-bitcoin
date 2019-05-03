@@ -2,7 +2,7 @@ use std::cmp;
 use primitives::compact::Compact;
 use primitives::hash::H256;
 use primitives::bigint::U256;
-use chain::{IndexedBlockHeader, BlockHeader};
+use chain::IndexedBlockHeader;
 use network::{Network, ConsensusParams, ConsensusFork};
 use storage::{BlockHeaderProvider, BlockRef};
 use work_bch::work_required_bitcoin_cash;
@@ -67,10 +67,7 @@ pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHea
 
 	match consensus.fork {
 		ConsensusFork::BitcoinCash(ref fork) if height >= fork.height =>
-			return work_required_bitcoin_cash(IndexedBlockHeader {
-				hash: parent_hash,
-				raw: parent_header
-			}, time, height, store, consensus, fork, max_bits),
+			return work_required_bitcoin_cash(parent_header, time, height, store, consensus, fork, max_bits),
 		_ => (),
 	}
 
@@ -82,7 +79,7 @@ pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHea
 		return work_required_testnet(parent_hash, time, height, store, Network::Testnet)
 	}
 
-	parent_header.bits
+	parent_header.raw.bits
 }
 
 pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, network: Network) -> Compact {
@@ -92,7 +89,7 @@ pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &
 	let mut block_ref: BlockRef = parent_hash.into();
 
 	let parent_header = store.block_header(block_ref.clone()).expect("height != 0; qed");
-	let max_time_gap = parent_header.time + DOUBLE_SPACING_SECONDS;
+	let max_time_gap = parent_header.raw.time + DOUBLE_SPACING_SECONDS;
 	let max_bits = network.max_bits().into();
 	if time > max_time_gap {
 		return max_bits;
@@ -104,8 +101,8 @@ pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &
 			Some(h) => h,
 			None => { break; }
 		};
-		bits.push(previous_header.bits);
-		block_ref = previous_header.previous_header_hash.into();
+		bits.push(previous_header.raw.bits);
+		block_ref = previous_header.raw.previous_header_hash.into();
 	}
 
 	for (index, bit) in bits.into_iter().enumerate() {
@@ -118,16 +115,16 @@ pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &
 }
 
 /// Algorithm used for retargeting work every 2 weeks
-pub fn work_required_retarget(parent_header: BlockHeader, height: u32, store: &BlockHeaderProvider, max_work_bits: Compact) -> Compact {
+pub fn work_required_retarget(parent_header: IndexedBlockHeader, height: u32, store: &BlockHeaderProvider, max_work_bits: Compact) -> Compact {
 	let retarget_ref = (height - RETARGETING_INTERVAL).into();
 	let retarget_header = store.block_header(retarget_ref).expect("self.height != 0 && self.height % RETARGETING_INTERVAL == 0; qed");
 
 	// timestamp of block(height - RETARGETING_INTERVAL)
-	let retarget_timestamp = retarget_header.time;
+	let retarget_timestamp = retarget_header.raw.time;
 	// timestamp of parent block
-	let last_timestamp = parent_header.time;
+	let last_timestamp = parent_header.raw.time;
 	// bits of last block
-	let last_bits = parent_header.bits;
+	let last_bits = parent_header.raw.bits;
 
 	let mut retarget: U256 = last_bits.into();
 	let maximum: U256 = max_work_bits.into();

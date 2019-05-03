@@ -9,7 +9,7 @@ use v1::helpers::errors::{block_not_found, block_at_height_not_found, transactio
 	transaction_output_not_found, transaction_of_side_branch};
 use jsonrpc_macros::Trailing;
 use jsonrpc_core::Error;
-use {storage, chain};
+use storage;
 use global_script::Script;
 use chain::OutPoint;
 use verification;
@@ -66,14 +66,13 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 	fn raw_block(&self, hash: GlobalH256) -> Option<RawBlock> {
 		self.storage.block(hash.into())
 			.map(|block| {
-				serialize(&block).into()
+				serialize(&block.to_raw_block()).into()
 			})
 	}
 
 	fn verbose_block(&self, hash: GlobalH256) -> Option<VerboseBlock> {
 		self.storage.block(hash.into())
 			.map(|block| {
-				let block: chain::IndexedBlock = block.into();
 				let height = self.storage.block_number(block.hash());
 				let confirmations = match height {
 					Some(block_number) => (self.storage.best_block().number - block_number + 1) as i64,
@@ -115,7 +114,7 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 			None => return Err(transaction_not_found(prev_out.hash)),
 		};
 
-		if prev_out.index >= transaction.outputs.len() as u32 {
+		if prev_out.index >= transaction.raw.outputs.len() as u32 {
 			return Err(transaction_output_not_found(prev_out));
 		}
 
@@ -137,15 +136,15 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 			return Err(transaction_not_found(prev_out.hash));
 		}
 
-		let ref script_bytes = transaction.outputs[prev_out.index as usize].script_pubkey;
+		let ref script_bytes = transaction.raw.outputs[prev_out.index as usize].script_pubkey;
 		let script: Script = script_bytes.clone().into();
 		let script_asm = format!("{}", script);
 		let script_addresses = script.extract_destinations().unwrap_or(vec![]);
 
 		Ok(GetTxOutResponse {
-			bestblock: block_header.hash().into(),
+			bestblock: block_header.hash.into(),
 			confirmations: best_block.number - meta.height() + 1,
-			value: 0.00000001f64 * (transaction.outputs[prev_out.index as usize].value as f64),
+			value: 0.00000001f64 * (transaction.raw.outputs[prev_out.index as usize].value as f64),
 			script: TransactionOutputScript {
 				asm: script_asm,
 				hex: script_bytes.clone().into(),
@@ -162,8 +161,8 @@ impl BlockChainClientCoreApi for BlockChainClientCore {
 					kind: a.kind,
 				}).collect(),
 			},
-			version: transaction.version,
-			coinbase: transaction.is_coinbase(),
+			version: transaction.raw.version,
+			coinbase: transaction.raw.is_coinbase(),
 		})
 	}
 }

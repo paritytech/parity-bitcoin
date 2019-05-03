@@ -16,8 +16,10 @@ pub struct BlockHeader {
 }
 
 impl BlockHeader {
+	/// Compute hash of the block header.
+	#[cfg(any(test, feature = "test-helpers"))]
 	pub fn hash(&self) -> H256 {
-		dhash256(&serialize(self))
+		block_header_hash(self)
 	}
 }
 
@@ -38,6 +40,11 @@ impl From<&'static str> for BlockHeader {
 	fn from(s: &'static str) -> Self {
 		deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap()
 	}
+}
+
+/// Compute hash of the block header.
+pub(crate) fn block_header_hash(block_header: &BlockHeader) -> H256 {
+	dhash256(&serialize(block_header))
 }
 
 #[cfg(test)]

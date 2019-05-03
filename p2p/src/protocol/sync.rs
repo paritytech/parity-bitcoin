@@ -8,12 +8,18 @@ use ser::SERIALIZE_TRANSACTION_WITNESS;
 pub type InboundSyncConnectionRef = Box<InboundSyncConnection>;
 pub type OutboundSyncConnectionRef = Arc<OutboundSyncConnection>;
 pub type LocalSyncNodeRef = Box<LocalSyncNode>;
+pub type InboundSyncConnectionStateRef = Arc<InboundSyncConnectionState>;
 
 pub trait LocalSyncNode : Send + Sync {
 	fn create_sync_session(&self, height: i32, services: Services, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;
 }
 
+pub trait InboundSyncConnectionState: Send + Sync {
+	fn synchronizing(&self) -> bool;
+}
+
 pub trait InboundSyncConnection : Send + Sync {
+	fn sync_state(&self) -> InboundSyncConnectionStateRef;
 	fn start_sync_session(&self, peer_name: String, version: types::Version);
 	fn close_session(&self);
 	fn on_inventory(&self, message: types::Inv);
@@ -178,15 +184,18 @@ impl OutboundSyncConnection for OutboundSync {
 pub struct SyncProtocol {
 	inbound_connection: InboundSyncConnectionRef,
 	context: Arc<PeerContext>,
+	state: InboundSyncConnectionStateRef,
 }
 
 impl SyncProtocol {
 	pub fn new(context: Arc<PeerContext>) -> Self {
 		let outbound_connection = Arc::new(OutboundSync::new(context.clone()));
 		let inbound_connection = context.global().create_sync_session(0, context.info().version_message.services(), outbound_connection);
+		let state = inbound_connection.sync_state();
 		SyncProtocol {
 			inbound_connection: inbound_connection,
 			context: context,
+			state: state,
 		}
 	}
 }
@@ -203,24 +212,51 @@ impl Protocol for SyncProtocol {
 	fn on_message(&mut self, command: &Command, payload: &Bytes) -> Result<(), Error> {
 		let version = self.context.info().version;
 		if command == &types::Inv::command() {
+			// we are synchronizing => we ask only for blocks with known headers
+			// => there are no useful blocks hashes for us
+			// we are synchronizing
+			// => we ignore all transactions until it is completed => there are no useful transactions hashes for us
+			if self.state.synchronizing() {
+				return Ok(());
+			}
+
 			let message: types::Inv = try!(deserialize_payload(payload, version));
 			self.inbound_connection.on_inventory(message);
 		}
 		else if command == &types::GetData::command() {
+			if self.state.synchronizing() {
+				return Ok(());
+			}
+
 			let message: types::GetData = try!(deserialize_payload(payload, version));
 			self.inbound_connection.on_getdata(message);
 		}
 		else if command == &types::GetBlocks::command() {
+			if self.state.synchronizing() {
+				return Ok(());
+			}
+
 			let message: types::GetBlocks = try!(deserialize_payload(payload, version));
 			self.inbound_connection.on_getblocks(message);
 		}
 		else if command == &types::GetHeaders::command() {
+			if self.state.synchronizing() {
+				return Ok(());
+			}
+
 			let message: types::GetHeaders = try!(deserialize_payload(payload, version));
 			let id = self.context.declare_response();
 			trace!("declared response {} for request: {}", id, types::GetHeaders::command());
 			self.inbound_connection.on_getheaders(message, id);
 		}
 		else if command == &types::Tx::command() {
+			// we ignore all transactions while synchronizing, as memory pool contains
+			// only verified transactions && we can not verify on-top transactions while
+			// we are not on the top
+			if self.state.synchronizing() {
+				return Ok(());
+			}
+
 			let message: types::Tx = try!(deserialize_payload(payload, version));
 			self.inbound_connection.on_transaction(message);
 		}
@@ -229,6 +265,10 @@ impl Protocol for SyncProtocol {
 			self.inbound_connection.on_block(message);
 		}
 		else if command == &types::MemPool::command() {
+			if self.state.synchronizing() {
+				return Ok(());
+			}
+
 			let message: types::MemPool = try!(deserialize_payload(payload, version));
 			self.inbound_connection.on_mempool(message);
 		}
@@ -269,6 +309,10 @@ impl Protocol for SyncProtocol {
 			self.inbound_connection.on_compact_block(message);
 		}
 		else if command == &types::GetBlockTxn::command() {
+			if self.state.synchronizing() {
+				return Ok(());
+			}
+
 			let message: types::GetBlockTxn = try!(deserialize_payload(payload, version));
 			self.inbound_connection.on_get_block_txn(message);
 		}

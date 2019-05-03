@@ -48,7 +48,7 @@ pub type ClientCoreRef<T> = Arc<Mutex<T>>;
 pub type ServerRef<T> = Arc<T>;
 
 /// Reference to local node
-pub type LocalNodeRef = Arc<LocalNode<LocalSynchronizationTaskExecutor, ServerImpl, SynchronizationClient<LocalSynchronizationTaskExecutor, AsyncVerifier>>>;
+pub type LocalNodeRef = Arc<LocalNode<ServerImpl, SynchronizationClient<LocalSynchronizationTaskExecutor, AsyncVerifier>>>;
 
 /// Synchronization events listener reference
 pub type SyncListenerRef = Box<SyncListener>;

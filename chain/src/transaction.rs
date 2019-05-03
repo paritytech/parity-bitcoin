@@ -111,8 +111,9 @@ impl HeapSizeOf for Transaction {
 }
 
 impl Transaction {
+	#[cfg(any(test, feature = "test-helpers"))]
 	pub fn hash(&self) -> H256 {
-		dhash256(&serialize(self))
+		transaction_hash(self)
 	}
 
 	pub fn witness_hash(&self) -> H256 {
@@ -257,6 +258,10 @@ impl Deserializable for Transaction {
 			lock_time: reader.read()?,
 		})
 	}
+}
+
+pub(crate) fn transaction_hash(transaction: &Transaction) -> H256 {
+	dhash256(&serialize(transaction))
 }
 
 #[cfg(test)]

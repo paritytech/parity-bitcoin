@@ -1,7 +1,7 @@
 use std::{io, cmp, fmt};
 use hash::H256;
 use ser::{Deserializable, Reader, Error as ReaderError};
-use block_header::BlockHeader;
+use block_header::{BlockHeader, block_header_hash};
 use read_and_hash::ReadAndHash;
 
 #[derive(Clone)]
@@ -19,21 +19,25 @@ impl fmt::Debug for IndexedBlockHeader {
 	}
 }
 
+#[cfg(feature = "test-helpers")]
 impl From<BlockHeader> for IndexedBlockHeader {
 	fn from(header: BlockHeader) -> Self {
-		IndexedBlockHeader {
-			hash: header.hash(),
-			raw: header,
-		}
+		Self::from_raw(header)
 	}
 }
-
 impl IndexedBlockHeader {
 	pub fn new(hash: H256, header: BlockHeader) -> Self {
 		IndexedBlockHeader {
 			hash: hash,
 			raw: header,
 		}
+	}
+
+	/// Explicit conversion of the raw BlockHeader into IndexedBlockHeader.
+	///
+	/// Hashes the contents of block header.
+	pub fn from_raw(header: BlockHeader) -> Self {
+		IndexedBlockHeader::new(block_header_hash(&header), header)
 	}
 }
 

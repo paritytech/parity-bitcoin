@@ -1,7 +1,7 @@
 use std::collections::{VecDeque, HashSet};
 use std::fmt;
 use linked_hash_map::LinkedHashMap;
-use chain::{BlockHeader, Transaction, IndexedBlockHeader, IndexedBlock, IndexedTransaction, OutPoint, TransactionOutput};
+use chain::{IndexedBlockHeader, IndexedBlock, IndexedTransaction, OutPoint, TransactionOutput};
 use storage;
 use miner::{MemoryPoolOrderingStrategy, MemoryPoolInformation, FeeCalculator};
 use network::ConsensusParams;
@@ -257,7 +257,7 @@ impl Chain {
 	/// Get block header by number
 	pub fn block_header_by_number(&self, number: BlockHeight) -> Option<IndexedBlockHeader> {
 		if number <= self.best_storage_block.number {
-			self.storage.block_header(storage::BlockRef::Number(number)).map(Into::into)
+			self.storage.block_header(storage::BlockRef::Number(number))
 		} else {
 			self.headers_chain.at(number - self.best_storage_block.number)
 		}
@@ -265,8 +265,8 @@ impl Chain {
 
 	/// Get block header by hash
 	pub fn block_header_by_hash(&self, hash: &H256) -> Option<IndexedBlockHeader> {
-		if let Some(block) = self.storage.block(storage::BlockRef::Hash(hash.clone())) {
-			return Some(block.block_header.into());
+		if let Some(header) = self.storage.block_header(storage::BlockRef::Hash(hash.clone())) {
+			return Some(header);
 		}
 		self.headers_chain.by_hash(hash)
 	}
@@ -417,7 +417,7 @@ impl Chain {
 
 				// reverify all transactions from old main branch' blocks
 				let old_main_blocks_transactions = origin.decanonized_route.into_iter()
-					.flat_map(|block_hash| self.storage.indexed_block_transactions(block_hash.into()))
+					.flat_map(|block_hash| self.storage.block_transactions(block_hash.into()))
 					.collect::<Vec<_>>();
 
 				trace!(target: "sync", "insert_best_block, old_main_blocks_transactions: {:?}",
@@ -602,7 +602,9 @@ impl Chain {
 	/// Get transaction by hash (if it's in memory pool or verifying)
 	pub fn transaction_by_hash(&self, hash: &H256) -> Option<IndexedTransaction> {
 		self.verifying_transactions.get(hash).cloned()
-			.or_else(|| self.memory_pool.read().read_by_hash(hash).cloned().map(|t| t.into()))
+			.or_else(|| self.memory_pool.read().read_by_hash(hash)
+				.cloned()
+				.map(|tx| IndexedTransaction::new(hash.clone(), tx)))
 	}
 
 	/// Insert transaction to memory pool
@@ -670,7 +672,7 @@ impl storage::TransactionProvider for Chain {
 			.or_else(|| self.storage.transaction_bytes(hash))
 	}
 
-	fn transaction(&self, hash: &H256) -> Option<Transaction> {
+	fn transaction(&self, hash: &H256) -> Option<IndexedTransaction> {
 		self.memory_pool.read().transaction(hash)
 			.or_else(|| self.storage.transaction(hash))
 	}
@@ -691,13 +693,13 @@ impl storage::TransactionOutputProvider for Chain {
 impl storage::BlockHeaderProvider for Chain {
 	fn block_header_bytes(&self, block_ref: storage::BlockRef) -> Option<Bytes> {
 		use ser::serialize;
-		self.block_header(block_ref).map(|h| serialize(&h))
+		self.block_header(block_ref).map(|h| serialize(&h.raw))
 	}
 
-	fn block_header(&self, block_ref: storage::BlockRef) -> Option<BlockHeader> {
+	fn block_header(&self, block_ref: storage::BlockRef) -> Option<IndexedBlockHeader> {
 		match block_ref {
-			storage::BlockRef::Hash(hash) => self.block_header_by_hash(&hash).map(|h| h.raw),
-			storage::BlockRef::Number(n) => self.block_header_by_number(n).map(|h| h.raw),
+			storage::BlockRef::Hash(hash) => self.block_header_by_hash(&hash),
+			storage::BlockRef::Number(n) => self.block_header_by_number(n),
 		}
 	}
 }

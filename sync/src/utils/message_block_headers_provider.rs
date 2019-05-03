@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use chain::BlockHeader;
+use chain::IndexedBlockHeader;
 use storage::{BlockRef, BlockHeaderProvider};
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
@@ -11,7 +11,7 @@ pub struct MessageBlockHeadersProvider<'a> {
 	/// headers offset
 	first_header_number: u32,
 	/// headers by hash
-	headers: HashMap<H256, BlockHeader>,
+	headers: HashMap<H256, IndexedBlockHeader>,
 	/// headers by order
 	headers_order: Vec<H256>,
 }
@@ -26,7 +26,7 @@ impl<'a> MessageBlockHeadersProvider<'a> {
 		}
 	}
 
-	pub fn append_header(&mut self, hash: H256, header: BlockHeader) {
+	pub fn append_header(&mut self, hash: H256, header: IndexedBlockHeader) {
 		self.headers.insert(hash.clone(), header);
 		self.headers_order.push(hash);
 	}
@@ -35,10 +35,10 @@ impl<'a> MessageBlockHeadersProvider<'a> {
 impl<'a> BlockHeaderProvider for MessageBlockHeadersProvider<'a> {
 	fn block_header_bytes(&self, block_ref: BlockRef) -> Option<Bytes> {
 		use ser::serialize;
-		self.block_header(block_ref).map(|h| serialize(&h))
+		self.block_header(block_ref).map(|h| serialize(&h.raw))
 	}
 
-	fn block_header(&self, block_ref: BlockRef) -> Option<BlockHeader> {
+	fn block_header(&self, block_ref: BlockRef) -> Option<IndexedBlockHeader> {
 		self.chain_provider.block_header(block_ref.clone())
 			.or_else(move || match block_ref {
 				BlockRef::Hash(h) => self.headers.get(&h).cloned(),
@@ -67,17 +67,17 @@ mod tests {
 		let storage_provider = storage.as_block_header_provider();
 		let mut headers_provider = MessageBlockHeadersProvider::new(storage_provider, 0);
 
-		assert_eq!(headers_provider.block_header(BlockRef::Hash(test_data::genesis().hash())), Some(test_data::genesis().block_header));
-		assert_eq!(headers_provider.block_header(BlockRef::Number(0)), Some(test_data::genesis().block_header));
+		assert_eq!(headers_provider.block_header(BlockRef::Hash(test_data::genesis().hash())), Some(test_data::genesis().block_header.into()));
+		assert_eq!(headers_provider.block_header(BlockRef::Number(0)), Some(test_data::genesis().block_header.into()));
 		assert_eq!(headers_provider.block_header(BlockRef::Hash(H256::from(1))), None);
 		assert_eq!(headers_provider.block_header(BlockRef::Number(1)), None);
 
-		headers_provider.append_header(test_data::block_h1().hash(), test_data::block_h1().block_header);
+		headers_provider.append_header(test_data::block_h1().hash(), test_data::block_h1().block_header.into());
 
-		assert_eq!(headers_provider.block_header(BlockRef::Hash(test_data::genesis().hash())), Some(test_data::genesis().block_header));
-		assert_eq!(headers_provider.block_header(BlockRef::Number(0)), Some(test_data::genesis().block_header));
-		assert_eq!(headers_provider.block_header(BlockRef::Hash(test_data::block_h1().hash())), Some(test_data::block_h1().block_header));
-		assert_eq!(headers_provider.block_header(BlockRef::Number(1)), Some(test_data::block_h1().block_header));
+		assert_eq!(headers_provider.block_header(BlockRef::Hash(test_data::genesis().hash())), Some(test_data::genesis().block_header.into()));
+		assert_eq!(headers_provider.block_header(BlockRef::Number(0)), Some(test_data::genesis().block_header.into()));
+		assert_eq!(headers_provider.block_header(BlockRef::Hash(test_data::block_h1().hash())), Some(test_data::block_h1().block_header.into()));
+		assert_eq!(headers_provider.block_header(BlockRef::Number(1)), Some(test_data::block_h1().block_header.into()));
 		assert_eq!(headers_provider.block_header(BlockRef::Hash(H256::from(1))), None);
 		assert_eq!(headers_provider.block_header(BlockRef::Number(2)), None);
 	}

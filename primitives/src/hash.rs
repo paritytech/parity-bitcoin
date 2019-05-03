@@ -7,6 +7,7 @@ use std::hash::{Hash, Hasher};
 macro_rules! impl_hash {
 	($name: ident, $size: expr) => {
 		#[repr(C)]
+		#[derive(Copy)]
 		pub struct $name([u8; $size]);
 
 		impl Default for $name {

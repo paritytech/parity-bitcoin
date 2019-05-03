@@ -6,7 +6,7 @@ use v1::types::{RawTransaction, TransactionInput, TransactionOutput, Transaction
 use v1::types::H256;
 use v1::helpers::errors::{execution, invalid_params, transaction_not_found, transaction_of_side_branch};
 use global_script::Script;
-use chain::Transaction as GlobalTransaction;
+use chain::{Transaction as GlobalTransaction, IndexedTransaction as GlobalIndexedTransaction};
 use network::{ConsensusFork, Network};
 use primitives::bytes::Bytes as GlobalBytes;
 use primitives::hash::H256 as GlobalH256;
@@ -22,7 +22,7 @@ pub trait RawClientCoreApi: Send + Sync + 'static {
 	fn accept_transaction(&self, transaction: GlobalTransaction) -> Result<GlobalH256, String>;
 	fn create_raw_transaction(&self, inputs: Vec<TransactionInput>, outputs: TransactionOutputs, lock_time: Trailing<u32>) -> Result<GlobalTransaction, String>;
 	fn get_raw_transaction(&self, hash: GlobalH256, verbose: bool) -> Result<GetRawTransactionResponse, Error>;
-	fn transaction_to_verbose_transaction(&self, transaction: GlobalTransaction) -> Transaction;
+	fn transaction_to_verbose_transaction(&self, transaction: GlobalIndexedTransaction) -> Transaction;
 }
 
 pub struct RawClientCore {
@@ -102,7 +102,7 @@ impl RawClientCore {
 
 impl RawClientCoreApi for RawClientCore {
 	fn accept_transaction(&self, transaction: GlobalTransaction) -> Result<GlobalH256, String> {
-		self.local_sync_node.accept_transaction(transaction)
+		self.local_sync_node.accept_transaction(GlobalIndexedTransaction::from_raw(transaction))
 	}
 
 	fn create_raw_transaction(&self, inputs: Vec<TransactionInput>, outputs: TransactionOutputs, lock_time: Trailing<u32>) -> Result<GlobalTransaction, String> {
@@ -115,7 +115,7 @@ impl RawClientCoreApi for RawClientCore {
 			None => return Err(transaction_not_found(hash)),
 		};
 
-		let transaction_bytes = serialize(&transaction);
+		let transaction_bytes = serialize(&transaction.raw);
 		let raw_transaction = RawTransaction::new(transaction_bytes.take());
 
 		if verbose {
@@ -134,14 +134,14 @@ impl RawClientCoreApi for RawClientCore {
 				return Err(transaction_not_found(hash));
 			}
 
-			let blockhash: H256 = block_header.hash().into();
+			let blockhash: H256 = block_header.hash.into();
 
 			let mut verbose_transaction = self.transaction_to_verbose_transaction(transaction);
 			verbose_transaction.hex = Some(raw_transaction);
 			verbose_transaction.blockhash = Some(blockhash.reversed());
 			verbose_transaction.confirmations = Some(best_block.number - meta.height() + 1);
-			verbose_transaction.time = Some(block_header.time);
-			verbose_transaction.blocktime = Some(block_header.time);
+			verbose_transaction.time = Some(block_header.raw.time);
+			verbose_transaction.blocktime = Some(block_header.raw.time);
 
 			Ok(GetRawTransactionResponse::Verbose(verbose_transaction))
 		} else {
@@ -149,11 +149,11 @@ impl RawClientCoreApi for RawClientCore {
 		}
 	}
 
-	fn transaction_to_verbose_transaction(&self, transaction: GlobalTransaction) -> Transaction {
-		let txid: H256 = transaction.hash().into();
-		let hash: H256 = transaction.witness_hash().into();
+	fn transaction_to_verbose_transaction(&self, transaction: GlobalIndexedTransaction) -> Transaction {
+		let txid: H256 = transaction.hash.into();
+		let hash: H256 = transaction.raw.witness_hash().into();
 
-		let inputs = transaction.clone().inputs
+		let inputs = transaction.raw.inputs.clone()
 			.into_iter()
 			.map(|input| {
 				let txid: H256 = input.previous_output.hash.into();
@@ -179,7 +179,7 @@ impl RawClientCoreApi for RawClientCore {
 				}
 			}).collect();
 
-		let outputs = transaction.clone().outputs
+		let outputs = transaction.raw.outputs.clone()
 			.into_iter()
 			.enumerate()
 			.map(|(index, output)| {
@@ -207,8 +207,8 @@ impl RawClientCoreApi for RawClientCore {
 				}
 			}).collect();
 
-		let tx_size = transaction.serialized_size_with_flags(SERIALIZE_TRANSACTION_WITNESS);
-		let weight = transaction.serialized_size() * (ConsensusFork::witness_scale_factor() - 1) + tx_size;
+		let tx_size = transaction.raw.serialized_size_with_flags(SERIALIZE_TRANSACTION_WITNESS);
+		let weight = transaction.raw.serialized_size() * (ConsensusFork::witness_scale_factor() - 1) + tx_size;
 		let tx_vsize = (weight + ConsensusFork::witness_scale_factor() - 1) / ConsensusFork::witness_scale_factor();
 
 		Transaction {
@@ -217,8 +217,8 @@ impl RawClientCoreApi for RawClientCore {
 			hash: hash.reversed(),
 			size: tx_size,
 			vsize: tx_vsize,
-			version: transaction.version,
-			locktime: transaction.lock_time as i32,
+			version: transaction.raw.version,
+			locktime: transaction.raw.lock_time as i32,
 			vin: inputs,
 			vout: outputs,
 			blockhash: None,
@@ -359,7 +359,7 @@ pub mod tests {
 			}
 		}
 
-		fn transaction_to_verbose_transaction(&self, _transaction: GlobalTransaction) -> Transaction {
+		fn transaction_to_verbose_transaction(&self, _transaction: GlobalIndexedTransaction) -> Transaction {
 			Transaction {
 				hex: None,
 				txid: "c586389e5e4b3acb9d6c8be1c19ae8ab2795397633176f5a6442a261bbdefc3a".into(),
@@ -419,7 +419,7 @@ pub mod tests {
 			Err(transaction_not_found(hash))
 		}
 
-		fn transaction_to_verbose_transaction(&self, _transaction: GlobalTransaction) -> Transaction {
+		fn transaction_to_verbose_transaction(&self, _transaction: GlobalIndexedTransaction) -> Transaction {
 			Transaction {
 				hex: None,
 				txid: "635f07dc4acdfb9bc305261169f82836949df462876fab9017bb9faf4d5fdadb".into(),

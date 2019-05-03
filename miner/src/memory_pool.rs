@@ -678,9 +678,10 @@ impl MemoryPool {
 	}
 
 	/// Removes single transaction by its hash.
-	/// All descedants remain in the pool.
-	pub fn remove_by_hash(&mut self, h: &H256) -> Option<Transaction> {
-		self.storage.remove_by_hash(h).map(|entry| entry.transaction)
+	/// All descendants remain in the pool.
+	pub fn remove_by_hash(&mut self, h: &H256) -> Option<IndexedTransaction> {
+		self.storage.remove_by_hash(h)
+			.map(|entry| IndexedTransaction::new(entry.hash, entry.transaction))
 	}
 
 	/// Checks if `transaction` spends some outputs, already spent by inpool transactions.
@@ -818,8 +819,8 @@ impl TransactionProvider for MemoryPool {
 		self.get(hash).map(|t| serialize(t))
 	}
 
-	fn transaction(&self, hash: &H256) -> Option<Transaction> {
-		self.get(hash).cloned()
+	fn transaction(&self, hash: &H256) -> Option<IndexedTransaction> {
+		self.get(hash).cloned().map(|tx| IndexedTransaction::new(*hash, tx))
 	}
 }
 
@@ -969,7 +970,7 @@ pub mod tests {
 		// remove and check remaining transactions
 		let removed = pool.remove_by_hash(&default_tx().hash());
 		assert!(removed.is_some());
-		assert_eq!(removed.unwrap(), default_tx());
+		assert_eq!(removed.unwrap(), default_tx().into());
 		assert_eq!(pool.get_transactions_ids().len(), 0);
 
 		// remove non-existant transaction

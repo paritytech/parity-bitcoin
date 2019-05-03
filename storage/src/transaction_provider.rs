@@ -1,6 +1,6 @@
 use hash::H256;
 use bytes::Bytes;
-use chain::{Transaction, OutPoint, TransactionOutput};
+use chain::{IndexedTransaction, OutPoint, TransactionOutput};
 use {TransactionMeta};
 
 /// Should be used to obtain all transactions from canon chain and forks.
@@ -14,7 +14,7 @@ pub trait TransactionProvider {
 	fn transaction_bytes(&self, hash: &H256) -> Option<Bytes>;
 
 	/// Resolves serialized transaction info by transaction hash.
-	fn transaction(&self, hash: &H256) -> Option<Transaction>;
+	fn transaction(&self, hash: &H256) -> Option<IndexedTransaction>;
 }
 
 /// Should be used to get canon chain transaction outputs.

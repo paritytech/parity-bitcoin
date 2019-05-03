@@ -1,7 +1,8 @@
 use std::{cmp, io, fmt};
 use hash::H256;
+use heapsize::HeapSizeOf;
 use ser::{Deserializable, Reader, Error as ReaderError};
-use transaction::Transaction;
+use transaction::{Transaction, transaction_hash};
 use read_and_hash::ReadAndHash;
 
 #[derive(Default, Clone)]
@@ -19,13 +20,16 @@ impl fmt::Debug for IndexedTransaction {
 	}
 }
 
+#[cfg(feature = "test-helpers")]
 impl<T> From<T> for IndexedTransaction where Transaction: From<T> {
 	fn from(other: T) -> Self {
-		let tx = Transaction::from(other);
-		IndexedTransaction {
-			hash: tx.hash(),
-			raw: tx,
-		}
+		Self::from_raw(other)
+	}
+}
+
+impl HeapSizeOf for IndexedTransaction {
+	fn heap_size_of_children(&self) -> usize {
+		self.raw.heap_size_of_children()
 	}
 }
 
@@ -35,6 +39,14 @@ impl IndexedTransaction {
 			hash: hash,
 			raw: transaction,
 		}
+	}
+
+	/// Explicit conversion of the raw Transaction into IndexedTransaction.
+	///
+	/// Hashes transaction contents.
+	pub fn from_raw<T>(transaction: T) -> Self where Transaction: From<T> {
+		let transaction = Transaction::from(transaction);
+		Self::new(transaction_hash(&transaction), transaction)
 	}
 }
 

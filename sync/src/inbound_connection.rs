@@ -1,6 +1,6 @@
-use chain::{IndexedTransaction, IndexedBlock};
+use chain::{IndexedTransaction, IndexedBlock, IndexedBlockHeader};
 use message::types;
-use p2p::{InboundSyncConnection, InboundSyncConnectionRef};
+use p2p::{InboundSyncConnection, InboundSyncConnectionRef, InboundSyncConnectionStateRef};
 use types::{PeersRef, LocalNodeRef, PeerIndex, RequestId};
 use utils::KnownHashType;
 
@@ -31,6 +31,10 @@ impl InboundConnection {
 }
 
 impl InboundSyncConnection for InboundConnection {
+	fn sync_state(&self) -> InboundSyncConnectionStateRef {
+		self.node.sync_state()
+	}
+
 	fn start_sync_session(&self, peer_name: String, version: types::Version) {
 		self.node.on_connect(self.peer_index, peer_name, version);
 	}
@@ -77,13 +81,13 @@ impl InboundSyncConnection for InboundConnection {
 	}
 
 	fn on_transaction(&self, message: types::Tx) {
-		let tx: IndexedTransaction = message.transaction.into();
+		let tx = IndexedTransaction::from_raw(message.transaction);
 		self.peers.hash_known_as(self.peer_index, tx.hash.clone(), KnownHashType::Transaction);
 		self.node.on_transaction(self.peer_index, tx);
 	}
 
 	fn on_block(&self, message: types::Block) {
-		let block: IndexedBlock = message.block.into();
+		let block = IndexedBlock::from_raw(message.block);
 		self.peers.hash_known_as(self.peer_index, block.hash().clone(), KnownHashType::Block);
 		self.node.on_block(self.peer_index, block);
 	}
@@ -99,7 +103,8 @@ impl InboundSyncConnection for InboundConnection {
 			return;
 		}
 
-		self.node.on_headers(self.peer_index, message);
+		let headers = message.headers.into_iter().map(IndexedBlockHeader::from_raw).collect();
+		self.node.on_headers(self.peer_index, headers);
 	}
 
 	fn on_mempool(&self, message: types::MemPool) {
