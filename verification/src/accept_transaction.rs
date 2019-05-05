@@ -441,6 +441,10 @@ impl<'a> TransactionDoubleSpend<'a> {
 	}
 
 	fn check(&self) -> Result<(), TransactionError> {
+		if self.transaction.raw.is_coinbase() {
+			return Ok(());
+		}
+
 		for input in &self.transaction.raw.inputs {
 			if self.store.is_spent(&input.previous_output) {
 				return Err(TransactionError::UsingSpentOutput(

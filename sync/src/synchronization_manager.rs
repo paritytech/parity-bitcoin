@@ -316,7 +316,7 @@ mod tests {
 	use std::collections::HashSet;
 	use primitives::hash::H256;
 	use synchronization_peers::PeersImpl;
-	use synchronization_peers_tasks::PeersTasks;
+	use synchronization_peers_tasks::{PeersTasks, TrustLevel};
 	use super::{ManagePeersConfig, ManageUnknownBlocksConfig, ManageOrphanTransactionsConfig, manage_synchronization_peers_blocks,
 		manage_unknown_orphaned_blocks, manage_orphaned_transactions};
 	use utils::{OrphanBlocksPool, OrphanTransactionsPool};
@@ -335,10 +335,12 @@ mod tests {
 	fn manage_bad_peers() {
 		use std::thread::sleep;
 		use std::time::Duration;
-		let config = ManagePeersConfig { new_block_failure_interval_ms: 0, ..Default::default() };
+		let config = ManagePeersConfig { trusted_block_failure_interval_ms: 0, ..Default::default() };
 		let mut peers = PeersTasks::default();
 		peers.on_blocks_requested(1, &vec![H256::from(0)]);
 		peers.on_blocks_requested(2, &vec![H256::from(1)]);
+		peers.get_peer_stats_mut(1).unwrap().set_trust(TrustLevel::Trusted);
+		peers.get_peer_stats_mut(2).unwrap().set_trust(TrustLevel::Trusted);
 		sleep(Duration::from_millis(1));
 
 		let managed_tasks = manage_synchronization_peers_blocks(&config, Arc::new(PeersImpl::default()), &mut peers).0;
