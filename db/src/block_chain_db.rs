@@ -40,7 +40,7 @@ pub struct ForkChainDatabase<'a, T> where T: 'a + KeyValueDatabase {
 }
 
 impl<'a, T> ForkChain for ForkChainDatabase<'a, T> where T: KeyValueDatabase {
-	fn store(&self) -> &Store {
+	fn store(&self) -> &dyn Store {
 		&self.blockchain
 	}
 
@@ -530,15 +530,15 @@ impl<T> BlockChain for BlockChainDatabase<T> where T: KeyValueDatabase {
 }
 
 impl<T> Forkable for BlockChainDatabase<T> where T: KeyValueDatabase {
-	fn fork<'a>(&'a self, side_chain: SideChainOrigin) -> Result<Box<ForkChain + 'a>, Error> {
+	fn fork<'a>(&'a self, side_chain: SideChainOrigin) -> Result<Box<dyn ForkChain + 'a>, Error> {
 		BlockChainDatabase::fork(self, side_chain)
 			.map(|fork_chain| {
-				let boxed: Box<ForkChain> = Box::new(fork_chain);
+				let boxed: Box<dyn ForkChain> = Box::new(fork_chain);
 				boxed
 			})
 	}
 
-	fn switch_to_fork<'a>(&self, fork: Box<ForkChain + 'a>) -> Result<(), Error> {
+	fn switch_to_fork<'a>(&self, fork: Box<dyn ForkChain + 'a>) -> Result<(), Error> {
 		let mut best_block = self.best_block.write();
 		*best_block = fork.store().best_block();
 		fork.flush()
@@ -546,7 +546,7 @@ impl<T> Forkable for BlockChainDatabase<T> where T: KeyValueDatabase {
 }
 
 impl<T> CanonStore for BlockChainDatabase<T> where T: KeyValueDatabase {
-	fn as_store(&self) -> &Store {
+	fn as_store(&self) -> &dyn Store {
 		&*self
 	}
 }
