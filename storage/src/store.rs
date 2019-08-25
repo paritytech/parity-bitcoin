@@ -6,7 +6,7 @@ use {
 };
 
 pub trait CanonStore: Store + Forkable + ConfigStore {
-	fn as_store(&self) -> &Store;
+	fn as_store(&self) -> &dyn Store;
 }
 
 /// Configuration storage interface
@@ -32,37 +32,37 @@ pub trait Store: AsSubstore {
 
 /// Allows casting Arc<Store> to reference to any substore type
 pub trait AsSubstore: BlockChain + BlockProvider + TransactionProvider + TransactionMetaProvider + TransactionOutputProvider {
-	fn as_block_provider(&self) -> &BlockProvider;
+	fn as_block_provider(&self) -> &dyn BlockProvider;
 
-	fn as_block_header_provider(&self) -> &BlockHeaderProvider;
+	fn as_block_header_provider(&self) -> &dyn BlockHeaderProvider;
 
-	fn as_transaction_provider(&self) -> &TransactionProvider;
+	fn as_transaction_provider(&self) -> &dyn TransactionProvider;
 
-	fn as_transaction_output_provider(&self) -> &TransactionOutputProvider;
+	fn as_transaction_output_provider(&self) -> &dyn TransactionOutputProvider;
 
-	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider;
+	fn as_transaction_meta_provider(&self) -> &dyn TransactionMetaProvider;
 }
 
 impl<T> AsSubstore for T where T: BlockChain + BlockProvider + TransactionProvider + TransactionMetaProvider + TransactionOutputProvider {
-	fn as_block_provider(&self) -> &BlockProvider {
+	fn as_block_provider(&self) -> &dyn BlockProvider {
 		&*self
 	}
 
-	fn as_block_header_provider(&self) -> &BlockHeaderProvider {
+	fn as_block_header_provider(&self) -> &dyn BlockHeaderProvider {
 		&*self
 	}
 
-	fn as_transaction_provider(&self) -> &TransactionProvider {
+	fn as_transaction_provider(&self) -> &dyn TransactionProvider {
 		&*self
 	}
 
-	fn as_transaction_output_provider(&self) -> &TransactionOutputProvider {
+	fn as_transaction_output_provider(&self) -> &dyn TransactionOutputProvider {
 		&*self
 	}
 
-	fn as_transaction_meta_provider(&self) -> &TransactionMetaProvider {
+	fn as_transaction_meta_provider(&self) -> &dyn TransactionMetaProvider {
 		&*self
 	}
 }
 
-pub type SharedStore = Arc<CanonStore + Send + Sync>;
+pub type SharedStore = Arc<dyn CanonStore + Send + Sync>;

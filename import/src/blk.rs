@@ -44,7 +44,7 @@ pub fn open_blk_dir<P>(path: P) -> Result<BlkDir, io::Error> where P: AsRef<path
 
 /// Bitcoind database blocks iterator
 pub struct BlkDir {
-	iter: Box<Iterator<Item = Result<Block, ReaderError>>>,
+	iter: Box<dyn Iterator<Item = Result<Block, ReaderError>>>,
 }
 
 impl Iterator for BlkDir {

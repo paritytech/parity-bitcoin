@@ -124,7 +124,7 @@ impl BackwardsCompatibleChainVerifier {
 
 	pub fn verify_block_header(
 		&self,
-		_block_header_provider: &BlockHeaderProvider,
+		_block_header_provider: &dyn BlockHeaderProvider,
 		hash: &H256,
 		header: &BlockHeader
 	) -> Result<(), Error> {
@@ -138,7 +138,7 @@ impl BackwardsCompatibleChainVerifier {
 
 	pub fn verify_mempool_transaction<T>(
 		&self,
-		block_header_provider: &BlockHeaderProvider,
+		block_header_provider: &dyn BlockHeaderProvider,
 		prevout_provider: &T,
 		height: u32,
 		time: u32,

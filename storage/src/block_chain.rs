@@ -4,7 +4,7 @@ use {Error, BlockOrigin, Store, SideChainOrigin};
 
 pub trait ForkChain {
 	/// Returns forks underlaying store.
-	fn store(&self) -> &Store;
+	fn store(&self) -> &dyn Store;
 
 	/// Flush fork changes to canon chain.
 	/// Should not be used directly from outside of `BlockChain`.
@@ -31,9 +31,9 @@ pub trait BlockChain {
 pub trait Forkable {
 	/// Forks current blockchain.
 	/// Lifetime guarantees fork relationship with canon chain.
-	fn fork<'a>(&'a self, side_chain: SideChainOrigin) -> Result<Box<ForkChain + 'a>, Error>;
+	fn fork<'a>(&'a self, side_chain: SideChainOrigin) -> Result<Box<dyn ForkChain + 'a>, Error>;
 
 	/// Switches blockchain to given fork.
 	/// Lifetime guarantees that fork comes from this canon chain.
-	fn switch_to_fork<'a>(&'a self, fork: Box<ForkChain + 'a>) -> Result<(), Error>;
+	fn switch_to_fork<'a>(&'a self, fork: Box<dyn ForkChain + 'a>) -> Result<(), Error>;
 }

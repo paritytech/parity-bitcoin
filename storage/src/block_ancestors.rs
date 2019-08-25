@@ -3,11 +3,11 @@ use {BlockRef, BlockHeaderProvider};
 
 pub struct BlockAncestors<'a> {
 	block: Option<BlockRef>,
-	headers: &'a BlockHeaderProvider,
+	headers: &'a dyn BlockHeaderProvider,
 }
 
 impl<'a> BlockAncestors<'a> {
-	pub fn new(block: BlockRef, headers: &'a BlockHeaderProvider) -> Self {
+	pub fn new(block: BlockRef, headers: &'a dyn BlockHeaderProvider) -> Self {
 		BlockAncestors {
 			block: Some(block),
 			headers: headers,

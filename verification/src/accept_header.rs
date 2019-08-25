@@ -14,7 +14,7 @@ pub struct HeaderAcceptor<'a> {
 
 impl<'a> HeaderAcceptor<'a> {
 	pub fn new<D: AsRef<Deployments>>(
-		store: &'a BlockHeaderProvider,
+		store: &'a dyn BlockHeaderProvider,
 		consensus: &'a ConsensusParams,
 		header: CanonHeader<'a>,
 		height: u32,
@@ -66,13 +66,13 @@ impl<'a> HeaderVersion<'a> {
 
 pub struct HeaderWork<'a> {
 	header: CanonHeader<'a>,
-	store: &'a BlockHeaderProvider,
+	store: &'a dyn BlockHeaderProvider,
 	height: u32,
 	consensus: &'a ConsensusParams,
 }
 
 impl<'a> HeaderWork<'a> {
-	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, height: u32, consensus: &'a ConsensusParams) -> Self {
+	fn new(header: CanonHeader<'a>, store: &'a dyn BlockHeaderProvider, height: u32, consensus: &'a ConsensusParams) -> Self {
 		HeaderWork {
 			header: header,
 			store: store,
@@ -95,12 +95,12 @@ impl<'a> HeaderWork<'a> {
 
 pub struct HeaderMedianTimestamp<'a> {
 	header: CanonHeader<'a>,
-	store: &'a BlockHeaderProvider,
+	store: &'a dyn BlockHeaderProvider,
 	active: bool,
 }
 
 impl<'a> HeaderMedianTimestamp<'a> {
-	fn new(header: CanonHeader<'a>, store: &'a BlockHeaderProvider, csv_active: bool) -> Self {
+	fn new(header: CanonHeader<'a>, store: &'a dyn BlockHeaderProvider, csv_active: bool) -> Self {
 		HeaderMedianTimestamp {
 			header: header,
 			store: store,

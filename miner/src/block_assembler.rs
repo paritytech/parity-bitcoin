@@ -125,7 +125,7 @@ pub struct BlockAssembler {
 /// Iterator iterating over mempool transactions and yielding only those which fit the block
 struct FittingTransactionsIterator<'a, T> {
 	/// Shared store is used to query previous transaction outputs from database
-	store: &'a TransactionOutputProvider,
+	store: &'a dyn TransactionOutputProvider,
 	/// Memory pool transactions iterator
 	iter: T,
 	/// New block height
@@ -148,7 +148,7 @@ struct FittingTransactionsIterator<'a, T> {
 
 impl<'a, T> FittingTransactionsIterator<'a, T> where T: Iterator<Item = &'a Entry> {
 	fn new(
-		store: &'a TransactionOutputProvider,
+		store: &'a dyn TransactionOutputProvider,
 		iter: T,
 		max_block_size: u32,
 		max_block_sigops: u32,

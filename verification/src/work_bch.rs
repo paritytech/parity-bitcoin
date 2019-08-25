@@ -12,7 +12,7 @@ use constants::{
 };
 
 /// Returns work required for given header for the post-HF Bitcoin Cash block
-pub fn work_required_bitcoin_cash(parent_header: IndexedBlockHeader, time: u32, height: u32, store: &BlockHeaderProvider, consensus: &ConsensusParams, fork: &BitcoinCashConsensusParams, max_bits: Compact) -> Compact {
+pub fn work_required_bitcoin_cash(parent_header: IndexedBlockHeader, time: u32, height: u32, store: &dyn BlockHeaderProvider, consensus: &ConsensusParams, fork: &BitcoinCashConsensusParams, max_bits: Compact) -> Compact {
 	// special processing of Bitcoin Cash difficulty adjustment hardfork (Nov 2017), where difficulty is adjusted after each block
 	// `height` is the height of the new block => comparison is shifted by one
 	if height.saturating_sub(1) >= fork.difficulty_adjustion_height {
@@ -59,10 +59,10 @@ pub fn work_required_bitcoin_cash(parent_header: IndexedBlockHeader, time: u32, 
 
 /// Algorithm to adjust difficulty after each block. Implementation is based on Bitcoin ABC commit:
 /// https://github.com/Bitcoin-ABC/bitcoin-abc/commit/be51cf295c239ff6395a0aa67a3e13906aca9cb2
-fn work_required_bitcoin_cash_adjusted(parent_header: IndexedBlockHeader, time: u32, height: u32, store: &BlockHeaderProvider, consensus: &ConsensusParams) -> Compact {
+fn work_required_bitcoin_cash_adjusted(parent_header: IndexedBlockHeader, time: u32, height: u32, store: &dyn BlockHeaderProvider, consensus: &ConsensusParams) -> Compact {
 	/// To reduce the impact of timestamp manipulation, we select the block we are
 	/// basing our computation on via a median of 3.
-	fn suitable_block(mut header2: IndexedBlockHeader, store: &BlockHeaderProvider) -> IndexedBlockHeader {
+	fn suitable_block(mut header2: IndexedBlockHeader, store: &dyn BlockHeaderProvider) -> IndexedBlockHeader {
 		let reason = "header.height >= RETARGETNG_INTERVAL; RETARGETING_INTERVAL > 2; qed";
 		let mut header1 = store.block_header(header2.raw.previous_header_hash.into()).expect(reason);
 		let mut header0 = store.block_header(header1.raw.previous_header_hash.into()).expect(reason);
@@ -91,7 +91,7 @@ fn work_required_bitcoin_cash_adjusted(parent_header: IndexedBlockHeader, time: 
 	}
 
 	/// Compute chain work between two blocks. Last block work is included. First block work is excluded.
-	fn compute_work_between_blocks(first: H256, last: &IndexedBlockHeader, store: &BlockHeaderProvider) -> U256 {
+	fn compute_work_between_blocks(first: H256, last: &IndexedBlockHeader, store: &dyn BlockHeaderProvider) -> U256 {
 		debug_assert!(last.hash != first);
 		let mut chain_work: U256 = block_proof(last);
 		let mut prev_hash = last.raw.previous_header_hash.clone();
@@ -109,7 +109,7 @@ fn work_required_bitcoin_cash_adjusted(parent_header: IndexedBlockHeader, time: 
 
 	/// Compute the a target based on the work done between 2 blocks and the time
 	/// required to produce that work.
-	fn compute_target(first_header: IndexedBlockHeader, last_header: IndexedBlockHeader, store: &BlockHeaderProvider) -> U256 {
+	fn compute_target(first_header: IndexedBlockHeader, last_header: IndexedBlockHeader, store: &dyn BlockHeaderProvider) -> U256 {
 		// From the total work done and the time it took to produce that much work,
 		// we can deduce how much work we expect to be produced in the targeted time
 		// between blocks.

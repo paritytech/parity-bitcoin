@@ -72,7 +72,7 @@ pub trait ClientCore {
 	fn on_transaction(&mut self, peer_index: PeerIndex, transaction: IndexedTransaction) -> Option<VecDeque<IndexedTransaction>>;
 	fn on_notfound(&mut self, peer_index: PeerIndex, message: types::NotFound);
 	fn after_peer_nearly_blocks_verified(&mut self, peer_index: PeerIndex, future: EmptyBoxFuture);
-	fn accept_transaction(&mut self, transaction: IndexedTransaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String>;
+	fn accept_transaction(&mut self, transaction: IndexedTransaction, sink: Box<dyn TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String>;
 	fn install_sync_listener(&mut self, listener: SyncListenerRef);
 	fn execute_synchronization_tasks(&mut self, forced_blocks_requests: Option<Vec<H256>>, final_blocks_requests: Option<Vec<H256>>);
 	fn try_switch_to_saturated_state(&mut self) -> bool;
@@ -114,7 +114,7 @@ pub struct SynchronizationClientCore<T: TaskExecutor> {
 	/// Verifying blocks futures
 	verifying_blocks_futures: HashMap<PeerIndex, (HashSet<H256>, Vec<EmptyBoxFuture>)>,
 	/// Verifying transactions futures
-	verifying_transactions_sinks: HashMap<H256, Box<TransactionVerificationSink>>,
+	verifying_transactions_sinks: HashMap<H256, Box<dyn TransactionVerificationSink>>,
 	/// Hashes of items we do not want to relay after verification is completed
 	do_not_relay: HashSet<H256>,
 	/// Block processing speed meter
@@ -538,7 +538,7 @@ impl<T> ClientCore for SynchronizationClientCore<T> where T: TaskExecutor {
 		}
 	}
 
-	fn accept_transaction(&mut self, transaction: IndexedTransaction, sink: Box<TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String> {
+	fn accept_transaction(&mut self, transaction: IndexedTransaction, sink: Box<dyn TransactionVerificationSink>) -> Result<VecDeque<IndexedTransaction>, String> {
 		let hash = transaction.hash;
 		match self.try_append_transaction(transaction, true) {
 			Err(AppendTransactionError::Orphan(_)) => Err("Cannot append transaction as its inputs are unknown".to_owned()),

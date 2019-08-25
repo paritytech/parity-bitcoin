@@ -20,9 +20,9 @@ pub struct ChainAcceptor<'a> {
 
 impl<'a> ChainAcceptor<'a> {
 	pub fn new(
-		tx_out_provider: &'a TransactionOutputProvider,
-		tx_meta_provider: &'a TransactionMetaProvider,
-		header_provider: &'a BlockHeaderProvider,
+		tx_out_provider: &'a dyn TransactionOutputProvider,
+		tx_meta_provider: &'a dyn TransactionMetaProvider,
+		header_provider: &'a dyn BlockHeaderProvider,
 		consensus: &'a ConsensusParams,
 		verification_level: VerificationLevel,
 		block: CanonBlock<'a>,

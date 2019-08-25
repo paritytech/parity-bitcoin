@@ -24,13 +24,13 @@ pub struct BlockAcceptor<'a> {
 
 impl<'a> BlockAcceptor<'a> {
 	pub fn new(
-		store: &'a TransactionOutputProvider,
+		store: &'a dyn TransactionOutputProvider,
 		consensus: &'a ConsensusParams,
 		block: CanonBlock<'a>,
 		height: u32,
 		median_time_past: u32,
 		deployments: &'a BlockDeployments<'a>,
-		headers: &'a BlockHeaderProvider,
+		headers: &'a dyn BlockHeaderProvider,
 	) -> Self {
 		BlockAcceptor {
 			finality: BlockFinality::new(block, height, deployments, headers),
@@ -59,11 +59,11 @@ pub struct BlockFinality<'a> {
 	block: CanonBlock<'a>,
 	height: u32,
 	csv_active: bool,
-	headers: &'a BlockHeaderProvider,
+	headers: &'a dyn BlockHeaderProvider,
 }
 
 impl<'a> BlockFinality<'a> {
-	fn new(block: CanonBlock<'a>, height: u32, deployments: &'a BlockDeployments<'a>, headers: &'a BlockHeaderProvider) -> Self {
+	fn new(block: CanonBlock<'a>, height: u32, deployments: &'a BlockDeployments<'a>, headers: &'a dyn BlockHeaderProvider) -> Self {
 		let csv_active = deployments.csv();
 
 		BlockFinality {
@@ -136,7 +136,7 @@ impl<'a> BlockSerializedSize<'a> {
 
 pub struct BlockSigops<'a> {
 	block: CanonBlock<'a>,
-	store: &'a TransactionOutputProvider,
+	store: &'a dyn TransactionOutputProvider,
 	consensus: &'a ConsensusParams,
 	height: u32,
 	bip16_active: bool,
@@ -146,7 +146,7 @@ pub struct BlockSigops<'a> {
 impl<'a> BlockSigops<'a> {
 	fn new(
 		block: CanonBlock<'a>,
-		store: &'a TransactionOutputProvider,
+		store: &'a dyn TransactionOutputProvider,
 		consensus: &'a ConsensusParams,
 		height: u32,
 		median_time_past: u32,
@@ -200,7 +200,7 @@ impl<'a> BlockSigops<'a> {
 
 pub struct BlockCoinbaseClaim<'a> {
 	block: CanonBlock<'a>,
-	store: &'a TransactionOutputProvider,
+	store: &'a dyn TransactionOutputProvider,
 	height: u32,
 	transaction_ordering: TransactionOrdering,
 }
@@ -209,7 +209,7 @@ impl<'a> BlockCoinbaseClaim<'a> {
 	fn new(
 		block: CanonBlock<'a>,
 		consensus_params: &ConsensusParams,
-		store: &'a TransactionOutputProvider,
+		store: &'a dyn TransactionOutputProvider,
 		height: u32,
 		median_time_past: u32
 	) -> Self {
