@@ -61,15 +61,15 @@ impl From<u64> for CompactInteger {
 impl Serializable for CompactInteger {
 	fn serialize(&self, stream: &mut Stream) {
 		match self.0 {
-			0...0xfc => {
+			0..=0xfc => {
 				stream.append(&(self.0 as u8));
 			},
-			0xfd...0xffff => {
+			0xfd..=0xffff => {
 				stream
 					.append(&0xfdu8)
 					.append(&(self.0 as u16));
 			},
-			0x10000...0xffff_ffff => {
+			0x10000..=0xffff_ffff => {
 				stream
 					.append(&0xfeu8)
 					.append(&(self.0 as u32));
@@ -84,9 +84,9 @@ impl Serializable for CompactInteger {
 
 	fn serialized_size(&self) -> usize {
 		match self.0 {
-			0...0xfc => 1,
-			0xfd...0xffff => 3,
-			0x10000...0xffff_ffff => 5,
+			0..=0xfc => 1,
+			0xfd..=0xffff => 3,
+			0x10000..=0xffff_ffff => 5,
 			_ => 9,
 		}
 	}
@@ -95,7 +95,7 @@ impl Serializable for CompactInteger {
 impl Deserializable for CompactInteger {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = match try!(reader.read::<u8>()) {
-			i @ 0...0xfc => i.into(),
+			i @ 0..=0xfc => i.into(),
 			0xfd => try!(reader.read::<u16>()).into(),
 			0xfe => try!(reader.read::<u32>()).into(),
 			_ => try!(reader.read::<u64>()).into(),
