@@ -59,7 +59,7 @@ pub struct Deployments {
 pub struct BlockDeployments<'a> {
 	deployments: &'a Deployments,
 	number: u32,
-	headers: &'a BlockHeaderProvider,
+	headers: &'a dyn BlockHeaderProvider,
 	consensus: &'a ConsensusParams,
 }
 
@@ -69,7 +69,7 @@ impl Deployments {
 	}
 
 	/// Returns true if csv deployment is active
-	pub fn csv(&self, number: u32, headers: &BlockHeaderProvider, consensus: &ConsensusParams) -> bool {
+	pub fn csv(&self, number: u32, headers: &dyn BlockHeaderProvider, consensus: &ConsensusParams) -> bool {
 		match consensus.csv_deployment {
 			Some(csv) => {
 				let mut cache = self.cache.lock();
@@ -80,7 +80,7 @@ impl Deployments {
 	}
 
 	/// Returns true if SegWit deployment is active
-	pub fn segwit(&self, number: u32, headers: &BlockHeaderProvider, consensus: &ConsensusParams) -> bool {
+	pub fn segwit(&self, number: u32, headers: &dyn BlockHeaderProvider, consensus: &ConsensusParams) -> bool {
 		match consensus.segwit_deployment {
 			Some(segwit) => {
 				let mut cache = self.cache.lock();
@@ -92,7 +92,7 @@ impl Deployments {
 }
 
 impl<'a> BlockDeployments<'a> {
-	pub fn new(deployments: &'a Deployments, number: u32, headers: &'a BlockHeaderProvider, consensus: &'a ConsensusParams) -> Self {
+	pub fn new(deployments: &'a Deployments, number: u32, headers: &'a dyn BlockHeaderProvider, consensus: &'a ConsensusParams) -> Self {
 		BlockDeployments {
 			deployments: deployments,
 			number: number,
@@ -119,11 +119,11 @@ impl AsRef<Deployments> for Deployments {
 impl<'a> AsRef<Deployments> for BlockDeployments<'a> {
 	fn as_ref(&self) -> &Deployments {
 		self.deployments
-	} 
+	}
 }
 
 /// Calculates threshold state of given deployment
-fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, number: u32, headers: &BlockHeaderProvider, miner_confirmation_window: u32, rule_change_activation_threshold: u32) -> ThresholdState {
+fn threshold_state(cache: &mut DeploymentStateCache, deployment: Deployment, number: u32, headers: &dyn BlockHeaderProvider, miner_confirmation_window: u32, rule_change_activation_threshold: u32) -> ThresholdState {
 	// deployments are checked using previous block index
 	if let Some(activation) = deployment.activation {
 		if activation <= number {
@@ -186,7 +186,7 @@ fn first_of_the_period(block: u32, miner_confirmation_window: u32) -> u32 {
 	}
 }
 
-fn count_deployment_matches(block_number: u32, blocks: &BlockHeaderProvider, deployment: Deployment, window: u32) -> usize {
+fn count_deployment_matches(block_number: u32, blocks: &dyn BlockHeaderProvider, deployment: Deployment, window: u32) -> usize {
 	BlockAncestors::new(BlockRef::Number(block_number), blocks)
 		.take(window as usize)
 		.filter(|header| deployment.matches(header.raw.version))
@@ -196,14 +196,14 @@ fn count_deployment_matches(block_number: u32, blocks: &BlockHeaderProvider, dep
 struct ThresholdIterator<'a> {
 	deployment: Deployment,
 	block_iterator: BlockIterator<'a>,
-	headers: &'a BlockHeaderProvider,
+	headers: &'a dyn BlockHeaderProvider,
 	miner_confirmation_window: u32,
 	rule_change_activation_threshold: u32,
 	last_state: ThresholdState,
 }
 
 impl<'a> ThresholdIterator<'a> {
-	fn new(deployment: Deployment, headers: &'a BlockHeaderProvider, to_check: u32, miner_confirmation_window: u32, rule_change_activation_threshold: u32, state: ThresholdState) -> Self {
+	fn new(deployment: Deployment, headers: &'a dyn BlockHeaderProvider, to_check: u32, miner_confirmation_window: u32, rule_change_activation_threshold: u32, state: ThresholdState) -> Self {
 		ThresholdIterator {
 			deployment: deployment,
 			block_iterator: BlockIterator::new(to_check, miner_confirmation_window, headers),

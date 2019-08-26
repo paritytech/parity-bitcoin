@@ -40,13 +40,13 @@ pub trait TransactionMetaProvider: Send + Sync {
 /// Not intended for long-lasting life, because it never clears its internal
 /// cache. The backing storage is considered readonly for the cache lifetime.
 pub struct CachedTransactionOutputProvider<'a> {
-	backend: &'a TransactionOutputProvider,
+	backend: &'a dyn TransactionOutputProvider,
 	cached_outputs: RwLock<HashMap<OutPoint, Option<TransactionOutput>>>,
 }
 
 impl<'a> CachedTransactionOutputProvider<'a> {
 	/// Create new cached tx output provider backed by passed provider.
-	pub fn new(backend: &'a TransactionOutputProvider) -> Self {
+	pub fn new(backend: &'a dyn TransactionOutputProvider) -> Self {
 		CachedTransactionOutputProvider {
 			backend,
 			cached_outputs: RwLock::new(HashMap::new()),

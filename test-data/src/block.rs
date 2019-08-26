@@ -308,11 +308,11 @@ impl<F> TransactionBuilder<F> where F: Invoke<chain::Transaction> {
 		let raw_input_size = 40;
 		let script_len_size = match size {
 			//0...(0xfc + 1) => 1,
-			0...0xfd => 1,
+			0..=0xfd => 1,
 			//0xfd...(0xffff + 3) => 3,
-			0xfd...0x10002 => 3,
+			0xfd..=0x10002 => 3,
 			//0x10000...(0xffff_ffff + 5) => 5,
-			0x10000...0x1_0000_0004 => 5,
+			0x10000..=0x1_0000_0004 => 5,
 			_ => 9,
 		};
 

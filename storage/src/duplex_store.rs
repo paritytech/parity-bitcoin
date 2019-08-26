@@ -7,12 +7,12 @@ use TransactionOutputProvider;
 
 #[derive(Clone, Copy)]
 pub struct DuplexTransactionOutputProvider<'a> {
-	first: &'a TransactionOutputProvider,
-	second: &'a TransactionOutputProvider,
+	first: &'a dyn TransactionOutputProvider,
+	second: &'a dyn TransactionOutputProvider,
 }
 
 impl<'a> DuplexTransactionOutputProvider<'a> {
-	pub fn new(first: &'a TransactionOutputProvider, second: &'a TransactionOutputProvider) -> Self {
+	pub fn new(first: &'a dyn TransactionOutputProvider, second: &'a dyn TransactionOutputProvider) -> Self {
 		DuplexTransactionOutputProvider {
 			first: first,
 			second: second,

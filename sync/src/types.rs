@@ -21,7 +21,7 @@ pub type RequestId = u32;
 pub type PeerIndex = usize;
 
 // No-error, no-result future
-pub type EmptyBoxFuture = Box<Future<Item=(), Error=()> + Send>;
+pub type EmptyBoxFuture = Box<dyn Future<Item=(), Error=()> + Send>;
 
 /// Reference to storage
 pub type StorageRef = storage::SharedStore;
@@ -33,7 +33,7 @@ pub type MemoryPoolRef = Arc<RwLock<MemoryPool>>;
 pub type SynchronizationStateRef = Arc<SynchronizationState>;
 
 /// Reference to peers
-pub type PeersRef = Arc<Peers>;
+pub type PeersRef = Arc<dyn Peers>;
 
 /// Reference to synchronization tasks executor
 pub type ExecutorRef<T> = Arc<T>;
@@ -51,4 +51,4 @@ pub type ServerRef<T> = Arc<T>;
 pub type LocalNodeRef = Arc<LocalNode<ServerImpl, SynchronizationClient<LocalSynchronizationTaskExecutor, AsyncVerifier>>>;
 
 /// Synchronization events listener reference
-pub type SyncListenerRef = Box<SyncListener>;
+pub type SyncListenerRef = Box<dyn SyncListener>;

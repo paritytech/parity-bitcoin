@@ -57,7 +57,7 @@ pub fn retarget_timespan(retarget_timestamp: u32, last_timestamp: u32) -> u32 {
 }
 
 /// Returns work required for given header
-pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, consensus: &ConsensusParams) -> Compact {
+pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &dyn BlockHeaderProvider, consensus: &ConsensusParams) -> Compact {
 	let max_bits = consensus.network.max_bits().into();
 	if height == 0 {
 		return max_bits;
@@ -82,7 +82,7 @@ pub fn work_required(parent_hash: H256, time: u32, height: u32, store: &BlockHea
 	parent_header.raw.bits
 }
 
-pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &BlockHeaderProvider, network: Network) -> Compact {
+pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &dyn BlockHeaderProvider, network: Network) -> Compact {
 	assert!(height != 0, "cannot calculate required work for genesis block");
 
 	let mut bits = Vec::new();
@@ -115,7 +115,7 @@ pub fn work_required_testnet(parent_hash: H256, time: u32, height: u32, store: &
 }
 
 /// Algorithm used for retargeting work every 2 weeks
-pub fn work_required_retarget(parent_header: IndexedBlockHeader, height: u32, store: &BlockHeaderProvider, max_work_bits: Compact) -> Compact {
+pub fn work_required_retarget(parent_header: IndexedBlockHeader, height: u32, store: &dyn BlockHeaderProvider, max_work_bits: Compact) -> Compact {
 	let retarget_ref = (height - RETARGETING_INTERVAL).into();
 	let retarget_header = store.block_header(retarget_ref).expect("self.height != 0 && self.height % RETARGETING_INTERVAL == 0; qed");
 

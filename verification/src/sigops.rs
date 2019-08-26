@@ -9,7 +9,7 @@ use script::{Script, ScriptWitness};
 /// missing, we simply ignore that fact and just carry on counting
 pub fn transaction_sigops(
 	transaction: &Transaction,
-	store: &TransactionOutputProvider,
+	store: &dyn TransactionOutputProvider,
 	bip16_active: bool,
 	checkdatasig_active: bool,
 ) -> usize {
@@ -44,7 +44,7 @@ pub fn transaction_sigops(
 
 pub fn transaction_sigops_cost(
 	transaction: &Transaction,
-	store: &TransactionOutputProvider,
+	store: &dyn TransactionOutputProvider,
 	sigops: usize,
 ) -> usize {
 	let sigops_cost = sigops * ConsensusFork::witness_scale_factor();

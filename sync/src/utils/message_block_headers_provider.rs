@@ -7,7 +7,7 @@ use primitives::hash::H256;
 /// Block headers provider from `headers` message
 pub struct MessageBlockHeadersProvider<'a> {
 	/// Synchronization chain headers provider
-	chain_provider: &'a BlockHeaderProvider,
+	chain_provider: &'a dyn BlockHeaderProvider,
 	/// headers offset
 	first_header_number: u32,
 	/// headers by hash
@@ -17,7 +17,7 @@ pub struct MessageBlockHeadersProvider<'a> {
 }
 
 impl<'a> MessageBlockHeadersProvider<'a> {
-	pub fn new(chain_provider: &'a BlockHeaderProvider, best_block_header_height: u32) -> Self {
+	pub fn new(chain_provider: &'a dyn BlockHeaderProvider, best_block_header_height: u32) -> Self {
 		MessageBlockHeadersProvider {
 			chain_provider: chain_provider,
 			first_header_number: best_block_header_height + 1,

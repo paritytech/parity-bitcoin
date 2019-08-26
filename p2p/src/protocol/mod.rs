@@ -29,7 +29,7 @@ pub trait Protocol: Send {
 	fn on_close(&mut self) {}
 
 	/// Boxes the protocol.
-	fn boxed(self) -> Box<Protocol> where Self: Sized + 'static {
+	fn boxed(self) -> Box<dyn Protocol> where Self: Sized + 'static {
 		Box::new(self)
 	}
 }

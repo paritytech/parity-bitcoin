@@ -37,11 +37,11 @@ impl SessionFactory for NormalSessionFactory {
 
 pub struct Session {
 	peer_context: Arc<PeerContext>,
-	protocols: Mutex<Vec<Box<Protocol>>>,
+	protocols: Mutex<Vec<Box<dyn Protocol>>>,
 }
 
 impl Session {
-	pub fn new(peer_context: Arc<PeerContext>, protocols: Vec<Box<Protocol>>) -> Self {
+	pub fn new(peer_context: Arc<PeerContext>, protocols: Vec<Box<dyn Protocol>>) -> Self {
 		Session {
 			peer_context: peer_context,
 			protocols: Mutex::new(protocols),

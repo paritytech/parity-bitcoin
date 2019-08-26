@@ -11,7 +11,7 @@ use {
 
 /// Helper function.
 fn check_signature(
-	checker: &SignatureChecker,
+	checker: &dyn SignatureChecker,
 	mut script_sig: Vec<u8>,
 	public: Vec<u8>,
 	script_code: &Script,
@@ -34,7 +34,7 @@ fn check_signature(
 
 /// Helper function.
 fn verify_signature(
-	checker: &SignatureChecker,
+	checker: &dyn SignatureChecker,
 	signature: Vec<u8>,
 	public: Vec<u8>,
 	message: Message,
@@ -266,7 +266,7 @@ pub fn verify_script(
 	script_pubkey: &Script,
 	witness: &ScriptWitness,
 	flags: &VerificationFlags,
-	checker: &SignatureChecker,
+	checker: &dyn SignatureChecker,
 	version: SignatureVersion,
 ) -> Result<(), Error> {
 	if flags.verify_sigpushonly && !script_sig.is_push_only() {
@@ -369,7 +369,7 @@ fn verify_witness_program(
 	witness_version: u8,
 	witness_program: &[u8],
 	flags: &VerificationFlags,
-	checker: &SignatureChecker,
+	checker: &dyn SignatureChecker,
 ) -> Result<bool, Error> {
 	if witness_version != 0 {
 		if flags.verify_discourage_upgradable_witness_program {
@@ -437,7 +437,7 @@ pub fn eval_script(
 	stack: &mut Stack<Bytes>,
 	script: &Script,
 	flags: &VerificationFlags,
-	checker: &SignatureChecker,
+	checker: &dyn SignatureChecker,
 	version: SignatureVersion
 ) -> Result<bool, Error> {
 	if script.len() > script::MAX_SCRIPT_SIZE {
@@ -608,7 +608,7 @@ pub fn eval_script(
 				}
 				let n: usize = n.into();
 				let splitted_value = {
-					let mut value_to_split = stack.last_mut()?;
+					let value_to_split = stack.last_mut()?;
 					if n > value_to_split.len() {
 						return Err(Error::InvalidSplitRange);
 					}
@@ -3897,7 +3897,7 @@ mod tests {
 		// https://github.com/bitcoincashorg/bitcoincash.org/blob/0c6f91b0b713aae3bc6c9834b46e80e247ff5fab/spec/op_checkdatasig.md
 
 		let kp = KeyPair::from_private(Private { network: Network::Mainnet, secret: 1.into(), compressed: false, }).unwrap();
-		
+
 		let pubkey = kp.public().clone();
 		let message = vec![42u8; 32];
 		let correct_signature = kp.private().sign(&Message::from(sha256(&message))).unwrap();
@@ -3979,7 +3979,7 @@ mod tests {
 		// https://github.com/bitcoincashorg/bitcoincash.org/blob/0c6f91b0b713aae3bc6c9834b46e80e247ff5fab/spec/op_checkdatasig.md
 
 		let kp = KeyPair::from_private(Private { network: Network::Mainnet, secret: 1.into(), compressed: false, }).unwrap();
-		
+
 		let pubkey = kp.public().clone();
 		let message = vec![42u8; 32];
 		let correct_signature = kp.private().sign(&Message::from(sha256(&message))).unwrap();

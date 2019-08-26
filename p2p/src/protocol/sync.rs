@@ -5,10 +5,10 @@ use protocol::Protocol;
 use net::PeerContext;
 use ser::SERIALIZE_TRANSACTION_WITNESS;
 
-pub type InboundSyncConnectionRef = Box<InboundSyncConnection>;
-pub type OutboundSyncConnectionRef = Arc<OutboundSyncConnection>;
-pub type LocalSyncNodeRef = Box<LocalSyncNode>;
-pub type InboundSyncConnectionStateRef = Arc<InboundSyncConnectionState>;
+pub type InboundSyncConnectionRef = Box<dyn InboundSyncConnection>;
+pub type OutboundSyncConnectionRef = Arc<dyn OutboundSyncConnection>;
+pub type LocalSyncNodeRef = Box<dyn LocalSyncNode>;
+pub type InboundSyncConnectionStateRef = Arc<dyn InboundSyncConnectionState>;
 
 pub trait LocalSyncNode : Send + Sync {
 	fn create_sync_session(&self, height: i32, services: Services, outbound: OutboundSyncConnectionRef) -> InboundSyncConnectionRef;

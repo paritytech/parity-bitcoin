@@ -10,7 +10,7 @@ pub trait MemoryPoolFeeCalculator {
 }
 
 /// Fee calculator that computes sum of real transparent fee + real shielded fee.
-pub struct FeeCalculator<'a>(pub &'a TransactionOutputProvider);
+pub struct FeeCalculator<'a>(pub &'a dyn TransactionOutputProvider);
 
 impl<'a> MemoryPoolFeeCalculator for FeeCalculator<'a> {
 	fn calculate(&self, memory_pool: &MemoryPool, tx: &Transaction) -> u64 {
@@ -32,7 +32,7 @@ impl MemoryPoolFeeCalculator for NonZeroFeeCalculator {
 	}
 }
 
-pub fn transaction_fee(store: &TransactionOutputProvider, tx: &Transaction) -> u64 {
+pub fn transaction_fee(store: &dyn TransactionOutputProvider, tx: &Transaction) -> u64 {
 	let input_value = tx.inputs.iter().fold(0, |acc, input| acc + store
 		.transaction_output(&input.previous_output, ::std::usize::MAX)
 		.map(|output| output.value)
@@ -42,7 +42,7 @@ pub fn transaction_fee(store: &TransactionOutputProvider, tx: &Transaction) -> u
 	input_value.saturating_sub(output_value)
 }
 
-pub fn transaction_fee_rate(store: &TransactionOutputProvider, tx: &Transaction) -> u64 {
+pub fn transaction_fee_rate(store: &dyn TransactionOutputProvider, tx: &Transaction) -> u64 {
 	transaction_fee(store, tx) / tx.serialized_size() as u64
 }
 

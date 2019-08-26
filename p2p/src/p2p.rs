@@ -20,7 +20,7 @@ use {Config, PeerId};
 use protocol::{LocalSyncNodeRef, InboundSyncConnectionRef, OutboundSyncConnectionRef};
 use io::DeadlineStatus;
 
-pub type BoxedEmptyFuture = Box<Future<Item=(), Error=()> + Send>;
+pub type BoxedEmptyFuture = Box<dyn Future<Item=(), Error=()> + Send>;
 
 /// Network context.
 pub struct Context {
@@ -42,7 +42,7 @@ pub struct Context {
 
 impl Context {
 	/// Creates new context with reference to local sync node, thread pool and event loop.
-	pub fn new(local_sync_node: LocalSyncNodeRef, pool_handle: CpuPool, remote: Remote, config: Config) -> Result<Self, Box<error::Error>> {
+	pub fn new(local_sync_node: LocalSyncNodeRef, pool_handle: CpuPool, remote: Remote, config: Config) -> Result<Self, Box<dyn error::Error>> {
 		let context = Context {
 			connections: Default::default(),
 			connection_counter: ConnectionCounter::new(config.inbound_connections, config.outbound_connections),
@@ -377,7 +377,7 @@ impl Context {
 	}
 
 	/// Close channel with given peer info.
-	pub fn close_channel_with_error(&self, id: PeerId, error: &error::Error) {
+	pub fn close_channel_with_error(&self, id: PeerId, error: &dyn error::Error) {
 		if let Some(channel) = self.connections.remove(id) {
 			let info = channel.peer_info();
 			channel.session().on_close();
@@ -429,7 +429,7 @@ impl Drop for P2P {
 }
 
 impl P2P {
-	pub fn new(config: Config, local_sync_node: LocalSyncNodeRef, handle: Handle) -> Result<Self, Box<error::Error>> {
+	pub fn new(config: Config, local_sync_node: LocalSyncNodeRef, handle: Handle) -> Result<Self, Box<dyn error::Error>> {
 		let pool = CpuPoolBuilder::new()
 			.name_prefix("I/O thread")
 			.pool_size(config.threads)
@@ -447,7 +447,7 @@ impl P2P {
 		Ok(p2p)
 	}
 
-	pub fn run(&self) -> Result<(), Box<error::Error>> {
+	pub fn run(&self) -> Result<(), Box<dyn error::Error>> {
 		for peer in &self.config.peers {
 			self.connect::<NormalSessionFactory>(*peer);
 		}
@@ -467,7 +467,7 @@ impl P2P {
 		Context::connect::<T>(self.context.clone(), addr);
 	}
 
-	pub fn connect_to_seednode(&self, resolver: &Resolver, seednode: &str) {
+	pub fn connect_to_seednode(&self, resolver: &dyn Resolver, seednode: &str) {
 		let owned_seednode = seednode.to_owned();
 		let context = self.context.clone();
 		let dns_lookup = resolver.resolve(seednode).then(move |result| {
@@ -491,7 +491,7 @@ impl P2P {
 		self.event_loop_handle.spawn(pool_work);
 	}
 
-	fn listen(&self) -> Result<(), Box<error::Error>> {
+	fn listen(&self) -> Result<(), Box<dyn error::Error>> {
 		let server = try!(Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone()));
 		self.event_loop_handle.spawn(server);
 		Ok(())

@@ -28,7 +28,7 @@ pub struct TransactionAcceptor<'a> {
 impl<'a> TransactionAcceptor<'a> {
 	pub fn new(
 		// in case of block validation, it's only current block,
-		meta_store: &'a TransactionMetaProvider,
+		meta_store: &'a dyn TransactionMetaProvider,
 		// previous transaction outputs
 		// in case of block validation, that's database and currently processed block
 		output_store: DuplexTransactionOutputProvider<'a>,
@@ -86,7 +86,7 @@ pub struct MemoryPoolTransactionAcceptor<'a> {
 impl<'a> MemoryPoolTransactionAcceptor<'a> {
 	pub fn new(
 		// TODO: in case of memory pool it should be db and memory pool
-		meta_store: &'a TransactionMetaProvider,
+		meta_store: &'a dyn TransactionMetaProvider,
 		// in case of memory pool it should be db and memory pool
 		output_store: DuplexTransactionOutputProvider<'a>,
 		consensus: &'a ConsensusParams,
@@ -137,14 +137,14 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 /// https://github.com/libbitcoin/libbitcoin/blob/61759b2fd66041bcdbc124b2f04ed5ddc20c7312/src/chain/transaction.cpp#L780-L785
 pub struct TransactionBip30<'a> {
 	transaction: CanonTransaction<'a>,
-	store: &'a TransactionMetaProvider,
+	store: &'a dyn TransactionMetaProvider,
 	exception: bool,
 }
 
 impl<'a> TransactionBip30<'a> {
 	fn new_for_sync(
 		transaction: CanonTransaction<'a>,
-		store: &'a TransactionMetaProvider,
+		store: &'a dyn TransactionMetaProvider,
 		consensus_params: &'a ConsensusParams,
 		block_hash: &'a H256,
 		height: u32
@@ -200,12 +200,12 @@ impl<'a> TransactionMissingInputs<'a> {
 
 pub struct TransactionMaturity<'a> {
 	transaction: CanonTransaction<'a>,
-	store: &'a TransactionMetaProvider,
+	store: &'a dyn TransactionMetaProvider,
 	height: u32,
 }
 
 impl<'a> TransactionMaturity<'a> {
-	fn new(transaction: CanonTransaction<'a>, store: &'a TransactionMetaProvider, height: u32) -> Self {
+	fn new(transaction: CanonTransaction<'a>, store: &'a dyn TransactionMetaProvider, height: u32) -> Self {
 		TransactionMaturity {
 			transaction: transaction,
 			store: store,
