@@ -107,13 +107,13 @@ Running integration tests is automated, as the regtests repository is one of the
 git submodule update --init
 ```
 
-Now we can run them:
+Now we can run them using the command:
 
 ```
 ./tools/regtests.sh
 ```
 
-It's also possible to run regtests manually:
+It is also possible to run regtests manually:
 
 ```
 # let's start pbtc in regtest compatible mode
@@ -129,7 +129,7 @@ java -jar pull-tests-f56eec3.jar
 
 ## Going online
 
-By default parity connects to bitcoind-seednodes. Full list is [here](./pbtc/seednodes.rs).
+By default parity connects to bitcoind-seednodes. Full list is available [here](./pbtc/seednodes.rs).
 
 Before starting synchronization, you must decide - which fork to follow - Bitcoin Core (`--btc` flag) or Bitcoin Cash (`--bch` flag). On next start, passing the same flag is optional, as the database is already bound to selected fork and won't be synchronized using other verification rules.
 
@@ -153,7 +153,7 @@ To not print any syncing progress add `--quiet` flag:
 
 ## Importing bitcoind database
 
-It it is possible to import existing `bitcoind` database:
+It is possible to import existing `bitcoind` database:
 
 ```
 # where $BITCOIND_DB is path to your bitcoind database, e.g., "/Users/user/Library/Application Support"
