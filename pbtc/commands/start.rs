@@ -117,7 +117,7 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 		local_sync_node.install_sync_listener(Box::new(BlockNotifier::new(block_notify_command)));
 	}
 
-	let p2p = try!(p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle()).map_err(|x| x.to_string()));
+	let p2p = p2p::P2P::new(p2p_cfg, sync_connection_factory, el.handle()).map_err(|x| x.to_string())?;
 	let rpc_deps = rpc::Dependencies {
 		network: cfg.network,
 		storage: cfg.db,
@@ -125,9 +125,9 @@ pub fn start(cfg: config::Config) -> Result<(), String> {
 		p2p_context: p2p.context().clone(),
 		remote: el.remote(),
 	};
-	let _rpc_server = try!(rpc::new_http(cfg.rpc_config, rpc_deps));
+	let _rpc_server = rpc::new_http(cfg.rpc_config, rpc_deps)?;
 
-	try!(p2p.run().map_err(|_| "Failed to start p2p module"));
+	p2p.run().map_err(|_| "Failed to start p2p module")?;
 	el.run(p2p::forever()).unwrap();
 	Ok(())
 }

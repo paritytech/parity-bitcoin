@@ -386,7 +386,7 @@ impl<T> NodeTable<T> where T: Time {
 
 		for n in iter {
 			let record = (n.addr.to_string(), n.time, u64::from(n.services), n.failures);
-			try!(writer.serialize(record).map_err(|_| err()));
+			writer.serialize(record).map_err(|_| err())?;
 		}
 
 		Ok(())
@@ -405,11 +405,11 @@ impl<T> NodeTable<T> where T: Time {
 		let err = || io::Error::new(io::ErrorKind::Other, "Load csv error");
 
 		for row in rdr.deserialize() {
-			let (addr, time, services, failures): (String, i64, u64, u32) = try!(row.map_err(|_| err()));
+			let (addr, time, services, failures): (String, i64, u64, u32) = row.map_err(|_| err())?;
 
 			let services = services.into();
 			let node = Node {
-				addr: try!(addr.parse().map_err(|_| err())),
+				addr: addr.parse().map_err(|_| err())?,
 				time: time,
 				services: services,
 				is_preferable: services.includes(&preferable_services),

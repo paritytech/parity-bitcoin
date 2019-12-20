@@ -23,9 +23,9 @@ impl Payload for GetBlocks {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let get_blocks = GetBlocks {
-			version: try!(reader.read()),
-			block_locator_hashes: try!(reader.read_list_max(500)),
-			hash_stop: try!(reader.read()),
+			version: reader.read()?,
+			block_locator_hashes: reader.read_list_max(500)?,
+			hash_stop: reader.read()?,
 		};
 
 		Ok(get_blocks)

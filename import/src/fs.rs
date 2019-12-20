@@ -3,7 +3,7 @@ use std::{io, fs, path, cmp};
 /// Creates an iterator over all blk .dat files
 pub fn read_blk_dir<P>(path: P) -> Result<ReadBlkDir, io::Error> where P: AsRef<path::Path> {
 	let read_blk_dir = ReadBlkDir {
-		read_dir: try!(fs::read_dir(path)),
+		read_dir: fs::read_dir(path)?,
 	};
 
 	Ok(read_blk_dir)

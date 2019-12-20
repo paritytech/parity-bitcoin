@@ -36,7 +36,7 @@ macro_rules! impl_hash {
 			type Err = <$other as FromStr>::Err;
 
 			fn from_str(s: &str) -> Result<Self, Self::Err> {
-				let other = try!($other::from_str(s));
+				let other = $other::from_str(s)?;
 				Ok($name(other.take()))
 			}
 		}

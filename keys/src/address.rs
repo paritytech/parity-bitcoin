@@ -108,7 +108,7 @@ impl FromStr for Address {
 	type Err = Error;
 
 	fn from_str(s: &str) -> Result<Self, Error> where Self: Sized {
-		let hex = try!(s.from_base58().map_err(|_| Error::InvalidAddress));
+		let hex = s.from_base58().map_err(|_| Error::InvalidAddress)?;
 		Address::from_layout(&hex)
 	}
 }

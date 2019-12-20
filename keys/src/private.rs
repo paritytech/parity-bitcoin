@@ -25,18 +25,18 @@ pub struct Private {
 impl Private {
 	pub fn sign(&self, message: &Message) -> Result<Signature, Error> {
 		let context = &SECP256K1;
-		let secret = try!(key::SecretKey::from_slice(context, &*self.secret));
-		let message = try!(SecpMessage::from_slice(&**message));
-		let signature = try!(context.sign(&message, &secret));
+		let secret = key::SecretKey::from_slice(context, &*self.secret)?;
+		let message = SecpMessage::from_slice(&**message)?;
+		let signature = context.sign(&message, &secret)?;
 		let data = signature.serialize_der(context);
 		Ok(data.into())
 	}
 
 	pub fn sign_compact(&self, message: &Message) -> Result<CompactSignature, Error> {
 		let context = &SECP256K1;
-		let secret = try!(key::SecretKey::from_slice(context, &*self.secret));
-		let message = try!(SecpMessage::from_slice(&**message));
-		let signature = try!(context.sign_recoverable(&message, &secret));
+		let secret = key::SecretKey::from_slice(context, &*self.secret)?;
+		let message = SecpMessage::from_slice(&**message)?;
+		let signature = context.sign_recoverable(&message, &secret)?;
 		let (recovery_id, data) = signature.serialize_compact(context);
 		let recovery_id = recovery_id.to_i32() as u8;
 		let mut signature = H520::default();
@@ -107,8 +107,8 @@ impl DisplayLayout for Private {
 
 impl fmt::Debug for Private {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		try!(writeln!(f, "network: {:?}", self.network));
-		try!(writeln!(f, "secret: {}", self.secret.to_hex::<String>()));
+		writeln!(f, "network: {:?}", self.network);
+		writeln!(f, "secret: {}", self.secret.to_hex::<String>());
 		writeln!(f, "compressed: {}", self.compressed)
 	}
 }
@@ -123,7 +123,7 @@ impl FromStr for Private {
 	type Err = Error;
 
 	fn from_str(s: &str) -> Result<Self, Error> where Self: Sized {
-		let hex = try!(s.from_base58().map_err(|_| Error::InvalidPrivate));
+		let hex = s.from_base58().map_err(|_| Error::InvalidPrivate)?;
 		Private::from_layout(&hex)
 	}
 }

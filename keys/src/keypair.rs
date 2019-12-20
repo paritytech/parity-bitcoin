@@ -13,14 +13,14 @@ pub struct KeyPair {
 
 impl fmt::Debug for KeyPair {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		try!(self.private.fmt(f));
+		self.private.fmt(f)?;
 		writeln!(f, "public: {:?}", self.public)
 	}
 }
 
 impl fmt::Display for KeyPair {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		try!(writeln!(f, "private: {}", self.private));
+		writeln!(f, "private: {}", self.private)?;
 		writeln!(f, "public: {}", self.public)
 	}
 }
@@ -36,8 +36,8 @@ impl KeyPair {
 
 	pub fn from_private(private: Private) -> Result<KeyPair, Error> {
 		let context = &SECP256K1;
-		let s: key::SecretKey = try!(key::SecretKey::from_slice(context, &*private.secret));
-		let pub_key = try!(key::PublicKey::from_secret_key(context, &s));
+		let s: key::SecretKey = key::SecretKey::from_slice(context, &*private.secret)?;
+		let pub_key = key::PublicKey::from_secret_key(context, &s)?;
 		let serialized = pub_key.serialize_vec(context, private.compressed);
 
 		let public = if private.compressed {

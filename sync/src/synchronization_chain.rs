@@ -712,11 +712,11 @@ impl fmt::Debug for Information {
 
 impl fmt::Debug for Chain {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		try!(writeln!(f, "chain: ["));
+		writeln!(f, "chain: [")?;
 		{
 			let mut num = self.best_storage_block.number;
-			try!(writeln!(f, "\tworse(stored): {} {:?}", 0, self.storage.block_hash(0)));
-			try!(writeln!(f, "\tbest(stored): {} {:?}", num, self.storage.block_hash(num)));
+			writeln!(f, "\tworse(stored): {} {:?}", 0, self.storage.block_hash(0))?;
+			writeln!(f, "\tbest(stored): {} {:?}", num, self.storage.block_hash(num))?;
 
 			let queues = vec![
 				("verifying", VERIFYING_QUEUE),
@@ -726,12 +726,12 @@ impl fmt::Debug for Chain {
 			for (state, queue) in queues {
 				let queue_len = self.hash_chain.len_of(queue);
 				if queue_len != 0 {
-					try!(writeln!(f, "\tworse({}): {} {:?}", state, num + 1, self.hash_chain.front_at(queue)));
+					writeln!(f, "\tworse({}): {} {:?}", state, num + 1, self.hash_chain.front_at(queue))?;
 					num += queue_len;
 					if let Some(pre_best) = self.hash_chain.pre_back_at(queue) {
-						try!(writeln!(f, "\tpre-best({}): {} {:?}", state, num - 1, pre_best));
+						writeln!(f, "\tpre-best({}): {} {:?}", state, num - 1, pre_best)?;
 					}
-					try!(writeln!(f, "\tbest({}): {} {:?}", state, num, self.hash_chain.back_at(queue)));
+					writeln!(f, "\tbest({}): {} {:?}", state, num, self.hash_chain.back_at(queue))?;
 				}
 			}
 		}

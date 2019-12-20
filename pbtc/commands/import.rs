@@ -4,7 +4,7 @@ use config::Config;
 use util::init_db;
 
 pub fn import(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
-	try!(init_db(&cfg));
+	init_db(&cfg)?;
 
 	let blk_path = matches.value_of("PATH").expect("PATH is required in cli.yml; qed");
 	let blk_dir = ::import::open_blk_dir(blk_path)

@@ -26,7 +26,7 @@ impl Payload for Pong {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let pong = Pong {
-			nonce: try!(reader.read()),
+			nonce: reader.read()?,
 		};
 
 		Ok(pong)

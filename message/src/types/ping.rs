@@ -26,7 +26,7 @@ impl Payload for Ping {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let ping = Ping {
-			nonce: try!(reader.read()),
+			nonce: reader.read()?,
 		};
 
 		Ok(ping)

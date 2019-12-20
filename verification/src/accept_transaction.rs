@@ -59,15 +59,15 @@ impl<'a> TransactionAcceptor<'a> {
 	}
 
 	pub fn check(&self) -> Result<(), TransactionError> {
-		try!(self.size.check());
-		try!(self.premature_witness.check());
-		try!(self.bip30.check());
-		try!(self.missing_inputs.check());
-		try!(self.maturity.check());
-		try!(self.overspent.check());
-		try!(self.double_spent.check());
-		try!(self.return_replay_protection.check());
-		try!(self.eval.check());
+		self.size.check()?;
+		self.premature_witness.check()?;
+		self.bip30.check()?;
+		self.missing_inputs.check()?;
+		self.maturity.check()?;
+		self.overspent.check()?;
+		self.double_spent.check()?;
+		self.return_replay_protection.check()?;
+		self.eval.check()?;
 		Ok(())
 	}
 }
@@ -114,14 +114,14 @@ impl<'a> MemoryPoolTransactionAcceptor<'a> {
 	pub fn check(&self) -> Result<(), TransactionError> {
 		// Bip30 is not checked because we don't need to allow tx pool acceptance of an unspent duplicate.
 		// Tx pool validation is not strinctly a matter of consensus.
-		try!(self.size.check());
-		try!(self.missing_inputs.check());
-		try!(self.maturity.check());
-		try!(self.overspent.check());
-		try!(self.sigops.check());
-		try!(self.double_spent.check());
-		try!(self.return_replay_protection.check());
-		try!(self.eval.check());
+		self.size.check();
+		self.missing_inputs.check();
+		self.maturity.check();
+		self.overspent.check();
+		self.sigops.check();
+		self.double_spent.check();
+		self.return_replay_protection.check();
+		self.eval.check();
 		Ok(())
 	}
 }
@@ -419,8 +419,8 @@ impl<'a> TransactionEval<'a> {
 				.verify_sigpushonly(self.verify_sigpushonly)
 				.verify_cleanstack(self.verify_cleanstack);
 
-			try!(verify_script(&input, &output, &script_witness, &flags, &checker, self.signature_version)
-				.map_err(|e| TransactionError::Signature(index, e)));
+			verify_script(&input, &output, &script_witness, &flags, &checker, self.signature_version)
+				.map_err(|e| TransactionError::Signature(index, e))?;
 		}
 
 		Ok(())

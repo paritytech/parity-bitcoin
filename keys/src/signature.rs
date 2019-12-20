@@ -34,7 +34,7 @@ impl str::FromStr for Signature {
 	type Err = Error;
 
 	fn from_str(s: &str) -> Result<Self, Error> {
-		let vec = try!(s.from_hex().map_err(|_| Error::InvalidSignature));
+		let vec = s.from_hex().map_err(|_| Error::InvalidSignature)?;
 		Ok(Signature(vec))
 	}
 }

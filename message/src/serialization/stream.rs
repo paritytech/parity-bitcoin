@@ -8,7 +8,7 @@ pub fn serialize_payload<T>(t: &T, version: u32) -> MessageResult<Bytes> where T
 
 pub fn serialize_payload_with_flags<T>(t: &T, version: u32, serialization_flags: u32) -> MessageResult<Bytes> where T: Payload {
 	let mut stream = PayloadStream::new(version, serialization_flags);
-	try!(stream.append(t));
+	stream.append(t)?;
 	Ok(stream.out())
 }
 

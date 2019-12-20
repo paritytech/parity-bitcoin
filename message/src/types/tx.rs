@@ -27,7 +27,7 @@ impl Payload for Tx {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let tx = Tx {
-			transaction: try!(reader.read()),
+			transaction: reader.read()?,
 		};
 
 		Ok(tx)

@@ -5,7 +5,7 @@ use primitives::hash::H256;
 use util::init_db;
 
 pub fn rollback(cfg: Config, matches: &ArgMatches) -> Result<(), String> {
-	try!(init_db(&cfg));
+	init_db(&cfg)?;
 
 	let block_ref = matches.value_of("BLOCK").expect("BLOCK is required in cli.yml; qed");
 	let block_ref = if block_ref.len() == 64 {

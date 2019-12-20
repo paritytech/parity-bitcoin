@@ -39,10 +39,10 @@ impl Payload for FilterLoad {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let filterload = FilterLoad {
-			filter: try!(reader.read()),
-			hash_functions: try!(reader.read()),
-			tweak: try!(reader.read()),
-			flags: try!(reader.read()),
+			filter: reader.read()?,
+			hash_functions: reader.read()?,
+			tweak: reader.read()?,
+			flags: reader.read()?,
 		};
 
 		Ok(filterload)
@@ -83,7 +83,7 @@ impl Serializable for FilterFlags {
 
 impl Deserializable for FilterFlags {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let t: u8 = try!(reader.read());
+		let t: u8 = reader.read()?;
 		FilterFlags::from_u8(t).ok_or(ReaderError::MalformedData)
 	}
 }

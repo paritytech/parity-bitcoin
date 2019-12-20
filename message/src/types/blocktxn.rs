@@ -19,7 +19,7 @@ impl Payload for BlockTxn {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let block = BlockTxn {
-			request: try!(reader.read()),
+			request: reader.read()?,
 		};
 
 		Ok(block)

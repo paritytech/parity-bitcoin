@@ -3,7 +3,7 @@ use compact_integer::CompactInteger;
 
 pub fn deserialize<R, T>(buffer: R) -> Result<T, Error> where R: io::Read, T: Deserializable {
 	let mut reader = Reader::from_read(buffer);
-	let result = try!(reader.read());
+	let result = reader.read()?;
 
 	if reader.is_finished() {
 		Ok(result)
@@ -112,18 +112,18 @@ impl<R> Reader<R> where R: io::Read {
 	}
 
 	pub fn read_list<T>(&mut self) -> Result<Vec<T>, Error> where T: Deserializable {
-		let len: usize = try!(self.read::<CompactInteger>()).into();
+		let len: usize = self.read::<CompactInteger>()?.into();
 		let mut result = Vec::with_capacity(len);
 
 		for _ in 0..len {
-			result.push(try!(self.read()));
+			result.push(self.read()?);
 		}
 
 		Ok(result)
 	}
 
 	pub fn read_list_max<T>(&mut self, max: usize) -> Result<Vec<T>, Error> where T: Deserializable {
-		let len: usize = try!(self.read::<CompactInteger>()).into();
+		let len: usize = self.read::<CompactInteger>()?.into();
 		if len > max {
 			return Err(Error::MalformedData);
 		}
@@ -131,7 +131,7 @@ impl<R> Reader<R> where R: io::Read {
 		let mut result = Vec::with_capacity(len);
 
 		for _ in 0..len {
-			result.push(try!(self.read()));
+			result.push(self.read()?);
 		}
 
 		Ok(result)
@@ -188,7 +188,7 @@ impl<F, T> Proxy<F, T> {
 
 impl<F, T> io::Read for Proxy<F, T> where F: io::Read, T: FnMut(&[u8]) {
 	fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-		let len = try!(io::Read::read(&mut self.from, buf));
+		let len = io::Read::read(&mut self.from, buf)?;
 		let to = &mut self.to;
 		to(&buf[..len]);
 		Ok(len)

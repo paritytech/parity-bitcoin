@@ -52,7 +52,7 @@ impl Payload for Headers {
 	}
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
-		let headers_with_txn_count: Vec<HeaderWithTxnCount> = try!(reader.read_list());
+		let headers_with_txn_count: Vec<HeaderWithTxnCount> = reader.read_list()?;
 		let headers = Headers {
 			headers: headers_with_txn_count.into_iter().map(Into::into).collect(),
 		};
@@ -78,10 +78,10 @@ impl<'a> Serializable for HeaderWithTxnCountRef<'a> {
 impl Deserializable for HeaderWithTxnCount {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let header = HeaderWithTxnCount {
-			header: try!(reader.read()),
+			header: reader.read()?,
 		};
 
-		let txn_count: CompactInteger = try!(reader.read());
+		let txn_count: CompactInteger = reader.read()?;
 		if txn_count != 0u32.into() {
 			return Err(ReaderError::MalformedData);
 		}

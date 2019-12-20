@@ -31,7 +31,7 @@ impl MessageHeader {
 		}
 
 		let mut reader = Reader::new(data);
-		let magic: u32 = try!(reader.read());
+		let magic: u32 = reader.read()?;
 		let magic = Magic::from(magic);
 		if expected != magic {
 			return Err(Error::InvalidMagic);
@@ -39,9 +39,9 @@ impl MessageHeader {
 
 		let header = MessageHeader {
 			magic: magic,
-			command: try!(reader.read()),
-			len: try!(reader.read()),
-			checksum: try!(reader.read()),
+			command: reader.read()?,
+			len: reader.read()?,
+			checksum: reader.read()?,
 		};
 
 		Ok(header)

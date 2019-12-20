@@ -26,8 +26,8 @@ impl Serializable for BlockTransactionsRequest {
 
 impl Deserializable for BlockTransactionsRequest {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let blockhash = try!(reader.read());
-		let indexes: Vec<CompactInteger> = try!(reader.read_list());
+		let blockhash = reader.read()?;
+		let indexes: Vec<CompactInteger> = reader.read_list()?;
 
 		let request = BlockTransactionsRequest {
 			blockhash: blockhash,

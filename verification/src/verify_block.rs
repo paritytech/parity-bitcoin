@@ -29,13 +29,13 @@ impl<'a> BlockVerifier<'a> {
 	}
 
 	pub fn check(&self) -> Result<(), Error> {
-		try!(self.empty.check());
-		try!(self.coinbase.check());
-		try!(self.serialized_size.check());
-		try!(self.extra_coinbases.check());
-		try!(self.transactions_uniqueness.check());
-		try!(self.sigops.check());
-		try!(self.merkle_root.check());
+		self.empty.check()?;
+		self.coinbase.check()?;
+		self.serialized_size.check()?;
+		self.extra_coinbases.check()?;
+		self.transactions_uniqueness.check()?;
+		self.sigops.check()?;
+		self.merkle_root.check()?;
 		Ok(())
 	}
 }

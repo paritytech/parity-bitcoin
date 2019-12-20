@@ -29,9 +29,9 @@ impl<'a> HeaderAcceptor<'a> {
 	}
 
 	pub fn check(&self) -> Result<(), Error> {
-		try!(self.version.check());
-		try!(self.work.check());
-		try!(self.median_timestamp.check());
+		self.version.check();
+		self.work.check();
+		self.median_timestamp.check();
 		Ok(())
 	}
 }

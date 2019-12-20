@@ -25,7 +25,7 @@ impl Serializable for Port {
 
 impl Deserializable for Port {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		Ok(try!(reader.read_u16::<BigEndian>().map(Port)))
+		Ok(reader.read_u16::<BigEndian>().map(Port)?)
 	}
 }
 
