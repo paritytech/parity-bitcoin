@@ -41,8 +41,6 @@ impl RawClientCore {
 	}
 
 	pub fn do_create_raw_transaction(inputs: Vec<TransactionInput>, outputs: TransactionOutputs, lock_time: Trailing<u32>) -> Result<GlobalTransaction, String> {
-		use chain;
-		use keys;
 		use global_script::Builder as ScriptBuilder;
 
 		// to make lock_time work at least one input must have sequnce < SEQUENCE_FINAL
