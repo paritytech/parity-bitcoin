@@ -230,7 +230,7 @@ impl Deserializable for Bytes {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error> where T: io::Read {
 		let len = reader.read::<CompactInteger>()?;
 		let mut bytes = Bytes::new_with_len(len.into());
-		reader.read_slice(&mut bytes);
+		reader.read_slice(&mut bytes)?;
 		Ok(bytes)
 	}
 }

@@ -107,8 +107,8 @@ impl DisplayLayout for Private {
 
 impl fmt::Debug for Private {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		writeln!(f, "network: {:?}", self.network);
-		writeln!(f, "secret: {}", self.secret.to_hex::<String>());
+		writeln!(f, "network: {:?}", self.network)?;
+		writeln!(f, "secret: {}", self.secret.to_hex::<String>())?;
 		writeln!(f, "compressed: {}", self.compressed)
 	}
 }

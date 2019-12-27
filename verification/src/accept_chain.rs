@@ -65,9 +65,9 @@ impl<'a> ChainAcceptor<'a> {
 	}
 
 	pub fn check(&self) -> Result<(), Error> {
-		self.block.check();
-		self.header.check();
-		self.check_transactions();
+		self.block.check()?;
+		self.header.check()?;
+		self.check_transactions()?;
 		Ok(())
 	}
 
