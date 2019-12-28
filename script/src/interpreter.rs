@@ -12,8 +12,8 @@ use {
 /// Helper function.
 fn check_signature(
 	checker: &dyn SignatureChecker,
-	mut script_sig: Vec<u8>,
-	public: Vec<u8>,
+	script_sig: &Vec<u8>,
+	public: &Vec<u8>,
 	script_code: &Script,
 	version: SignatureVersion
 ) -> bool {
@@ -22,14 +22,11 @@ fn check_signature(
 		_ => return false,
 	};
 
-	if script_sig.is_empty() {
-		return false;
+	if let Some((hash_type, sig)) = script_sig.split_last() {
+		checker.check_signature(&sig.into(), &public, script_code, *hash_type as u32, version)
+	} else {
+		return false
 	}
-
-	let hash_type = script_sig.pop().unwrap() as u32;
-	let signature = script_sig.into();
-
-	checker.check_signature(&signature, &public, script_code, hash_type, version)
 }
 
 /// Helper function.
@@ -1038,7 +1035,7 @@ pub fn eval_script(
 				check_signature_encoding(&signature, flags, version)?;
 				check_pubkey_encoding(&pubkey, flags)?;
 
-				let success = check_signature(checker, signature.into(), pubkey.into(), &subscript, version);
+				let success = check_signature(checker, &signature, &pubkey, &subscript, version);
 				match opcode {
 					Opcode::OP_CHECKSIG => {
 						if success {
@@ -1088,14 +1085,13 @@ pub fn eval_script(
 				let mut k = 0;
 				let mut s = 0;
 				while s < sigs.len() && success {
-					// TODO: remove redundant copying
-					let key = keys[k].clone();
-					let sig = sigs[s].clone();
+					let key = &keys[k];
+					let sig = &sigs[s];
 
-					check_signature_encoding(&sig, flags, version)?;
-					check_pubkey_encoding(&key, flags)?;
+					check_signature_encoding(sig, flags, version)?;
+					check_pubkey_encoding(key, flags)?;
 
-					let ok = check_signature(checker, sig.into(), key.into(), &subscript, version);
+					let ok = check_signature(checker, sig, key, &subscript, version);
 					if ok {
 						s += 1;
 					}
