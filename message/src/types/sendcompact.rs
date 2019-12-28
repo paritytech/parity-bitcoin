@@ -19,8 +19,8 @@ impl Payload for SendCompact {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let send_compact = SendCompact {
-			first: try!(reader.read()),
-			second: try!(reader.read()),
+			first: reader.read()?,
+			second: reader.read()?,
 		};
 
 		Ok(send_compact)

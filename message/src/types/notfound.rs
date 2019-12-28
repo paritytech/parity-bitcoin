@@ -27,7 +27,7 @@ impl Payload for NotFound {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let inv = NotFound {
-			inventory: try!(reader.read_list_max(50_000)),
+			inventory: reader.read_list_max(50_000)?,
 		};
 
 		Ok(inv)

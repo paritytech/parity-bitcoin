@@ -37,10 +37,10 @@ impl Public {
 
 	pub fn verify(&self, message: &Message, signature: &Signature) -> Result<bool, Error> {
 		let context = &SECP256K1;
-		let public = try!(key::PublicKey::from_slice(context, self));
-		let mut signature = try!(SecpSignature::from_der_lax(context, signature));
+		let public = key::PublicKey::from_slice(context, self)?;
+		let mut signature = SecpSignature::from_der_lax(context, signature)?;
 		signature.normalize_s(context);
-		let message = try!(SecpMessage::from_slice(&**message));
+		let message = SecpMessage::from_slice(&**message)?;
 		match context.verify(&message, &signature, &public) {
 			Ok(_) => Ok(true),
 			Err(SecpError::IncorrectSignature) => Ok(false),
@@ -52,10 +52,10 @@ impl Public {
 		let context = &SECP256K1;
 		let recovery_id = (signature[0] - 27) & 3;
 		let compressed = (signature[0] - 27) & 4 != 0;
-		let recovery_id = try!(RecoveryId::from_i32(recovery_id as i32));
-		let signature = try!(RecoverableSignature::from_compact(context, &signature[1..65], recovery_id));
-		let message = try!(SecpMessage::from_slice(&**message));
-		let pubkey = try!(context.recover(&message, &signature));
+		let recovery_id = RecoveryId::from_i32(recovery_id as i32)?;
+		let signature = RecoverableSignature::from_compact(context, &signature[1..65], recovery_id)?;
+		let message = SecpMessage::from_slice(&**message)?;
+		let pubkey = context.recover(&message, &signature)?;
 		let serialized = pubkey.serialize_vec(context, compressed);
 		let public = if compressed {
 			let mut public = H264::default();

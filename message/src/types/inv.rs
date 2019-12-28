@@ -29,7 +29,7 @@ impl Payload for Inv {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let inv = Inv {
-			inventory: try!(reader.read_list_max(50_000)),
+			inventory: reader.read_list_max(50_000)?,
 		};
 
 		Ok(inv)

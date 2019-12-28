@@ -26,7 +26,7 @@ impl Payload for FeeFilter {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let fee_filter = FeeFilter {
-			fee_rate: try!(reader.read()),
+			fee_rate: reader.read()?,
 		};
 
 		Ok(fee_filter)

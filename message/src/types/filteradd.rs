@@ -22,7 +22,7 @@ impl Payload for FilterAdd {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let filteradd = FilterAdd {
-			data: try!(reader.read()),
+			data: reader.read()?,
 		};
 
 		Ok(filteradd)

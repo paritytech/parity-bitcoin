@@ -47,7 +47,7 @@ impl Serializable for RejectCode {
 
 impl Deserializable for RejectCode {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let v: u8 = try!(reader.read());
+		let v: u8 = reader.read()?;
 		RejectCode::from_u8(v).ok_or_else(|| ReaderError::MalformedData)
 	}
 }
@@ -71,9 +71,9 @@ impl Payload for Reject {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let reject = Reject {
-			message: try!(reader.read()),
-			code: try!(reader.read()),
-			reason: try!(reader.read()),
+			message: reader.read()?,
+			code: reader.read()?,
+			reason: reader.read()?,
 		};
 
 		Ok(reject)

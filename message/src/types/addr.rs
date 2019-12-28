@@ -72,8 +72,8 @@ impl Serializable for AddressEntry {
 impl Deserializable for AddressEntry {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let entry = AddressEntry {
-			timestamp: try!(reader.read()),
-			address: try!(reader.read()),
+			timestamp: reader.read()?,
+			address: reader.read()?,
 		};
 
 		Ok(entry)
@@ -94,7 +94,7 @@ impl Serializable for V31402 {
 impl Deserializable for V31402 {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = V31402 {
-			addresses: try!(reader.read_list_max(1000)),
+			addresses: reader.read_list_max(1000)?,
 		};
 
 		Ok(result)
@@ -115,7 +115,7 @@ impl Serializable for V0 {
 impl Deserializable for V0 {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = V0 {
-			addresses: try!(reader.read_list_max(1000)),
+			addresses: reader.read_list_max(1000)?,
 		};
 
 		Ok(result)

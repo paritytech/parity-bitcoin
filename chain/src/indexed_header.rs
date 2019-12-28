@@ -49,7 +49,7 @@ impl cmp::PartialEq for IndexedBlockHeader {
 
 impl Deserializable for IndexedBlockHeader {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let data = try!(reader.read_and_hash::<BlockHeader>());
+		let data = reader.read_and_hash::<BlockHeader>()?;
 		// TODO: use len
 		let header = IndexedBlockHeader {
 			raw: data.data,

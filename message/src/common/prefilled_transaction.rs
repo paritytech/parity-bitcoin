@@ -21,10 +21,10 @@ impl Serializable for PrefilledTransaction {
 
 impl Deserializable for PrefilledTransaction {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let compact: CompactInteger = try!(reader.read());
+		let compact: CompactInteger = reader.read()?;
 		let tx = PrefilledTransaction {
 			index: compact.into(),
-			transaction: try!(reader.read()),
+			transaction: reader.read()?,
 		};
 
 		Ok(tx)

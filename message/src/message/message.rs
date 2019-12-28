@@ -23,7 +23,7 @@ impl<T> Message<T> where T: Payload {
 	}
 
 	pub fn with_flags(magic: Magic, version: u32, payload: &T, serialization_flags: u32) -> MessageResult<Self> {
-		let serialized = try!(serialize_payload_with_flags(payload, version, serialization_flags));
+		let serialized = serialize_payload_with_flags(payload, version, serialization_flags)?;
 
 		let message = Message {
 			bytes: TaggedBytes::new(to_raw_message(magic, T::command().into(), &serialized)),

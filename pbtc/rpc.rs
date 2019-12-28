@@ -45,8 +45,8 @@ pub fn new_http(conf: HttpConfiguration, deps: Dependencies) -> Result<Option<Se
 	}
 
 	let url = format!("{}:{}", conf.interface, conf.port);
-	let addr = try!(url.parse().map_err(|_| format!("Invalid JSONRPC listen host/port given: {}", url)));
-	Ok(Some(try!(setup_http_rpc_server(&addr, conf.cors, conf.hosts, conf.apis, deps))))
+	let addr = url.parse().map_err(|_| format!("Invalid JSONRPC listen host/port given: {}", url))?;
+	Ok(Some(setup_http_rpc_server(&addr, conf.cors, conf.hosts, conf.apis, deps)?))
 }
 
 pub fn setup_http_rpc_server(

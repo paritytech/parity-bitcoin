@@ -19,7 +19,7 @@ impl Payload for CompactBlock {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let block = CompactBlock {
-			header: try!(reader.read()),
+			header: reader.read()?,
 		};
 
 		Ok(block)

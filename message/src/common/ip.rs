@@ -57,24 +57,24 @@ impl Serializable for IpAddress {
 impl Deserializable for IpAddress {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let bytes: &mut [u8] = &mut [0u8; 12];
-		try!(reader.read_slice(bytes));
+		reader.read_slice(bytes)?;
 		if bytes == &[0u8; 12] {
 			let address: &mut [u8] = &mut [0u8; 4];
-			try!(reader.read_slice(address));
+			reader.read_slice(address)?;
 			let address = net::Ipv4Addr::new(address[0], address[1], address[2], address[3]);
 			Ok(IpAddress(net::IpAddr::V4(address)))
 		} else {
 			// compiler needs some help here...
 			let mut b = bytes as &[u8];
 			let address = net::Ipv6Addr::new(
-				try!(b.read_u16::<BigEndian>()),
-				try!(b.read_u16::<BigEndian>()),
-				try!(b.read_u16::<BigEndian>()),
-				try!(b.read_u16::<BigEndian>()),
-				try!(b.read_u16::<BigEndian>()),
-				try!(b.read_u16::<BigEndian>()),
-				try!(reader.read_u16::<BigEndian>()),
-				try!(reader.read_u16::<BigEndian>())
+				b.read_u16::<BigEndian>()?,
+				b.read_u16::<BigEndian>()?,
+				b.read_u16::<BigEndian>()?,
+				b.read_u16::<BigEndian>()?,
+				b.read_u16::<BigEndian>()?,
+				b.read_u16::<BigEndian>()?,
+				reader.read_u16::<BigEndian>()?,
+				reader.read_u16::<BigEndian>()?
 			);
 			Ok(IpAddress(net::IpAddr::V6(address)))
 		}

@@ -46,7 +46,7 @@ impl Context {
 		let context = Context {
 			connections: Default::default(),
 			connection_counter: ConnectionCounter::new(config.inbound_connections, config.outbound_connections),
-			node_table: RwLock::new(try!(NodeTable::from_file(config.preferable_services, &config.node_table_path))),
+			node_table: RwLock::new(NodeTable::from_file(config.preferable_services, &config.node_table_path)?),
 			pool: pool_handle,
 			remote: remote,
 			local_sync_node: local_sync_node,
@@ -259,7 +259,7 @@ impl Context {
 	/// Starts tcp server and listens for incomming connections.
 	pub fn listen(context: Arc<Context>, handle: &Handle, config: NetConfig) -> Result<BoxedEmptyFuture, io::Error> {
 		trace!("Starting tcp server");
-		let server = try!(TcpListener::bind(&config.local_address, handle));
+		let server = TcpListener::bind(&config.local_address, handle)?;
 		let server = Box::new(server.incoming()
 			.and_then(move |(stream, socket)| {
 				// because we acquire atomic value twice,
@@ -435,7 +435,7 @@ impl P2P {
 			.pool_size(config.threads)
 			.create();
 
-		let context = try!(Context::new(local_sync_node, pool.clone(), handle.remote().clone(), config.clone()));
+		let context = Context::new(local_sync_node, pool.clone(), handle.remote().clone(), config.clone())?;
 
 		let p2p = P2P {
 			event_loop_handle: handle.clone(),
@@ -452,13 +452,13 @@ impl P2P {
 			self.connect::<NormalSessionFactory>(*peer);
 		}
 
-		let resolver = try!(DnsResolver::system_config(&self.event_loop_handle));
+		let resolver = DnsResolver::system_config(&self.event_loop_handle)?;
 		for seed in &self.config.seeds {
 			self.connect_to_seednode(&resolver, seed);
 		}
 
 		Context::autoconnect(self.context.clone(), &self.event_loop_handle);
-		try!(self.listen());
+		self.listen()?;
 		Ok(())
 	}
 
@@ -492,7 +492,7 @@ impl P2P {
 	}
 
 	fn listen(&self) -> Result<(), Box<dyn error::Error>> {
-		let server = try!(Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone()));
+		let server = Context::listen(self.context.clone(), &self.event_loop_handle, self.config.connection.clone())?;
 		self.event_loop_handle.spawn(server);
 		Ok(())
 	}

@@ -24,10 +24,10 @@ impl Payload for MerkleBlock {
 
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
 		let merkle_block = MerkleBlock {
-			block_header: try!(reader.read()),
-			total_transactions: try!(reader.read()),
-			hashes: try!(reader.read_list()),
-			flags: try!(reader.read()),
+			block_header: reader.read()?,
+			total_transactions: reader.read()?,
+			hashes: reader.read_list()?,
+			flags: reader.read()?,
 		};
 
 		Ok(merkle_block)

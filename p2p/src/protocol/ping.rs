@@ -78,11 +78,11 @@ impl Protocol for PingProtocol {
 		self.state = State::WaitingTimeout(time::precise_time_s());
 		
 		if command == &Ping::command() {
-			let ping: Ping = try!(deserialize_payload(payload, self.context.info().version));
+			let ping: Ping = deserialize_payload(payload, self.context.info().version)?;
 			let pong = Pong::new(ping.nonce);
 			self.context.send_response_inline(&pong);
 		} else if command == &Pong::command() {
-			let pong: Pong = try!(deserialize_payload(payload, self.context.info().version));
+			let pong: Pong = deserialize_payload(payload, self.context.info().version)?;
 			if Some(pong.nonce) != self.last_ping_nonce.take() {
 				return Err(Error::InvalidCommand)
 			}

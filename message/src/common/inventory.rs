@@ -45,7 +45,7 @@ impl Serializable for InventoryType {
 
 impl Deserializable for InventoryType {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
-		let t: u32 = try!(reader.read());
+		let t: u32 = reader.read()?;
 		InventoryType::from_u32(t).ok_or(ReaderError::MalformedData)
 	}
 }
@@ -97,8 +97,8 @@ impl Serializable for InventoryVector {
 impl Deserializable for InventoryVector {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let vec = InventoryVector {
-			inv_type: try!(reader.read()),
-			hash: try!(reader.read()),
+			inv_type: reader.read()?,
+			hash: reader.read()?,
 		};
 
 		Ok(vec)

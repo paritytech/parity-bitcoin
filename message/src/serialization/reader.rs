@@ -3,7 +3,7 @@ use {Payload, Error};
 
 pub fn deserialize_payload<T>(buffer: &[u8], version: u32) -> Result<T, Error> where T: Payload {
 	let mut reader = PayloadReader::new(buffer, version);
-	let result = try!(reader.read());
+	let result = reader.read()?;
 	if !reader.is_finished() {
 		return Err(Error::Deserialize);
 	}

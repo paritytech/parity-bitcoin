@@ -215,7 +215,7 @@ impl<T, U> Client for SynchronizationClient<T, U> where T: TaskExecutor, U: Veri
 	}
 
 	fn accept_transaction(&self, transaction: IndexedTransaction, sink: Box<dyn TransactionVerificationSink>) -> Result<(), String> {
-		let mut transactions_to_verify = try!(self.core.lock().accept_transaction(transaction, sink));
+		let mut transactions_to_verify = self.core.lock().accept_transaction(transaction, sink)?;
 
 		let next_block_height = self.shared_state.best_storage_block_height() + 1;
 		while let Some(tx) = transactions_to_verify.pop_front() {

@@ -25,9 +25,9 @@ impl<'a> TransactionVerifier<'a> {
 	}
 
 	pub fn check(&self) -> Result<(), TransactionError> {
-		try!(self.empty.check());
-		try!(self.null_non_coinbase.check());
-		try!(self.oversized_coinbase.check());
+		self.empty.check()?;
+		self.null_non_coinbase.check()?;
+		self.oversized_coinbase.check()?;
 		Ok(())
 	}
 }
@@ -55,12 +55,12 @@ impl<'a> MemoryPoolTransactionVerifier<'a> {
 	}
 
 	pub fn check(&self) -> Result<(), TransactionError> {
-		try!(self.empty.check());
-		try!(self.null_non_coinbase.check());
-		try!(self.is_coinbase.check());
-		try!(self.size.check());
-		try!(self.premature_witness.check());
-		try!(self.sigops.check());
+		self.empty.check()?;
+		self.null_non_coinbase.check()?;
+		self.is_coinbase.check()?;
+		self.size.check()?;
+		self.premature_witness.check()?;
+		self.sigops.check()?;
 		Ok(())
 	}
 }

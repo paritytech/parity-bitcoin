@@ -148,10 +148,10 @@ impl Database {
 
 		let mut opts = Options::new();
 		if let Some(rate_limit) = config.compaction.write_rate_limit {
-			try!(opts.set_parsed_options(&format!("rate_limiter_bytes_per_sec={}", rate_limit)));
+			opts.set_parsed_options(&format!("rate_limiter_bytes_per_sec={}", rate_limit))?;
 		}
-		try!(opts.set_parsed_options(&format!("max_total_wal_size={}", 64 * 1024 * 1024)));
-		try!(opts.set_parsed_options("verify_checksums_in_compaction=0"));
+		opts.set_parsed_options(&format!("max_total_wal_size={}", 64 * 1024 * 1024))?;
+		opts.set_parsed_options("verify_checksums_in_compaction=0")?;
 		opts.set_max_open_files(config.max_open_files);
 		opts.create_if_missing(true);
 		opts.set_use_fsync(false);
@@ -211,7 +211,7 @@ impl Database {
 						// retry and create CFs
 						match DB::open_cf(&opts, &path, &[], &[]) {
 							Ok(mut db) => {
-								cfs = try!(cfnames.iter().enumerate().map(|(i, n)| db.create_cf(n, &cf_options[i])).collect());
+								cfs = cfnames.iter().enumerate().map(|(i, n)| db.create_cf(n, &cf_options[i])).collect::<Result<Vec<Column>, String>>()?;
 								Ok(db)
 							},
 							err @ Err(_) => err,
@@ -227,11 +227,11 @@ impl Database {
 			Err(ref s) if s.starts_with("Corruption:") => {
 				info!("{}", s);
 				info!("Attempting DB repair for {}", path);
-				try!(DB::repair(&opts, &path));
+				DB::repair(&opts, &path)?;
 
 				match cfnames.is_empty() {
-					true => try!(DB::open(&opts, &path)),
-					false => try!(DB::open_cf(&opts, &path, &cfnames, &cf_options))
+					true => DB::open(&opts, &path)?,
+					false => DB::open_cf(&opts, &path, &cfnames, &cf_options)?
 				}
 			},
 			Err(s) => { return Err(s); }

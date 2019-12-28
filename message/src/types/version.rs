@@ -32,17 +32,17 @@ impl Payload for Version {
 
 	// version package is an serialization excpetion
 	fn deserialize_payload<T>(reader: &mut Reader<T>, _version: u32) -> MessageResult<Self> where T: io::Read {
-		let simple: V0 = try!(reader.read());
+		let simple: V0 = reader.read()?;
 
 		if simple.version < 106 {
 			return Ok(Version::V0(simple));
 		}
 
-		let v106: V106 = try!(reader.read());
+		let v106: V106 = reader.read()?;
 		if simple.version < 70001 {
 			Ok(Version::V106(simple, v106))
 		} else {
-			let v70001: V70001 = try!(reader.read());
+			let v70001: V70001 = reader.read()?;
 			Ok(Version::V70001(simple, v106, v70001))
 		}
 	}
@@ -144,10 +144,10 @@ impl Serializable for V0 {
 impl Deserializable for V0 {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = V0 {
-			version: try!(reader.read()),
-			services: try!(reader.read()),
-			timestamp: try!(reader.read()),
-			receiver: try!(reader.read()),
+			version: reader.read()?,
+			services: reader.read()?,
+			timestamp: reader.read()?,
+			receiver: reader.read()?,
 		};
 
 		Ok(result)
@@ -167,10 +167,10 @@ impl Serializable for V106 {
 impl Deserializable for V106 {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = V106 {
-			from: try!(reader.read()),
-			nonce: try!(reader.read()),
-			user_agent: try!(reader.read()),
-			start_height: try!(reader.read()),
+			from: reader.read()?,
+			nonce: reader.read()?,
+			user_agent: reader.read()?,
+			start_height: reader.read()?,
 		};
 
 		Ok(result)
@@ -186,7 +186,7 @@ impl Serializable for V70001 {
 impl Deserializable for V70001 {
 	fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, ReaderError> where T: io::Read {
 		let result = V70001 {
-			relay: try!(reader.read()),
+			relay: reader.read()?,
 		};
 
 		Ok(result)
