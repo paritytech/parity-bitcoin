@@ -267,9 +267,7 @@ pub fn manage_unknown_orphaned_blocks(config: &ManageUnknownBlocksConfig, orphan
 	};
 
 	// remove unknown blocks
-	let unknown_to_remove: Vec<H256> = orphaned_blocks_pool.remove_blocks(&unknown_to_remove).into_iter()
-		.map(|b| b.header.hash)
-		.collect();
+	let unknown_to_remove: Vec<H256> = orphaned_blocks_pool.remove_blocks(&unknown_to_remove);
 
 	if unknown_to_remove.is_empty() { None } else { Some(unknown_to_remove) }
 }
