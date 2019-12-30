@@ -85,34 +85,22 @@ impl OrphanBlocksPool {
 	}
 
 	/// Remove blocks with given hashes + all dependent blocks
-	pub fn remove_blocks(&mut self, hashes: &HashSet<H256>) -> Vec<IndexedBlock> {
-		// TODO: excess clone
-		let mut removed: Vec<IndexedBlock> = Vec::new();
-		let parent_orphan_keys: Vec<_> = self.orphaned_blocks.keys().cloned().collect();
-		for parent_orphan_key in parent_orphan_keys {
-			if let Entry::Occupied(mut orphan_entry) = self.orphaned_blocks.entry(parent_orphan_key) {
-				let remove_entry = {
-					let orphans = orphan_entry.get_mut();
-					let orphans_keys: HashSet<H256> = orphans.keys().cloned().collect();
-					for orphan_to_remove in orphans_keys.intersection(hashes) {
-						self.unknown_blocks.remove(orphan_to_remove);
-						removed.push(
-							orphans.remove(orphan_to_remove)
-								.expect("iterating by intersection of orphans keys with hashes; removing from orphans; qed")
-						);
-					}
-					orphans.is_empty()
-				};
+	pub fn remove_blocks(&mut self, hashes: &HashSet<H256>) -> Vec<H256> {
+		let mut removed: Vec<H256> = Vec::new();
 
-				if remove_entry {
-					orphan_entry.remove_entry();
-				}
+		self.orphaned_blocks.retain(|_, orphans| {
+			for hash in hashes {
+				orphans.remove(hash).map(|_| removed.push(*hash));
 			}
-		}
+			!orphans.is_empty()
+		});
 
+		for block in &removed {
+			self.unknown_blocks.remove(block);
+		}
 		// also delete all children
 		for hash in hashes.iter() {
-			removed.extend(self.remove_blocks_for_parent(hash));
+			removed.extend(self.remove_blocks_for_parent(hash).iter().map(|block| block.hash()));
 		}
 
 		removed
@@ -234,10 +222,10 @@ mod tests {
 
 		let removed = pool.remove_blocks(&blocks_to_remove);
 		assert_eq!(removed.len(), 4);
-		assert!(removed.iter().any(|ref b| b.hash() == &b1_hash));
-		assert!(removed.iter().any(|ref b| b.hash() == &b2_hash));
-		assert!(removed.iter().any(|ref b| b.hash() == &b3_hash));
-		assert!(removed.iter().any(|ref b| b.hash() == &b4_hash));
+		assert!(removed.iter().any(|h| h == &b1_hash));
+		assert!(removed.iter().any(|h| h == &b2_hash));
+		assert!(removed.iter().any(|h| h == &b3_hash));
+		assert!(removed.iter().any(|h| h == &b4_hash));
 
 		assert_eq!(pool.len(), 1);
 	}
