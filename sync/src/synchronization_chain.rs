@@ -265,7 +265,7 @@ impl Chain {
 
 	/// Get block header by hash
 	pub fn block_header_by_hash(&self, hash: &H256) -> Option<IndexedBlockHeader> {
-		if let Some(header) = self.storage.block_header(storage::BlockRef::Hash(hash.clone())) {
+		if let Some(header) = self.storage.block_header(storage::BlockRef::Hash(*hash)) {
 			return Some(header);
 		}
 		self.headers_chain.by_hash(hash)
@@ -275,7 +275,7 @@ impl Chain {
 	pub fn block_state(&self, hash: &H256) -> BlockState {
 		match self.hash_chain.contains_in(hash) {
 			Some(queue_index) => BlockState::from_queue_index(queue_index),
-			None => if self.storage.contains_block(storage::BlockRef::Hash(hash.clone())) {
+			None => if self.storage.contains_block(storage::BlockRef::Hash(*hash)) {
 				BlockState::Stored
 			} else if self.dead_end_blocks.contains(hash) {
 				BlockState::DeadEnd
@@ -340,7 +340,7 @@ impl Chain {
 
 	/// Mark this block as dead end, so these tasks won't be synchronized
 	pub fn mark_dead_end_block(&mut self, hash: &H256) {
-		self.dead_end_blocks.insert(hash.clone());
+		self.dead_end_blocks.insert(*hash);
 	}
 
 	/// Insert new best block to storage
@@ -382,7 +382,7 @@ impl Chain {
 				// no transactions to reverify, because we have just appended new transactions to the blockchain
 
 				Ok(BlockInsertionResult {
-					canonized_blocks_hashes: vec![block.hash().clone()],
+					canonized_blocks_hashes: vec![*block.hash()],
 					transactions_to_reverify: Vec::new(),
 				})
 			},
@@ -438,7 +438,7 @@ impl Chain {
 					.collect();
 				self.verifying_transactions.clear();
 
-				canonized_blocks_hashes.push(block.hash().clone());
+				canonized_blocks_hashes.push(*block.hash());
 
 				let result = BlockInsertionResult {
 					canonized_blocks_hashes: canonized_blocks_hashes,
@@ -517,7 +517,7 @@ impl Chain {
 	pub fn forget_block_with_children(&mut self, hash: &H256) {
 		let mut removal_stack: VecDeque<H256> = VecDeque::new();
 		let mut removal_queue: VecDeque<H256> = VecDeque::new();
-		removal_queue.push_back(hash.clone());
+		removal_queue.push_back(*hash);
 
 		// remove in reverse order to minimize headers operations
 		while let Some(hash) = removal_queue.pop_front() {
@@ -568,34 +568,23 @@ impl Chain {
 		self.verifying_transactions.remove(hash).is_some()
 	}
 
-	/// Remove verifying trasaction + all dependent transactions currently verifying
+	/// Remove verifying transaction + all dependent transactions currently verifying
 	pub fn forget_verifying_transaction_with_children(&mut self, hash: &H256) {
 		self.forget_verifying_transaction(hash);
 
-		// TODO: suboptimal
 		let mut queue: VecDeque<H256> = VecDeque::new();
-		queue.push_back(hash.clone());
+		queue.push_back(*hash);
 		while let Some(hash) = queue.pop_front() {
-			let all_keys: Vec<_> = self.verifying_transactions.keys().cloned().collect();
-			for h in all_keys {
-				let remove_verifying_transaction = {
-					if let Some(entry) = self.verifying_transactions.get(&h) {
-						if entry.raw.inputs.iter().any(|i| i.previous_output.hash == hash) {
-							queue.push_back(h.clone());
-							true
-						} else {
-							false
-						}
-					} else {
-						// iterating by previously read keys
-						unreachable!()
-					}
-				};
+			let remove: Vec<H256> = self.verifying_transactions.iter()
+				.filter(|(_, e)|
+					e.raw.inputs.iter().any(|i| i.previous_output.hash == hash))
+				.map(|(h, _)| h.clone())
+				.collect();
 
-				if remove_verifying_transaction {
-					self.verifying_transactions.remove(&h);
-				}
+			for h in &remove {
+				self.verifying_transactions.remove(h);
 			}
+			queue.extend(remove);
 		}
 	}
 
@@ -604,7 +593,7 @@ impl Chain {
 		self.verifying_transactions.get(hash).cloned()
 			.or_else(|| self.memory_pool.read().read_by_hash(hash)
 				.cloned()
-				.map(|tx| IndexedTransaction::new(hash.clone(), tx)))
+				.map(|tx| IndexedTransaction::new(*hash, tx)))
 	}
 
 	/// Insert transaction to memory pool
