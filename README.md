@@ -163,7 +163,7 @@ It is possible to import existing `bitcoind` database:
 By default import verifies imported the blocks. You can disable this, by adding `--verification-level==none` flag.
 
 ```
-./target/release/pbtc import "#BITCOIND_DB/Bitcoin/blocks" --btc --skip-verification
+./target/release/pbtc --btc --verification-level==none import "$BITCOIND_DB/Bitcoin/blocks"
 ```
 
 ## Command line interface
