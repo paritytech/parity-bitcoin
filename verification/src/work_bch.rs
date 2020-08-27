@@ -1,15 +1,15 @@
+use ethereum_types::U256;
+
+use chain::IndexedBlockHeader;
+use constants::{
+	DOUBLE_SPACING_SECONDS, RETARGETING_INTERVAL, TARGET_SPACING_SECONDS
+};
+use network::{BitcoinCashConsensusParams, ConsensusParams, Network};
 use primitives::compact::Compact;
 use primitives::hash::H256;
-use primitives::bigint::{Uint, U256};
-use chain::IndexedBlockHeader;
-use network::{Network, ConsensusParams, BitcoinCashConsensusParams};
 use storage::BlockHeaderProvider;
 use timestamp::median_timestamp_inclusive;
-use work::{is_retarget_height, work_required_testnet, work_required_retarget};
-
-use constants::{
-	DOUBLE_SPACING_SECONDS, TARGET_SPACING_SECONDS, RETARGETING_INTERVAL
-};
+use work::{is_retarget_height, work_required_retarget, work_required_testnet};
 
 /// Returns work required for given header for the post-HF Bitcoin Cash block
 pub fn work_required_bitcoin_cash(parent_header: IndexedBlockHeader, time: u32, height: u32, store: &dyn BlockHeaderProvider, consensus: &ConsensusParams, fork: &BitcoinCashConsensusParams, max_bits: Compact) -> Compact {
@@ -114,7 +114,8 @@ fn work_required_bitcoin_cash_adjusted(parent_header: IndexedBlockHeader, time: 
 		// we can deduce how much work we expect to be produced in the targeted time
 		// between blocks.
 		let mut work = compute_work_between_blocks(first_header.hash, &last_header, store);
-		work = work * TARGET_SPACING_SECONDS.into();
+		let mul_by: U256 = TARGET_SPACING_SECONDS.into();
+		work = work * mul_by;
 
 		// In order to avoid difficulty cliffs, we bound the amplitude of the
 		// adjustement we are going to do.
@@ -126,7 +127,8 @@ fn work_required_bitcoin_cash_adjusted(parent_header: IndexedBlockHeader, time: 
 			actual_timespan = 72 * TARGET_SPACING_SECONDS;
 		}
 
-		let work = work / actual_timespan.into();
+		let div_by: U256 = actual_timespan.into();
+		let work = work / div_by;
 
 		// We need to compute T = (2^256 / W) - 1 but 2^256 doesn't fit in 256 bits.
 		// By expressing 1 as W / W, we get (2^256 - W) / W, and we can compute
@@ -174,13 +176,16 @@ fn work_required_bitcoin_cash_adjusted(parent_header: IndexedBlockHeader, time: 
 #[cfg(test)]
 mod tests {
 	use std::collections::HashMap;
+
+	use ethereum_types::U256;
+
+	use chain::{BlockHeader, IndexedBlockHeader};
+	use network::{BitcoinCashConsensusParams, ConsensusFork, ConsensusParams, Network};
 	use primitives::bytes::Bytes;
 	use primitives::hash::H256;
-	use primitives::bigint::U256;
-	use network::{Network, ConsensusParams, BitcoinCashConsensusParams, ConsensusFork};
 	use storage::{BlockHeaderProvider, BlockRef};
-	use chain::{BlockHeader, IndexedBlockHeader};
 	use work::work_required;
+
 	use super::work_required_bitcoin_cash_adjusted;
 
 	#[derive(Default)]

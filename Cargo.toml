@@ -1,46 +1,82 @@
 [package]
-name = "pbtc"
-version = "0.1.0"
-license = "GPL-3.0"
 authors = ["Parity Technologies <admin@parity.io>"]
 description = "Parity bitcoin client."
+license = "GPL-3.0"
+name = "pbtc"
+version = "0.1.0"
+[[bin]]
+name = "pbtc"
+path = "pbtc/main.rs"
 
 [dependencies]
-log = "0.4"
 env_logger = "0.5"
-app_dirs = { git = "https://github.com/paritytech/app-dirs-rs" }
+ethereum-types = "*"
 libc = "0.2"
-clap = { version = "2", features = ["yaml"] }
-chain = { path = "chain" }
-keys = { path = "keys" }
-message = { path = "message" }
-network = { path = "network" }
-miner = { path = "miner" }
-p2p = { path = "p2p" }
-script = { path = "script" }
-storage = { path = "storage" }
-db = { path = "db" }
-verification = { path = "verification" }
-sync = { path = "sync" }
-import = { path = "import" }
-logs = { path = "logs" }
-rpc = { path = "rpc" }
-primitives = { path = "primitives" }
+log = "0.4"
 
+[dependencies.app_dirs]
+git = "https://github.com/paritytech/app-dirs-rs"
+
+[dependencies.chain]
+path = "chain"
+
+[dependencies.clap]
+features = ["yaml"]
+version = "2"
+
+[dependencies.db]
+path = "db"
+
+[dependencies.import]
+path = "import"
+
+[dependencies.keys]
+path = "keys"
+
+[dependencies.logs]
+path = "logs"
+
+[dependencies.message]
+path = "message"
+
+[dependencies.miner]
+path = "miner"
+
+[dependencies.network]
+path = "network"
+
+[dependencies.p2p]
+path = "p2p"
+
+[dependencies.primitives]
+path = "primitives"
+
+[dependencies.rpc]
+path = "rpc"
+
+[dependencies.script]
+path = "script"
+
+[dependencies.storage]
+path = "storage"
+
+[dependencies.sync]
+path = "sync"
+
+[dependencies.verification]
+path = "verification"
+
+[profile]
 [profile.dev]
 debug = true
-panic = 'abort'
+panic = "abort"
 
 [profile.release]
 debug = true
-panic = 'abort'
+panic = "abort"
 
 [profile.test]
 debug = true
-
-[[bin]]
-path = "pbtc/main.rs"
-name = "pbtc"
 
 [workspace]
 members = ["bencher"]
