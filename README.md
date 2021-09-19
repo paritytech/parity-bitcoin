@@ -33,8 +33,7 @@ Gitter [![Gitter https://gitter.im/paritytech/parity-bitcoin](https://badges.git
 
 Installing `pbtc` from source requires `rustc` and `cargo`.
 
-Minimal supported version is `rustc 1.23.0 (766bd11c8 2018-01-01)`
-Maximum supported version is `cargo 1.47.0 (f3c7e066a 2020-08-28)`
+Minimal supported version is `rustc 1.23.0 (766bd11c8 2018-01-01)`,Maximum supported version is `rustc 1.47.0 (18bf6b4f0 2020-10-07)`.
 
 #### Install rustc and cargo
 
