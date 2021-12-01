@@ -1,6 +1,6 @@
 # The Parity Bitcoin client.
 
-# THIS IS UNMAINTAINED HISTORICAL SOFTARE
+# THIS IS UNMAINTAINED HISTORICAL SOFTWARE
 
 [![Build Status][travis-image]][travis-url] [![Snap Status](https://build.snapcraft.io/badge/paritytech/parity-bitcoin.svg)](https://build.snapcraft.io/user/paritytech/parity-bitcoin)
 
