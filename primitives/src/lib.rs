@@ -1,8 +1,8 @@
 extern crate byteorder;
+extern crate ethereum_types;
 #[macro_use]
 extern crate heapsize;
 extern crate rustc_hex as hex;
-pub extern crate bigint;
 
 pub mod bytes;
 pub mod compact;

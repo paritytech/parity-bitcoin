@@ -5,5 +5,6 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 
 [dependencies]
 lazy_static = "1.4.0"
+ethereum-types = "0.9"
 chain = { path = "../chain" }
 primitives = { path = "../primitives" }

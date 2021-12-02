@@ -1,11 +1,12 @@
 //! Bitcoin network
 //! https://www.anintegratedworld.com/unravelling-the-mysterious-block-chain-magic-number/
 
-use compact::Compact;
+use ethereum_types::U256;
+
+use ConsensusFork;
 use chain::IndexedBlock;
+use compact::Compact;
 use primitives::hash::H256;
-use primitives::bigint::U256;
-use {ConsensusFork};
 
 const MAGIC_MAINNET: u32 = 0xD9B4BEF9;
 const MAGIC_TESTNET: u32 = 0x0709110B;
@@ -101,11 +102,12 @@ impl Network {
 
 #[cfg(test)]
 mod tests {
+	use ConsensusFork;
 	use compact::Compact;
-	use {ConsensusFork};
+
 	use super::{
-		Network, MAGIC_MAINNET, MAGIC_TESTNET, MAGIC_REGTEST, MAGIC_UNITEST,
-		MAX_BITS_MAINNET, MAX_BITS_TESTNET, MAX_BITS_REGTEST,
+		MAGIC_MAINNET, MAGIC_REGTEST, MAGIC_TESTNET, MAGIC_UNITEST, MAX_BITS_MAINNET,
+		MAX_BITS_REGTEST, MAX_BITS_TESTNET, Network,
 	};
 
 	#[test]

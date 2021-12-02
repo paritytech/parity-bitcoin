@@ -11,7 +11,7 @@ pub const SEQUENCE_FINAL: u32 = 0xffffffff;
 // If CTxIn::nSequence encodes a relative lock-time and this flag
 // is set, the relative lock-time has units of 512 seconds,
 // otherwise it specifies blocks with a granularity of 1.
-pub const SEQUENCE_LOCKTIME_TYPE_FLAG: u32 = (1 << 22);
+pub const SEQUENCE_LOCKTIME_TYPE_FLAG: u32 = 1 << 22;
 
 // If CTxIn::nSequence encodes a relative lock-time, this mask is
 // applied to extract that lock-time from the sequence field.

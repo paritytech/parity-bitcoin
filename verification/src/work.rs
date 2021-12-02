@@ -1,16 +1,17 @@
 use std::cmp;
+
+use ethereum_types::U256;
+
+use chain::IndexedBlockHeader;
+use constants::{
+	DOUBLE_SPACING_SECONDS, MAX_TIMESPAN,
+	MIN_TIMESPAN, RETARGETING_INTERVAL, TARGET_TIMESPAN_SECONDS
+};
+use network::{ConsensusFork, ConsensusParams, Network};
 use primitives::compact::Compact;
 use primitives::hash::H256;
-use primitives::bigint::U256;
-use chain::IndexedBlockHeader;
-use network::{Network, ConsensusParams, ConsensusFork};
 use storage::{BlockHeaderProvider, BlockRef};
 use work_bch::work_required_bitcoin_cash;
-
-use constants::{
-	DOUBLE_SPACING_SECONDS, TARGET_TIMESPAN_SECONDS,
-	MIN_TIMESPAN, MAX_TIMESPAN, RETARGETING_INTERVAL
-};
 
 pub fn is_retarget_height(height: u32) -> bool {
 	height % RETARGETING_INTERVAL == 0
@@ -129,8 +130,10 @@ pub fn work_required_retarget(parent_header: IndexedBlockHeader, height: u32, st
 	let mut retarget: U256 = last_bits.into();
 	let maximum: U256 = max_work_bits.into();
 
-	retarget = retarget * retarget_timespan(retarget_timestamp, last_timestamp).into();
-	retarget = retarget / TARGET_TIMESPAN_SECONDS.into();
+	let mul_by: U256 = retarget_timespan(retarget_timestamp, last_timestamp).into();
+	retarget = retarget * mul_by;
+	let div_by: U256 = TARGET_TIMESPAN_SECONDS.into();
+	retarget = retarget / div_by;
 
 	if retarget > maximum {
 		max_work_bits
@@ -147,10 +150,11 @@ pub fn block_reward_satoshi(block_height: u32) -> u64 {
 
 #[cfg(test)]
 mod tests {
-	use primitives::hash::H256;
-	use primitives::compact::Compact;
 	use network::Network;
-	use super::{is_valid_proof_of_work_hash, is_valid_proof_of_work, block_reward_satoshi};
+	use primitives::compact::Compact;
+	use primitives::hash::H256;
+
+	use super::{block_reward_satoshi, is_valid_proof_of_work, is_valid_proof_of_work_hash};
 
 	fn is_valid_pow(max: Compact, bits: u32, hash: &'static str) -> bool {
 		is_valid_proof_of_work_hash(bits.into(), &H256::from_reversed_str(hash)) &&
